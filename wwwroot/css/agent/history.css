@@ -1,0 +1,32 @@
+﻿.agent-history-item {
+    width: 100%;
+    display: grid;
+    gap: 3px;
+    margin-top: 8px;
+    padding: 9px 10px;
+    border: 1px solid var(--agent-border);
+    border-radius: 5px;
+    background: var(--agent-surface-raised);
+    color: var(--agent-text);
+    text-align: left;
+    cursor: pointer;
+    font: inherit;
+}
+
+.agent-history-item:hover {
+    border-color: var(--agent-border-strong);
+    background: var(--agent-hover);
+}
+
+.agent-history-item strong {
+    font-size: 13px;
+}
+
+.agent-history-item span,
+.agent-history-item small {
+    overflow: hidden;
+    color: var(--agent-text-muted);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

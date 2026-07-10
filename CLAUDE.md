@@ -1,0 +1,173 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+---
+
+## What this project is
+
+PSX is a Windows desktop terminal shell (C# + WPF + WebView2 + xterm.js + ConPTY) for running AI Agent CLIs (Claude Code, opencode, qodercli) and dev tools (node, npm, git). Two coexisting views in one window: a `Terminal` view (real ConPTY shells via xterm.js) and an `Agent` view (Claude chat workspace backed by the Agent Client Protocol). Multi-tab, themeable, persistent threads.
+
+---
+
+## Runtime data & paths
+
+Two distinct path roots — don't confuse them:
+
+- **User data** lives in `%USERPROFILE%\.psx\` (NOT `%APPDATA%`; defined in `AgentThreadStore` constructor):
+  - `config.json` — last thread id / working directory / restore flag
+  - `agent/threads/<threadId>.json` — full message history per Agent session
+  - `agent/attachments/<threadId>/` — image attachments (binary + `.json` metadata)
+  - `agent/index.json` — thread index (capped at 100 entries)
+  - `agent/acp-logs/` — per-run NDJSON of JSON-RPC traffic + `acp-runtime.log`
+- **Install-relative** (next to `PSX.exe`, resolved by `RuntimeLocator`):
+  - `psx.ini` — **active** app config (theme/font/shell). Note: NOT in `.psx\`
+  - `theme-presets/` — templates; manually copy one up to install dir to activate
+  - `tools/node/` — bundled portable Node.js
+  - `tools/acp-seed/` — read-only seed manifest for first-run `npm ci`
+  - `runtime/acp-current/` — live ACP adapter + bundled `claude.exe` (what Agent mode loads)
+  - `runtime/acp-next/` — staging dir for background updates (see below)
+  - `runtime/webview2-fixed/` — optional WebView2 Fixed Version runtime
+
+**Terminal sessions are NOT persisted** — closing the app loses them. Only Agent threads survive (in `.psx/agent/threads/`).
+
+---
+
+## Build & run
+
+```bash
+# Build
+dotnet build PSX.slnx
+
+# Run from source
+dotnet run --project PSX.csproj
+
+# Publish a self-contained x64 build. The real release pipeline is
+# tools/build-release.ps1 — it runs dotnet publish, downloads a portable
+# Node.js, pre-installs the ACP runtime via npm ci, and optionally bundles
+# a WebView2 Fixed Version runtime. Plain `dotnet publish` will NOT produce
+# a runnable Agent mode (no bundled claude.exe / node.exe).
+powershell -ExecutionPolicy Bypass -File tools/build-release.ps1
+
+# Debug build: first Agent-mode message triggers an online `npm ci` install
+# of the ACP runtime into runtime/acp-current/ (seeded from tools/acp-seed/).
+# Release builds pre-install this at packaging time, so no network needed.
+```
+
+**No test project exists** — `PSX.slnx` only references the single `PSX.csproj`. There is no `dotnet test` target. Don't suggest adding tests as if infrastructure exists; it doesn't.
+
+**SDK pinning** — `global.json` pins `9.0.300` with `rollForward: latestMajor` (allows resolving to the 10.0.x SDK). Target framework is `net10.0-windows`. Editing `psx.ini` requires a restart (theme brush injection happens once in `App.OnStartup`, see App.ApplyThemeResources).
+
+---
+
+## Architecture (read this before touching anything)
+
+The codebase has 4 large subsystems that look independent but are tightly coupled through events:
+
+### 1. The two bridges share one WebView2
+
+`Controls/TerminalHost.cs` is a code-behind `UserControl` that hosts **one** `WebView2` (no XAML file). Both `TerminalBridgeService` and `AgentBridgeService` subscribe to the same `WebMessageReceived` event and dispatch on the `type` field of the incoming JSON.
+
+- `wwwroot/` is mapped to `https://psx.local/` via `SetVirtualHostNameToFolderMapping` (`Services/TerminalBridgeService.cs:43-48`)
+- `~/.psx/agent/attachments/` is mapped to `https://psx-attachments.local/` (same file, lines 50-56)
+- The page base href is `https://psx.local/` in `wwwroot/index.html:6`
+- All cross-boundary binary IO is base64 strings (JS limitation of `PostWebMessageAsJson`)
+
+If you change the message contract, update **both** the C# dispatcher in the two bridges (`TerminalBridgeService.OnWebMessageReceived`, `AgentBridgeService.OnWebMessageReceived`) and the JS `switch` in `wwwroot/js/main.js` (the `handleEvent` / `switch (message.type)` block). There is no schema validation between them.
+
+### 2. ConPTY is hand-rolled P/Invoke, not a library
+
+`Helpers/NativeMethods.cs` declares the 5 ConPTY Win32 APIs. `Helpers/ProcessFactory.cs:22-107` is the only place that assembles: `CreatePipe` → `CreatePseudoConsole` → `InitializeProcThreadAttributeList` + `UpdateProcThreadAttribute(PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE)` → `CreateProcessW(EXTENDED_STARTUPINFO_PRESENT)`. **Do not "modernize" this** — this is intentional, it gives PowerShell real `COLORTERM=truecolor` detection.
+
+Output is batched in `Services/ConPtyService.ReadOutputLoopAsync`: `8ms` flush interval, `64KB` max batch, `ArrayBufferWriter<byte>`, `PeekNamedPipe` to drain the pipe. Touching these constants requires understanding that `cat largefile` will blow up the WebMessage channel if you don't batch.
+
+`OutputPipeRead` is a `SafeFileHandle` that needs `DangerousAddRef/DangerousRelease` across the P/Invoke boundary — see `ConPtyService.cs:174, 235-238`. Don't refactor to a plain `IntPtr`.
+
+### 3. Agent has two backends behind one interface
+
+`IAgentSessionService` has two implementations registered separately in git history:
+
+- `AcpAgentSessionService` — **the active one**, registered in DI in `App.ConfigureServices` (look for `AddSingleton<IAgentSessionService, AcpAgentSessionService>`). Spawns the bundled portable `node.exe` running `@agentclientprotocol/claude-agent-acp` (currently 0.57.x) from `runtime/acp-current/node_modules/.../dist/index.js` — resolved by `AcpAgentSessionService.ResolveAdapterFromRuntime`, which deliberately has **no fallback** to the legacy `tools/acp/` directory (version-skew hazard, see its doc comment). The ACP adapter in turn spawns the bundled `claude.exe` from `@anthropic-ai/claude-agent-sdk-win32-x64`. Communicates via JSON-RPC 2.0 over stdin/stdout through `AcpJsonRpcTransport` (uses `ConcurrentDictionary<int, TaskCompletionSource>` for async correlation, NDJSON logging at `_logPath`).
+- `ClaudeCodeAgentService` — **legacy/fallback**, parses `stream-json` from a direct `claude.exe` subprocess. Still in the codebase but not wired into DI. Don't delete without checking; the slash command `/terminal` (dispatched in `AcpAgentSessionService.TryHandlePsxSlashCommand`, which calls `OpenRawClaudeTerminalAsync`) deliberately falls back to opening a raw PowerShell tab running system `claude --resume`.
+
+**Switching backends is a one-line change** in `App.ConfigureServices`. The whole point of the interface is to keep `AgentBridgeService` and the JS layer unaware of which one is running.
+
+### 4. ACP's "request/response" pattern uses `TaskCompletionSource`
+
+Long-running ACP requests (permission prompts, elicitation forms) block on a `TCS` until the JS layer sends a response message back. See `AcpAgentSessionService.PendingPermission.Completion` and the `HandlePermissionRequestAsync` flow. Cancellation is a magic string `"__cancelled__"` — fragile, but it's the only one. Don't add more magic strings; if you need a second one, replace the pattern with an enum.
+
+### 5. ACP runtime: dual-directory install + background refresh
+
+`AcpRuntimeManager` owns the bundled ACP adapter across two directories:
+- `runtime/acp-current/` — what the live Agent session reads, exclusively
+- `runtime/acp-next/` — where background `npm update` writes
+
+Updates never mutate `acp-current` in place. Background refresh writes to `acp-next`, flips the `acp-active.txt` marker to `"next"`, and the **next PSX launch** promotes `acp-next` → `acp-current` (`TryPromoteNextToCurrentAsync`). This eliminates the half-updated `node_modules` hazard. If you see code paths trying to fall back from `acp-current` to `tools/acp/`, that's intentional hard refusal — version skew.
+
+First run (Debug build, or if `runtime/acp-current/` is missing): `EnsureInstalledCoreAsync` seeds from `tools/acp-seed/` and runs `npm ci --include=optional` (the `--include=optional` is what pulls the platform-specific `@anthropic-ai/claude-agent-sdk-win32-x64` containing `claude.exe`). Release builds pre-install this at packaging time via `tools/build-release.ps1`, so end users never need network on first Agent message.
+
+---
+
+## Cross-cutting rules (learned from the code, not invented)
+
+1. **All thread-hopping to WebView2 uses `BeginInvoke`, never `Invoke`.** `TerminalBridgeService` has a comment explaining deadlock avoidance near its `BeginInvoke` calls (search for "deadlock" in that file). Match this pattern everywhere you call `PostWebMessageAsJson` from a background thread.
+
+2. **All thread-hopping to `ObservableCollection<T>` in ViewModels uses `Dispatcher.BeginInvoke`** (see the `OnTabCreated` / `OnTabClosed` / `OnTabTitleChanged` handlers in `MainViewModel`). Don't modify `Tabs` directly from a service event handler.
+
+3. **Async services use `ConfigureAwait(false)` everywhere** except the final hop that touches UI. `AcpJsonRpcTransport` is the canonical example (~15 occurrences).
+
+4. **The `XAML brush key` ↔ `psx.ini [theme] field` ↔ `JS CSS variable` are three faces of the same color.** When you add a new color, you must add it in: `Models/AppSettings.cs` (ThemeColors/AgentThemeColors), `psx.ini` (and the matching preset), `App.xaml.cs` ApplyThemeResources, and (if it shows in JS) `wwwroot/css/agent/tokens.css`. The preset README in `theme-presets/README.txt` requires users to close PSX before swapping presets — restart-required is a feature, not a bug, because of the WPF resource injection timing.
+
+5. **The shutdown sequence is load-bearing.** `MainWindow.OnClosing` intercepts `Cancel`, disposes services in order (viewModel → tabService → bridgeService → agentBridgeService → agentSessionService), then re-issues `Close()` via `Dispatcher.BeginInvoke`. If you add a new `IDisposable` service, dispose it here **and** in `Dispose()` of the service itself, and add it to the DI registration as `AddSingleton<IXxxService, XxxService>()` in `App.ConfigureServices`.
+
+6. **SettingsViewModel only writes 3 fields back to `psx.ini`.** Don't add "save settings" features assuming the pipeline exists; the rest of `psx.ini` requires a manual edit + restart. `SettingsService.SaveSettings` only persists `FontSize`, `FontFamily`, `DefaultShellProfileId` (see `SettingsViewModel`'s `OnFontSizeChanged` / `OnFontFamilyChanged` / `OnDefaultShellProfileIdChanged` handlers, and `SettingsService.SaveSettings` — which atomically rewrites the whole psx.ini via a `.tmp` + `File.Move`).
+
+---
+
+## File-to-purpose map (only the non-obvious ones)
+
+- `Helpers/ProcessFactory.cs` — only place that knows how to start a ConPTY child process. Reused by `ConPtyService`.
+- `Services/AcpAgentSessionService.cs` — ~2100 lines, the bulk of the Agent mode. Has internal state machine (`ready` / `running` / `restoring` / `transcript_only` / `error` / `fallback`) and a `ReplayHistoryState` that distinguishes live vs replay event handling. Two parallel handler paths (`HandleSessionUpdateAsync` vs `HandleReplaySessionUpdateAsync`) — easy to get wrong, read both before editing.
+- `Services/AcpJsonRpcTransport.cs` — generic JSON-RPC 2.0 client over stdio. Could be lifted out as a standalone library.
+- `Services/SettingsService.cs` — hand-rolled INI parser, **no third-party INI library**. `ValidateColor` accepts CSS `#RRGGBBAA` and silently normalizes to WPF `#AARRGGBB`. Bad colors fall back to XAML defaults — never throw.
+- `Services/AgentThreadStore.cs` — owns `~/.psx/` layout: `agent/threads/<threadId>.json`, `agent/attachments/<threadId>/<id>.<ext>`, `agent/index.json`. Path safety uses `char.IsLetterOrDigit` filtering, not path canonicalization — see "not solved" below.
+- `Controls/TerminalHost.cs` — sets `WebView2.DefaultBackgroundColor` from `Application.Current.Resources["WindowBackgroundBrush"]` **at construction time** to prevent white flash before the page loads. If you add another `WebView2` host, copy this pattern.
+- `MainWindow.OnSourceInitialized` — DWM dark title bar is set here (HWND created, window not yet shown). `OnLoaded` is too late.
+- `App.ApplyThemeResources` — overwrites 18 brush keys in `Application.Current.Resources`. Works only because every XAML reference uses `DynamicResource` (not `StaticResource`).
+
+---
+
+## Release packaging
+
+`tools/build-release.ps1` is the real release pipeline — **not** plain `dotnet publish`. It produces a fully self-contained `PSX-<version>-win-x64.zip` (win-x64 only) bundling:
+
+- Self-contained .NET 10 runtime (via `Properties/PublishProfiles/win-x64-self-contained.pubxml`: `SelfContained=true`, NOT single-file, NOT trimmed — WPF can't be trimmed)
+- Portable Node.js v22.17.0 win-x64 (downloaded fresh from nodejs.org into `tools/node/`)
+- Pre-installed ACP runtime in `runtime/acp-current/` (via `npm ci --include=optional`), including the ~243 MB `claude.exe`
+- Optional WebView2 Fixed Version runtime in `runtime/webview2-fixed/` — **only if** `-WebView2FixedRuntimePath` is passed at build time; otherwise users rely on system Evergreen WebView2
+
+Users unzip and double-click `PSX.exe` — no Node/.NET/Claude Code install required. The only external dependency is WebView2 (system-installed Evergreen, or bundled fixed version).
+
+Note: `RuntimeLocator.Locate()` resolves all install-relative paths at startup; `RuntimePreflightService` checks WebView2/Node/ACP/Claude Code readiness before any WebView2-dependent service starts (missing WebView2 → prompt + shutdown).
+
+---
+
+## Things this codebase does NOT have (don't assume they exist)
+
+- No test project, no mocking framework, no `dotnet test` invocation
+- No `IConPtyService` or `IAcpJsonRpcTransport` interfaces — those concrete classes are injected directly (`App.xaml.cs:42`)
+- No CI/CD — no `.github/workflows`, no `azure-pipelines.yml`. Builds are manual.
+- No git tags for versions. `releases/PSX-v0.2.0-win-x64.zip` is a 64MB artifact **not in git** (`.gitignore` line ~23 excludes `[Rr]eleases/`)
+- No logging framework — `Debug.WriteLine` and `MessageBox.Show` are used for diagnostics
+- No `Models/TerminalOptions.cs` schema validation against the JS side — the contract is implicit, matched by string keys in C# `switch` and JS `switch`
+- No `Channel<T>` — output batching is hand-rolled with `ArrayBufferWriter<byte>` + `Stopwatch`
+
+---
+
+## Known fragility (don't paper over it; fix the root cause if you touch it)
+
+- `MainViewModel` `RelayCommand` handlers — several do `_ = SomeAsync()` fire-and-forget (search for `_ =` in MainViewModel.cs). Exceptions in those tasks are silently lost.
+- `TabManagementService.cs:11-14` — two `HashSet`s (`_closingSessions` and `_closedSessions`) with non-atomic reads across `OnConPtySessionExited` vs `OnClosing`. A duplicate `TabClosed` event is possible under load.
+- `AgentThreadStore.cs:340-352` — path-traversal defense is character-class filtering, not `Path.GetFullPath` + `StartsWith` verification. Acceptable for the current use case (GUID-derived `threadId`), but if `threadId` ever becomes user-supplied, replace it.
+- `AcpAgentSessionService` — `"__cancelled__"` magic string as cancel signal (referenced from both the cancellation path and the response-handling path). Replace with enum if you add a second signal.
+- `ClaudeCodeAgentService.cs` is dead code in the current DI graph but still shipped. Removing it requires checking that the `/terminal` slash command handler (`AcpAgentSessionService.TryHandlePsxSlashCommand` → `OpenRawClaudeTerminalAsync`) doesn't reference it.

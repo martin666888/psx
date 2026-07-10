@@ -1,0 +1,79 @@
+﻿.agent-system {
+    color: var(--agent-text-dim);
+    font-size: 12px;
+    margin: 0 0 14px;
+}
+
+.agent-message {
+    width: 100%;
+    box-sizing: border-box;
+    margin: 0 0 18px;
+}
+
+.agent-turn {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.agent-message-label {
+    margin-bottom: 6px;
+    color: var(--agent-text-muted);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.agent-message-body {
+    color: var(--agent-text);
+    font-size: var(--agent-font-size);
+    line-height: 1.65;
+    white-space: normal;
+}
+
+.agent-message-content {
+    position: relative;
+    box-sizing: border-box;
+}
+
+.agent-message-collapsed .agent-message-content {
+    max-height: var(--agent-user-message-collapsed-height);
+    overflow: hidden;
+    padding-bottom: 34px;
+}
+
+.agent-message-collapsed .agent-message-content::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 70px;
+    pointer-events: none;
+    background: linear-gradient(to bottom, color-mix(in srgb, var(--agent-code-block-bg) 0%, transparent), var(--agent-code-block-bg) 70%);
+}
+
+.agent-message-collapse-toggle {
+    position: static;
+    z-index: 1;
+    display: block;
+    margin: 2px 0 0;
+    padding: 3px 6px;
+    border: 0;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--agent-code-block-bg) 88%, transparent);
+    color: var(--agent-accent-hover);
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.86em;
+}
+
+.agent-message-collapsed .agent-message-collapse-toggle {
+    position: absolute;
+    left: 8px;
+    bottom: 6px;
+    margin: 0;
+}
+
+.agent-message-collapse-toggle:hover {
+    color: var(--agent-text);
+    background: color-mix(in srgb, var(--agent-hover) 96%, transparent);
+}

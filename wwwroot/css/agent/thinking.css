@@ -1,0 +1,73 @@
+﻿.agent-thinking {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 18px;
+    color: var(--agent-text-muted);
+    font-size: var(--agent-font-size);
+}
+
+.agent-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--agent-border-strong);
+    border-top-color: var(--agent-accent);
+    border-radius: 50%;
+    animation: agent-spin 800ms linear infinite;
+}
+
+.agent-thinking-block {
+    width: 100%;
+    box-sizing: border-box;
+    margin: 0 0 14px;
+    border: 1px solid var(--agent-border);
+    border-radius: 6px;
+    background: var(--agent-surface);
+}
+
+.agent-thinking-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    color: var(--agent-text-muted);
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 700;
+    list-style: none;
+    user-select: none;
+}
+
+.agent-thinking-header::-webkit-details-marker {
+    display: none;
+}
+
+.agent-thinking-chevron::before {
+    content: '\25b6';
+    display: inline-block;
+    color: var(--agent-text-dim);
+    font-size: 10px;
+    transition: transform 150ms;
+}
+
+.agent-thinking-block[open] > .agent-thinking-header .agent-thinking-chevron::before {
+    transform: rotate(90deg);
+}
+
+.agent-thinking-title {
+    flex: 1;
+}
+
+.agent-thinking-content {
+    max-height: 260px;
+    overflow: auto;
+    margin: 0 8px 8px;
+    padding: 8px 10px;
+    border-radius: 4px;
+    background: var(--agent-surface-muted);
+    color: var(--agent-text-muted);
+    font-family: var(--agent-font-mono);
+    font-size: clamp(11px, calc(var(--agent-font-size) * 0.8), 18px);
+    line-height: 1.5;
+    white-space: pre-wrap;
+}

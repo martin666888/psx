@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "name": "psx-acp-runtime",
+  "version": "0.1.0",
+  "description": "PSX ACP adapter runtime — installed into %LOCALAPPDATA%\\PSX\\runtime\\acp on first run, refreshed in the background by AcpRuntimeManager.",
+  "dependencies": {
+    "@agentclientprotocol/claude-agent-acp": "0.57.0"
+  }
+}

@@ -1,0 +1,126 @@
+﻿.agent-composer {
+    position: relative;
+    border-top: 1px solid var(--agent-border);
+    background: var(--agent-bg);
+    padding: 12px;
+}
+
+.agent-input-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.agent-composer textarea {
+    width: 100%;
+    min-height: var(--agent-composer-control-height);
+    max-height: 180px;
+    resize: none;
+    box-sizing: border-box;
+    border: 1px solid var(--agent-border-strong);
+    border-radius: 6px;
+    padding: 11px 12px;
+    outline: none;
+    overflow-y: hidden;
+    background: var(--agent-surface);
+    color: var(--agent-text);
+    font-family: var(--agent-font-mono);
+    font-size: var(--agent-font-size);
+    line-height: 1.45;
+    scrollbar-color: var(--agent-scrollbar) var(--agent-surface);
+    scrollbar-width: thin;
+}
+
+.agent-composer textarea:focus {
+    border-color: var(--agent-accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--agent-accent) 16%, transparent);
+}
+
+.agent-composer-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 9px;
+}
+
+.agent-hints {
+    display: flex;
+    flex: 1 1 auto;
+    gap: 12px;
+    color: var(--agent-text-dim);
+    font-size: 12px;
+}
+
+.agent-config-options {
+    display: flex;
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    min-width: 0;
+}
+
+.agent-mode-control,
+.agent-config-control {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
+    color: var(--agent-text-dim);
+    font-size: 12px;
+}
+
+.agent-mode-control[hidden],
+.agent-config-control[hidden] {
+    display: none;
+}
+
+.agent-mode-control select,
+.agent-config-control select {
+    max-width: 180px;
+    border: 1px solid var(--agent-border);
+    border-radius: 5px;
+    background: var(--agent-surface);
+    color: var(--agent-text-muted);
+    padding: 3px 6px;
+    font: inherit;
+    text-overflow: ellipsis;
+}
+
+.agent-config-control select[data-config-id="model"] {
+    max-width: 230px;
+}
+
+.agent-mode-control select:disabled,
+.agent-config-control select:disabled {
+    opacity: 0.55;
+}
+
+.agent-send {
+    flex: 0 0 96px;
+    min-width: 96px;
+    height: var(--agent-composer-control-height);
+    box-sizing: border-box;
+    background: var(--agent-send-btn);
+    border-color: var(--agent-send-btn);
+    color: var(--agent-send-btn-text);
+    font-weight: 600;
+}
+
+.agent-send:hover {
+    background: var(--agent-send-btn-hover);
+    border-color: var(--agent-send-btn-hover);
+}
+
+.agent-send-stop {
+    background: var(--agent-stop-btn);
+    border-color: var(--agent-stop-btn);
+}
+
+.agent-send-stop:hover {
+    background: var(--agent-stop-btn-hover);
+    border-color: var(--agent-stop-btn-hover);
+}

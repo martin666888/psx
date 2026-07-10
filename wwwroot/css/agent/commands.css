@@ -1,0 +1,58 @@
+﻿.agent-command-menu {
+    position: absolute;
+    left: 12px;
+    right: 118px;
+    bottom: calc(100% - 12px);
+    max-height: 260px;
+    overflow: auto;
+    border: 1px solid var(--agent-border-strong);
+    border-radius: 6px;
+    background: var(--agent-surface-raised);
+    box-shadow: 0 12px 28px color-mix(in srgb, var(--agent-shadow) 34%, transparent);
+    z-index: 20;
+}
+
+.agent-command-group {
+    padding: 8px 12px 5px;
+    color: var(--agent-text-dim);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
+.agent-command-item {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 9px 12px;
+    border: 0;
+    background: transparent;
+    color: var(--agent-text);
+    text-align: left;
+    cursor: pointer;
+    font: inherit;
+}
+
+.agent-command-item span {
+    font-family: var(--agent-font-mono);
+    font-size: 13px;
+}
+
+.agent-command-item small {
+    color: var(--agent-text-muted);
+    font-size: 12px;
+}
+
+.agent-command-item:hover,
+.agent-command-item.is-active {
+    background: var(--agent-hover);
+}
+
+@keyframes agent-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}

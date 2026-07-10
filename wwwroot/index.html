@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <base href="https://psx.local/">
+    <link rel="stylesheet" href="vendor/xterm/xterm.css">
+    <link rel="stylesheet" href="css/terminal.css">
+    <link rel="stylesheet" href="css/agent/index.css">
+    <link rel="icon" href="data:,">
+    <title>PSX Terminal</title>
+</head>
+<body>
+    <div id="terminal-container"></div>
+    <section id="agent-panel" class="agent-panel" hidden>
+        <header class="agent-toolbar">
+            <div class="agent-meta">
+                <span id="agent-status">Ready</span>
+                <span id="agent-cwd">Working directory not loaded</span>
+                <button id="agent-change-cwd" class="agent-link-button" type="button">Change</button>
+                <span id="agent-session"></span>
+            </div>
+            <div class="agent-toolbar-actions">
+                <button id="agent-new" title="Start a new Agent thread">New</button>
+                <button id="agent-history" title="Show Agent thread history">History</button>
+                <button id="agent-clear" title="Clear thread">Clear</button>
+            </div>
+        </header>
+        <div class="agent-workspace">
+            <main id="agent-thread" class="agent-thread"></main>
+            <div id="agent-plan-resizer"
+                 class="agent-plan-resizer"
+                 role="separator"
+                 aria-label="Resize plan panel"
+                 aria-orientation="vertical"
+                 tabindex="0"></div>
+            <aside id="agent-plan-panel" class="agent-plan-panel" aria-label="Plan panel"></aside>
+        </div>
+        <footer class="agent-composer">
+            <div id="agent-attachments-strip" class="agent-attachments-strip" hidden></div>
+            <div class="agent-input-row">
+                <button id="agent-attach" class="agent-attach" type="button" title="Attach images">+</button>
+                <input id="agent-attachment-input" type="file" accept="image/*" multiple hidden>
+                <textarea id="agent-input" rows="1" spellcheck="false" placeholder="Message Claude Agent - / for commands"></textarea>
+                <button id="agent-send" class="agent-send" title="Send message">Send</button>
+            </div>
+            <div id="agent-command-menu" class="agent-command-menu" hidden></div>
+            <div class="agent-composer-footer">
+                <div class="agent-hints">
+                    <span>/ commands</span>
+                    <span id="agent-context-used">Context used --k</span>
+                </div>
+                <label class="agent-mode-control" title="Claude Agent mode">
+                    <span>mode</span>
+                    <select id="agent-mode" disabled>
+                        <option value="">default</option>
+                    </select>
+                </label>
+                <div id="agent-config-options" class="agent-config-options"></div>
+            </div>
+        </footer>
+        <div id="agent-image-preview" class="agent-image-preview" hidden>
+            <img id="agent-image-preview-img" alt="Image preview">
+        </div>
+    </section>
+
+    <script>
+        window.onerror = function(msg, src, line, col, err) {
+            var d = document.createElement('pre');
+            d.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#f38ba8;color:#1e1e2e;font-size:12px;padding:8px;z-index:9999;white-space:pre-wrap;max-height:40vh;overflow:auto';
+            d.textContent = '[JS ERROR] ' + msg + '\n  at ' + src + ':' + line + ':' + col + (err ? '\n' + err.stack : '');
+            document.body.appendChild(d);
+            return false;
+        };
+        window.addEventListener('unhandledrejection', function(e) {
+            window.onerror('Unhandled Promise: ' + e.reason, '', 0, 0, e.reason instanceof Error ? e.reason : null);
+        });
+    </script>
+    <script src="vendor/xterm/xterm.js"></script>
+    <script src="vendor/xterm/addon-fit.js"></script>
+    <script src="vendor/xterm/addon-unicode11.js"></script>
+    <script src="vendor/xterm/addon-webgl.js"></script>
+    <script src="js/Bridge.js"></script>
+    <script src="js/TerminalManager.js"></script>
+    <script src="js/AgentThreadManager.js"></script>
+    <script src="js/agent/composer.js"></script>
+    <script src="js/agent/config.js"></script>
+    <script src="js/agent/commands.js"></script>
+    <script src="js/agent/attachments.js"></script>
+    <script src="js/agent/thread.js"></script>
+    <script src="js/agent/messages.js"></script>
+    <script src="js/agent/plan.js"></script>
+    <script src="js/agent/thinking.js"></script>
+    <script src="js/agent/tools.js"></script>
+    <script src="js/agent/decisions.js"></script>
+    <script src="js/agent/markdown.js"></script>
+    <script src="js/agent/scroll.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>

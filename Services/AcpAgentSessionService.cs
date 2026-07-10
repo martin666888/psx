@@ -1,0 +1,2449 @@
+using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.IO;
+using System.Text;
+using System.Text.Json;
+using PSX.Models;
+
+namespace PSX.Services;
+
+public sealed class AcpAgentSessionService : IAgentSessionService
+{
+    private const long MaxImageBytes = 20L * 1024 * 1024;
+    private const long MaxPromptImageBytes = 50L * 1024 * 1024;
+    private const int MaxPromptImages = 5;
+    private static readonly HashSet<string> SupportedImageMimeTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "image/png",
+        "image/jpeg",
+        "image/webp",
+        "image/gif"
+    };
+
+    private sealed class AcpMode
+    {
+        public string Id { get; init; } = "";
+        public string Name { get; init; } = "";
+        public string Description { get; init; } = "";
+    }
+
+    private sealed class AcpConfigOption
+    {
+        public string Id { get; init; } = "";
+        public string Name { get; init; } = "";
+        public string Description { get; init; } = "";
+        public string Category { get; init; } = "";
+        public string Type { get; init; } = "";
+        public string CurrentValue { get; init; } = "";
+        public IReadOnlyList<AcpConfigOptionValue> Options { get; init; } = Array.Empty<AcpConfigOptionValue>();
+    }
+
+    private sealed class AcpConfigOptionValue
+    {
+        public string Value { get; init; } = "";
+        public string Name { get; init; } = "";
+        public string Description { get; init; } = "";
+    }
+
+    private sealed class PendingPermission
+    {
+        public TaskCompletionSource<string> Completion { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public string[] OptionIds { get; init; } = Array.Empty<string>();
+    }
+
+    private sealed class PendingElicitation
+    {
+        public TaskCompletionSource<string> Completion { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    private sealed class AcpTerminalProcess
+    {
+        public Process Process { get; init; } = null!;
+        public StringBuilder Output { get; } = new();
+        public int OutputByteLimit { get; init; } = 200_000;
+    }
+
+    private sealed class ReplayHistoryState
+    {
+        public List<AgentMessage> Messages { get; } = new();
+        public StringBuilder ThinkingBuffer { get; } = new();
+        public StringBuilder AssistantBuffer { get; } = new();
+        public Dictionary<string, string> ToolNames { get; } = new();
+        public Dictionary<string, string> ToolInputs { get; } = new();
+        public Dictionary<string, string> ToolOutputs { get; } = new();
+        public Dictionary<string, string> ToolSummaries { get; } = new();
+        public Dictionary<string, string> ToolRunIds { get; } = new();
+        public string? CurrentRunId { get; set; }
+        public int TurnIndex { get; set; }
+    }
+
+    private readonly IAgentBridgeService _bridgeService;
+    private readonly ITabManagementService _tabManagementService;
+    private readonly ITerminalBridgeService _terminalBridgeService;
+    private readonly IAgentThreadStore _threadStore;
+    private readonly IAgentDirectoryPicker _directoryPicker;
+    private readonly RuntimeLocator _runtimeLocator;
+    private readonly AcpRuntimeManager _acpRuntime;
+    private readonly object _runLock = new();
+    private readonly ConcurrentDictionary<string, PendingPermission> _pendingPermissions = new();
+    private readonly ConcurrentDictionary<string, PendingElicitation> _pendingElicitations = new();
+    private readonly ConcurrentDictionary<string, AcpTerminalProcess> _terminals = new();
+    private readonly StringBuilder _thinkingBuffer = new();
+    private readonly StringBuilder _assistantBuffer = new();
+    private readonly Dictionary<string, string> _toolNames = new();
+    private readonly Dictionary<string, string> _toolSummaries = new();
+    private readonly Dictionary<string, string> _toolOutputs = new();
+    private AgentThread _currentThread;
+    private AcpJsonRpcTransport? _transport;
+    private string _workingDirectory = "";
+    private string? _acpSessionId;
+    private string? _adapterVersion;
+    private string _status = "ready";
+    private string? _currentRunId;
+    private IReadOnlyList<AcpMode> _modes = Array.Empty<AcpMode>();
+    private IReadOnlyList<AcpConfigOption> _configOptions = Array.Empty<AcpConfigOption>();
+    private string? _currentModeId;
+    private bool _isRunning;
+    private bool _isLoadingHistory;
+    private bool _supportsImage = true;
+    private ReplayHistoryState? _replayHistory;
+    private CancellationTokenSource? _runCts;
+    private Task? _currentRunTask;
+    private bool _disposed;
+
+    public AcpAgentSessionService(
+        IAgentBridgeService bridgeService,
+        ITabManagementService tabManagementService,
+        ITerminalBridgeService terminalBridgeService,
+        IAgentThreadStore threadStore,
+        IAgentDirectoryPicker directoryPicker,
+        RuntimeLocator runtimeLocator,
+        AcpRuntimeManager acpRuntime)
+    {
+        _bridgeService = bridgeService;
+        _tabManagementService = tabManagementService;
+        _terminalBridgeService = terminalBridgeService;
+        _threadStore = threadStore;
+        _directoryPicker = directoryPicker;
+        _runtimeLocator = runtimeLocator;
+        _acpRuntime = acpRuntime;
+        var initialThread = _threadStore.LoadOrCreateInitialThread(ResolveWorkspaceRoot());
+        _currentThread = IsEmptyAgentDraft(initialThread)
+            ? initialThread
+            : _threadStore.CreateThread(initialThread.Cwd);
+        _currentThread.Provider = "acp-claude";
+        ApplyThread(_currentThread);
+        _bridgeService.UserMessageSubmitted += OnUserMessageSubmitted;
+        _bridgeService.CommandReceived += OnCommandReceived;
+        _bridgeService.AttachmentUploadReceived += OnAttachmentUploadReceived;
+    }
+
+    public async Task SubmitMessageAsync(string text, IReadOnlyList<string>? attachmentIds = null)
+    {
+        if (_disposed)
+            return;
+
+        var trimmed = text.Trim();
+        var attachments = attachmentIds?
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray() ?? Array.Empty<string>();
+
+        if (trimmed.StartsWith('/') && attachments.Length == 0 && TryHandlePsxSlashCommand(trimmed, out var commandTask))
+        {
+            await commandTask.ConfigureAwait(false);
+            return;
+        }
+
+        await StartAcpRunAsync(trimmed, attachments).ConfigureAwait(false);
+    }
+
+    public async Task ClearAsync()
+    {
+        _currentThread.Messages.Clear();
+        SaveCurrentThread();
+        await _bridgeService.SendEventAsync(new { type = "agent_cleared" }).ConfigureAwait(false);
+    }
+
+    public async Task CancelAsync()
+    {
+        await CancelRunAsync(notify: true).ConfigureAwait(false);
+    }
+
+    private async Task CancelRunAsync(bool notify)
+    {
+        // Signal cancellation to the running Task.Run so it can exit gracefully.
+        var cts = _runCts;
+        try { cts?.Cancel(); } catch { }
+
+        var sessionId = _acpSessionId;
+        if (!string.IsNullOrWhiteSpace(sessionId) && _transport != null)
+        {
+            try
+            {
+                await _transport.SendNotificationAsync("session/cancel", new { sessionId }).ConfigureAwait(false);
+            }
+            catch { }
+        }
+
+        foreach (var item in _pendingPermissions.ToArray())
+        {
+            if (_pendingPermissions.TryRemove(item.Key, out var pending))
+            {
+                pending.Completion.TrySetResult("__cancelled__");
+                await _bridgeService.SendEventAsync(new
+                {
+                    type = "permission_cancelled",
+                    requestId = item.Key,
+                    text = "Request cancelled because the current run stopped."
+                }).ConfigureAwait(false);
+            }
+        }
+
+        foreach (var item in _pendingElicitations.ToArray())
+        {
+            if (_pendingElicitations.TryRemove(item.Key, out var pending))
+            {
+                pending.Completion.TrySetResult("{\"action\":\"cancel\"}");
+                await _bridgeService.SendEventAsync(new
+                {
+                    type = "elicitation_cancelled",
+                    requestId = item.Key,
+                    text = "Input request cancelled because the current run stopped."
+                }).ConfigureAwait(false);
+            }
+        }
+
+        // Wait for the old Task.Run to finish (with timeout) so its finally
+        // block can clean up before we allow a new run to start.
+        var oldTask = _currentRunTask;
+        if (oldTask != null)
+        {
+            try
+            {
+                await oldTask.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            }
+            catch { /* timeout or fault — proceed anyway */ }
+        }
+
+        lock (_runLock)
+        {
+            _isRunning = false;
+            _status = "ready";
+            _currentRunId = null;
+            _runCts = null;
+            _currentRunTask = null;
+        }
+
+        if (notify)
+            await _bridgeService.SendEventAsync(new { type = "command_result", text = "ACP run stopped." }).ConfigureAwait(false);
+        await PublishStateAsync().ConfigureAwait(false);
+    }
+
+    public async Task NewThreadAsync(string? workingDirectory = null)
+    {
+        await CancelRunAsync(notify: true).ConfigureAwait(false);
+        var cwd = string.IsNullOrWhiteSpace(workingDirectory) ? _workingDirectory : workingDirectory;
+        _currentThread = _threadStore.CreateThread(cwd);
+        _currentThread.Provider = "acp-claude";
+        ApplyThread(_currentThread);
+        await SendThreadLoadedAsync(clear: true).ConfigureAwait(false);
+        await _bridgeService.SendEventAsync(new { type = "command_result", text = "Started a new ACP Agent draft. Claude will start on the first message." }).ConfigureAwait(false);
+        await PublishStateAsync().ConfigureAwait(false);
+    }
+
+    public async Task LoadThreadAsync(string threadId)
+    {
+        var thread = _threadStore.LoadThread(threadId);
+        if (thread == null)
+        {
+            await SendRunFailedAsync($"Thread not found: {threadId}").ConfigureAwait(false);
+            return;
+        }
+
+        await CancelRunAsync(notify: false).ConfigureAwait(false);
+        _currentThread = thread;
+        ApplyThread(_currentThread);
+        _acpSessionId = null;
+        _threadStore.SaveLastThread(_currentThread);
+        await SendThreadLoadedAsync(clear: true).ConfigureAwait(false);
+        await _bridgeService.SendEventAsync(new { type = "command_result", text = "Loading ACP session history..." }).ConfigureAwait(false);
+
+        if (string.IsNullOrWhiteSpace(_currentThread.AcpSessionId))
+        {
+            _status = "transcript_only";
+            await _bridgeService.SendEventAsync(new { type = "command_result", text = "This thread has no ACP session id. Showing local transcript only." }).ConfigureAwait(false);
+            await PublishStateAsync().ConfigureAwait(false);
+            return;
+        }
+
+        try
+        {
+            var restored = await LoadAcpHistoryAsync(_currentThread.AcpSessionId).ConfigureAwait(false);
+            if (restored)
+            {
+                _status = "restored";
+                await _bridgeService.SendEventAsync(new { type = "command_result", text = "ACP session history restored. Continuing will use this session." }).ConfigureAwait(false);
+            }
+            else
+            {
+                _status = "transcript_only";
+                await _bridgeService.SendEventAsync(new { type = "resume_failed", text = "ACP session loaded, but no transcript was replayed. Showing local transcript only." }).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            _acpSessionId = null;
+            _status = "transcript_only";
+            await _bridgeService.SendEventAsync(new { type = "resume_failed", text = $"ACP session could not be restored. Showing local transcript only. {ex.Message}" }).ConfigureAwait(false);
+        }
+
+        await PublishStateAsync().ConfigureAwait(false);
+    }
+
+    public async Task DeleteThreadAsync(string threadId)
+    {
+        if (_currentThread.ThreadId == threadId && !string.IsNullOrWhiteSpace(_acpSessionId) && _transport != null)
+        {
+            try
+            {
+                await _transport.SendRequestAsync("session/delete", new { sessionId = _acpSessionId }, TimeSpan.FromSeconds(15))
+                    .ConfigureAwait(false);
+            }
+            catch { }
+        }
+
+        await CancelRunAsync(notify: false).ConfigureAwait(false);
+        _threadStore.DeleteThread(threadId);
+        var next = _threadStore.ListThreads().FirstOrDefault();
+        _currentThread = next != null
+            ? _threadStore.LoadThread(next.ThreadId) ?? _threadStore.CreateThread(_workingDirectory)
+            : _threadStore.CreateThread(_workingDirectory);
+        _currentThread.Provider = "acp-claude";
+        ApplyThread(_currentThread);
+        await SendThreadLoadedAsync(clear: true).ConfigureAwait(false);
+        await _bridgeService.SendEventAsync(new { type = "command_result", text = "Deleted thread." }).ConfigureAwait(false);
+        await PublishStateAsync().ConfigureAwait(false);
+    }
+
+    public async Task ChangeDirectoryAsync(string path)
+    {
+        var expanded = Environment.ExpandEnvironmentVariables(path.Trim('"'));
+        var fullPath = Path.GetFullPath(Path.IsPathRooted(expanded)
+            ? expanded
+            : Path.Combine(_workingDirectory, expanded));
+
+        if (!Directory.Exists(fullPath))
+        {
+            await SendRunFailedAsync($"Directory does not exist: {fullPath}").ConfigureAwait(false);
+            return;
+        }
+
+        await NewThreadAsync(fullPath).ConfigureAwait(false);
+        await _bridgeService.SendEventAsync(new { type = "command_result", text = $"Working directory changed to: {fullPath}" }).ConfigureAwait(false);
+    }
+
+    public Task ListThreadsAsync()
+    {
+        return _bridgeService.SendEventAsync(new
+        {
+            type = "agent_threads",
+            threads = _threadStore.ListThreads().Select(t => new
+            {
+                threadId = t.ThreadId,
+                title = t.Title,
+                cwd = t.Cwd,
+                sessionId = t.AcpSessionId ?? t.ClaudeSessionId ?? "",
+                updatedAt = t.UpdatedAt.ToString("u")
+            }).ToArray()
+        });
+    }
+
+    public Task PublishStateAsync()
+    {
+        return _bridgeService.SendEventAsync(new
+        {
+            type = "agent_state",
+            cwd = _workingDirectory,
+            sessionId = _acpSessionId ?? "",
+            threadId = _currentThread.ThreadId,
+            title = _currentThread.Title,
+            status = _status,
+            busy = _isRunning,
+            supportsImage = _supportsImage,
+            contextUsedTokens = _currentThread.ContextUsedTokens,
+            store = _threadStore.RootDirectory
+        });
+    }
+
+    private void OnUserMessageSubmitted(object? sender, AgentSubmitEventArgs e)
+    {
+        _ = SubmitMessageAsync(e.Text, e.AttachmentIds);
+    }
+
+    private void OnAttachmentUploadReceived(object? sender, AgentAttachmentUploadEventArgs e)
+    {
+        _ = UploadAttachmentAsync(e);
+    }
+
+    private void OnCommandReceived(object? sender, AgentCommandEventArgs e)
+    {
+        _ = HandleFrontendCommandAsync(e);
+    }
+
+    private async Task HandleFrontendCommandAsync(AgentCommandEventArgs e)
+    {
+        switch (e.Command)
+        {
+            case "state":
+                await SendThreadLoadedAsync(clear: true).ConfigureAwait(false);
+                await PublishStateAsync().ConfigureAwait(false);
+                break;
+            case "activate":
+                await ActivateAsync().ConfigureAwait(false);
+                break;
+            case "clear":
+                await ClearAsync().ConfigureAwait(false);
+                break;
+            case "new":
+                await NewThreadAsync().ConfigureAwait(false);
+                break;
+            case "cwd":
+                if (string.IsNullOrWhiteSpace(e.Value))
+                    await _bridgeService.SendEventAsync(new { type = "command_result", text = $"Current working directory: {_workingDirectory}" }).ConfigureAwait(false);
+                else
+                    await ChangeDirectoryAsync(e.Value).ConfigureAwait(false);
+                break;
+            case "pick_cwd":
+                await PickDirectoryAsync().ConfigureAwait(false);
+                break;
+            case "terminal":
+                await OpenRawClaudeTerminalAsync().ConfigureAwait(false);
+                break;
+            case "stop":
+                await CancelAsync().ConfigureAwait(false);
+                break;
+            case "history":
+                await ListThreadsAsync().ConfigureAwait(false);
+                break;
+            case "load_thread":
+                if (!string.IsNullOrWhiteSpace(e.Value))
+                    await LoadThreadAsync(e.Value).ConfigureAwait(false);
+                break;
+            case "delete":
+                await DeleteThreadAsync(_currentThread.ThreadId).ConfigureAwait(false);
+                break;
+            case "help":
+                await SendHelpAsync().ConfigureAwait(false);
+                break;
+            case "claude_command":
+                if (!string.IsNullOrWhiteSpace(e.Value))
+                    await StartAcpRunAsync(e.Value).ConfigureAwait(false);
+                break;
+            case "set_mode":
+                if (!string.IsNullOrWhiteSpace(e.Value))
+                    await SetModeAsync(e.Value).ConfigureAwait(false);
+                break;
+            case "set_config_option":
+                if (!string.IsNullOrWhiteSpace(e.RequestId) && !string.IsNullOrWhiteSpace(e.Value))
+                    await SetConfigOptionAsync(e.RequestId, e.Value).ConfigureAwait(false);
+                break;
+            case "agent_permission_response":
+                if (!string.IsNullOrWhiteSpace(e.RequestId)
+                    && _pendingPermissions.TryRemove(e.RequestId, out var pending))
+                {
+                    pending.Completion.TrySetResult(e.Value ?? "");
+                }
+                break;
+            case "agent_elicitation_response":
+                if (!string.IsNullOrWhiteSpace(e.RequestId)
+                    && _pendingElicitations.TryRemove(e.RequestId, out var elicitation))
+                {
+                    elicitation.Completion.TrySetResult(e.Value ?? "{\"action\":\"cancel\"}");
+                }
+                break;
+        }
+    }
+
+    private async Task ActivateAsync()
+    {
+        await PublishStateAsync().ConfigureAwait(false);
+    }
+
+    private bool TryHandlePsxSlashCommand(string commandText, out Task task)
+    {
+        var parts = commandText.Split(' ', 2, StringSplitOptions.TrimEntries);
+        var command = parts[0].ToLowerInvariant();
+        var value = parts.Length > 1 ? parts[1] : "";
+
+        task = command switch
+        {
+            "/clear" => ClearAsync(),
+            "/new" => NewThreadAsync(),
+            "/cwd" => string.IsNullOrWhiteSpace(value)
+                ? _bridgeService.SendEventAsync(new { type = "command_result", text = $"Current working directory: {_workingDirectory}" })
+                : ChangeDirectoryAsync(value),
+            "/terminal" => OpenRawClaudeTerminalAsync(),
+            "/stop" => CancelAsync(),
+            "/history" => ListThreadsAsync(),
+            "/delete" => DeleteThreadAsync(_currentThread.ThreadId),
+            "/help" => SendHelpAsync(),
+            _ => Task.CompletedTask
+        };
+
+        return command is "/clear" or "/new" or "/cwd" or "/terminal" or "/stop" or "/history" or "/delete" or "/help";
+    }
+
+    private async Task PickDirectoryAsync()
+    {
+        var selected = _directoryPicker.PickDirectory(_workingDirectory);
+        if (!string.IsNullOrWhiteSpace(selected))
+            await ChangeDirectoryAsync(selected).ConfigureAwait(false);
+    }
+
+    private Task SendHelpAsync()
+    {
+        return _bridgeService.SendEventAsync(new
+        {
+            type = "command_result",
+            text = "PSX commands: /clear, /new, /cwd, /cwd <path>, /terminal, /stop, /history, /delete, /help. ACP commands are sent through Claude Agent."
+        });
+    }
+
+    private async Task UploadAttachmentAsync(AgentAttachmentUploadEventArgs e)
+    {
+        try
+        {
+            await EnsureTransportAsync().ConfigureAwait(false);
+
+            if (!_supportsImage)
+                throw new InvalidOperationException("Current ACP Agent does not support image input.");
+
+            if (!SupportedImageMimeTypes.Contains(e.MimeType))
+                throw new InvalidOperationException("Only PNG, JPEG, WebP, and GIF images are supported.");
+
+            if (e.Size <= 0 || e.Size > MaxImageBytes)
+                throw new InvalidOperationException("Each image must be 20MB or smaller.");
+
+            byte[] data;
+            try
+            {
+                data = Convert.FromBase64String(e.DataBase64);
+            }
+            catch
+            {
+                throw new InvalidOperationException("Image upload data is invalid.");
+            }
+
+            if (data.LongLength != e.Size)
+                throw new InvalidOperationException("Image upload size did not match the file metadata.");
+
+            var attachment = _threadStore.SaveAttachment(_currentThread.ThreadId, e.FileName, e.MimeType, data);
+            await _bridgeService.SendEventAsync(new
+            {
+                type = "agent_attachment_uploaded",
+                clientId = e.ClientId,
+                attachment = ToAttachmentPayload(attachment)
+            }).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            await _bridgeService.SendEventAsync(new
+            {
+                type = "agent_attachment_failed",
+                clientId = e.ClientId,
+                text = ex.Message
+            }).ConfigureAwait(false);
+        }
+    }
+
+    private async Task OpenRawClaudeTerminalAsync()
+    {
+        var escapedCwd = _workingDirectory.Replace("'", "''");
+        var claudeCommand = string.IsNullOrWhiteSpace(_acpSessionId)
+            ? "claude"
+            : $"claude --resume {_acpSessionId}";
+        var profile = new ShellProfile
+        {
+            Id = "claude-code",
+            Name = "Claude Code",
+            Command = "powershell.exe",
+            Arguments = $"-NoExit -Command Set-Location -LiteralPath '{escapedCwd}'; {claudeCommand}",
+            StartingDirectory = _workingDirectory
+        };
+
+        await _tabManagementService.CreateTabAsync(profile).ConfigureAwait(false);
+        await _terminalBridgeService.SetViewModeAsync("terminal").ConfigureAwait(false);
+        await _bridgeService.SendEventAsync(new
+        {
+            type = "raw_terminal_fallback",
+            text = "Opened a raw Claude Code terminal tab in the current working directory."
+        }).ConfigureAwait(false);
+        _status = "fallback";
+        await PublishStateAsync().ConfigureAwait(false);
+    }
+
+    private async Task StartAcpRunAsync(string prompt, IReadOnlyList<string>? attachmentIds = null)
+    {
+        var requestedAttachmentIds = attachmentIds?
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray() ?? Array.Empty<string>();
+
+        if (string.IsNullOrWhiteSpace(prompt) && requestedAttachmentIds.Length == 0)
+            return;
+
+        if (_status == "restoring")
+        {
+            await SendRunFailedAsync("ACP history is still loading. Wait for restore to finish.").ConfigureAwait(false);
+            return;
+        }
+
+        if (_status == "transcript_only")
+        {
+            await _bridgeService.SendEventAsync(new { type = "resume_failed", text = "This transcript is local only. Start a new thread or open terminal before continuing." }).ConfigureAwait(false);
+            return;
+        }
+
+        if (!Directory.Exists(_workingDirectory))
+        {
+            await SendRunFailedAsync($"Directory does not exist: {_workingDirectory}").ConfigureAwait(false);
+            return;
+        }
+
+        IReadOnlyList<AgentAttachment> attachments;
+        try
+        {
+            attachments = ResolvePromptAttachments(requestedAttachmentIds);
+        }
+        catch (Exception ex)
+        {
+            await SendRunFailedAsync(ex.Message).ConfigureAwait(false);
+            return;
+        }
+
+        string runId;
+        var cts = new CancellationTokenSource();
+
+        lock (_runLock)
+        {
+            if (_isRunning)
+            {
+                cts.Dispose();
+                _ = SendRunFailedAsync("Claude Agent is still responding. Wait for the current run to finish or use /stop.");
+                return;
+            }
+
+            _isRunning = true;
+            _status = "running";
+            _thinkingBuffer.Clear();
+            _assistantBuffer.Clear();
+            _toolNames.Clear();
+            _toolSummaries.Clear();
+            _toolOutputs.Clear();
+            _currentRunId = Guid.NewGuid().ToString();
+            _runCts = cts;
+            runId = _currentRunId;
+        }
+
+        AddMessage("user", prompt, attachments: attachments);
+        await _bridgeService.SendEventAsync(new
+        {
+            type = "user_message",
+            text = prompt,
+            runId,
+            attachments = attachments.Select(ToAttachmentPayload).ToArray()
+        }).ConfigureAwait(false);
+        await _bridgeService.SendEventAsync(new { type = "thinking_started" }).ConfigureAwait(false);
+        await PublishStateAsync().ConfigureAwait(false);
+
+        var runTask = Task.Run(async () =>
+        {
+            var token = cts.Token;
+            try
+            {
+                token.ThrowIfCancellationRequested();
+                await EnsureAcpSessionAsync(createIfMissing: true).ConfigureAwait(false);
+                var promptBlocks = BuildPromptBlocks(prompt, attachments);
+
+                // Use a 10-minute timeout so a stuck adapter doesn't hang forever.
+                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+                timeoutCts.CancelAfter(TimeSpan.FromMinutes(10));
+
+                await _transport!.SendRequestAsync("session/prompt", new
+                {
+                    sessionId = _acpSessionId,
+                    messageId = Guid.NewGuid().ToString(),
+                    prompt = promptBlocks
+                }, TimeSpan.FromMinutes(10)).ConfigureAwait(false);
+
+                timeoutCts.Token.ThrowIfCancellationRequested();
+                await FinishAssistantMessageAsync().ConfigureAwait(false);
+                await _bridgeService.SendEventAsync(new { type = "thinking_finished" }).ConfigureAwait(false);
+                await _bridgeService.SendEventAsync(new { type = "assistant_message_done" }).ConfigureAwait(false);
+            }
+            catch (Exception) when (token.IsCancellationRequested)
+            {
+                // Run was cancelled by user — do NOT set _status to "error".
+                // CancelRunAsync already set _status = "ready".
+                await _bridgeService.SendEventAsync(new { type = "thinking_finished" }).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // Real error (not cancellation) — only update state if this
+                // run is still the current one (guard against orphaned tasks).
+                lock (_runLock)
+                {
+                    if (_currentRunId == runId)
+                        _status = "error";
+                }
+                await _bridgeService.SendEventAsync(new { type = "thinking_finished" }).ConfigureAwait(false);
+                await SendRunFailedAsync(ex.Message, runId).ConfigureAwait(false);
+            }
+            finally
+            {
+                // Only clean up state if this task is still the current run.
+                // This prevents an orphaned old task from destroying a new run's state.
+                lock (_runLock)
+                {
+                    if (_currentRunId == runId)
+                    {
+                        _isRunning = false;
+                        if (_status == "running")
+                            _status = "ready";
+                        _currentRunId = null;
+                        _runCts = null;
+                        _currentRunTask = null;
+                    }
+                }
+
+                SaveCurrentThread();
+                await _bridgeService.SendEventAsync(new { type = "run_finished", runId }).ConfigureAwait(false);
+                await PublishStateAsync().ConfigureAwait(false);
+            }
+        });
+
+        lock (_runLock)
+        {
+            _currentRunTask = runTask;
+        }
+    }
+
+    private async Task EnsureAcpSessionAsync(bool createIfMissing)
+    {
+        await EnsureTransportAsync().ConfigureAwait(false);
+
+        if (!string.IsNullOrWhiteSpace(_acpSessionId))
+            return;
+
+        if (!string.IsNullOrWhiteSpace(_currentThread.AcpSessionId))
+        {
+            if (!createIfMissing)
+                return;
+
+            throw new InvalidOperationException("ACP session context is not restored. Reload the thread from History or start a new thread.");
+        }
+
+        if (!createIfMissing)
+            return;
+
+        var result = await _transport!.SendRequestAsync("session/new", new
+        {
+            cwd = _workingDirectory,
+            mcpServers = Array.Empty<object>()
+        }, TimeSpan.FromSeconds(30)).ConfigureAwait(false);
+
+        _acpSessionId = GetString(result, "sessionId");
+        _currentThread.Provider = "acp-claude";
+        _currentThread.AcpSessionId = _acpSessionId;
+        _currentThread.AdapterVersion = _adapterVersion;
+        CaptureModes(result);
+        CaptureConfigOptions(result);
+        SaveCurrentThread();
+        await SendSessionReadyAsync().ConfigureAwait(false);
+    }
+
+    private async Task<bool> LoadAcpHistoryAsync(string sessionId)
+    {
+        await EnsureTransportAsync().ConfigureAwait(false);
+
+        var replay = new ReplayHistoryState();
+        _isLoadingHistory = true;
+        _replayHistory = replay;
+        _status = "restoring";
+        await PublishStateAsync().ConfigureAwait(false);
+
+        try
+        {
+            var loadResult = await _transport!.SendRequestAsync("session/load", new
+            {
+                sessionId,
+                cwd = _workingDirectory,
+                mcpServers = Array.Empty<object>()
+            }, TimeSpan.FromSeconds(45)).ConfigureAwait(false);
+
+            _acpSessionId = sessionId;
+            CaptureModes(loadResult);
+            CaptureConfigOptions(loadResult);
+            FinishReplayHistory(replay);
+
+            if (replay.Messages.Count > 0)
+            {
+                if (replay.Messages[0].Role == "user")
+                    _currentThread.Title = BuildMessageTitle(replay.Messages[0].Text);
+                _currentThread.Messages = replay.Messages;
+                SaveCurrentThread();
+                await SendThreadLoadedAsync(clear: true).ConfigureAwait(false);
+            }
+            else
+            {
+                _acpSessionId = null;
+                await _bridgeService.SendEventAsync(new { type = "command_result", text = "ACP session loaded, but no transcript was replayed. Keeping the local snapshot." }).ConfigureAwait(false);
+            }
+
+            await SendSessionReadyAsync().ConfigureAwait(false);
+            return replay.Messages.Count > 0;
+        }
+        finally
+        {
+            _isLoadingHistory = false;
+            _replayHistory = null;
+        }
+    }
+
+    private async Task EnsureTransportAsync()
+    {
+        if (_transport?.IsRunning == true)
+            return;
+
+        var paths = _runtimeLocator.Locate();
+        if (paths.PortableNodePath == null)
+        {
+            throw new InvalidOperationException(
+                "Portable Node.js was not found next to PSX.exe. The release zip should include tools/node/node.exe.");
+        }
+
+        // First-run install: if the runtime is missing, do it here, in the
+        // user-visible path, so the user sees clear progress rather than a
+        // silent background hang. Pending updates are promoted only during
+        // the next PSX startup, not from a live Agent run.
+        if (!_acpRuntime.IsAdapterInstalled())
+        {
+            var installResult = await _acpRuntime.EnsureInstalledAsync().ConfigureAwait(false);
+            if (installResult.Kind != AcpRuntimeOperationKind.Success
+                && installResult.Kind != AcpRuntimeOperationKind.AlreadyReady)
+            {
+                throw new InvalidOperationException(
+                    $"ACP adapter installation failed: {installResult.Message}. See log: {_acpRuntime.LogPath}");
+            }
+            // Re-resolve after install too — install touches the active dir
+            // and may have flipped the pointer (it always writes
+            // pointer='current' on success).
+            paths = _runtimeLocator.Locate();
+        }
+
+        var adapter = ResolveAdapterFromRuntime(paths);
+        if (adapter == null)
+        {
+            throw new InvalidOperationException(
+                $"ACP adapter is still missing after install at {paths.AcpActiveDirectory}. See log: {_acpRuntime.LogPath}");
+        }
+
+        var logDirectory = Path.Combine(_threadStore.RootDirectory, "agent", "acp-logs");
+        Directory.CreateDirectory(logDirectory);
+        var logPath = Path.Combine(logDirectory, DateTimeOffset.Now.ToString("yyyyMMdd-HHmmss") + ".ndjson.log");
+        _transport?.Dispose();
+        // Re-check PortableNodePath after re-locate — the data flow from the
+        // earlier null check doesn't carry through because we reassigned paths.
+        if (paths.PortableNodePath == null)
+        {
+            throw new InvalidOperationException(
+                "Portable Node.js was not found next to PSX.exe. The release zip should include tools/node/node.exe.");
+        }
+        _transport = new AcpJsonRpcTransport(
+            paths.PortableNodePath,
+            adapter,
+            paths.AcpActiveDirectory,
+            logPath,
+            HandleAgentRequestAsync,
+            HandleAgentNotificationAsync);
+        _transport.Start();
+
+        var initResult = await _transport.SendRequestAsync("initialize", new
+        {
+            protocolVersion = 1,
+            clientCapabilities = new Dictionary<string, object?>
+            {
+                ["fs"] = new { readTextFile = true, writeTextFile = true },
+                ["terminal"] = true,
+                ["elicitation"] = new
+                {
+                    form = new { },
+                    url = new { }
+                },
+                ["_meta"] = new Dictionary<string, object?>
+                {
+                    ["terminal_output"] = true
+                }
+            },
+            clientInfo = new
+            {
+                name = "PSX",
+                version = "0.1.0"
+            }
+        }, TimeSpan.FromSeconds(30)).ConfigureAwait(false);
+
+        _adapterVersion = ReadNestedString(initResult, "agentInfo", "version");
+        _supportsImage = ReadNestedBool(initResult, "agentCapabilities", "promptCapabilities", "image") ?? false;
+        _currentThread.AdapterVersion = _adapterVersion;
+        SaveCurrentThread();
+        await PublishStateAsync().ConfigureAwait(false);
+    }
+
+    private async Task<object?> HandleAgentRequestAsync(JsonElement request)
+    {
+        var method = GetString(request, "method");
+        var parameters = request.TryGetProperty("params", out var p) ? p : default;
+
+        return method switch
+        {
+            "session/request_permission" => await HandlePermissionRequestAsync(request, parameters).ConfigureAwait(false),
+            "elicitation/create" => await HandleElicitationCreateAsync(request, parameters).ConfigureAwait(false),
+            "fs/read_text_file" => HandleReadTextFile(parameters),
+            "fs/write_text_file" => HandleWriteTextFile(parameters),
+            "terminal/create" => HandleCreateTerminal(parameters),
+            "terminal/output" => HandleTerminalOutput(parameters),
+            "terminal/wait_for_exit" => await HandleWaitForTerminalExitAsync(parameters).ConfigureAwait(false),
+            "terminal/kill" => HandleKillTerminal(parameters),
+            "terminal/release" => HandleReleaseTerminal(parameters),
+            _ => new { }
+        };
+    }
+
+    private async Task<object?> HandlePermissionRequestAsync(JsonElement request, JsonElement parameters)
+    {
+        var requestId = request.GetProperty("id").ToString();
+        var options = parameters.TryGetProperty("options", out var optionsElement) && optionsElement.ValueKind == JsonValueKind.Array
+            ? optionsElement.EnumerateArray().Select(option => new
+            {
+                optionId = GetString(option, "optionId"),
+                name = GetString(option, "name"),
+                kind = GetString(option, "kind")
+            }).Where(o => !string.IsNullOrWhiteSpace(o.optionId)).ToArray()
+            : Array.Empty<object>();
+
+        var toolCall = parameters.TryGetProperty("toolCall", out var tc) ? tc : default;
+        var pending = new PendingPermission
+        {
+            OptionIds = options.Select(o => (string)o.GetType().GetProperty("optionId")!.GetValue(o)!).ToArray()
+        };
+        _pendingPermissions[requestId] = pending;
+
+        // 提取标题
+        var title = GetString(toolCall, "title");
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            title = GetString(toolCall, "name") ?? "Claude permission request";
+        }
+
+        // 提取工具输入参数：尝试多个可能的字段
+        var toolInput = "";
+        if (toolCall.ValueKind != JsonValueKind.Undefined)
+        {
+            if (toolCall.TryGetProperty("rawInput", out var rawInput))
+            {
+                toolInput = rawInput.ValueKind == JsonValueKind.String
+                    ? rawInput.GetString() ?? ""
+                    : rawInput.GetRawText();
+            }
+            else if (toolCall.TryGetProperty("input", out var input))
+            {
+                toolInput = input.GetRawText();
+            }
+            else if (toolCall.TryGetProperty("arguments", out var args))
+            {
+                toolInput = args.GetRawText();
+            }
+            else
+            {
+                // 如果没有找到输入字段，输出整个 toolCall 对象
+                toolInput = toolCall.GetRawText();
+            }
+        }
+
+        await _bridgeService.SendEventAsync(new
+        {
+            type = "permission_request",
+            requestId,
+            title,
+            text = toolInput,
+            options
+        }).ConfigureAwait(false);
+
+        var selected = await pending.Completion.Task.ConfigureAwait(false);
+        if (selected == "__cancelled__")
+        {
+            return new { outcome = new { outcome = "cancelled" } };
+        }
+
+        // 处理 always_allow 选项
+        if (selected == "always_allow")
+        {
+            // TODO: 保存用户的 always_allow 选择到配置文件
+            selected = "allow";
+        }
+
+        if (!pending.OptionIds.Contains(selected, StringComparer.OrdinalIgnoreCase))
+            selected = pending.OptionIds.FirstOrDefault() ?? selected;
+
+        return new
+        {
+            outcome = new
+            {
+                outcome = "selected",
+                optionId = selected
+            }
+        };
+    }
+
+    private async Task<object?> HandleElicitationCreateAsync(JsonElement request, JsonElement parameters)
+    {
+        var requestId = request.GetProperty("id").ToString();
+        var pending = new PendingElicitation();
+        _pendingElicitations[requestId] = pending;
+
+        await _bridgeService.SendEventAsync(new
+        {
+            type = "elicitation_request",
+            requestId,
+            mode = GetString(parameters, "mode"),
+            message = GetString(parameters, "message", "Claude needs more information."),
+            schema = parameters.TryGetProperty("requestedSchema", out var schema) ? JsonElementToObject(schema) : null,
+            url = GetString(parameters, "url")
+        }).ConfigureAwait(false);
+
+        var responseJson = await pending.Completion.Task.ConfigureAwait(false);
+        try
+        {
+            using var document = JsonDocument.Parse(responseJson);
+            var root = document.RootElement;
+            var action = GetString(root, "action", "cancel");
+            if (action is "decline" or "cancel")
+                return new { action };
+
+            if (root.TryGetProperty("content", out var content))
+            {
+                return new
+                {
+                    action = "accept",
+                    content = JsonElementToObject(content)
+                };
+            }
+
+            return new { action = "accept", content = new { } };
+        }
+        catch
+        {
+            return new { action = "cancel" };
+        }
+    }
+
+    private object HandleReadTextFile(JsonElement parameters)
+    {
+        var path = EnsureAllowedPath(GetString(parameters, "path"));
+        var line = TryGetInt(parameters, "line");
+        var limit = TryGetInt(parameters, "limit");
+        var lines = File.ReadAllLines(path, Encoding.UTF8);
+        var start = Math.Max((line ?? 1) - 1, 0);
+        var selected = lines.Skip(start);
+        if (limit is > 0)
+            selected = selected.Take(limit.Value);
+
+        return new { content = string.Join(Environment.NewLine, selected) };
+    }
+
+    private object HandleWriteTextFile(JsonElement parameters)
+    {
+        var path = EnsureAllowedPath(GetString(parameters, "path"));
+        var content = GetString(parameters, "content");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, content, Encoding.UTF8);
+        return new { };
+    }
+
+    private object HandleCreateTerminal(JsonElement parameters)
+    {
+        var command = GetString(parameters, "command");
+        if (string.IsNullOrWhiteSpace(command))
+            throw new InvalidOperationException("ACP terminal/create did not include a command.");
+
+        var args = parameters.TryGetProperty("args", out var argsElement) && argsElement.ValueKind == JsonValueKind.Array
+            ? argsElement.EnumerateArray().Where(a => a.ValueKind == JsonValueKind.String).Select(a => a.GetString()!).ToArray()
+            : Array.Empty<string>();
+        var cwd = GetString(parameters, "cwd");
+        if (string.IsNullOrWhiteSpace(cwd))
+            cwd = _workingDirectory;
+        cwd = EnsureAllowedDirectory(cwd);
+
+        var terminalId = Guid.NewGuid().ToString();
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = command,
+            WorkingDirectory = cwd,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8
+        };
+
+        foreach (var arg in args)
+            startInfo.ArgumentList.Add(arg);
+
+        if (parameters.TryGetProperty("env", out var envElement) && envElement.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in envElement.EnumerateArray())
+            {
+                var name = GetString(item, "name");
+                if (!string.IsNullOrWhiteSpace(name))
+                    startInfo.Environment[name] = GetString(item, "value");
+            }
+        }
+
+        var limit = TryGetInt(parameters, "outputByteLimit") ?? 200_000;
+        var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
+        if (!process.Start())
+            throw new InvalidOperationException($"Failed to start ACP terminal command: {command}");
+
+        var terminal = new AcpTerminalProcess { Process = process, OutputByteLimit = limit };
+        _terminals[terminalId] = terminal;
+        _ = Task.Run(() => ReadTerminalStreamAsync(terminalId, process.StandardOutput));
+        _ = Task.Run(() => ReadTerminalStreamAsync(terminalId, process.StandardError));
+
+        return new { terminalId };
+    }
+
+    private object HandleTerminalOutput(JsonElement parameters)
+    {
+        var terminal = GetTerminal(GetString(parameters, "terminalId"));
+        lock (terminal.Output)
+        {
+            return new
+            {
+                output = terminal.Output.ToString(),
+                truncated = false,
+                exitStatus = terminal.Process.HasExited
+                    ? new { exitCode = terminal.Process.ExitCode, signal = (string?)null }
+                    : null
+            };
+        }
+    }
+
+    private async Task<object> HandleWaitForTerminalExitAsync(JsonElement parameters)
+    {
+        var terminal = GetTerminal(GetString(parameters, "terminalId"));
+        await terminal.Process.WaitForExitAsync().ConfigureAwait(false);
+        return new
+        {
+            exitCode = terminal.Process.ExitCode,
+            signal = (string?)null
+        };
+    }
+
+    private object HandleKillTerminal(JsonElement parameters)
+    {
+        var terminal = GetTerminal(GetString(parameters, "terminalId"));
+        try
+        {
+            if (!terminal.Process.HasExited)
+                terminal.Process.Kill(entireProcessTree: true);
+        }
+        catch { }
+
+        return new { };
+    }
+
+    private object HandleReleaseTerminal(JsonElement parameters)
+    {
+        var terminalId = GetString(parameters, "terminalId");
+        if (_terminals.TryRemove(terminalId, out var terminal))
+            terminal.Process.Dispose();
+        return new { };
+    }
+
+    private async Task ReadTerminalStreamAsync(string terminalId, StreamReader reader)
+    {
+        var buffer = new char[4096];
+        while (true)
+        {
+            var count = await reader.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
+            if (count <= 0)
+                break;
+
+            if (!_terminals.TryGetValue(terminalId, out var terminal))
+                break;
+
+            lock (terminal.Output)
+            {
+                terminal.Output.Append(buffer, 0, count);
+                if (terminal.Output.Length > terminal.OutputByteLimit)
+                    terminal.Output.Remove(0, terminal.Output.Length - terminal.OutputByteLimit);
+            }
+        }
+    }
+
+    private AcpTerminalProcess GetTerminal(string terminalId)
+    {
+        if (!_terminals.TryGetValue(terminalId, out var terminal))
+            throw new InvalidOperationException($"ACP terminal not found: {terminalId}");
+        return terminal;
+    }
+
+    private Task HandleAgentNotificationAsync(JsonElement notification)
+    {
+        var method = GetString(notification, "method");
+        if (method != "session/update")
+            return Task.CompletedTask;
+
+        if (!notification.TryGetProperty("params", out var parameters)
+            || !parameters.TryGetProperty("update", out var update))
+        {
+            return Task.CompletedTask;
+        }
+
+        return HandleSessionUpdateAsync(update);
+    }
+
+    private async Task HandleSessionUpdateAsync(JsonElement update)
+    {
+        if (_isLoadingHistory && _replayHistory != null)
+        {
+            await HandleReplaySessionUpdateAsync(update, _replayHistory).ConfigureAwait(false);
+            return;
+        }
+
+        var updateType = GetString(update, "sessionUpdate");
+        switch (updateType)
+        {
+            case "user_message_chunk":
+                break;
+            case "agent_message_chunk":
+                await SendAssistantTextAsync(ExtractContentText(update)).ConfigureAwait(false);
+                break;
+            case "agent_thought_chunk":
+                await SendThinkingTextAsync(ExtractContentText(update)).ConfigureAwait(false);
+                break;
+            case "tool_call":
+                await HandleToolCallAsync(update).ConfigureAwait(false);
+                break;
+            case "tool_call_update":
+                await HandleToolCallUpdateAsync(update).ConfigureAwait(false);
+                break;
+            case "plan":
+                await HandlePlanUpdateAsync(update).ConfigureAwait(false);
+                break;
+            case "available_commands_update":
+                await SendAvailableCommandsAsync(update).ConfigureAwait(false);
+                break;
+            case "usage_update":
+                await HandleUsageUpdateAsync(update).ConfigureAwait(false);
+                break;
+            case "config_option_update":
+                CaptureConfigOptions(update);
+                await SendConfigOptionsAsync().ConfigureAwait(false);
+                break;
+            case "current_mode_update":
+                _currentModeId = GetString(update, "currentModeId");
+                _currentThread.ModeId = _currentModeId;
+                SaveCurrentThread();
+                await SendModesAsync().ConfigureAwait(false);
+                break;
+            case "session_info_update":
+                if (update.TryGetProperty("title", out var title) && title.ValueKind == JsonValueKind.String)
+                {
+                    _currentThread.Title = title.GetString() ?? _currentThread.Title;
+                    SaveCurrentThread();
+                }
+                break;
+        }
+    }
+
+    private async Task HandleReplaySessionUpdateAsync(JsonElement update, ReplayHistoryState replay)
+    {
+        var updateType = GetString(update, "sessionUpdate");
+        switch (updateType)
+        {
+            case "user_message_chunk":
+                AppendReplayUserMessage(replay, ExtractContentText(update));
+                break;
+            case "agent_thought_chunk":
+                AppendReplayThinking(replay, ExtractContentText(update));
+                break;
+            case "agent_message_chunk":
+                AppendReplayAssistantMessage(replay, ExtractContentText(update));
+                break;
+            case "tool_call":
+                CaptureReplayToolCall(replay, update);
+                break;
+            case "tool_call_update":
+                CaptureReplayToolUpdate(replay, update);
+                break;
+            case "plan":
+                UpsertReplayPlan(replay, update);
+                break;
+            case "available_commands_update":
+                await SendAvailableCommandsAsync(update).ConfigureAwait(false);
+                break;
+            case "usage_update":
+                await HandleUsageUpdateAsync(update).ConfigureAwait(false);
+                break;
+            case "config_option_update":
+                break;
+            case "current_mode_update":
+                _currentModeId = GetString(update, "currentModeId");
+                _currentThread.ModeId = _currentModeId;
+                await SendModesAsync().ConfigureAwait(false);
+                break;
+            case "session_info_update":
+                if (update.TryGetProperty("title", out var title) && title.ValueKind == JsonValueKind.String)
+                    _currentThread.Title = title.GetString() ?? _currentThread.Title;
+                break;
+        }
+    }
+
+    private async Task HandleToolCallAsync(JsonElement update)
+    {
+        var toolCallId = GetString(update, "toolCallId");
+        var name = ReadToolName(update);
+        var input = FormatToolInput(update);
+        var summary = BuildToolSummary(name, input, update);
+        _toolNames[toolCallId] = name;
+        _toolSummaries[toolCallId] = summary;
+        _toolOutputs[toolCallId] = "";
+
+        await _bridgeService.SendEventAsync(new
+        {
+            type = "tool_started",
+            name,
+            input,
+            runId = _currentRunId,
+            toolCallId,
+            summary
+        }).ConfigureAwait(false);
+
+        var initialOutput = FormatToolOutput(update);
+        if (!string.IsNullOrWhiteSpace(initialOutput))
+        {
+            _toolOutputs[toolCallId] = initialOutput;
+            await _bridgeService.SendEventAsync(new
+            {
+                type = "tool_delta",
+                text = initialOutput,
+                runId = _currentRunId,
+                toolCallId
+            }).ConfigureAwait(false);
+        }
+
+        var status = GetString(update, "status");
+        if (status is "completed" or "failed")
+            await FinishToolAsync(toolCallId, status).ConfigureAwait(false);
+    }
+
+    private async Task HandleToolCallUpdateAsync(JsonElement update)
+    {
+        var toolCallId = GetString(update, "toolCallId");
+        if (!_toolNames.ContainsKey(toolCallId))
+            _toolNames[toolCallId] = ReadToolName(update);
+        if (!_toolSummaries.ContainsKey(toolCallId))
+            _toolSummaries[toolCallId] = BuildToolSummary(_toolNames[toolCallId], FormatToolInput(update), update);
+
+        if (!_toolOutputs.ContainsKey(toolCallId))
+            _toolOutputs[toolCallId] = "";
+
+        var output = FormatToolOutput(update);
+        if (!string.IsNullOrWhiteSpace(output))
+        {
+            _toolOutputs[toolCallId] += output;
+            await _bridgeService.SendEventAsync(new
+            {
+                type = "tool_delta",
+                text = output,
+                runId = _currentRunId,
+                toolCallId
+            }).ConfigureAwait(false);
+        }
+
+        var status = GetString(update, "status");
+        if (status is "completed" or "failed")
+            await FinishToolAsync(toolCallId, status).ConfigureAwait(false);
+    }
+
+    private static void AppendReplayUserMessage(ReplayHistoryState replay, string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        FlushReplayThinking(replay);
+        FlushReplayAssistant(replay);
+        if (replay.Messages.LastOrDefault()?.Role == "user")
+        {
+            replay.Messages[^1].Text += text;
+            return;
+        }
+
+        replay.TurnIndex++;
+        replay.CurrentRunId = $"history-{replay.TurnIndex}";
+        replay.Messages.Add(new AgentMessage
+        {
+            Role = "user",
+            Text = text,
+            RunId = replay.CurrentRunId,
+            CreatedAt = DateTimeOffset.Now
+        });
+    }
+
+    private static void AppendReplayThinking(ReplayHistoryState replay, string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        if (string.IsNullOrWhiteSpace(replay.CurrentRunId))
+            replay.CurrentRunId = $"history-{++replay.TurnIndex}";
+
+        replay.ThinkingBuffer.Append(text);
+    }
+
+    private static void AppendReplayAssistantMessage(ReplayHistoryState replay, string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        FlushReplayThinking(replay);
+        if (string.IsNullOrWhiteSpace(replay.CurrentRunId))
+            replay.CurrentRunId = $"history-{++replay.TurnIndex}";
+
+        replay.AssistantBuffer.Append(text);
+    }
+
+    private static void CaptureReplayToolCall(ReplayHistoryState replay, JsonElement update)
+    {
+        FlushReplayThinking(replay);
+        FlushReplayAssistant(replay);
+        if (string.IsNullOrWhiteSpace(replay.CurrentRunId))
+            replay.CurrentRunId = $"history-{++replay.TurnIndex}";
+
+        var toolCallId = GetString(update, "toolCallId");
+        if (string.IsNullOrWhiteSpace(toolCallId))
+            toolCallId = "history-tool-" + Guid.NewGuid().ToString("N");
+
+        var name = ReadToolName(update);
+        var input = FormatToolInput(update);
+        replay.ToolNames[toolCallId] = name;
+        replay.ToolInputs[toolCallId] = input;
+        replay.ToolOutputs[toolCallId] = FormatToolOutput(update);
+        replay.ToolSummaries[toolCallId] = BuildToolSummary(name, input, update);
+        replay.ToolRunIds[toolCallId] = replay.CurrentRunId;
+
+        var status = GetString(update, "status");
+        if (status is "completed" or "failed")
+            FinishReplayTool(replay, toolCallId, status);
+    }
+
+    private static void CaptureReplayToolUpdate(ReplayHistoryState replay, JsonElement update)
+    {
+        FlushReplayThinking(replay);
+        FlushReplayAssistant(replay);
+        if (string.IsNullOrWhiteSpace(replay.CurrentRunId))
+            replay.CurrentRunId = $"history-{++replay.TurnIndex}";
+
+        var toolCallId = GetString(update, "toolCallId");
+        if (string.IsNullOrWhiteSpace(toolCallId))
+            toolCallId = "history-tool-" + Guid.NewGuid().ToString("N");
+
+        if (!replay.ToolNames.ContainsKey(toolCallId))
+            replay.ToolNames[toolCallId] = ReadToolName(update);
+        if (!replay.ToolInputs.ContainsKey(toolCallId))
+            replay.ToolInputs[toolCallId] = FormatToolInput(update);
+        if (!replay.ToolSummaries.ContainsKey(toolCallId))
+            replay.ToolSummaries[toolCallId] = BuildToolSummary(replay.ToolNames[toolCallId], replay.ToolInputs[toolCallId], update);
+        if (!replay.ToolRunIds.ContainsKey(toolCallId))
+            replay.ToolRunIds[toolCallId] = replay.CurrentRunId;
+
+        var output = FormatToolOutput(update);
+        if (!string.IsNullOrWhiteSpace(output))
+        {
+            replay.ToolOutputs[toolCallId] = replay.ToolOutputs.TryGetValue(toolCallId, out var existing)
+                ? existing + output
+                : output;
+        }
+
+        var status = GetString(update, "status");
+        if (status is "completed" or "failed")
+            FinishReplayTool(replay, toolCallId, status);
+    }
+
+    private static void UpsertReplayPlan(ReplayHistoryState replay, JsonElement update)
+    {
+        FlushReplayThinking(replay);
+        FlushReplayAssistant(replay);
+        if (string.IsNullOrWhiteSpace(replay.CurrentRunId))
+            replay.CurrentRunId = $"history-{++replay.TurnIndex}";
+
+        var entries = ReadPlanEntries(update);
+        var text = FormatPlanText(entries, update);
+        UpsertPlanMessage(replay.Messages, replay.CurrentRunId, entries, text);
+    }
+
+    private static void FinishReplayHistory(ReplayHistoryState replay)
+    {
+        FlushReplayThinking(replay);
+        FlushReplayAssistant(replay);
+        foreach (var toolCallId in replay.ToolNames.Keys.ToArray())
+            FinishReplayTool(replay, toolCallId, "done");
+    }
+
+    private static void FlushReplayThinking(ReplayHistoryState replay)
+    {
+        var text = replay.ThinkingBuffer.ToString();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            replay.ThinkingBuffer.Clear();
+            return;
+        }
+
+        replay.Messages.Add(new AgentMessage
+        {
+            Role = "thinking",
+            Text = text,
+            RunId = replay.CurrentRunId,
+            CreatedAt = DateTimeOffset.Now
+        });
+        replay.ThinkingBuffer.Clear();
+    }
+
+    private static void FlushReplayAssistant(ReplayHistoryState replay)
+    {
+        var text = replay.AssistantBuffer.ToString();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            replay.AssistantBuffer.Clear();
+            return;
+        }
+
+        replay.Messages.Add(new AgentMessage
+        {
+            Role = "assistant",
+            Text = text,
+            RunId = replay.CurrentRunId,
+            CreatedAt = DateTimeOffset.Now
+        });
+        replay.AssistantBuffer.Clear();
+    }
+
+    private static void FinishReplayTool(ReplayHistoryState replay, string toolCallId, string status)
+    {
+        var name = replay.ToolNames.TryGetValue(toolCallId, out var n) ? n : "Tool";
+        var input = replay.ToolInputs.TryGetValue(toolCallId, out var i) ? i : "";
+        var output = replay.ToolOutputs.TryGetValue(toolCallId, out var o) ? o : "";
+        var summary = replay.ToolSummaries.TryGetValue(toolCallId, out var s) ? s : name;
+        var runId = replay.ToolRunIds.TryGetValue(toolCallId, out var r) ? r : replay.CurrentRunId;
+
+        replay.Messages.Add(new AgentMessage
+        {
+            Role = "tool",
+            Text = input,
+            Name = name,
+            RunId = runId,
+            ToolCallId = toolCallId,
+            ToolInput = input,
+            ToolOutput = output,
+            ToolStatus = status,
+            Summary = summary,
+            CreatedAt = DateTimeOffset.Now
+        });
+
+        replay.ToolNames.Remove(toolCallId);
+        replay.ToolInputs.Remove(toolCallId);
+        replay.ToolOutputs.Remove(toolCallId);
+        replay.ToolSummaries.Remove(toolCallId);
+        replay.ToolRunIds.Remove(toolCallId);
+    }
+
+    private async Task FinishToolAsync(string toolCallId, string status)
+    {
+        var name = _toolNames.TryGetValue(toolCallId, out var n) ? n : "Tool";
+        var summary = _toolSummaries.TryGetValue(toolCallId, out var s) ? s : name;
+        var output = _toolOutputs.TryGetValue(toolCallId, out var o) ? o : "";
+        _toolOutputs.Remove(toolCallId);
+        AddToolMessage("", name, _currentRunId, toolCallId, output, status, summary);
+        await _bridgeService.SendEventAsync(new
+        {
+            type = "tool_finished",
+            runId = _currentRunId,
+            toolCallId,
+            summary,
+            status
+        }).ConfigureAwait(false);
+    }
+
+    private Task SendAvailableCommandsAsync(JsonElement update)
+    {
+        if (!update.TryGetProperty("availableCommands", out var commands) || commands.ValueKind != JsonValueKind.Array)
+            return Task.CompletedTask;
+
+        var items = commands.EnumerateArray()
+            .Select(command => new
+            {
+                name = NormalizeSlashCommand(GetString(command, "name")),
+                description = GetString(command, "description")
+            })
+            .Where(command => !string.IsNullOrWhiteSpace(command.name))
+            .ToArray();
+
+        return _bridgeService.SendEventAsync(new
+        {
+            type = "agent_commands",
+            commands = items
+        });
+    }
+
+    private Task HandleUsageUpdateAsync(JsonElement update)
+    {
+        var used = TryGetLong(update, "used");
+        if (used is null or < 0)
+            return Task.CompletedTask;
+
+        _currentThread.ContextUsedTokens = used.Value;
+        return _bridgeService.SendEventAsync(new
+        {
+            type = "agent_usage_update",
+            contextUsedTokens = _currentThread.ContextUsedTokens
+        });
+    }
+
+    private async Task SetModeAsync(string modeId)
+    {
+        await EnsureAcpSessionAsync(createIfMissing: true).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(_acpSessionId))
+            return;
+
+        await _transport!.SendRequestAsync("session/set_mode", new
+        {
+            sessionId = _acpSessionId,
+            modeId
+        }, TimeSpan.FromSeconds(15)).ConfigureAwait(false);
+
+        _currentModeId = modeId;
+        _currentThread.ModeId = modeId;
+        SaveCurrentThread();
+        await SendModesAsync().ConfigureAwait(false);
+    }
+
+    private async Task SetConfigOptionAsync(string configId, string value)
+    {
+        await EnsureAcpSessionAsync(createIfMissing: true).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(_acpSessionId))
+            return;
+
+        var result = await _transport!.SendRequestAsync("session/set_config_option", new
+        {
+            sessionId = _acpSessionId,
+            configId,
+            value
+        }, TimeSpan.FromSeconds(15)).ConfigureAwait(false);
+
+        CaptureConfigOptions(result);
+        if (configId == "mode")
+            _currentModeId = value;
+        _currentThread.ModeId = _currentModeId;
+        SaveCurrentThread();
+        await Task.WhenAll(SendConfigOptionsAsync(), SendModesAsync()).ConfigureAwait(false);
+    }
+
+    private void CaptureModes(JsonElement result)
+    {
+        if (!result.TryGetProperty("modes", out var modes)
+            || modes.ValueKind != JsonValueKind.Object)
+        {
+            _modes = Array.Empty<AcpMode>();
+            _currentModeId = null;
+            return;
+        }
+
+        _currentModeId = GetString(modes, "currentModeId");
+        if (modes.TryGetProperty("availableModes", out var availableModes)
+            && availableModes.ValueKind == JsonValueKind.Array)
+        {
+            _modes = availableModes.EnumerateArray()
+                .Select(mode => new AcpMode
+                {
+                    Id = GetString(mode, "id"),
+                    Name = GetString(mode, "name"),
+                    Description = GetString(mode, "description")
+                })
+                .Where(mode => !string.IsNullOrWhiteSpace(mode.Id))
+                .ToArray();
+        }
+
+        _currentThread.ModeId = _currentModeId;
+    }
+
+    private void CaptureConfigOptions(JsonElement result)
+    {
+        if (!result.TryGetProperty("configOptions", out var configOptions)
+            || configOptions.ValueKind != JsonValueKind.Array)
+        {
+            return;
+        }
+
+        _configOptions = configOptions.EnumerateArray()
+            .Select(option => new AcpConfigOption
+            {
+                Id = GetString(option, "id"),
+                Name = GetString(option, "name"),
+                Description = GetString(option, "description"),
+                Category = GetString(option, "category"),
+                Type = GetString(option, "type"),
+                CurrentValue = GetString(option, "currentValue"),
+                Options = ReadConfigOptionValues(option)
+            })
+            .Where(option => !string.IsNullOrWhiteSpace(option.Id)
+                             && option.Type == "select"
+                             && option.Options.Count > 0)
+            .ToArray();
+
+        var modeOption = _configOptions.FirstOrDefault(option => option.Id == "mode");
+        if (!string.IsNullOrWhiteSpace(modeOption?.CurrentValue))
+        {
+            _currentModeId = modeOption.CurrentValue;
+            _currentThread.ModeId = _currentModeId;
+        }
+    }
+
+    private Task SendSessionReadyAsync()
+    {
+        return Task.WhenAll(
+            _bridgeService.SendEventAsync(new { type = "agent_ready", sessionId = _acpSessionId ?? "" }),
+            SendModesAsync(),
+            SendConfigOptionsAsync(),
+            PublishStateAsync());
+    }
+
+    private Task SendModesAsync()
+    {
+        return _bridgeService.SendEventAsync(new
+        {
+            type = "agent_modes",
+            currentModeId = _currentModeId ?? "",
+            modes = _modes.Select(mode => new
+            {
+                id = mode.Id,
+                name = mode.Name,
+                description = mode.Description
+            }).ToArray()
+        });
+    }
+
+    private Task SendConfigOptionsAsync()
+    {
+        return _bridgeService.SendEventAsync(new
+        {
+            type = "agent_config_options",
+            options = _configOptions.Select(option => new
+            {
+                id = option.Id,
+                name = option.Name,
+                description = option.Description,
+                category = option.Category,
+                type = option.Type,
+                currentValue = option.CurrentValue,
+                options = option.Options.Select(value => new
+                {
+                    value = value.Value,
+                    name = value.Name,
+                    description = value.Description
+                }).ToArray()
+            }).ToArray()
+        });
+    }
+
+    private Task SendAssistantTextAsync(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return Task.CompletedTask;
+
+        _assistantBuffer.Append(text);
+        return _bridgeService.SendEventAsync(new { type = "assistant_delta", text });
+    }
+
+    private Task SendThinkingTextAsync(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return Task.CompletedTask;
+
+        _thinkingBuffer.Append(text);
+        return _bridgeService.SendEventAsync(new { type = "thinking_delta", text, runId = _currentRunId });
+    }
+
+    private async Task HandlePlanUpdateAsync(JsonElement update)
+    {
+        var runId = string.IsNullOrWhiteSpace(_currentRunId)
+            ? "plan-" + Guid.NewGuid().ToString("N")
+            : _currentRunId;
+        var entries = ReadPlanEntries(update);
+        if (entries.Count == 0)
+            return;
+
+        var text = FormatPlanText(entries, update);
+
+        UpsertPlanMessage(_currentThread.Messages, runId, entries, text);
+        SaveCurrentThread();
+
+        await _bridgeService.SendEventAsync(new
+        {
+            type = "plan_update",
+            runId,
+            text,
+            entries = entries.Select(entry => new
+            {
+                content = entry.Content,
+                status = entry.Status,
+                priority = entry.Priority
+            }).ToArray()
+        }).ConfigureAwait(false);
+    }
+
+    private Task FinishAssistantMessageAsync()
+    {
+        FinishThinkingMessage();
+        var text = _assistantBuffer.ToString();
+        if (!string.IsNullOrWhiteSpace(text))
+            AddMessage("assistant", text);
+
+        _assistantBuffer.Clear();
+        return Task.CompletedTask;
+    }
+
+    private void FinishThinkingMessage()
+    {
+        var text = _thinkingBuffer.ToString();
+        if (!string.IsNullOrWhiteSpace(text))
+            AddMessage("thinking", text);
+
+        _thinkingBuffer.Clear();
+    }
+
+    private void AddMessage(string role, string text, string? name = null, IReadOnlyList<AgentAttachment>? attachments = null)
+    {
+        if (role == "user" && _currentThread.Messages.Count == 0)
+            _currentThread.Title = BuildMessageTitle(text);
+
+        if (role == "user" && attachments is { Count: > 0 })
+            _currentThread.ContainsImages = true;
+
+        _currentThread.Messages.Add(new AgentMessage
+        {
+            Role = role,
+            Text = text,
+            Name = name,
+            RunId = role is "user" or "assistant" ? _currentRunId : null,
+            Attachments = attachments?.Select(CloneAttachment).ToList(),
+            CreatedAt = DateTimeOffset.Now
+        });
+        SaveCurrentThread();
+    }
+
+    private void AddToolMessage(string text, string name, string? runId,
+        string? toolCallId, string? toolOutput, string? toolStatus, string? summary)
+    {
+        _currentThread.Messages.Add(new AgentMessage
+        {
+            Role = "tool",
+            Text = text,
+            Name = name,
+            RunId = runId,
+            ToolCallId = toolCallId,
+            ToolInput = text,
+            ToolOutput = toolOutput,
+            ToolStatus = toolStatus,
+            Summary = summary,
+            CreatedAt = DateTimeOffset.Now
+        });
+        SaveCurrentThread();
+    }
+
+    private void SaveCurrentThread()
+    {
+        _currentThread.Cwd = _workingDirectory;
+        _currentThread.Provider = "acp-claude";
+        _currentThread.AcpSessionId = _acpSessionId;
+        _currentThread.ModeId = _currentModeId;
+        _currentThread.AdapterVersion = _adapterVersion;
+        _threadStore.SaveThread(_currentThread);
+    }
+
+    private Task SendRunFailedAsync(string text, string? runId = null)
+    {
+        return _bridgeService.SendEventAsync(new
+        {
+            type = "run_failed",
+            text,
+            runId,
+            visionContextHint = _currentThread.ContainsImages
+                ? "提示：当前对话曾发送过图片，这个错误可能是因为当前模型或供应商不支持图片上下文，或当前模型不是多模态模型导致，建议切换至多模态模型。"
+                : ""
+        });
+    }
+
+    private void ApplyThread(AgentThread thread)
+    {
+        EnsureImageContextFlag(thread);
+        _workingDirectory = Directory.Exists(thread.Cwd) ? thread.Cwd : ResolveWorkspaceRoot();
+        _acpSessionId = null;
+        _currentModeId = thread.ModeId;
+        _adapterVersion = thread.AdapterVersion;
+        _status = "ready";
+        _thinkingBuffer.Clear();
+        _assistantBuffer.Clear();
+        _toolNames.Clear();
+        _toolSummaries.Clear();
+        _toolOutputs.Clear();
+        _currentRunId = null;
+    }
+
+    private void EnsureImageContextFlag(AgentThread thread)
+    {
+        if (thread.ContainsImages)
+            return;
+
+        if (!thread.Messages.Any(message => message.Attachments is { Count: > 0 }))
+            return;
+
+        thread.ContainsImages = true;
+        _threadStore.SaveThread(thread);
+    }
+
+    private static bool IsEmptyAgentDraft(AgentThread thread)
+    {
+        return string.IsNullOrWhiteSpace(thread.ClaudeSessionId)
+            && string.IsNullOrWhiteSpace(thread.AcpSessionId)
+            && thread.Messages.Count == 0;
+    }
+
+    private Task SendThreadLoadedAsync(bool clear)
+    {
+        return _bridgeService.SendEventAsync(new
+        {
+            type = "agent_thread_loaded",
+            clear,
+            threadId = _currentThread.ThreadId,
+            title = _currentThread.Title,
+            cwd = _currentThread.Cwd,
+            sessionId = _currentThread.AcpSessionId ?? _currentThread.ClaudeSessionId ?? "",
+            contextUsedTokens = _currentThread.ContextUsedTokens,
+            messages = _currentThread.Messages.Select(m => new
+            {
+                role = m.Role,
+                text = m.Text,
+                name = m.Name ?? "",
+                createdAt = m.CreatedAt.ToString("u"),
+                runId = m.RunId,
+                toolCallId = m.ToolCallId,
+                summary = m.Summary,
+                toolInput = m.ToolInput,
+                toolOutput = m.ToolOutput,
+                toolStatus = m.ToolStatus,
+                planEntries = m.PlanEntries?.Select(entry => new
+                {
+                    content = entry.Content,
+                    status = entry.Status,
+                    priority = entry.Priority
+                }).ToArray(),
+                attachments = m.Attachments?.Select(ToAttachmentPayload).ToArray()
+            }).ToArray()
+        });
+    }
+
+    private IReadOnlyList<AgentAttachment> ResolvePromptAttachments(IReadOnlyList<string> attachmentIds)
+    {
+        if (attachmentIds.Count == 0)
+            return Array.Empty<AgentAttachment>();
+
+        if (!_supportsImage)
+            throw new InvalidOperationException("Current ACP Agent does not support image input.");
+
+        if (attachmentIds.Count > MaxPromptImages)
+            throw new InvalidOperationException($"You can send at most {MaxPromptImages} images at once.");
+
+        var attachments = _threadStore.LoadAttachments(_currentThread.ThreadId, attachmentIds);
+        if (attachments.Count != attachmentIds.Count)
+            throw new InvalidOperationException("One or more image attachments were not found. Remove them and try again.");
+
+        var totalBytes = attachments.Sum(attachment => attachment.Size);
+        if (totalBytes > MaxPromptImageBytes)
+            throw new InvalidOperationException("Images in a single message must total 50MB or less.");
+
+        return attachments;
+    }
+
+    private static object[] BuildPromptBlocks(string prompt, IReadOnlyList<AgentAttachment> attachments)
+    {
+        var blocks = new List<object>();
+        if (!string.IsNullOrWhiteSpace(prompt))
+            blocks.Add(new { type = "text", text = prompt });
+
+        foreach (var attachment in attachments)
+        {
+            blocks.Add(new
+            {
+                type = "image",
+                mimeType = attachment.MimeType,
+                data = Convert.ToBase64String(File.ReadAllBytes(attachment.Path)),
+                uri = attachment.Uri
+            });
+        }
+
+        return blocks.ToArray();
+    }
+
+    private static object ToAttachmentPayload(AgentAttachment attachment)
+    {
+        return new
+        {
+            id = attachment.Id,
+            fileName = attachment.FileName,
+            mimeType = attachment.MimeType,
+            size = attachment.Size,
+            url = attachment.Url,
+            uri = attachment.Uri,
+            createdAt = attachment.CreatedAt.ToString("u")
+        };
+    }
+
+    private static AgentAttachment CloneAttachment(AgentAttachment attachment)
+    {
+        return new AgentAttachment
+        {
+            Id = attachment.Id,
+            FileName = attachment.FileName,
+            MimeType = attachment.MimeType,
+            Size = attachment.Size,
+            Path = attachment.Path,
+            Url = attachment.Url,
+            Uri = attachment.Uri,
+            CreatedAt = attachment.CreatedAt
+        };
+    }
+
+    private string EnsureAllowedPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            throw new InvalidOperationException("Empty path is not allowed.");
+
+        var fullPath = Path.GetFullPath(path);
+        var root = Path.GetFullPath(_workingDirectory);
+        if (!IsWithin(fullPath, root))
+            throw new InvalidOperationException($"Path is outside the current workspace: {fullPath}");
+
+        return fullPath;
+    }
+
+    private string EnsureAllowedDirectory(string path)
+    {
+        var directory = Path.GetFullPath(path);
+        if (!Directory.Exists(directory))
+            throw new InvalidOperationException($"Directory does not exist: {directory}");
+
+        return EnsureAllowedPath(directory);
+    }
+
+    private static bool IsWithin(string path, string root)
+    {
+        var normalizedRoot = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        var normalizedPath = path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        return normalizedPath.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? ResolveAdapterFromRuntime(RuntimePaths paths)
+    {
+        // Single canonical path inside the runtime dir; RuntimeLocator fixes
+        // this under AppContext.BaseDirectory/runtime/. Do not fall back anywhere else —
+        // mixing the legacy tools/acp/ with the new runtime/ causes version
+        // skew between seed, install, and runtime.
+        var candidate = Path.Combine(
+            paths.AcpActiveDirectory,
+            "node_modules",
+            "@agentclientprotocol",
+            "claude-agent-acp",
+            "dist",
+            "index.js");
+        return File.Exists(candidate) ? candidate : null;
+    }
+
+    private static IEnumerable<string> FindRepositoryRoots()
+    {
+        foreach (var candidate in new[] { Environment.CurrentDirectory, AppContext.BaseDirectory })
+        {
+            var directory = new DirectoryInfo(candidate);
+            while (directory != null)
+            {
+                if (File.Exists(Path.Combine(directory.FullName, "PSX.csproj")) || Directory.Exists(Path.Combine(directory.FullName, ".git")))
+                    yield return directory.FullName;
+
+                directory = directory.Parent;
+            }
+        }
+    }
+
+    private static string ResolveWorkspaceRoot()
+    {
+        foreach (var root in FindRepositoryRoots())
+            return root;
+
+        return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    }
+
+    private static string BuildMessageTitle(string text)
+    {
+        var compact = string.Join(' ', text.Split(default(string[]), StringSplitOptions.RemoveEmptyEntries));
+        if (string.IsNullOrWhiteSpace(compact))
+            return "Agent Chat";
+
+        return compact.Length <= 48 ? compact : compact[..48] + "...";
+    }
+
+    private static string ExtractContentText(JsonElement update)
+    {
+        if (!update.TryGetProperty("content", out var content))
+            return "";
+
+        if (content.TryGetProperty("type", out var type)
+            && type.ValueKind == JsonValueKind.String
+            && type.GetString() == "text")
+        {
+            return GetString(content, "text");
+        }
+
+        return content.GetRawText();
+    }
+
+    private static string ReadToolName(JsonElement update)
+    {
+        var metaName = ReadNestedString(update, "_meta", "claudeCode", "toolName");
+        if (!string.IsNullOrWhiteSpace(metaName))
+            return metaName;
+
+        var title = GetString(update, "title");
+        if (!string.IsNullOrWhiteSpace(title))
+            return title;
+
+        var kind = GetString(update, "kind");
+        return string.IsNullOrWhiteSpace(kind) ? "Tool" : kind;
+    }
+
+    private static string FormatToolInput(JsonElement update)
+    {
+        if (!update.TryGetProperty("rawInput", out var rawInput))
+            return "";
+
+        return rawInput.ValueKind == JsonValueKind.String
+            ? rawInput.GetString() ?? ""
+            : rawInput.GetRawText();
+    }
+
+    private static string FormatToolOutput(JsonElement update)
+    {
+        var parts = new List<string>();
+        var terminalOutput = ReadNestedElement(update, "_meta", "terminal_output");
+        if (terminalOutput.HasValue)
+        {
+            var data = GetString(terminalOutput.Value, "data");
+            if (!string.IsNullOrWhiteSpace(data))
+                parts.Add(data);
+        }
+
+        if (update.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in content.EnumerateArray())
+            {
+                var itemType = GetString(item, "type");
+                if (itemType == "content"
+                    && item.TryGetProperty("content", out var block)
+                    && GetString(block, "type") == "text")
+                {
+                    parts.Add(GetString(block, "text"));
+                }
+                else if (itemType == "diff")
+                {
+                    parts.Add(item.GetRawText());
+                }
+            }
+        }
+
+        if (update.TryGetProperty("rawOutput", out var rawOutput))
+        {
+            if (rawOutput.ValueKind == JsonValueKind.String)
+                parts.Add(rawOutput.GetString() ?? "");
+            else if (rawOutput.ValueKind != JsonValueKind.Null)
+                parts.Add(rawOutput.GetRawText());
+        }
+
+        return string.Join(Environment.NewLine, parts.Where(p => !string.IsNullOrWhiteSpace(p)));
+    }
+
+    private static string BuildToolSummary(string name, string input, JsonElement update)
+    {
+        var title = GetString(update, "title");
+        if (!string.IsNullOrWhiteSpace(title))
+            return title.Length <= 100 ? title : title[..97] + "...";
+
+        if (string.IsNullOrWhiteSpace(input))
+            return name;
+
+        try
+        {
+            using var document = JsonDocument.Parse(input);
+            var root = document.RootElement;
+            var detail = GetString(root, "file_path");
+            if (string.IsNullOrWhiteSpace(detail))
+                detail = GetString(root, "path");
+            if (string.IsNullOrWhiteSpace(detail))
+                detail = GetString(root, "command");
+            if (string.IsNullOrWhiteSpace(detail))
+                detail = GetString(root, "description");
+
+            if (string.IsNullOrWhiteSpace(detail))
+                return name;
+
+            var summary = name + " " + detail;
+            return summary.Length <= 100 ? summary : summary[..97] + "...";
+        }
+        catch
+        {
+            return name;
+        }
+    }
+
+    private static void UpsertPlanMessage(List<AgentMessage> messages, string? runId, IReadOnlyList<AgentPlanEntry> entries, string text)
+    {
+        var effectiveRunId = string.IsNullOrWhiteSpace(runId) ? "plan" : runId;
+        var index = messages.FindLastIndex(message =>
+            message.Role == "plan" && string.Equals(message.RunId, effectiveRunId, StringComparison.Ordinal));
+
+        var planMessage = new AgentMessage
+        {
+            Role = "plan",
+            Name = "Plan",
+            Text = text,
+            RunId = effectiveRunId,
+            PlanEntries = entries.ToList(),
+            CreatedAt = DateTimeOffset.Now
+        };
+
+        if (index >= 0)
+        {
+            planMessage.CreatedAt = messages[index].CreatedAt;
+            messages[index] = planMessage;
+        }
+        else
+        {
+            messages.Add(planMessage);
+        }
+    }
+
+    private static List<AgentPlanEntry> ReadPlanEntries(JsonElement update)
+    {
+        if (!update.TryGetProperty("entries", out var entries) || entries.ValueKind != JsonValueKind.Array)
+            return new List<AgentPlanEntry>();
+
+        return entries.EnumerateArray()
+            .Select(entry => new AgentPlanEntry
+            {
+                Content = ReadPlanEntryContent(entry),
+                Status = GetString(entry, "status"),
+                Priority = GetString(entry, "priority")
+            })
+            .Where(entry => !string.IsNullOrWhiteSpace(entry.Content))
+            .ToList();
+    }
+
+    private static string FormatPlanText(IReadOnlyList<AgentPlanEntry> entries, JsonElement fallback)
+    {
+        if (entries.Count == 0)
+            return fallback.GetRawText();
+
+        return string.Join(Environment.NewLine, entries.Select(entry =>
+        {
+            var status = string.IsNullOrWhiteSpace(entry.Status) ? "" : $"[{entry.Status}] ";
+            return "- " + status + entry.Content;
+        }));
+    }
+
+    private static string ReadPlanEntryContent(JsonElement entry)
+    {
+        var content = GetString(entry, "content");
+        if (!string.IsNullOrWhiteSpace(content))
+            return content;
+
+        return GetString(entry, "title");
+    }
+
+    private static string? NormalizeSlashCommand(string? command)
+    {
+        if (string.IsNullOrWhiteSpace(command))
+            return null;
+
+        var trimmed = command.Trim();
+        return trimmed.StartsWith('/') ? trimmed : "/" + trimmed;
+    }
+
+    private static IReadOnlyList<AcpConfigOptionValue> ReadConfigOptionValues(JsonElement option)
+    {
+        if (!option.TryGetProperty("options", out var options) || options.ValueKind != JsonValueKind.Array)
+            return Array.Empty<AcpConfigOptionValue>();
+
+        var values = new List<AcpConfigOptionValue>();
+        foreach (var item in options.EnumerateArray())
+        {
+            if (item.TryGetProperty("options", out var nested) && nested.ValueKind == JsonValueKind.Array)
+            {
+                values.AddRange(ReadConfigOptionValueArray(nested));
+            }
+            else
+            {
+                var value = ReadConfigOptionValue(item);
+                if (value != null)
+                    values.Add(value);
+            }
+        }
+
+        return values;
+    }
+
+    private static IEnumerable<AcpConfigOptionValue> ReadConfigOptionValueArray(JsonElement options)
+    {
+        foreach (var item in options.EnumerateArray())
+        {
+            var value = ReadConfigOptionValue(item);
+            if (value != null)
+                yield return value;
+        }
+    }
+
+    private static AcpConfigOptionValue? ReadConfigOptionValue(JsonElement item)
+    {
+        var value = GetString(item, "value");
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var name = GetString(item, "name");
+        return new AcpConfigOptionValue
+        {
+            Value = value,
+            Name = string.IsNullOrWhiteSpace(name) ? value : name,
+            Description = GetString(item, "description")
+        };
+    }
+
+    private static string GetString(JsonElement element, string propertyName, string fallback = "")
+    {
+        return element.ValueKind == JsonValueKind.Object
+            && element.TryGetProperty(propertyName, out var value)
+            && value.ValueKind == JsonValueKind.String
+            ? value.GetString() ?? fallback
+            : fallback;
+    }
+
+    private static int? TryGetInt(JsonElement element, string propertyName)
+    {
+        return element.ValueKind == JsonValueKind.Object
+            && element.TryGetProperty(propertyName, out var value)
+            && value.ValueKind == JsonValueKind.Number
+            && value.TryGetInt32(out var number)
+            ? number
+            : null;
+    }
+
+    private static long? TryGetLong(JsonElement element, string propertyName)
+    {
+        return element.ValueKind == JsonValueKind.Object
+            && element.TryGetProperty(propertyName, out var value)
+            && value.ValueKind == JsonValueKind.Number
+            && value.TryGetInt64(out var number)
+            ? number
+            : null;
+    }
+
+    private static string ReadNestedString(JsonElement element, params string[] path)
+    {
+        var current = ReadNestedElement(element, path);
+        return current.HasValue && current.Value.ValueKind == JsonValueKind.String
+            ? current.Value.GetString() ?? ""
+            : "";
+    }
+
+    private static bool? ReadNestedBool(JsonElement element, params string[] path)
+    {
+        var current = ReadNestedElement(element, path);
+        return current.HasValue && current.Value.ValueKind == JsonValueKind.True ? true
+            : current.HasValue && current.Value.ValueKind == JsonValueKind.False ? false
+            : null;
+    }
+
+    private static JsonElement? ReadNestedElement(JsonElement element, params string[] path)
+    {
+        var current = element;
+        foreach (var name in path)
+        {
+            if (current.ValueKind != JsonValueKind.Object || !current.TryGetProperty(name, out current))
+                return null;
+        }
+
+        return current;
+    }
+
+    private static object? JsonElementToObject(JsonElement element)
+    {
+        return element.ValueKind switch
+        {
+            JsonValueKind.Object => element.EnumerateObject()
+                .ToDictionary(property => property.Name, property => JsonElementToObject(property.Value)),
+            JsonValueKind.Array => element.EnumerateArray().Select(JsonElementToObject).ToArray(),
+            JsonValueKind.String => element.GetString(),
+            JsonValueKind.Number => element.TryGetInt64(out var longValue)
+                ? longValue
+                : element.TryGetDouble(out var doubleValue) ? doubleValue : null,
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            _ => null
+        };
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+        _bridgeService.UserMessageSubmitted -= OnUserMessageSubmitted;
+        _bridgeService.CommandReceived -= OnCommandReceived;
+        _bridgeService.AttachmentUploadReceived -= OnAttachmentUploadReceived;
+        _transport?.Dispose();
+        foreach (var terminal in _terminals.Values)
+        {
+            try
+            {
+                if (!terminal.Process.HasExited)
+                    terminal.Process.Kill(entireProcessTree: true);
+            }
+            catch { }
+            terminal.Process.Dispose();
+        }
+    }
+}

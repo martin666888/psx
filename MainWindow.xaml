@@ -1,0 +1,108 @@
+<Window x:Class="PSX.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:PSX.Controls"
+        Title="PSX"
+        Icon="Assets/Icons/psx.ico"
+        Height="800" Width="1200"
+        MinHeight="560" MinWidth="900"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource WindowBackgroundBrush}">
+
+    <Window.InputBindings>
+        <KeyBinding Gesture="Ctrl+Shift+T" Command="{Binding NewTabCommand}"/>
+        <KeyBinding Gesture="Ctrl+Shift+W" Command="{Binding CloseTabCommand}" CommandParameter="{Binding ActiveTab.SessionId}"/>
+    </Window.InputBindings>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0" Background="{DynamicResource WindowBackgroundBrush}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <controls:TabBar Grid.Column="0" DataContext="{Binding}"/>
+
+            <Border Grid.Column="1" Margin="8,6,10,6" Padding="2" Background="{DynamicResource SurfaceBrush}" CornerRadius="4">
+                <StackPanel Orientation="Horizontal">
+                    <Button Content="Terminal"
+                            MinWidth="72"
+                            Padding="10,3"
+                            Margin="0"
+                            Command="{Binding ShowTerminalCommand}">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Setter Property="Cursor" Value="Hand"/>
+                                <Setter Property="FontSize" Value="12"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsTerminalView}" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}"/>
+                                        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                    <Button Content="Agent"
+                            MinWidth="62"
+                            Padding="10,3"
+                            Margin="2,0,0,0"
+                            Command="{Binding ShowAgentCommand}">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Setter Property="Cursor" Value="Hand"/>
+                                <Setter Property="FontSize" Value="12"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsAgentView}" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}"/>
+                                        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <Border Grid.Row="1" Background="{DynamicResource WindowBackgroundBrush}">
+            <controls:TerminalHost x:Name="TerminalHostControl"/>
+        </Border>
+
+        <!-- Status bar — populated by MainViewModel.SetStatus(...) from services.
+             Collapsed to zero height when IsStatusVisible is false, so it doesn't
+             eat vertical space during normal use. -->
+        <Border Grid.Row="2"
+                Background="{DynamicResource SurfaceMutedBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="10,4">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="Visibility" Value="Visible"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsStatusVisible}" Value="False">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
+            <TextBlock Text="{Binding StatusMessage}"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       FontSize="11"
+                       TextTrimming="CharacterEllipsis"/>
+        </Border>
+    </Grid>
+</Window>
