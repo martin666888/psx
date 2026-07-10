@@ -4,25 +4,27 @@ Languages: [English](README.md) | [简体中文](docs/zh-CN/README.md)
 
 PSX is a Windows desktop terminal for AI Agent workflows. It is not trying to be
 another PowerShell. It packages a terminal, an Agent conversation panel, task
-plans, and the required runtime pieces into a lightweight portable app that can
-be unzipped and run directly.
+plans, .NET, and Portable Node into a lightweight app that can be unzipped and
+run directly. Terminal mode is ready immediately; Agent mode installs its ACP
+runtime from the official npm registry only after the user confirms.
 
 Many polished Agent applications start with an installer, then download more
 runtime components after installation. That is often unfriendly on company
 laptops, locked-down networks, machines without admin rights, or environments
-where users cannot freely install software. PSX is built around a different
-distribution model: download one zip, unzip it, run `PSX.exe`, and start using
-it.
+where users cannot freely install software. PSX keeps the application itself
+portable: download one zip, extract it, run `PSX.exe`, and start using the
+Terminal. The optional Agent runtime is installed on first use instead of being
+redistributed inside the public package.
 
 ## Why PSX Exists
 
 The core value of PSX is:
 
 - **Portable first**: distributed as a zip, no installer required.
-- **Runtime included**: the release package includes the .NET runtime, portable
-  Node, and a preinstalled ACP runtime.
-- **Friendly to restricted environments**: fewer first-run downloads and fewer
-  install-time assumptions.
+- **Terminal ready immediately**: the release package includes the .NET runtime
+  and Portable Node; no installer or administrator access is required.
+- **Explicit Agent setup**: PSX downloads the ACP runtime only after the user
+  opens Agent mode and confirms the installation.
 - **More than a terminal**: PSX includes a dedicated Agent panel in addition to
   normal terminal tabs.
 - **Clear Agent workflow**: conversations, tool calls, permission prompts, and
@@ -45,35 +47,56 @@ controllable, and easy to distribute on work machines.
 - Tool call cards for Agent inputs and outputs.
 - Permission and question prompts handled in the UI.
 - Theme and font configuration through `psx.ini` and `theme-presets/`.
-- Self-contained portable release for Windows x64.
+- Portable Windows x64 release with .NET and Node included.
 
 ## Download
 
 Download the latest Windows build from GitHub Releases:
 
 ```text
-PSX-v0.1.0-win-x64-portable.zip
+PSX-1.0.0-win-x64-portable.zip
 ```
 
 Usage:
 
 1. Download the zip.
-2. Extract it anywhere.
+2. Extract it to a directory where your account has write access.
 3. Run `PSX.exe`.
 
 PSX currently targets Windows x64. Microsoft Edge WebView2 Runtime is required.
 If WebView2 is not installed, PSX will show a prompt instead of opening a blank
 window.
 
-The release package already includes the .NET runtime, portable Node, and ACP
-runtime. In normal use, users do not need to install .NET, Node, or the Claude
-adapter separately.
+The release package includes the .NET runtime, Portable Node, and the ACP seed
+manifests. It deliberately does **not** include `claude.exe` or an installed ACP
+runtime.
+
+## First-time Agent Setup
+
+Terminal mode works immediately and never starts an npm download. The first
+time you open Agent mode, PSX shows an installation card. Choose **Install Agent
+runtime** to download the pinned ACP dependencies from the official npm
+registry. The UI shows progress and supports cancellation and retry. Agent input
+remains disabled until installation succeeds; no restart is required afterward.
+
+The installed runtime is stored under `runtime/` beside `PSX.exe`. The same
+extracted directory reuses it on later launches, while a newly extracted copy
+needs its own first-time download. Keep the PSX directory writable and preserve
+it if you want to keep the installed runtime. Network access to the npm registry
+is required for this step.
+
+PSX does not read, store, or display API keys. Configure credentials and
+provider settings using the tools supported by the Agent runtime. As an optional
+third-party convenience, [CC Switch](https://github.com/farion1231/cc-switch)
+can manage Claude Code provider configurations. CC Switch is not part of PSX
+and is not an official PSX or Anthropic component.
 
 ## Configuration
 
 PSX reads its active configuration from `psx.ini` in the application directory.
-In a portable release, this is the same folder as `PSX.exe`. In a source
-checkout, it is the repository root.
+In a portable release, this is the same folder as `PSX.exe`. When running from
+source, the active file is the copy in the build output directory (for example,
+`bin/Debug/net10.0-windows/psx.ini`), not the repository-root source file.
 
 The `theme-presets/` folder contains templates only. To use a preset:
 
@@ -120,7 +143,7 @@ Requirements:
 - .NET SDK selected by `global.json`
 - PowerShell
 - Network access for release builds, because the release script downloads
-  portable Node and installs the ACP runtime
+  Portable Node unless a verified cache is explicitly requested
 
 Build:
 
@@ -170,24 +193,28 @@ in environments where installing a heavier application is inconvenient.
 - `wwwroot/` - WebView2 frontend for xterm.js and Agent mode
 - `theme-presets/` - preset theme configuration files
 - `tools/build-release.ps1` - portable release builder
-- `tools/acp-seed/` - seed manifest for the bundled ACP runtime
+- `tools/acp-seed/` - pinned manifests used for the user-confirmed Agent install
 
 ## Release Notes For Maintainers
 
 The release script creates a self-contained Windows x64 portable package. It
-stages the published WPF app, downloads portable Node, runs `npm ci` inside
-`runtime/acp-current/`, and validates that the ACP adapter and bundled
-`claude.exe` are present.
+stages the published WPF app, downloads and verifies Portable Node 22.23.1, and
+includes the ACP seed manifests. Before writing the archive it validates the
+application, Node, npm, frontend, seed, and license files. It also rejects any
+package containing `claude.exe`, `runtime/acp-current`, logs, or temporary files.
 
 Recommended package name:
 
 ```text
-PSX-v<version>-win-x64-portable.zip
+PSX-<version>-win-x64-portable.zip
 ```
 
-If the generated file still uses `0.0.0`, add a `<Version>` property to
-`PSX.csproj`.
+`-SkipNodeDownload` only accepts an existing Node archive whose SHA-256 matches
+the pinned value; it fails when the cache is absent or invalid.
 
 ## License
 
-See [LICENSE.txt](LICENSE.txt).
+PSX is licensed under the [MIT License](LICENSE.txt). Bundled dependency license
+and notice information is in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)
+and the `licenses/` directory. Anthropic components are installed later by the
+user and remain subject to their own terms.

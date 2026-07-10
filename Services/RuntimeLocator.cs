@@ -32,9 +32,9 @@ public sealed class RuntimeLocator
     /// never fall back to a legacy <c>tools/acp</c> directory — that would
     /// collapse current and next onto the same path and let
     /// <c>AcpRuntimeManager</c> delete the in-use runtime.
-    /// Development builds populate <c>runtime/acp-current</c> on first Agent
-    /// message via <c>AcpRuntimeManager.EnsureInstalledCoreAsync</c> (npm ci
-    /// from <c>tools/acp-seed</c>); there is no pre-installed fallback.
+    /// Agent mode populates <c>runtime/acp-current</c> only after the user
+    /// confirms installation (npm ci from <c>tools/acp-seed</c>); there is no
+    /// pre-installed fallback or first-message installation path.
     /// </summary>
     public RuntimePaths Locate()
     {

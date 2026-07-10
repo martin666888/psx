@@ -56,6 +56,7 @@ class AgentThreadManager {
         this._wireComposer();
         this._wireModeControl();
         this._wireAttachments();
+        this._wireRuntimeControls();
         this._initializePlanPanel();
     }
 
@@ -134,7 +135,7 @@ class AgentThreadManager {
 
     setVisible(visible) {
         this.panel.hidden = !visible;
-        if (visible) {
+        if (visible && this._runtimeReady()) {
             setTimeout(() => this.input.focus(), 0);
         }
     }
@@ -147,6 +148,9 @@ class AgentThreadManager {
         switch (event.type) {
             case 'agent_state':
                 this._updateState(event);
+                break;
+            case 'runtime_status':
+                this._updateRuntimeStatus(event);
                 break;
             case 'agent_thread_loaded':
                 this._loadThread(event);

@@ -87,6 +87,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
     private readonly RuntimeLocator _runtimeLocator;
     private readonly AcpRuntimeManager _acpRuntime;
     private readonly object _runLock = new();
+    private readonly object _runtimeInstallLock = new();
     private readonly ConcurrentDictionary<string, PendingPermission> _pendingPermissions = new();
     private readonly ConcurrentDictionary<string, PendingElicitation> _pendingElicitations = new();
     private readonly ConcurrentDictionary<string, AcpTerminalProcess> _terminals = new();
@@ -111,6 +112,10 @@ public sealed class AcpAgentSessionService : IAgentSessionService
     private ReplayHistoryState? _replayHistory;
     private CancellationTokenSource? _runCts;
     private Task? _currentRunTask;
+    private CancellationTokenSource? _runtimeInstallCts;
+    private bool _runtimeInstallInProgress;
+    private string _runtimeInstallState = "missing";
+    private string _runtimeInstallMessage = "Agent runtime is not installed.";
     private bool _disposed;
 
     public AcpAgentSessionService(
@@ -129,6 +134,11 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         _directoryPicker = directoryPicker;
         _runtimeLocator = runtimeLocator;
         _acpRuntime = acpRuntime;
+        if (IsAgentRuntimeReady())
+        {
+            _runtimeInstallState = "ready";
+            _runtimeInstallMessage = "Agent runtime is ready.";
+        }
         var initialThread = _threadStore.LoadOrCreateInitialThread(ResolveWorkspaceRoot());
         _currentThread = IsEmptyAgentDraft(initialThread)
             ? initialThread
@@ -138,6 +148,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         _bridgeService.UserMessageSubmitted += OnUserMessageSubmitted;
         _bridgeService.CommandReceived += OnCommandReceived;
         _bridgeService.AttachmentUploadReceived += OnAttachmentUploadReceived;
+        _acpRuntime.StatusChanged += OnRuntimeStatusChanged;
     }
 
     public async Task SubmitMessageAsync(string text, IReadOnlyList<string>? attachmentIds = null)
@@ -361,9 +372,9 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         });
     }
 
-    public Task PublishStateAsync()
+    public async Task PublishStateAsync()
     {
-        return _bridgeService.SendEventAsync(new
+        await _bridgeService.SendEventAsync(new
         {
             type = "agent_state",
             cwd = _workingDirectory,
@@ -375,7 +386,8 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             supportsImage = _supportsImage,
             contextUsedTokens = _currentThread.ContextUsedTokens,
             store = _threadStore.RootDirectory
-        });
+        }).ConfigureAwait(false);
+        await PublishRuntimeStatusAsync().ConfigureAwait(false);
     }
 
     private void OnUserMessageSubmitted(object? sender, AgentSubmitEventArgs e)
@@ -403,6 +415,12 @@ public sealed class AcpAgentSessionService : IAgentSessionService
                 break;
             case "activate":
                 await ActivateAsync().ConfigureAwait(false);
+                break;
+            case "install_runtime":
+                await InstallRuntimeAsync().ConfigureAwait(false);
+                break;
+            case "cancel_runtime_install":
+                await CancelRuntimeInstallAsync().ConfigureAwait(false);
                 break;
             case "clear":
                 await ClearAsync().ConfigureAwait(false);
@@ -470,6 +488,179 @@ public sealed class AcpAgentSessionService : IAgentSessionService
     private async Task ActivateAsync()
     {
         await PublishStateAsync().ConfigureAwait(false);
+    }
+
+    private bool IsAgentRuntimeReady()
+    {
+        return _acpRuntime.IsAdapterInstalled() && _acpRuntime.IsBundledClaudeCodeInstalled();
+    }
+
+    private void OnRuntimeStatusChanged(string message)
+    {
+        lock (_runtimeInstallLock)
+        {
+            if (!_runtimeInstallInProgress)
+                return;
+
+            _runtimeInstallMessage = message;
+        }
+
+        _ = PublishRuntimeStatusAsync();
+    }
+
+    private async Task InstallRuntimeAsync()
+    {
+        CancellationTokenSource? installCts;
+        lock (_runtimeInstallLock)
+        {
+            if (_runtimeInstallInProgress)
+                return;
+
+            if (IsAgentRuntimeReady())
+            {
+                _runtimeInstallState = "ready";
+                _runtimeInstallMessage = "Agent runtime is ready.";
+                installCts = null;
+            }
+            else
+            {
+                _runtimeInstallInProgress = true;
+                _runtimeInstallState = "installing";
+                _runtimeInstallMessage = "Preparing to install the Agent runtime...";
+                _runtimeInstallCts = new CancellationTokenSource();
+                installCts = _runtimeInstallCts;
+            }
+        }
+
+        if (installCts == null)
+        {
+            await PublishRuntimeStatusAsync().ConfigureAwait(false);
+            return;
+        }
+
+        try
+        {
+            await PublishRuntimeStatusAsync().ConfigureAwait(false);
+
+            var paths = _runtimeLocator.Locate();
+            try
+            {
+                Directory.CreateDirectory(paths.RuntimeRoot);
+                var probePath = Path.Combine(paths.RuntimeRoot, $".psx-write-probe-{Guid.NewGuid():N}.tmp");
+                await File.WriteAllTextAsync(probePath, "PSX runtime write probe", installCts.Token).ConfigureAwait(false);
+                File.Delete(probePath);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                lock (_runtimeInstallLock)
+                {
+                    _runtimeInstallState = "failed";
+                    _runtimeInstallMessage =
+                        $"PSX cannot write to its runtime folder. Extract PSX to a writable folder and retry. {ex.Message}";
+                }
+                return;
+            }
+
+            var result = await _acpRuntime.EnsureInstalledAsync(
+                cancellationToken: installCts.Token).ConfigureAwait(false);
+
+            lock (_runtimeInstallLock)
+            {
+                switch (result.Kind)
+                {
+                    case AcpRuntimeOperationKind.Success:
+                    case AcpRuntimeOperationKind.AlreadyReady:
+                        _runtimeInstallState = "ready";
+                        _runtimeInstallMessage = "Agent runtime installed successfully.";
+                        break;
+                    case AcpRuntimeOperationKind.Cancelled:
+                        _runtimeInstallState = "cancelled";
+                        _runtimeInstallMessage = "Agent runtime installation was cancelled.";
+                        break;
+                    case AcpRuntimeOperationKind.NetworkUnavailable:
+                        _runtimeInstallState = "failed";
+                        _runtimeInstallMessage = "Download failed. Check the network connection and retry.";
+                        break;
+                    default:
+                        _runtimeInstallState = "failed";
+                        _runtimeInstallMessage = $"Agent runtime installation failed. {result.Message}";
+                        break;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            lock (_runtimeInstallLock)
+            {
+                _runtimeInstallState = "cancelled";
+                _runtimeInstallMessage = "Agent runtime installation was cancelled.";
+            }
+        }
+        finally
+        {
+            lock (_runtimeInstallLock)
+            {
+                _runtimeInstallInProgress = false;
+                _runtimeInstallCts?.Dispose();
+                _runtimeInstallCts = null;
+            }
+
+            await PublishRuntimeStatusAsync().ConfigureAwait(false);
+        }
+    }
+
+    private async Task CancelRuntimeInstallAsync()
+    {
+        CancellationTokenSource? installCts;
+        lock (_runtimeInstallLock)
+        {
+            installCts = _runtimeInstallCts;
+            if (!_runtimeInstallInProgress || installCts == null)
+                return;
+
+            _runtimeInstallMessage = "Cancelling Agent runtime installation...";
+        }
+
+        try { installCts.Cancel(); } catch { }
+        await PublishRuntimeStatusAsync().ConfigureAwait(false);
+    }
+
+    private Task PublishRuntimeStatusAsync()
+    {
+        string state;
+        string message;
+        bool canCancel;
+
+        lock (_runtimeInstallLock)
+        {
+            if (!_runtimeInstallInProgress && IsAgentRuntimeReady())
+            {
+                _runtimeInstallState = "ready";
+                _runtimeInstallMessage = "Agent runtime is ready.";
+            }
+            else if (_runtimeInstallState == "ready")
+            {
+                _runtimeInstallState = "missing";
+                _runtimeInstallMessage = "Agent runtime is not installed.";
+            }
+
+            state = _runtimeInstallState;
+            message = _runtimeInstallMessage;
+            canCancel = _runtimeInstallInProgress;
+        }
+
+        return _bridgeService.SendEventAsync(new
+        {
+            type = "runtime_status",
+            state,
+            message,
+            canInstall = state is "missing" or "failed" or "cancelled",
+            canCancel
+        });
     }
 
     private bool TryHandlePsxSlashCommand(string commandText, out Task task)
@@ -594,6 +785,13 @@ public sealed class AcpAgentSessionService : IAgentSessionService
 
         if (string.IsNullOrWhiteSpace(prompt) && requestedAttachmentIds.Length == 0)
             return;
+
+        if (!IsAgentRuntimeReady())
+        {
+            await PublishRuntimeStatusAsync().ConfigureAwait(false);
+            await SendRunFailedAsync("Install the Agent runtime before sending a message.").ConfigureAwait(false);
+            return;
+        }
 
         if (_status == "restoring")
         {
@@ -825,23 +1023,10 @@ public sealed class AcpAgentSessionService : IAgentSessionService
                 "Portable Node.js was not found next to PSX.exe. The release zip should include tools/node/node.exe.");
         }
 
-        // First-run install: if the runtime is missing, do it here, in the
-        // user-visible path, so the user sees clear progress rather than a
-        // silent background hang. Pending updates are promoted only during
-        // the next PSX startup, not from a live Agent run.
-        if (!_acpRuntime.IsAdapterInstalled())
+        if (!IsAgentRuntimeReady())
         {
-            var installResult = await _acpRuntime.EnsureInstalledAsync().ConfigureAwait(false);
-            if (installResult.Kind != AcpRuntimeOperationKind.Success
-                && installResult.Kind != AcpRuntimeOperationKind.AlreadyReady)
-            {
-                throw new InvalidOperationException(
-                    $"ACP adapter installation failed: {installResult.Message}. See log: {_acpRuntime.LogPath}");
-            }
-            // Re-resolve after install too — install touches the active dir
-            // and may have flipped the pointer (it always writes
-            // pointer='current' on success).
-            paths = _runtimeLocator.Locate();
+            throw new InvalidOperationException(
+                "Agent runtime is not installed. Open Agent mode and choose Install runtime first.");
         }
 
         var adapter = ResolveAdapterFromRuntime(paths);
@@ -2434,6 +2619,9 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         _bridgeService.UserMessageSubmitted -= OnUserMessageSubmitted;
         _bridgeService.CommandReceived -= OnCommandReceived;
         _bridgeService.AttachmentUploadReceived -= OnAttachmentUploadReceived;
+        _acpRuntime.StatusChanged -= OnRuntimeStatusChanged;
+        try { _runtimeInstallCts?.Cancel(); } catch { }
+        _runtimeInstallCts?.Dispose();
         _transport?.Dispose();
         foreach (var terminal in _terminals.Values)
         {

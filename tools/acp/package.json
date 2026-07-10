@@ -1,8 +1,0 @@
-{
-  "private": true,
-  "name": "psx-acp-tools",
-  "version": "0.1.0",
-  "dependencies": {
-    "@agentclientprotocol/claude-agent-acp": "0.57.0"
-  }
-}

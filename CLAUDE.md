@@ -24,7 +24,7 @@ Two distinct path roots — don't confuse them:
   - `psx.ini` — **active** app config (theme/font/shell). Note: NOT in `.psx\`
   - `theme-presets/` — templates; manually copy one up to install dir to activate
   - `tools/node/` — bundled portable Node.js
-  - `tools/acp-seed/` — read-only seed manifest for first-run `npm ci`
+  - `tools/acp-seed/` — read-only seed manifest for the user-confirmed `npm ci`
   - `runtime/acp-current/` — live ACP adapter + bundled `claude.exe` (what Agent mode loads)
   - `runtime/acp-next/` — staging dir for background updates (see below)
   - `runtime/webview2-fixed/` — optional WebView2 Fixed Version runtime
@@ -43,15 +43,13 @@ dotnet build PSX.slnx
 dotnet run --project PSX.csproj
 
 # Publish a self-contained x64 build. The real release pipeline is
-# tools/build-release.ps1 — it runs dotnet publish, downloads a portable
-# Node.js, pre-installs the ACP runtime via npm ci, and optionally bundles
-# a WebView2 Fixed Version runtime. Plain `dotnet publish` will NOT produce
-# a runnable Agent mode (no bundled claude.exe / node.exe).
+# tools/build-release.ps1: it runs dotnet publish, downloads and verifies
+# Portable Node, includes the ACP seed, and optionally bundles WebView2.
+# It deliberately does not include an installed ACP runtime or claude.exe.
 powershell -ExecutionPolicy Bypass -File tools/build-release.ps1
 
-# Debug build: first Agent-mode message triggers an online `npm ci` install
-# of the ACP runtime into runtime/acp-current/ (seeded from tools/acp-seed/).
-# Release builds pre-install this at packaging time, so no network needed.
+# On any build, Agent mode shows an installation card when the runtime is
+# missing. Only explicit user confirmation runs npm ci in runtime/acp-current/.
 ```
 
 **No test project exists** — `PSX.slnx` only references the single `PSX.csproj`. There is no `dotnet test` target. Don't suggest adding tests as if infrastructure exists; it doesn't.
@@ -98,13 +96,13 @@ Long-running ACP requests (permission prompts, elicitation forms) block on a `TC
 
 ### 5. ACP runtime: dual-directory install + background refresh
 
-`AcpRuntimeManager` owns the bundled ACP adapter across two directories:
+`AcpRuntimeManager` owns the installed ACP adapter across two directories:
 - `runtime/acp-current/` — what the live Agent session reads, exclusively
 - `runtime/acp-next/` — where background `npm update` writes
 
 Updates never mutate `acp-current` in place. Background refresh writes to `acp-next`, flips the `acp-active.txt` marker to `"next"`, and the **next PSX launch** promotes `acp-next` → `acp-current` (`TryPromoteNextToCurrentAsync`). This eliminates the half-updated `node_modules` hazard. If you see code paths trying to fall back from `acp-current` to `tools/acp/`, that's intentional hard refusal — version skew.
 
-First run (Debug build, or if `runtime/acp-current/` is missing): `EnsureInstalledCoreAsync` seeds from `tools/acp-seed/` and runs `npm ci --include=optional` (the `--include=optional` is what pulls the platform-specific `@anthropic-ai/claude-agent-sdk-win32-x64` containing `claude.exe`). Release builds pre-install this at packaging time via `tools/build-release.ps1`, so end users never need network on first Agent message.
+When `runtime/acp-current/` is missing, Agent mode publishes `runtime_status: missing` and disables the composer. The `install_runtime` command is the only normal path to `EnsureInstalledCoreAsync`; it seeds from `tools/acp-seed/` and runs `npm ci --include=optional` after explicit confirmation. `cancel_runtime_install` cancels npm and terminates its process tree. `EnsureTransportAsync` never installs implicitly. The installed runtime stays beside `PSX.exe`, so the same extracted directory reuses it and a new directory needs a new install.
 
 ---
 
@@ -139,16 +137,17 @@ First run (Debug build, or if `runtime/acp-current/` is missing): `EnsureInstall
 
 ## Release packaging
 
-`tools/build-release.ps1` is the real release pipeline — **not** plain `dotnet publish`. It produces a fully self-contained `PSX-<version>-win-x64.zip` (win-x64 only) bundling:
+`tools/build-release.ps1` is the real release pipeline — **not** plain `dotnet publish`. It produces a fully self-contained `PSX-<version>-win-x64-portable.zip` (win-x64 only) bundling:
 
 - Self-contained .NET 10 runtime (via `Properties/PublishProfiles/win-x64-self-contained.pubxml`: `SelfContained=true`, NOT single-file, NOT trimmed — WPF can't be trimmed)
-- Portable Node.js v22.17.0 win-x64 (downloaded fresh from nodejs.org into `tools/node/`)
-- Pre-installed ACP runtime in `runtime/acp-current/` (via `npm ci --include=optional`), including the ~243 MB `claude.exe`
+- Portable Node.js v22.23.1 win-x64, pinned to the official SHA-256
+- ACP seed manifests used by the explicit first-use installation flow
+- Project and third-party license/NOTICE files
 - Optional WebView2 Fixed Version runtime in `runtime/webview2-fixed/` — **only if** `-WebView2FixedRuntimePath` is passed at build time; otherwise users rely on system Evergreen WebView2
 
-Users unzip and double-click `PSX.exe` — no Node/.NET/Claude Code install required. The only external dependency is WebView2 (system-installed Evergreen, or bundled fixed version).
+Users unzip and double-click `PSX.exe`; Terminal mode needs no Node or .NET installation. Agent mode needs a one-time npm download per extracted directory after the user confirms. The public ZIP must never contain `claude.exe` or `runtime/acp-current`. WebView2 remains the only startup dependency (system-installed Evergreen, or bundled fixed version).
 
-Note: `RuntimeLocator.Locate()` resolves all install-relative paths at startup; `RuntimePreflightService` checks WebView2/Node/ACP/Claude Code readiness before any WebView2-dependent service starts (missing WebView2 → prompt + shutdown).
+Note: `RuntimeLocator.Locate()` resolves all install-relative paths at startup. `RuntimePreflightService` inspects WebView2/Node/ACP/Claude readiness, but only missing WebView2 blocks application startup; a missing ACP runtime is handled inside Agent mode.
 
 ---
 
@@ -157,7 +156,7 @@ Note: `RuntimeLocator.Locate()` resolves all install-relative paths at startup; 
 - No test project, no mocking framework, no `dotnet test` invocation
 - No `IConPtyService` or `IAcpJsonRpcTransport` interfaces — those concrete classes are injected directly (`App.xaml.cs:42`)
 - No CI/CD — no `.github/workflows`, no `azure-pipelines.yml`. Builds are manual.
-- No git tags for versions. `releases/PSX-v0.2.0-win-x64.zip` is a 64MB artifact **not in git** (`.gitignore` line ~23 excludes `[Rr]eleases/`)
+- Release artifacts are generated under `bin/releases/` and are not committed (`.gitignore` excludes `[Bb]in/`).
 - No logging framework — `Debug.WriteLine` and `MessageBox.Show` are used for diagnostics
 - No `Models/TerminalOptions.cs` schema validation against the JS side — the contract is implicit, matched by string keys in C# `switch` and JS `switch`
 - No `Channel<T>` — output batching is hand-rolled with `ArrayBufferWriter<byte>` + `Stopwatch`

@@ -9,9 +9,9 @@ PSX is a Windows desktop terminal built with C#, WPF, WebView2, xterm.js, and Co
 - `dotnet build PSX.slnx` - restore packages and compile the application.
 - `dotnet run --project PSX.csproj` - launch a development build on Windows.
 - `dotnet format PSX.slnx --verify-no-changes` - check standard .NET formatting.
-- `powershell -ExecutionPolicy Bypass -File tools/build-release.ps1` - create the self-contained Windows x64 package in `bin/releases/`; this may download Node and install the ACP runtime.
+- `powershell -ExecutionPolicy Bypass -File tools/build-release.ps1` - create the self-contained Windows x64 package in `bin/releases/`; this may download the verified Portable Node archive but never pre-installs the ACP runtime.
 
-Use the SDK selected by `global.json`. A plain `dotnet publish` does not assemble the complete Agent runtime.
+Use the SDK selected by `global.json`. The release script assembles the public portable package; users install the Agent runtime later from Agent mode after explicit confirmation.
 
 ## Coding Style & Naming Conventions
 

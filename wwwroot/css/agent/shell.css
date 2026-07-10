@@ -2,7 +2,12 @@
     position: absolute;
     inset: 0;
     display: grid;
-    grid-template-rows: auto 1fr auto;
+    grid-template-areas:
+        "toolbar"
+        "runtime"
+        "workspace"
+        "composer";
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
     --agent-plan-panel-width: 300px;
     background: var(--agent-bg);
     color: var(--agent-text);
@@ -14,6 +19,7 @@
 }
 
 .agent-toolbar {
+    grid-area: toolbar;
     min-height: 44px;
     display: flex;
     align-items: center;
@@ -103,6 +109,7 @@
 }
 
 .agent-workspace {
+    grid-area: workspace;
     display: grid;
     grid-template-columns: minmax(360px, 1fr) 7px var(--agent-plan-panel-width);
     min-height: 0;

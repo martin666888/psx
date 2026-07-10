@@ -69,8 +69,8 @@ public partial class MainWindow : Window
             if (_bridgeService == null || TerminalHostControl.WebView == null)
                 return;
 
-            // Wire ACP runtime install progress to the status bar so the
-            // user sees something during the (rare) first-launch npm install.
+            // Wire ACP runtime progress to the status bar. New installations
+            // only begin after the user confirms from Agent mode.
             if (_acpRuntime != null)
             {
                 _acpRuntime.StatusChanged += msg => _viewModel?.SetStatus(msg);

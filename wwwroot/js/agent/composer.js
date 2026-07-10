@@ -40,6 +40,10 @@ AgentThreadManager.prototype._wireModeControl = function() {
 };
 
 AgentThreadManager.prototype._submit = function() {
+        if (!this._runtimeReady()) {
+            return;
+        }
+
         if (this.isRestoring) {
             return;
         }

@@ -5,7 +5,7 @@ AgentThreadManager.prototype._wireAttachments = function() {
         }
 
         this.meta.attachButton.addEventListener('click', () => {
-            if (!this.supportsImage || this.isBusy || this.isRestoring) return;
+            if (!this._runtimeReady() || !this.supportsImage || this.isBusy || this.isRestoring) return;
             this.meta.attachmentInput.click();
         });
 
@@ -15,7 +15,7 @@ AgentThreadManager.prototype._wireAttachments = function() {
         });
 
         this.panel.addEventListener('paste', (event) => {
-            if (!this.supportsImage || this.isBusy || this.isRestoring) return;
+            if (!this._runtimeReady() || !this.supportsImage || this.isBusy || this.isRestoring) return;
             const files = Array.from(event.clipboardData?.items || [])
                 .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
                 .map((item) => item.getAsFile())
@@ -27,14 +27,14 @@ AgentThreadManager.prototype._wireAttachments = function() {
         });
 
         this.panel.addEventListener('dragover', (event) => {
-            if (!this.supportsImage || this.isBusy || this.isRestoring) return;
+            if (!this._runtimeReady() || !this.supportsImage || this.isBusy || this.isRestoring) return;
             if (Array.from(event.dataTransfer?.items || []).some((item) => item.kind === 'file')) {
                 event.preventDefault();
             }
         });
 
         this.panel.addEventListener('drop', (event) => {
-            if (!this.supportsImage || this.isBusy || this.isRestoring) return;
+            if (!this._runtimeReady() || !this.supportsImage || this.isBusy || this.isRestoring) return;
             const files = Array.from(event.dataTransfer?.files || []).filter((file) => file.type.startsWith('image/'));
             if (files.length > 0) {
                 event.preventDefault();
@@ -283,8 +283,8 @@ AgentThreadManager.prototype._hideImagePreview = function() {
 
 AgentThreadManager.prototype._syncAttachmentControls = function() {
         if (!this.meta.attachButton) return;
-        this.meta.attachButton.disabled = !this.supportsImage || this.isBusy || this.isRestoring;
+        this.meta.attachButton.disabled = !this._runtimeReady() || !this.supportsImage || this.isBusy || this.isRestoring;
         this.meta.attachButton.title = this.supportsImage
-            ? 'Attach images'
+            ? (this._runtimeReady() ? 'Attach images' : 'Install the Agent runtime before attaching images')
             : 'Current ACP Agent does not support image input';
 };

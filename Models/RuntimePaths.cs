@@ -27,8 +27,9 @@ public sealed record RuntimePaths
     public required string AcpActiveDirectory { get; init; }
 
     /// <summary>
-    /// The current ACP directory. This is what <c>npm ci</c> populates on
-    /// first run, and what Agent mode loads for the lifetime of the process.
+    /// The current ACP directory. This is what <c>npm ci</c> populates after
+    /// explicit user confirmation, and what Agent mode loads for the lifetime
+    /// of the process.
     /// </summary>
     public required string AcpCurrentDirectory { get; init; }
 
@@ -74,7 +75,7 @@ public sealed record RuntimePaths
 
     /// <summary>
     /// Path to the bundled ACP seed directory (contains package.json, package-lock.json, .npmrc).
-    /// This is the source of truth for first-run copy; never written to.
+    /// This is the source of truth for user-confirmed installation; never written to.
     /// </summary>
     public required string AcpSeedDirectory { get; init; }
 

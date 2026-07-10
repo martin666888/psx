@@ -23,13 +23,14 @@ AgentThreadManager.prototype._updateState = function(event) {
             this.sendButton.textContent = this.isBusy ? 'Stop' : 'Send';
             this.sendButton.title = this.isBusy ? 'Stop Claude' : 'Send message';
         }
-        this.sendButton.disabled = this.isRestoring;
+        this.sendButton.disabled = this.isRestoring || !this._runtimeReady();
         this.sendButton.classList.toggle('agent-send-stop', this.isBusy);
         if (this.meta.mode) {
             this._syncFallbackModeVisibility();
             this.meta.mode.disabled = this._configControlsDisabled() || this.modes.length === 0 || this._hasConfigOption('mode');
         }
         this._syncConfigOptionDisabledState();
+        this._syncRuntimeControls();
 };
 
 AgentThreadManager.prototype._formatStatus = function(status) {

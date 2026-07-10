@@ -102,7 +102,7 @@ AgentThreadManager.prototype._syncFallbackModeVisibility = function() {
 };
 
 AgentThreadManager.prototype._configControlsDisabled = function() {
-        return this.isBusy || this.isRestoring || this.isTranscriptOnly;
+        return this.isBusy || this.isRestoring || this.isTranscriptOnly || !this._runtimeReady();
 };
 
 AgentThreadManager.prototype._hasConfigOption = function(id) {

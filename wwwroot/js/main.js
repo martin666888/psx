@@ -22,7 +22,12 @@
             imagePreview: document.getElementById('agent-image-preview'),
             imagePreviewImg: document.getElementById('agent-image-preview-img'),
             planPanel: document.getElementById('agent-plan-panel'),
-            planResizer: document.getElementById('agent-plan-resizer')
+            planResizer: document.getElementById('agent-plan-resizer'),
+            runtimeCard: document.getElementById('agent-runtime-card'),
+            runtimeTitle: document.getElementById('agent-runtime-title'),
+            runtimeMessage: document.getElementById('agent-runtime-message'),
+            runtimeInstall: document.getElementById('agent-runtime-install'),
+            runtimeCancel: document.getElementById('agent-runtime-cancel')
         }
     );
     let resizeTimer = null;
@@ -88,6 +93,7 @@
                 break;
             case 'agent_ready':
             case 'agent_state':
+            case 'runtime_status':
             case 'agent_thread_loaded':
             case 'agent_threads':
             case 'agent_commands':

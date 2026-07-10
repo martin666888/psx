@@ -26,6 +26,22 @@
                 <button id="agent-clear" title="Clear thread">Clear</button>
             </div>
         </header>
+        <section id="agent-runtime-card"
+                 class="agent-runtime-card"
+                 aria-live="polite"
+                 aria-labelledby="agent-runtime-title"
+                 hidden>
+            <div class="agent-runtime-indicator" aria-hidden="true"></div>
+            <div class="agent-runtime-copy">
+                <h2 id="agent-runtime-title">Agent runtime required</h2>
+                <p id="agent-runtime-message">Install the Agent runtime before starting a Claude session.</p>
+                <p class="agent-runtime-note">Downloads pinned components from the official npm registry into this PSX folder and reuses them on later launches.</p>
+            </div>
+            <div class="agent-runtime-actions">
+                <button id="agent-runtime-install" type="button">Install runtime</button>
+                <button id="agent-runtime-cancel" type="button" hidden>Cancel</button>
+            </div>
+        </section>
         <div class="agent-workspace">
             <main id="agent-thread" class="agent-thread"></main>
             <div id="agent-plan-resizer"
@@ -87,6 +103,7 @@
     <script src="js/agent/config.js"></script>
     <script src="js/agent/commands.js"></script>
     <script src="js/agent/attachments.js"></script>
+    <script src="js/agent/runtime.js"></script>
     <script src="js/agent/thread.js"></script>
     <script src="js/agent/messages.js"></script>
     <script src="js/agent/plan.js"></script>

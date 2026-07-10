@@ -203,14 +203,23 @@ public sealed class AcpRuntimeManager
         }
 
         // First install: use `npm ci` so we install EXACTLY what the seed
-        // lockfile pinned. Fall back to `npm install` if ci fails for any
-        // reason (rare — usually means lock + .npmrc mismatch).
+        // lockfile pinned. Fall back to `npm install` only for a local npm/lock
+        // failure; cancellation and network failures return immediately.
         var ciResult = await RunNpmCiAsync(paths, paths.AcpCurrentDirectory, progress, cancellationToken).ConfigureAwait(false);
         if (ciResult.Kind == AcpRuntimeOperationKind.Success
             || ciResult.Kind == AcpRuntimeOperationKind.AlreadyReady)
         {
             WriteActivePointer(paths, ActiveCurrentToken);
             StatusChanged?.Invoke(BuildStatusText());
+            return ciResult;
+        }
+
+        if (ciResult.Kind is AcpRuntimeOperationKind.Cancelled
+            or AcpRuntimeOperationKind.NetworkUnavailable)
+        {
+            StatusChanged?.Invoke(ciResult.Kind == AcpRuntimeOperationKind.Cancelled
+                ? "ACP 安装已取消"
+                : "ACP 安装失败，Agent 暂不可用，请检查网络后重试");
             return ciResult;
         }
 
@@ -658,6 +667,7 @@ public sealed class AcpRuntimeManager
             return new AcpRuntimeOperationResult(AcpRuntimeOperationKind.Failed,
                 $"{label} did not start.");
         }
+        using var processLifetime = process;
 
         var stdoutTask = process.StandardOutput.ReadToEndAsync();
         var stderrTask = process.StandardError.ReadToEndAsync();

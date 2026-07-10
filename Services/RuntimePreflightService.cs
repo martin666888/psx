@@ -147,7 +147,7 @@ public sealed class RuntimePreflightService
         }
 
         return new RuntimeComponentStatus("ACP Adapter", RuntimeComponentState.NeedsInstall,
-            "Will run `npm install` on first launch.");
+            "Open Agent mode and confirm installation to download the ACP runtime.");
     }
 
     public RuntimeComponentStatus CheckBundledClaudeCode()
