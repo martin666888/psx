@@ -71,17 +71,30 @@ public sealed class ConPtyService : IDisposable
     /// </summary>
     public void Resize(Guid sessionId, int columns, int rows)
     {
+        if (columns is < 2 or > short.MaxValue || rows is < 1 or > short.MaxValue)
+        {
+            Debug.WriteLine($"Ignored invalid ConPTY resize for {sessionId}: {columns}x{rows}");
+            return;
+        }
+
         TerminalSession? session;
         lock (_sessionsLock)
         {
             _sessions.TryGetValue(sessionId, out session);
+            if (session == null)
+                return;
+
+            if (session.Size.Columns == columns && session.Size.Rows == rows)
+            {
+                Debug.WriteLine($"Ignored duplicate ConPTY resize for {sessionId}: {columns}x{rows}");
+                return;
+            }
+
+            Debug.WriteLine(
+                $"ConPTY resize {sessionId}: {session.Size.Columns}x{session.Size.Rows} -> {columns}x{rows}");
+            session.Size.Columns = columns;
+            session.Size.Rows = rows;
         }
-
-        if (session == null)
-            return;
-
-        session.Size.Columns = columns;
-        session.Size.Rows = rows;
 
         var coord = new COORD((short)columns, (short)rows);
         try

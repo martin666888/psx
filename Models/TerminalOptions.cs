@@ -16,6 +16,9 @@ public sealed class TerminalOptions
     [JsonPropertyName("scrollback")]
     public int Scrollback { get; set; }
 
+    [JsonPropertyName("windowsBuildNumber")]
+    public int WindowsBuildNumber { get; set; }
+
     [JsonPropertyName("agentFontSize")]
     public int AgentFontSize { get; set; }
 
@@ -42,6 +45,7 @@ public sealed class TerminalOptions
             FontFamily = settings.FontFamily,
             Theme = settings.Theme,
             Scrollback = settings.Scrollback,
+            WindowsBuildNumber = Environment.OSVersion.Version.Build,
             AgentFontSize = settings.AgentFontSize,
             AgentFontFamily = settings.AgentFontFamily,
             AgentMonoFontFamily = string.IsNullOrWhiteSpace(settings.AgentMonoFontFamily)

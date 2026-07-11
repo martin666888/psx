@@ -31,14 +31,26 @@ class TerminalManager {
         this.container = container;
         this.terminals = new Map();
         this.activeSessionId = null;
+        this.viewVisible = !container.hidden;
         this._encoder = new TextEncoder();
         this._xtermTheme = { ...defaultXtermTheme };
+        this._fontFitGeneration = 0;
         this.options = {
             fontSize: 14,
             fontFamily: "Cascadia Code, Consolas, monospace",
             theme: 'dark',
-            scrollback: 10000
+            scrollback: 10000,
+            windowsBuildNumber: null
         };
+
+        this._resizeObserver = typeof ResizeObserver === 'function'
+            ? new ResizeObserver(() => this.fitActiveTerminal('container-resize'))
+            : null;
+        this._resizeObserver?.observe(this.container);
+
+        if (document.fonts?.ready) {
+            document.fonts.ready.then(() => this.fitActiveTerminal('initial-fonts-ready'));
+        }
     }
 
     setSettings(settings) {
@@ -58,10 +70,15 @@ class TerminalManager {
             next.scrollback = settings.scrollback;
         }
 
+        if (Number.isInteger(settings.windowsBuildNumber) && settings.windowsBuildNumber > 0) {
+            next.windowsBuildNumber = settings.windowsBuildNumber;
+        }
+
         if (typeof settings.theme === 'string' && settings.theme.toLowerCase() === 'dark') {
             next.theme = 'dark';
         }
 
+        const fontChanged = next.fontSize !== this.options.fontSize || next.fontFamily !== this.options.fontFamily;
         this.options = next;
 
         // 从 psx.ini 构造 xterm 主题
@@ -108,9 +125,13 @@ class TerminalManager {
             entry.terminal.options.theme = this._xtermTheme;
             entry.terminal.options.fontSize = this.options.fontSize;
             entry.terminal.options.fontFamily = this.options.fontFamily;
-            if (entry.element.style.display !== 'none') {
-                this._fitVisibleTerminal(entry, true);
+            if (fontChanged) {
+                entry.needsFit = true;
             }
+        }
+
+        if (fontChanged) {
+            this._scheduleFontFit();
         }
     }
 
@@ -136,6 +157,9 @@ class TerminalManager {
             letterSpacing: 0,
             bracketedPasteMode: true,
             smoothScrollDuration: 150,
+            windowsPty: Number.isInteger(this.options.windowsBuildNumber)
+                ? { backend: 'conpty', buildNumber: this.options.windowsBuildNumber }
+                : undefined,
             windowOptions: {
                 getWinSizeChars: true,
                 getCellSizePixels: true,
@@ -215,7 +239,15 @@ class TerminalManager {
             Bridge.sendTitle(sessionId, title);
         });
 
-        const entry = { terminal, fitAddon, decoder, element: wrapper };
+        const entry = {
+            terminal,
+            fitAddon,
+            decoder,
+            element: wrapper,
+            pendingFitFrame: null,
+            fitGeneration: 0,
+            needsFit: true
+        };
         this.terminals.set(sessionId, entry);
 
         if (this.terminals.size > 1) {
@@ -238,18 +270,36 @@ class TerminalManager {
 
         target.element.style.display = 'block';
         this.activeSessionId = sessionId;
-        this._fitVisibleTerminal(target, true);
+        this._scheduleFit(target, { focusAfterFit: true, reason: 'tab-switch' });
     }
 
-    fitActiveTerminal() {
+    setViewVisible(visible) {
+        this.viewVisible = visible;
+
+        if (!visible) {
+            for (const entry of this.terminals.values()) {
+                this._cancelPendingFit(entry);
+                entry.needsFit = true;
+            }
+            this.container.hidden = true;
+            return;
+        }
+
+        this.container.hidden = false;
+        const entry = this.terminals.get(this.activeSessionId);
+        if (entry) {
+            entry.needsFit = true;
+            this._scheduleFit(entry, { focusAfterFit: true, reason: 'view-restored' });
+        }
+    }
+
+    fitActiveTerminal(reason = 'explicit-fit') {
         if (!this.activeSessionId) return;
 
         const entry = this.terminals.get(this.activeSessionId);
         if (!entry) return;
 
-        if (entry.element.style.display === 'none') return;
-
-        this._fitVisibleTerminal(entry);
+        this._scheduleFit(entry, { reason });
     }
 
     writeOutput(sessionId, base64Data) {
@@ -275,6 +325,7 @@ class TerminalManager {
         if (flushed) {
             entry.terminal.write(flushed);
         }
+        this._cancelPendingFit(entry);
         entry.terminal.dispose();
         entry.element.remove();
         this.terminals.delete(sessionId);
@@ -314,30 +365,113 @@ class TerminalManager {
         // }
     }
 
-    _fitVisibleTerminal(entry, focusAfterFit = false) {
-        requestAnimationFrame(() => {
-            entry.element.offsetHeight;
-            this._fitTerminal(entry);
+    _scheduleFit(entry, { focusAfterFit = false, reason = 'unspecified' } = {}) {
+        entry.needsFit = true;
+        this._cancelPendingFit(entry);
 
-            requestAnimationFrame(() => {
-                this._fitTerminal(entry);
-                if (focusAfterFit) {
+        if (!this._isMeasurable(entry)) {
+            this._debugFit(reason, entry, null, 'deferred-hidden');
+            return;
+        }
+
+        const generation = ++entry.fitGeneration;
+        const measure = (previous, attempt) => {
+            entry.pendingFitFrame = requestAnimationFrame(() => {
+                if (generation !== entry.fitGeneration || !this._isMeasurable(entry)) {
+                    entry.pendingFitFrame = null;
+                    entry.needsFit = true;
+                    this._debugFit(reason, entry, null, 'cancelled-stale');
+                    return;
+                }
+
+                const proposed = this._proposeDimensions(entry);
+                if (!proposed) {
+                    entry.pendingFitFrame = null;
+                    entry.needsFit = true;
+                    this._debugFit(reason, entry, null, 'invalid-measurement');
+                    return;
+                }
+
+                const stable = previous && previous.cols === proposed.cols && previous.rows === proposed.rows;
+                if (!stable && attempt < 3) {
+                    measure(proposed, attempt + 1);
+                    return;
+                }
+
+                entry.pendingFitFrame = null;
+                entry.needsFit = false;
+                this._applyDimensions(entry, proposed, reason);
+                if (focusAfterFit && this._isMeasurable(entry)) {
                     entry.terminal.focus();
                 }
             });
-        });
+        };
 
-        if (document.fonts?.ready) {
-            document.fonts.ready.then(() => {
-                if (entry.element.style.display !== 'none') {
-                    this._fitTerminal(entry);
-                }
-            });
+        measure(null, 0);
+    }
+
+    _cancelPendingFit(entry) {
+        entry.fitGeneration++;
+        if (entry.pendingFitFrame !== null) {
+            cancelAnimationFrame(entry.pendingFitFrame);
+            entry.pendingFitFrame = null;
         }
     }
 
-    _fitTerminal(entry) {
-        try { entry.fitAddon.fit(); } catch (e) { /* ignore */ }
+    _isMeasurable(entry) {
+        return this.viewVisible
+            && !this.container.hidden
+            && entry.element.isConnected
+            && entry.element.style.display !== 'none'
+            && entry.element.clientWidth > 0
+            && entry.element.clientHeight > 0
+            && entry.element.getClientRects().length > 0;
+    }
+
+    _proposeDimensions(entry) {
+        try {
+            const dimensions = entry.fitAddon.proposeDimensions();
+            if (!dimensions || !Number.isInteger(dimensions.cols) || !Number.isInteger(dimensions.rows)) return null;
+            if (dimensions.cols < 2 || dimensions.rows < 1) return null;
+            return dimensions;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    _applyDimensions(entry, dimensions, reason) {
+        const changed = entry.terminal.cols !== dimensions.cols || entry.terminal.rows !== dimensions.rows;
+        this._debugFit(reason, entry, dimensions, changed ? 'resize' : 'unchanged');
+        if (changed) {
+            entry.terminal.resize(dimensions.cols, dimensions.rows);
+        }
+    }
+
+    _scheduleFontFit() {
+        const generation = ++this._fontFitGeneration;
+        const ready = document.fonts?.ready || Promise.resolve();
+        ready.then(() => {
+            if (generation !== this._fontFitGeneration) return;
+            const active = this.terminals.get(this.activeSessionId);
+            if (!active) return;
+            this._scheduleFit(active, { reason: 'font-changed' });
+        });
+    }
+
+    _debugFit(reason, entry, proposed, outcome) {
+        if (localStorage.getItem('psxDebugResize') !== '1') return;
+        console.debug('[PSX terminal fit]', {
+            reason,
+            outcome,
+            containerHidden: this.container.hidden,
+            width: entry.element.clientWidth,
+            height: entry.element.clientHeight,
+            oldCols: entry.terminal.cols,
+            oldRows: entry.terminal.rows,
+            proposedCols: proposed?.cols ?? null,
+            proposedRows: proposed?.rows ?? null,
+            generation: entry.fitGeneration
+        });
     }
 
     _resolveTheme(theme) {

@@ -11,6 +11,8 @@ public sealed class TabManagementService : ITabManagementService, IDisposable
     private readonly object _sessionStateLock = new();
     private readonly HashSet<Guid> _closingSessions = new();
     private readonly HashSet<Guid> _closedSessions = new();
+    private int? _lastTerminalColumns;
+    private int? _lastTerminalRows;
     private bool _disposed;
 
     public event EventHandler<TabCreatedEventArgs>? TabCreated;
@@ -42,7 +44,15 @@ public sealed class TabManagementService : ITabManagementService, IDisposable
 
         profile ??= _settingsService.GetDefaultProfile();
 
-        var size = new TerminalSize { Columns = 120, Rows = 30 };
+        int columns;
+        int rows;
+        lock (_sessionStateLock)
+        {
+            columns = _lastTerminalColumns ?? 120;
+            rows = _lastTerminalRows ?? 30;
+        }
+
+        var size = new TerminalSize { Columns = columns, Rows = rows };
         var session = _conPtyService.CreateSession(profile, size);
 
         _ = _bridgeService.CreateTerminalAsync(session.SessionId);
@@ -139,6 +149,15 @@ public sealed class TabManagementService : ITabManagementService, IDisposable
     private void OnBridgeResize(object? sender, TerminalResizeEventArgs e)
     {
         if (_disposed) return;
+
+        if (e.Cols is < 2 or > short.MaxValue || e.Rows is < 1 or > short.MaxValue)
+            return;
+
+        lock (_sessionStateLock)
+        {
+            _lastTerminalColumns = e.Cols;
+            _lastTerminalRows = e.Rows;
+        }
 
         _conPtyService.Resize(e.SessionId, e.Cols, e.Rows);
     }

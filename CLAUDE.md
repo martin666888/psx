@@ -68,6 +68,8 @@ The codebase has 4 large subsystems that look independent but are tightly couple
 
 `Controls/TerminalHost.cs` is a code-behind `UserControl` that hosts **one** `WebView2` (no XAML file). Both `TerminalBridgeService` and `AgentBridgeService` subscribe to the same `WebMessageReceived` event and dispatch on the `type` field of the incoming JSON.
 
+Terminal view switching is a resume operation, not a new session. While `#terminal-container` is hidden, never call FitAddon or resize ConPTY; update output/theme state only and defer one stable fit until the container is visible again.
+
 - `wwwroot/` is mapped to `https://psx.local/` via `SetVirtualHostNameToFolderMapping` (`Services/TerminalBridgeService.cs:43-48`)
 - `~/.psx/agent/attachments/` is mapped to `https://psx-attachments.local/` (same file, lines 50-56)
 - The page base href is `https://psx.local/` in `wwwroot/index.html:6`

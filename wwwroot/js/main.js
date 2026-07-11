@@ -30,8 +30,6 @@
             runtimeCancel: document.getElementById('agent-runtime-cancel')
         }
     );
-    let resizeTimer = null;
-
     document.getElementById('agent-new').addEventListener('click', () => {
         Bridge.sendAgentCommand('new');
     });
@@ -46,17 +44,6 @@
 
     document.getElementById('agent-change-cwd').addEventListener('click', () => {
         agentManager.promptForWorkingDirectory();
-    });
-
-    window.addEventListener('resize', () => {
-        if (resizeTimer) {
-            clearTimeout(resizeTimer);
-        }
-
-        resizeTimer = setTimeout(() => {
-            resizeTimer = null;
-            manager.fitActiveTerminal();
-        }, 100);
     });
 
     // Listen for messages from C# host
@@ -86,13 +73,13 @@
                 manager.closeTerminal(message.sessionId);
                 break;
             case 'view_mode':
-                container.hidden = message.mode === 'agent';
-                agentManager.setVisible(message.mode === 'agent');
                 if (message.mode === 'agent') {
+                    manager.setViewVisible(false);
+                    agentManager.setVisible(true);
                     Bridge.sendAgentCommand('activate');
-                }
-                if (message.mode !== 'agent') {
-                    manager.fitActiveTerminal();
+                } else {
+                    agentManager.setVisible(false);
+                    manager.setViewVisible(true);
                 }
                 break;
             case 'agent_ready':

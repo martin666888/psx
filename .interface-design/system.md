@@ -159,6 +159,15 @@ Theme 弹层是全局选择器的参考实现：
 → 失败则保留原状态并显示诊断
 ```
 
+### Terminal 会话生命周期
+
+- 软件启动、点击 `+`、关闭最后一个 Tab 后补建，属于新建会话：创建新的 ConPTY/Shell，并允许 Shell 输出一次启动说明。
+- Agent/Terminal 切换和 Terminal Tab 切换，属于恢复会话：不得重启 Shell、清空 buffer、发送回车或伪造提示符。
+- Terminal 隐藏时继续接收后台输出，但不得测量 DOM、fit 或 resize ConPTY。
+- Terminal 恢复显示后，等待布局稳定，只提交一个最终行列尺寸并恢复焦点。
+- 主题颜色可在隐藏时更新；字体变化只标记延迟 fit，不能抢走 Agent 输入焦点。
+- 长提示符、半条未执行命令、scrollback、cwd 和运行进程都属于必须保留的会话状态。
+
 ## 6. WPF 与 WebView2 一致性
 
 - WPF 和 WebView2 是同一个产品表面，不能各自发展独立的颜色、间距和状态语言。
