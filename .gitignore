@@ -373,6 +373,8 @@ FodyWeavers.xsd
 .trae/
 .kilocode/
 .alma-snapshots
+.zcode/
+.opencode/
 
 # Codex / agent local state. Keep the repository-level AGENTS.md tracked.
 /.codex/

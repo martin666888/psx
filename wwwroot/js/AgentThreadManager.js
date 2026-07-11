@@ -227,9 +227,11 @@ class AgentThreadManager {
                 this._appendAssistantDelta(event.text || '');
                 break;
             case 'assistant_message_done':
+                this._finalizeAssistantMessage(this.currentAssistant);
                 this.currentAssistant = null;
                 break;
             case 'run_finished':
+                this._finalizeAssistantMessage(this.currentAssistant);
                 this.currentAssistant = null;
                 this._hideThinking();
                 this._finalizeRunGroup();
@@ -246,9 +248,9 @@ class AgentThreadManager {
                 );
                 break;
             case 'tool_delta': {
-                const card = event.toolCallId ? this.toolCards[event.toolCallId] : null;
-                if (card) {
-                    card.pre.textContent += (event.text || '');
+                const resolved = this._resolveToolCard(event);
+                if (resolved) {
+                    resolved.card.pre.textContent += (event.text || '');
                 } else {
                     this._appendToolDelta(event.name || 'Tool output', event.text || '');
                 }
@@ -256,12 +258,15 @@ class AgentThreadManager {
                 break;
             }
             case 'tool_finished': {
-                const card = event.toolCallId ? this.toolCards[event.toolCallId] : null;
-                if (card) {
-                    card.details.classList.remove('agent-tool-card-running');
-                    card.details.classList.add('agent-tool-card-' + (event.status || 'done'));
-                    card.details.removeAttribute('open');
-                    delete this.toolCards[event.toolCallId];
+                const resolved = this._resolveToolCard(event);
+                if (resolved) {
+                    if (!resolved.card.pre.textContent.trim()) {
+                        resolved.card.pre.textContent = 'Finished.';
+                    }
+                    resolved.card.details.classList.remove('agent-tool-card-running');
+                    resolved.card.details.classList.add('agent-tool-card-' + (event.status || 'done'));
+                    resolved.card.details.removeAttribute('open');
+                    delete this.toolCards[resolved.toolCallId];
                 } else {
                     this._finishTool();
                 }

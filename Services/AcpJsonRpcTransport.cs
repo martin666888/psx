@@ -20,10 +20,13 @@ public sealed class AcpJsonRpcTransport : IDisposable
     private readonly Func<JsonElement, Task<object?>> _requestHandler;
     private readonly Func<JsonElement, Task> _notificationHandler;
     private readonly ConcurrentDictionary<int, TaskCompletionSource<JsonElement>> _pending = new();
+    private readonly object _lifecycleLock = new();
     private readonly object _writeLock = new();
     private Process? _process;
     private int _nextId;
-    private bool _disposed;
+    private volatile bool _started;
+    private volatile bool _disconnected;
+    private volatile bool _disposed;
 
     public AcpJsonRpcTransport(
         string nodePath,
@@ -41,40 +44,74 @@ public sealed class AcpJsonRpcTransport : IDisposable
         _notificationHandler = notificationHandler;
     }
 
-    public bool IsRunning => _process is { HasExited: false };
+    public bool IsRunning
+    {
+        get
+        {
+            if (_disposed || _disconnected)
+                return false;
+
+            try
+            {
+                return _process is { HasExited: false };
+            }
+            catch (InvalidOperationException)
+            {
+                return false;
+            }
+        }
+    }
 
     public void Start()
     {
-        if (IsRunning)
-            return;
-
-        Directory.CreateDirectory(Path.GetDirectoryName(_logPath)!);
-
-        var startInfo = new ProcessStartInfo
+        lock (_lifecycleLock)
         {
-            FileName = _nodePath,
-            WorkingDirectory = _workingDirectory,
-            UseShellExecute = false,
-            RedirectStandardInput = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true,
-            StandardInputEncoding = Encoding.UTF8,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8
-        };
-        startInfo.ArgumentList.Add(_adapterPath);
+            ThrowIfDisposed();
+            if (IsRunning)
+                return;
+            if (_started || _disconnected)
+                throw new InvalidOperationException("ACP adapter transport is disconnected and cannot be restarted.");
 
-        _process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
-        if (!_process.Start())
-            throw new InvalidOperationException("Failed to start ACP adapter.");
+            Directory.CreateDirectory(Path.GetDirectoryName(_logPath)!);
 
-        _ = Task.Run(ReadStdoutAsync);
-        _ = Task.Run(ReadStderrAsync);
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = _nodePath,
+                WorkingDirectory = _workingDirectory,
+                UseShellExecute = false,
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+                StandardInputEncoding = Encoding.UTF8,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8
+            };
+            startInfo.ArgumentList.Add(_adapterPath);
+
+            var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
+            if (!process.Start())
+            {
+                process.Dispose();
+                throw new InvalidOperationException("Failed to start ACP adapter.");
+            }
+
+            _process = process;
+            _started = true;
+            process.Exited += (_, _) => SignalDisconnected(
+                new EndOfStreamException($"ACP adapter exited with code {TryGetExitCode(process)}."));
+            _ = Task.Run(() => ReadStdoutAsync(process));
+            _ = Task.Run(() => ReadStderrAsync(process));
+        }
     }
 
-    public async Task<JsonElement> SendRequestAsync(string method, object? parameters, TimeSpan? timeout = null)
+    public async Task<JsonElement> SendRequestAsync(
+        string method,
+        object? parameters,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
     {
+        ThrowIfUnavailable();
         if (!IsRunning)
             Start();
 
@@ -82,23 +119,29 @@ public sealed class AcpJsonRpcTransport : IDisposable
         var tcs = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
         _pending[id] = tcs;
 
-        await SendMessageAsync(new
+        try
         {
-            jsonrpc = "2.0",
-            id,
-            method,
-            @params = parameters
-        }).ConfigureAwait(false);
+            await SendMessageAsync(new
+            {
+                jsonrpc = "2.0",
+                id,
+                method,
+                @params = parameters
+            }).ConfigureAwait(false);
 
-        var wait = timeout.HasValue
-            ? tcs.Task.WaitAsync(timeout.Value)
-            : tcs.Task;
-
-        return await wait.ConfigureAwait(false);
+            return timeout.HasValue
+                ? await tcs.Task.WaitAsync(timeout.Value, cancellationToken).ConfigureAwait(false)
+                : await tcs.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _pending.TryRemove(id, out _);
+        }
     }
 
     public Task SendNotificationAsync(string method, object? parameters)
     {
+        ThrowIfUnavailable();
         return SendMessageAsync(new
         {
             jsonrpc = "2.0",
@@ -109,25 +152,34 @@ public sealed class AcpJsonRpcTransport : IDisposable
 
     private Task SendMessageAsync(object message)
     {
-        var process = _process ?? throw new InvalidOperationException("ACP adapter is not running.");
+        ThrowIfUnavailable();
         var json = JsonSerializer.Serialize(message, JsonOptions);
         Log(">> " + json);
 
         lock (_writeLock)
         {
-            process.StandardInput.WriteLine(json);
-            process.StandardInput.Flush();
+            ThrowIfUnavailable();
+            var process = _process;
+            if (process == null || !IsRunning)
+                throw new InvalidOperationException("ACP adapter is not running.");
+
+            try
+            {
+                process.StandardInput.WriteLine(json);
+                process.StandardInput.Flush();
+            }
+            catch (Exception ex)
+            {
+                SignalDisconnected(ex);
+                throw;
+            }
         }
 
         return Task.CompletedTask;
     }
 
-    private async Task ReadStdoutAsync()
+    private async Task ReadStdoutAsync(Process process)
     {
-        var process = _process;
-        if (process == null)
-            return;
-
         try
         {
             while (await process.StandardOutput.ReadLineAsync().ConfigureAwait(false) is { } line)
@@ -138,19 +190,17 @@ public sealed class AcpJsonRpcTransport : IDisposable
                 Log("<< " + line);
                 await HandleIncomingLineAsync(line).ConfigureAwait(false);
             }
+
+            SignalDisconnected(new EndOfStreamException("ACP adapter stdout closed."));
         }
         catch (Exception ex)
         {
-            CompletePendingWithError(ex);
+            SignalDisconnected(ex);
         }
     }
 
-    private async Task ReadStderrAsync()
+    private async Task ReadStderrAsync(Process process)
     {
-        var process = _process;
-        if (process == null)
-            return;
-
         try
         {
             while (await process.StandardError.ReadLineAsync().ConfigureAwait(false) is { } line)
@@ -195,7 +245,10 @@ public sealed class AcpJsonRpcTransport : IDisposable
 
         if (root.TryGetProperty("method", out _) && root.TryGetProperty("id", out _))
         {
-            await HandleAgentRequestAsync(root).ConfigureAwait(false);
+            // Agent requests may intentionally wait for user input or a
+            // background terminal. Do not block the stdout reader while one
+            // request is pending; JSON-RPC responses are correlated by id.
+            _ = HandleAgentRequestAsync(root);
             return;
         }
 
@@ -215,7 +268,14 @@ public sealed class AcpJsonRpcTransport : IDisposable
         }
         catch (Exception ex)
         {
-            await SendErrorAsync(id, ex.Message).ConfigureAwait(false);
+            try
+            {
+                await SendErrorAsync(id, ex.Message).ConfigureAwait(false);
+            }
+            catch (Exception sendException)
+            {
+                SignalDisconnected(sendException);
+            }
         }
     }
 
@@ -264,6 +324,40 @@ public sealed class AcpJsonRpcTransport : IDisposable
         }
     }
 
+    private void SignalDisconnected(Exception exception)
+    {
+        if (_disposed || _disconnected)
+            return;
+
+        _disconnected = true;
+        Log("!! transport disconnected: " + exception.Message);
+        CompletePendingWithError(exception);
+    }
+
+    private void ThrowIfDisposed()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+    }
+
+    private void ThrowIfUnavailable()
+    {
+        ThrowIfDisposed();
+        if (_disconnected)
+            throw new InvalidOperationException("ACP adapter transport is disconnected.");
+    }
+
+    private static int TryGetExitCode(Process process)
+    {
+        try
+        {
+            return process.ExitCode;
+        }
+        catch
+        {
+            return -1;
+        }
+    }
+
     private void Log(string line)
     {
         try
@@ -275,18 +369,23 @@ public sealed class AcpJsonRpcTransport : IDisposable
 
     public void Dispose()
     {
-        if (_disposed)
-            return;
-
-        _disposed = true;
-        try
+        lock (_lifecycleLock)
         {
-            if (_process is { HasExited: false })
-                _process.Kill(entireProcessTree: true);
-        }
-        catch { }
+            if (_disposed)
+                return;
 
-        _process?.Dispose();
-        CompletePendingWithError(new ObjectDisposedException(nameof(AcpJsonRpcTransport)));
+            _disposed = true;
+            _disconnected = true;
+            CompletePendingWithError(new ObjectDisposedException(nameof(AcpJsonRpcTransport)));
+            try
+            {
+                if (_process is { HasExited: false })
+                    _process.Kill(entireProcessTree: true);
+            }
+            catch { }
+
+            _process?.Dispose();
+            _process = null;
+        }
     }
 }

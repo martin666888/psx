@@ -62,6 +62,14 @@ AgentThreadManager.prototype._updateRunGroupSummary = function() {
 AgentThreadManager.prototype._createToolCard = function(toolCallId, name, input, summary, state) {
         if (!this.currentRunGroupBody) return;
 
+        const existing = this.toolCards[toolCallId];
+        if (existing) {
+            if (input && !existing.pre.textContent) {
+                existing.pre.textContent = input;
+            }
+            return existing;
+        }
+
         const details = document.createElement('details');
         details.className = 'agent-tool-card agent-tool-card-' + state;
         details.open = true;
@@ -101,6 +109,26 @@ AgentThreadManager.prototype._createToolCard = function(toolCallId, name, input,
             this.currentRunGroup.style.display = '';
         }
         this._scrollToBottom();
+        return this.toolCards[toolCallId];
+};
+
+AgentThreadManager.prototype._resolveToolCard = function(event) {
+        const requestedId = event.toolCallId || this.currentToolCardId || '';
+        if (requestedId && this.toolCards[requestedId]) {
+            return { toolCallId: requestedId, card: this.toolCards[requestedId] };
+        }
+
+        this._ensureRunGroup(event.runId || '');
+        const toolCallId = requestedId || ('orphan-' + Date.now());
+        const card = this._createToolCard(
+            toolCallId,
+            event.name || 'Tool',
+            event.input || '',
+            event.summary || event.name || 'Tool output',
+            'running'
+        );
+
+        return card ? { toolCallId, card } : null;
 };
 
 AgentThreadManager.prototype._finalizeRunGroup = function() {

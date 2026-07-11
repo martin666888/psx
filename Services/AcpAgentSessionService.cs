@@ -63,6 +63,8 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         public Process Process { get; init; } = null!;
         public StringBuilder Output { get; } = new();
         public int OutputByteLimit { get; init; } = 200_000;
+        public long TransportGeneration { get; init; }
+        public CancellationToken TransportToken { get; init; }
     }
 
     private sealed class ReplayHistoryState
@@ -88,6 +90,9 @@ public sealed class AcpAgentSessionService : IAgentSessionService
     private readonly AcpRuntimeManager _acpRuntime;
     private readonly object _runLock = new();
     private readonly object _runtimeInstallLock = new();
+    private readonly SemaphoreSlim _transportLock = new(1, 1);
+    private readonly SemaphoreSlim _sessionRestoreLock = new(1, 1);
+    private readonly CancellationTokenSource _serviceLifetimeCts = new();
     private readonly ConcurrentDictionary<string, PendingPermission> _pendingPermissions = new();
     private readonly ConcurrentDictionary<string, PendingElicitation> _pendingElicitations = new();
     private readonly ConcurrentDictionary<string, AcpTerminalProcess> _terminals = new();
@@ -96,10 +101,12 @@ public sealed class AcpAgentSessionService : IAgentSessionService
     private readonly Dictionary<string, string> _toolNames = new();
     private readonly Dictionary<string, string> _toolSummaries = new();
     private readonly Dictionary<string, string> _toolOutputs = new();
+    private readonly HashSet<string> _startedToolCallIds = new();
     private AgentThread _currentThread;
     private AcpJsonRpcTransport? _transport;
     private string _workingDirectory = "";
     private string? _acpSessionId;
+    private string? _sessionIdPendingReload;
     private string? _adapterVersion;
     private string _status = "ready";
     private string? _currentRunId;
@@ -111,7 +118,13 @@ public sealed class AcpAgentSessionService : IAgentSessionService
     private bool _supportsImage = true;
     private ReplayHistoryState? _replayHistory;
     private CancellationTokenSource? _runCts;
+    private CancellationTokenSource? _runRequestCts;
     private Task? _currentRunTask;
+    private AcpJsonRpcTransport? _currentRunTransport;
+    private long _currentRunTransportGeneration;
+    private CancellationTokenSource? _transportLifetimeCts;
+    private long _transportGeneration;
+    private bool _requiresSessionReload;
     private CancellationTokenSource? _runtimeInstallCts;
     private bool _runtimeInstallInProgress;
     private string _runtimeInstallState = "missing";
@@ -185,16 +198,33 @@ public sealed class AcpAgentSessionService : IAgentSessionService
 
     private async Task CancelRunAsync(bool notify)
     {
-        // Signal cancellation to the running Task.Run so it can exit gracefully.
-        var cts = _runCts;
+        CancellationTokenSource? cts;
+        CancellationTokenSource? requestCts;
+        Task? oldTask;
+        AcpJsonRpcTransport? runTransport;
+        long runTransportGeneration;
+        lock (_runLock)
+        {
+            cts = _runCts;
+            requestCts = _runRequestCts;
+            oldTask = _currentRunTask;
+            runTransport = _currentRunTransport ?? _transport;
+            runTransportGeneration = _currentRunTransportGeneration != 0
+                ? _currentRunTransportGeneration
+                : _transportGeneration;
+        }
+
+        // Mark the run cancelled immediately, but let the in-flight prompt
+        // request wait briefly for the adapter's session/cancel handling.
         try { cts?.Cancel(); } catch { }
 
         var sessionId = _acpSessionId;
-        if (!string.IsNullOrWhiteSpace(sessionId) && _transport != null)
+        var notificationTransport = runTransport ?? _transport;
+        if (oldTask != null && !string.IsNullOrWhiteSpace(sessionId) && notificationTransport != null)
         {
             try
             {
-                await _transport.SendNotificationAsync("session/cancel", new { sessionId }).ConfigureAwait(false);
+                await notificationTransport.SendNotificationAsync("session/cancel", new { sessionId }).ConfigureAwait(false);
             }
             catch { }
         }
@@ -227,16 +257,37 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             }
         }
 
-        // Wait for the old Task.Run to finish (with timeout) so its finally
-        // block can clean up before we allow a new run to start.
-        var oldTask = _currentRunTask;
+        var forceReset = false;
         if (oldTask != null)
         {
             try
             {
                 await oldTask.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
             }
-            catch { /* timeout or fault — proceed anyway */ }
+            catch (TimeoutException)
+            {
+                forceReset = true;
+                try { requestCts?.Cancel(); } catch { }
+            }
+            catch
+            {
+                // The old task is already complete or faulted; its finally
+                // block owns the remaining run cleanup.
+            }
+        }
+
+        if (forceReset && runTransport != null)
+        {
+            await ResetTransportAsync(runTransport, runTransportGeneration).ConfigureAwait(false);
+            try
+            {
+                await oldTask!.WaitAsync(TimeSpan.FromSeconds(1)).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Resetting the transport is the hard stop. The run-id guard
+                // prevents a late task from mutating a newer run.
+            }
         }
 
         lock (_runLock)
@@ -245,7 +296,10 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             _status = "ready";
             _currentRunId = null;
             _runCts = null;
+            _runRequestCts = null;
             _currentRunTask = null;
+            _currentRunTransport = null;
+            _currentRunTransportGeneration = 0;
         }
 
         if (notify)
@@ -320,7 +374,11 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         {
             try
             {
-                await _transport.SendRequestAsync("session/delete", new { sessionId = _acpSessionId }, TimeSpan.FromSeconds(15))
+                await _transport.SendRequestAsync(
+                        "session/delete",
+                        new { sessionId = _acpSessionId },
+                        TimeSpan.FromSeconds(15),
+                        _serviceLifetimeCts.Token)
                     .ConfigureAwait(false);
             }
             catch { }
@@ -811,6 +869,25 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             return;
         }
 
+        if (_requiresSessionReload)
+        {
+            try
+            {
+                await RestoreSessionAfterTransportResetAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _status = "transcript_only";
+                await _bridgeService.SendEventAsync(new
+                {
+                    type = "resume_failed",
+                    text = $"ACP session could not be restored after reconnect. Showing local transcript only. {ex.Message}"
+                }).ConfigureAwait(false);
+                await PublishStateAsync().ConfigureAwait(false);
+                return;
+            }
+        }
+
         IReadOnlyList<AgentAttachment> attachments;
         try
         {
@@ -824,12 +901,14 @@ public sealed class AcpAgentSessionService : IAgentSessionService
 
         string runId;
         var cts = new CancellationTokenSource();
+        var requestCts = CancellationTokenSource.CreateLinkedTokenSource(_serviceLifetimeCts.Token);
 
         lock (_runLock)
         {
             if (_isRunning)
             {
                 cts.Dispose();
+                requestCts.Dispose();
                 _ = SendRunFailedAsync("Claude Agent is still responding. Wait for the current run to finish or use /stop.");
                 return;
             }
@@ -841,8 +920,10 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             _toolNames.Clear();
             _toolSummaries.Clear();
             _toolOutputs.Clear();
+            _startedToolCallIds.Clear();
             _currentRunId = Guid.NewGuid().ToString();
             _runCts = cts;
+            _runRequestCts = requestCts;
             runId = _currentRunId;
         }
 
@@ -857,27 +938,42 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         await _bridgeService.SendEventAsync(new { type = "thinking_started" }).ConfigureAwait(false);
         await PublishStateAsync().ConfigureAwait(false);
 
+        var runStart = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var runTask = Task.Run(async () =>
         {
+            await runStart.Task.ConfigureAwait(false);
             var token = cts.Token;
+            AcpJsonRpcTransport? usedTransport = null;
+            long usedTransportGeneration = 0;
             try
             {
                 token.ThrowIfCancellationRequested();
-                await EnsureAcpSessionAsync(createIfMissing: true).ConfigureAwait(false);
+                await EnsureAcpSessionAsync(createIfMissing: true, requestCts.Token).ConfigureAwait(false);
+                token.ThrowIfCancellationRequested();
+
+                usedTransport = _transport
+                    ?? throw new InvalidOperationException("ACP adapter transport was not initialized.");
+                usedTransportGeneration = _transportGeneration;
+                lock (_runLock)
+                {
+                    if (_currentRunId == runId)
+                    {
+                        _currentRunTransport = usedTransport;
+                        _currentRunTransportGeneration = usedTransportGeneration;
+                    }
+                }
+
                 var promptBlocks = BuildPromptBlocks(prompt, attachments);
 
                 // Use a 10-minute timeout so a stuck adapter doesn't hang forever.
-                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(token);
-                timeoutCts.CancelAfter(TimeSpan.FromMinutes(10));
-
-                await _transport!.SendRequestAsync("session/prompt", new
+                await usedTransport.SendRequestAsync("session/prompt", new
                 {
                     sessionId = _acpSessionId,
                     messageId = Guid.NewGuid().ToString(),
                     prompt = promptBlocks
-                }, TimeSpan.FromMinutes(10)).ConfigureAwait(false);
+                }, TimeSpan.FromMinutes(10), requestCts.Token).ConfigureAwait(false);
 
-                timeoutCts.Token.ThrowIfCancellationRequested();
+                token.ThrowIfCancellationRequested();
                 await FinishAssistantMessageAsync().ConfigureAwait(false);
                 await _bridgeService.SendEventAsync(new { type = "thinking_finished" }).ConfigureAwait(false);
                 await _bridgeService.SendEventAsync(new { type = "assistant_message_done" }).ConfigureAwait(false);
@@ -886,7 +982,28 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             {
                 // Run was cancelled by user — do NOT set _status to "error".
                 // CancelRunAsync already set _status = "ready".
-                await _bridgeService.SendEventAsync(new { type = "thinking_finished" }).ConfigureAwait(false);
+                if (!_disposed)
+                    await _bridgeService.SendEventAsync(new { type = "thinking_finished" }).ConfigureAwait(false);
+            }
+            catch (TimeoutException ex)
+            {
+                var timedOutTransport = usedTransport ?? _transport;
+                var timedOutGeneration = usedTransportGeneration != 0
+                    ? usedTransportGeneration
+                    : _transportGeneration;
+                if (timedOutTransport != null)
+                    await ResetTransportAsync(timedOutTransport, timedOutGeneration).ConfigureAwait(false);
+
+                lock (_runLock)
+                {
+                    if (_currentRunId == runId)
+                        _status = "error";
+                }
+                if (!_disposed)
+                {
+                    await _bridgeService.SendEventAsync(new { type = "thinking_finished" }).ConfigureAwait(false);
+                    await SendRunFailedAsync(ex.Message, runId).ConfigureAwait(false);
+                }
             }
             catch (Exception ex)
             {
@@ -894,11 +1011,14 @@ public sealed class AcpAgentSessionService : IAgentSessionService
                 // run is still the current one (guard against orphaned tasks).
                 lock (_runLock)
                 {
-                    if (_currentRunId == runId)
+                    if (_currentRunId == runId && _status != "transcript_only")
                         _status = "error";
                 }
-                await _bridgeService.SendEventAsync(new { type = "thinking_finished" }).ConfigureAwait(false);
-                await SendRunFailedAsync(ex.Message, runId).ConfigureAwait(false);
+                if (!_disposed)
+                {
+                    await _bridgeService.SendEventAsync(new { type = "thinking_finished" }).ConfigureAwait(false);
+                    await SendRunFailedAsync(ex.Message, runId).ConfigureAwait(false);
+                }
             }
             finally
             {
@@ -913,25 +1033,40 @@ public sealed class AcpAgentSessionService : IAgentSessionService
                             _status = "ready";
                         _currentRunId = null;
                         _runCts = null;
+                        _runRequestCts = null;
                         _currentRunTask = null;
+                        _currentRunTransport = null;
+                        _currentRunTransportGeneration = 0;
                     }
                 }
 
-                SaveCurrentThread();
-                await _bridgeService.SendEventAsync(new { type = "run_finished", runId }).ConfigureAwait(false);
-                await PublishStateAsync().ConfigureAwait(false);
+                cts.Dispose();
+                requestCts.Dispose();
+                if (!_disposed)
+                {
+                    SaveCurrentThread();
+                    await _bridgeService.SendEventAsync(new { type = "run_finished", runId }).ConfigureAwait(false);
+                    await PublishStateAsync().ConfigureAwait(false);
+                }
             }
         });
 
         lock (_runLock)
         {
-            _currentRunTask = runTask;
+            if (_currentRunId == runId)
+                _currentRunTask = runTask;
         }
+        runStart.TrySetResult();
     }
 
-    private async Task EnsureAcpSessionAsync(bool createIfMissing)
+    private async Task EnsureAcpSessionAsync(
+        bool createIfMissing,
+        CancellationToken cancellationToken = default)
     {
-        await EnsureTransportAsync().ConfigureAwait(false);
+        await EnsureTransportAsync(cancellationToken).ConfigureAwait(false);
+
+        if (_requiresSessionReload)
+            await RestoreSessionAfterTransportResetAsync(cancellationToken).ConfigureAwait(false);
 
         if (!string.IsNullOrWhiteSpace(_acpSessionId))
             return;
@@ -951,9 +1086,11 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         {
             cwd = _workingDirectory,
             mcpServers = Array.Empty<object>()
-        }, TimeSpan.FromSeconds(30)).ConfigureAwait(false);
+        }, TimeSpan.FromSeconds(30), GetEffectiveCancellationToken(cancellationToken)).ConfigureAwait(false);
 
         _acpSessionId = GetString(result, "sessionId");
+        _sessionIdPendingReload = null;
+        _requiresSessionReload = false;
         _currentThread.Provider = "acp-claude";
         _currentThread.AcpSessionId = _acpSessionId;
         _currentThread.AdapterVersion = _adapterVersion;
@@ -963,9 +1100,11 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         await SendSessionReadyAsync().ConfigureAwait(false);
     }
 
-    private async Task<bool> LoadAcpHistoryAsync(string sessionId)
+    private async Task<bool> LoadAcpHistoryAsync(
+        string sessionId,
+        CancellationToken cancellationToken = default)
     {
-        await EnsureTransportAsync().ConfigureAwait(false);
+        await EnsureTransportAsync(cancellationToken).ConfigureAwait(false);
 
         var replay = new ReplayHistoryState();
         _isLoadingHistory = true;
@@ -980,9 +1119,11 @@ public sealed class AcpAgentSessionService : IAgentSessionService
                 sessionId,
                 cwd = _workingDirectory,
                 mcpServers = Array.Empty<object>()
-            }, TimeSpan.FromSeconds(45)).ConfigureAwait(false);
+            }, TimeSpan.FromSeconds(45), GetEffectiveCancellationToken(cancellationToken)).ConfigureAwait(false);
 
             _acpSessionId = sessionId;
+            _sessionIdPendingReload = null;
+            _requiresSessionReload = false;
             CaptureModes(loadResult);
             CaptureConfigOptions(loadResult);
             FinishReplayHistory(replay);
@@ -1011,80 +1152,210 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         }
     }
 
-    private async Task EnsureTransportAsync()
+    private async Task EnsureTransportAsync(CancellationToken cancellationToken = default)
     {
-        if (_transport?.IsRunning == true)
-            return;
-
-        var paths = _runtimeLocator.Locate();
-        if (paths.PortableNodePath == null)
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var effectiveToken = GetEffectiveCancellationToken(cancellationToken);
+        await _transportLock.WaitAsync(effectiveToken).ConfigureAwait(false);
+        try
         {
-            throw new InvalidOperationException(
-                "Portable Node.js was not found next to PSX.exe. The release zip should include tools/node/node.exe.");
-        }
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_transport?.IsRunning == true)
+                return;
 
-        if (!IsAgentRuntimeReady())
-        {
-            throw new InvalidOperationException(
-                "Agent runtime is not installed. Open Agent mode and choose Install runtime first.");
-        }
+            if (_transport != null)
+                ResetTransportCore(_transport, _transportGeneration);
 
-        var adapter = ResolveAdapterFromRuntime(paths);
-        if (adapter == null)
-        {
-            throw new InvalidOperationException(
-                $"ACP adapter is still missing after install at {paths.AcpActiveDirectory}. See log: {_acpRuntime.LogPath}");
-        }
-
-        var logDirectory = Path.Combine(_threadStore.RootDirectory, "agent", "acp-logs");
-        Directory.CreateDirectory(logDirectory);
-        var logPath = Path.Combine(logDirectory, DateTimeOffset.Now.ToString("yyyyMMdd-HHmmss") + ".ndjson.log");
-        _transport?.Dispose();
-        // Re-check PortableNodePath after re-locate — the data flow from the
-        // earlier null check doesn't carry through because we reassigned paths.
-        if (paths.PortableNodePath == null)
-        {
-            throw new InvalidOperationException(
-                "Portable Node.js was not found next to PSX.exe. The release zip should include tools/node/node.exe.");
-        }
-        _transport = new AcpJsonRpcTransport(
-            paths.PortableNodePath,
-            adapter,
-            paths.AcpActiveDirectory,
-            logPath,
-            HandleAgentRequestAsync,
-            HandleAgentNotificationAsync);
-        _transport.Start();
-
-        var initResult = await _transport.SendRequestAsync("initialize", new
-        {
-            protocolVersion = 1,
-            clientCapabilities = new Dictionary<string, object?>
+            var paths = _runtimeLocator.Locate();
+            if (paths.PortableNodePath == null)
             {
-                ["fs"] = new { readTextFile = true, writeTextFile = true },
-                ["terminal"] = true,
-                ["elicitation"] = new
-                {
-                    form = new { },
-                    url = new { }
-                },
-                ["_meta"] = new Dictionary<string, object?>
-                {
-                    ["terminal_output"] = true
-                }
-            },
-            clientInfo = new
-            {
-                name = "PSX",
-                version = "0.1.0"
+                throw new InvalidOperationException(
+                    "Portable Node.js was not found next to PSX.exe. The release zip should include tools/node/node.exe.");
             }
-        }, TimeSpan.FromSeconds(30)).ConfigureAwait(false);
 
-        _adapterVersion = ReadNestedString(initResult, "agentInfo", "version");
-        _supportsImage = ReadNestedBool(initResult, "agentCapabilities", "promptCapabilities", "image") ?? false;
-        _currentThread.AdapterVersion = _adapterVersion;
-        SaveCurrentThread();
-        await PublishStateAsync().ConfigureAwait(false);
+            if (!IsAgentRuntimeReady())
+            {
+                throw new InvalidOperationException(
+                    "Agent runtime is not installed. Open Agent mode and choose Install runtime first.");
+            }
+
+            var adapter = ResolveAdapterFromRuntime(paths);
+            if (adapter == null)
+            {
+                throw new InvalidOperationException(
+                    $"ACP adapter is still missing after install at {paths.AcpActiveDirectory}. See log: {_acpRuntime.LogPath}");
+            }
+
+            var logDirectory = Path.Combine(_threadStore.RootDirectory, "agent", "acp-logs");
+            Directory.CreateDirectory(logDirectory);
+            var logPath = Path.Combine(logDirectory, DateTimeOffset.Now.ToString("yyyyMMdd-HHmmss-fff") + ".ndjson.log");
+            var generation = ++_transportGeneration;
+            var transportLifetimeCts = CancellationTokenSource.CreateLinkedTokenSource(_serviceLifetimeCts.Token);
+            var transport = new AcpJsonRpcTransport(
+                paths.PortableNodePath,
+                adapter,
+                paths.AcpActiveDirectory,
+                logPath,
+                HandleAgentRequestAsync,
+                HandleAgentNotificationAsync);
+
+            _transport = transport;
+            _transportLifetimeCts = transportLifetimeCts;
+
+            try
+            {
+                transport.Start();
+                using var initializeCts = CancellationTokenSource.CreateLinkedTokenSource(
+                    effectiveToken,
+                    transportLifetimeCts.Token);
+                var initResult = await transport.SendRequestAsync("initialize", new
+                {
+                    protocolVersion = 1,
+                    clientCapabilities = new Dictionary<string, object?>
+                    {
+                        ["fs"] = new { readTextFile = true, writeTextFile = true },
+                        ["terminal"] = true,
+                        ["elicitation"] = new
+                        {
+                            form = new { },
+                            url = new { }
+                        },
+                        ["_meta"] = new Dictionary<string, object?>
+                        {
+                            ["terminal_output"] = true
+                        }
+                    },
+                    clientInfo = new
+                    {
+                        name = "PSX",
+                        version = "0.1.0"
+                    }
+                }, TimeSpan.FromSeconds(30), initializeCts.Token).ConfigureAwait(false);
+
+                _adapterVersion = ReadNestedString(initResult, "agentInfo", "version");
+                _supportsImage = ReadNestedBool(initResult, "agentCapabilities", "promptCapabilities", "image") ?? false;
+                _currentThread.AdapterVersion = _adapterVersion;
+                SaveCurrentThread();
+                await PublishStateAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+                ResetTransportCore(transport, generation);
+                throw;
+            }
+        }
+        finally
+        {
+            _transportLock.Release();
+        }
+    }
+
+    private async Task RestoreSessionAfterTransportResetAsync(CancellationToken cancellationToken = default)
+    {
+        var effectiveToken = GetEffectiveCancellationToken(cancellationToken);
+        await _sessionRestoreLock.WaitAsync(effectiveToken).ConfigureAwait(false);
+        try
+        {
+            if (!_requiresSessionReload)
+                return;
+
+            var sessionId = _sessionIdPendingReload ?? _currentThread.AcpSessionId;
+            if (string.IsNullOrWhiteSpace(sessionId))
+            {
+                _requiresSessionReload = false;
+                return;
+            }
+
+            var restored = await LoadAcpHistoryAsync(sessionId, effectiveToken).ConfigureAwait(false);
+            if (!restored)
+            {
+                _requiresSessionReload = false;
+                _status = "transcript_only";
+                throw new InvalidOperationException("ACP session reconnected, but no transcript was replayed.");
+            }
+
+            _sessionIdPendingReload = null;
+            _requiresSessionReload = false;
+            _status = _isRunning ? "running" : "restored";
+        }
+        catch (Exception ex)
+        {
+            var failedTransport = _transport;
+            var failedGeneration = _transportGeneration;
+            if (failedTransport != null && (ex is TimeoutException || !failedTransport.IsRunning))
+                await ResetTransportAsync(failedTransport, failedGeneration).ConfigureAwait(false);
+
+            _requiresSessionReload = false;
+            _status = "transcript_only";
+            throw;
+        }
+        finally
+        {
+            _sessionRestoreLock.Release();
+        }
+    }
+
+    private async Task ResetTransportAsync(AcpJsonRpcTransport expectedTransport, long expectedGeneration)
+    {
+        await _transportLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            ResetTransportCore(expectedTransport, expectedGeneration);
+        }
+        finally
+        {
+            _transportLock.Release();
+        }
+    }
+
+    private bool ResetTransportCore(AcpJsonRpcTransport expectedTransport, long expectedGeneration)
+    {
+        if (!ReferenceEquals(_transport, expectedTransport) || _transportGeneration != expectedGeneration)
+            return false;
+
+        _sessionIdPendingReload ??= _acpSessionId ?? _currentThread.AcpSessionId;
+        _acpSessionId = null;
+        _requiresSessionReload = !string.IsNullOrWhiteSpace(_sessionIdPendingReload);
+
+        try { _transportLifetimeCts?.Cancel(); } catch { }
+        _transportLifetimeCts?.Dispose();
+        _transportLifetimeCts = null;
+
+        _transport = null;
+        expectedTransport.Dispose();
+        CleanupTerminalsForGeneration(expectedGeneration);
+        return true;
+    }
+
+    private void CleanupTerminalsForGeneration(long generation)
+    {
+        foreach (var item in _terminals.ToArray())
+        {
+            if (item.Value.TransportGeneration != generation)
+                continue;
+
+            if (_terminals.TryRemove(item.Key, out var terminal))
+                StopAndDisposeTerminal(terminal);
+        }
+    }
+
+    private static void StopAndDisposeTerminal(AcpTerminalProcess terminal)
+    {
+        try
+        {
+            if (!terminal.Process.HasExited)
+                terminal.Process.Kill(entireProcessTree: true);
+        }
+        catch { }
+
+        terminal.Process.Dispose();
+    }
+
+    private CancellationToken GetEffectiveCancellationToken(CancellationToken cancellationToken)
+    {
+        return cancellationToken.CanBeCanceled
+            ? cancellationToken
+            : _serviceLifetimeCts.Token;
     }
 
     private async Task<object?> HandleAgentRequestAsync(JsonElement request)
@@ -1303,7 +1574,13 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         if (!process.Start())
             throw new InvalidOperationException($"Failed to start ACP terminal command: {command}");
 
-        var terminal = new AcpTerminalProcess { Process = process, OutputByteLimit = limit };
+        var terminal = new AcpTerminalProcess
+        {
+            Process = process,
+            OutputByteLimit = limit,
+            TransportGeneration = _transportGeneration,
+            TransportToken = _transportLifetimeCts?.Token ?? _serviceLifetimeCts.Token
+        };
         _terminals[terminalId] = terminal;
         _ = Task.Run(() => ReadTerminalStreamAsync(terminalId, process.StandardOutput));
         _ = Task.Run(() => ReadTerminalStreamAsync(terminalId, process.StandardError));
@@ -1330,7 +1607,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
     private async Task<object> HandleWaitForTerminalExitAsync(JsonElement parameters)
     {
         var terminal = GetTerminal(GetString(parameters, "terminalId"));
-        await terminal.Process.WaitForExitAsync().ConfigureAwait(false);
+        await terminal.Process.WaitForExitAsync(terminal.TransportToken).ConfigureAwait(false);
         return new
         {
             exitCode = terminal.Process.ExitCode,
@@ -1361,22 +1638,29 @@ public sealed class AcpAgentSessionService : IAgentSessionService
 
     private async Task ReadTerminalStreamAsync(string terminalId, StreamReader reader)
     {
-        var buffer = new char[4096];
-        while (true)
+        try
         {
-            var count = await reader.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
-            if (count <= 0)
-                break;
-
-            if (!_terminals.TryGetValue(terminalId, out var terminal))
-                break;
-
-            lock (terminal.Output)
+            var buffer = new char[4096];
+            while (true)
             {
-                terminal.Output.Append(buffer, 0, count);
-                if (terminal.Output.Length > terminal.OutputByteLimit)
-                    terminal.Output.Remove(0, terminal.Output.Length - terminal.OutputByteLimit);
+                var count = await reader.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
+                if (count <= 0)
+                    break;
+
+                if (!_terminals.TryGetValue(terminalId, out var terminal))
+                    break;
+
+                lock (terminal.Output)
+                {
+                    terminal.Output.Append(buffer, 0, count);
+                    if (terminal.Output.Length > terminal.OutputByteLimit)
+                        terminal.Output.Remove(0, terminal.Output.Length - terminal.OutputByteLimit);
+                }
             }
+        }
+        catch (Exception) when (!_terminals.ContainsKey(terminalId) || _disposed)
+        {
+            // The transport reset or service shutdown disposed the stream.
         }
     }
 
@@ -1501,23 +1785,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
 
     private async Task HandleToolCallAsync(JsonElement update)
     {
-        var toolCallId = GetString(update, "toolCallId");
-        var name = ReadToolName(update);
-        var input = FormatToolInput(update);
-        var summary = BuildToolSummary(name, input, update);
-        _toolNames[toolCallId] = name;
-        _toolSummaries[toolCallId] = summary;
-        _toolOutputs[toolCallId] = "";
-
-        await _bridgeService.SendEventAsync(new
-        {
-            type = "tool_started",
-            name,
-            input,
-            runId = _currentRunId,
-            toolCallId,
-            summary
-        }).ConfigureAwait(false);
+        var toolCallId = await EnsureToolStartedAsync(update).ConfigureAwait(false);
 
         var initialOutput = FormatToolOutput(update);
         if (!string.IsNullOrWhiteSpace(initialOutput))
@@ -1539,14 +1807,10 @@ public sealed class AcpAgentSessionService : IAgentSessionService
 
     private async Task HandleToolCallUpdateAsync(JsonElement update)
     {
-        var toolCallId = GetString(update, "toolCallId");
-        if (!_toolNames.ContainsKey(toolCallId))
-            _toolNames[toolCallId] = ReadToolName(update);
-        if (!_toolSummaries.ContainsKey(toolCallId))
-            _toolSummaries[toolCallId] = BuildToolSummary(_toolNames[toolCallId], FormatToolInput(update), update);
-
-        if (!_toolOutputs.ContainsKey(toolCallId))
-            _toolOutputs[toolCallId] = "";
+        // Some adapters can surface an update before the corresponding
+        // tool_call notification. Normalize that sequence for the frontend so
+        // every delta has a keyed, collapsible tool card to attach to.
+        var toolCallId = await EnsureToolStartedAsync(update).ConfigureAwait(false);
 
         var output = FormatToolOutput(update);
         if (!string.IsNullOrWhiteSpace(output))
@@ -1564,6 +1828,40 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         var status = GetString(update, "status");
         if (status is "completed" or "failed")
             await FinishToolAsync(toolCallId, status).ConfigureAwait(false);
+    }
+
+    private async Task<string> EnsureToolStartedAsync(JsonElement update)
+    {
+        var toolCallId = GetString(update, "toolCallId");
+        var name = ReadToolName(update);
+        var input = FormatToolInput(update);
+        var summary = BuildToolSummary(name, input, update);
+
+        if (!_toolNames.TryGetValue(toolCallId, out var existingName)
+            || string.Equals(existingName, "Tool", StringComparison.OrdinalIgnoreCase))
+        {
+            _toolNames[toolCallId] = name;
+        }
+
+        if (!_toolSummaries.ContainsKey(toolCallId))
+            _toolSummaries[toolCallId] = summary;
+        if (!_toolOutputs.ContainsKey(toolCallId))
+            _toolOutputs[toolCallId] = "";
+
+        if (_startedToolCallIds.Add(toolCallId))
+        {
+            await _bridgeService.SendEventAsync(new
+            {
+                type = "tool_started",
+                name = _toolNames[toolCallId],
+                input,
+                runId = _currentRunId,
+                toolCallId,
+                summary = _toolSummaries[toolCallId]
+            }).ConfigureAwait(false);
+        }
+
+        return toolCallId;
     }
 
     private static void AppendReplayUserMessage(ReplayHistoryState replay, string text)
@@ -1819,7 +2117,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         {
             sessionId = _acpSessionId,
             modeId
-        }, TimeSpan.FromSeconds(15)).ConfigureAwait(false);
+        }, TimeSpan.FromSeconds(15), _serviceLifetimeCts.Token).ConfigureAwait(false);
 
         _currentModeId = modeId;
         _currentThread.ModeId = modeId;
@@ -1838,7 +2136,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             sessionId = _acpSessionId,
             configId,
             value
-        }, TimeSpan.FromSeconds(15)).ConfigureAwait(false);
+        }, TimeSpan.FromSeconds(15), _serviceLifetimeCts.Token).ConfigureAwait(false);
 
         CaptureConfigOptions(result);
         if (configId == "mode")
@@ -2064,7 +2362,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
     {
         _currentThread.Cwd = _workingDirectory;
         _currentThread.Provider = "acp-claude";
-        _currentThread.AcpSessionId = _acpSessionId;
+        _currentThread.AcpSessionId = _acpSessionId ?? _sessionIdPendingReload;
         _currentThread.ModeId = _currentModeId;
         _currentThread.AdapterVersion = _adapterVersion;
         _threadStore.SaveThread(_currentThread);
@@ -2088,6 +2386,8 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         EnsureImageContextFlag(thread);
         _workingDirectory = Directory.Exists(thread.Cwd) ? thread.Cwd : ResolveWorkspaceRoot();
         _acpSessionId = null;
+        _sessionIdPendingReload = null;
+        _requiresSessionReload = false;
         _currentModeId = thread.ModeId;
         _adapterVersion = thread.AdapterVersion;
         _status = "ready";
@@ -2096,6 +2396,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         _toolNames.Clear();
         _toolSummaries.Clear();
         _toolOutputs.Clear();
+        _startedToolCallIds.Clear();
         _currentRunId = null;
     }
 
@@ -2620,18 +2921,44 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         _bridgeService.CommandReceived -= OnCommandReceived;
         _bridgeService.AttachmentUploadReceived -= OnAttachmentUploadReceived;
         _acpRuntime.StatusChanged -= OnRuntimeStatusChanged;
+        try { _serviceLifetimeCts.Cancel(); } catch { }
+        try { _runCts?.Cancel(); } catch { }
+        try { _runRequestCts?.Cancel(); } catch { }
         try { _runtimeInstallCts?.Cancel(); } catch { }
-        _runtimeInstallCts?.Dispose();
-        _transport?.Dispose();
-        foreach (var terminal in _terminals.Values)
+
+        foreach (var item in _pendingPermissions.ToArray())
         {
-            try
-            {
-                if (!terminal.Process.HasExited)
-                    terminal.Process.Kill(entireProcessTree: true);
-            }
-            catch { }
-            terminal.Process.Dispose();
+            if (_pendingPermissions.TryRemove(item.Key, out var pending))
+                pending.Completion.TrySetResult("__cancelled__");
         }
+
+        foreach (var item in _pendingElicitations.ToArray())
+        {
+            if (_pendingElicitations.TryRemove(item.Key, out var pending))
+                pending.Completion.TrySetResult("{\"action\":\"cancel\"}");
+        }
+
+        _runtimeInstallCts?.Dispose();
+        _runCts?.Dispose();
+        _runRequestCts?.Dispose();
+
+        _transportLock.Wait();
+        try
+        {
+            if (_transport != null)
+                ResetTransportCore(_transport, _transportGeneration);
+
+            foreach (var item in _terminals.ToArray())
+            {
+                if (_terminals.TryRemove(item.Key, out var terminal))
+                    StopAndDisposeTerminal(terminal);
+            }
+        }
+        finally
+        {
+            _transportLock.Release();
+        }
+
+        _serviceLifetimeCts.Dispose();
     }
 }

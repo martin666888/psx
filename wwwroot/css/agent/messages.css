@@ -77,3 +77,47 @@
     color: var(--agent-text);
     background: color-mix(in srgb, var(--agent-hover) 96%, transparent);
 }
+
+.agent-message-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 6px;
+}
+
+.agent-copy-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--agent-text-dim);
+    cursor: pointer;
+    transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.agent-copy-button:hover {
+    color: var(--agent-text-muted);
+    background: var(--agent-hover);
+}
+
+.agent-copy-button:focus-visible {
+    outline: 2px solid var(--agent-focus-ring);
+    outline-offset: 1px;
+}
+
+.agent-copy-button.agent-copy-success {
+    color: var(--agent-allow-color);
+}
+
+.agent-copy-button.agent-copy-fail {
+    color: var(--agent-error);
+}
+
+.agent-copy-button svg {
+    pointer-events: none;
+    display: block;
+}
