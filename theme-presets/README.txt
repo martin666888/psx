@@ -1,10 +1,11 @@
 PSX theme presets
 
-Usage:
-1. Close PSX.
-2. Back up the psx.ini file in the parent folder.
-3. Copy one preset ini file from this folder to the parent folder.
-4. Rename the copied file to psx.ini.
-5. Start PSX again.
+Use the Theme button in PSX to preview a preset, then confirm it to update the
+active psx.ini configuration atomically. Closing the menu without confirming
+restores the previously applied theme.
 
-The parent psx.ini is the active configuration file. Files in this folder are templates only.
+Built-in presets live in this folder. Put custom theme files in:
+%USERPROFILE%\.psx\themes
+
+Edit a theme INI, refresh the Theme menu, and select it again to preview the
+new version. The application validates themes before previewing or saving them.

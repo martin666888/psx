@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
+using PSX.Models;
 using PSX.Services;
 using PSX.ViewModels;
 
@@ -19,6 +20,7 @@ public partial class MainWindow : Window
     private readonly IAgentSessionService? _agentSessionService;
     private readonly AcpRuntimeManager? _acpRuntime;
     private readonly RuntimePreflightService? _preflight;
+    private readonly ISettingsService? _settingsService;
     private bool _isShuttingDown;
     private bool _shutdownCompleted;
 
@@ -34,7 +36,8 @@ public partial class MainWindow : Window
         IAgentBridgeService agentBridgeService,
         IAgentSessionService agentSessionService,
         AcpRuntimeManager acpRuntime,
-        RuntimePreflightService preflight)
+        RuntimePreflightService preflight,
+        ISettingsService settingsService)
     {
         InitializeComponent();
 
@@ -45,6 +48,7 @@ public partial class MainWindow : Window
         _agentSessionService = agentSessionService;
         _acpRuntime = acpRuntime;
         _preflight = preflight;
+        _settingsService = settingsService;
 
         DataContext = _viewModel;
 
@@ -60,12 +64,17 @@ public partial class MainWindow : Window
         var hwnd = new WindowInteropHelper(this).Handle;
         int darkMode = 1;
         DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref darkMode, Marshal.SizeOf(darkMode));
+        if (_settingsService != null)
+            AppearanceService.ApplyWpf(AppearanceSettings.FromSettings(_settingsService.GetSettings()));
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         try
         {
+            if (!string.IsNullOrWhiteSpace(_settingsService?.StartupWarning))
+                _viewModel?.SetStatus(_settingsService.StartupWarning);
+
             if (_bridgeService == null || TerminalHostControl.WebView == null)
                 return;
 
@@ -192,6 +201,7 @@ public partial class MainWindow : Window
             Application.Current.Shutdown();
         });
     }
+
 
 
 }

@@ -8,6 +8,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 PSX is a Windows desktop terminal shell (C# + WPF + WebView2 + xterm.js + ConPTY) for running AI Agent CLIs (Claude Code, opencode, qodercli) and dev tools (node, npm, git). Two coexisting views in one window: a `Terminal` view (real ConPTY shells via xterm.js) and an `Agent` view (Claude chat workspace backed by the Agent Client Protocol). Multi-tab, themeable, persistent threads.
 
+Project-level interface rules live in `.interface-design/system.md`. Read and follow them before changing WPF or WebView2 UI.
+
 ---
 
 ## Runtime data & paths
@@ -22,7 +24,7 @@ Two distinct path roots — don't confuse them:
   - `agent/acp-logs/` — per-run NDJSON of JSON-RPC traffic + `acp-runtime.log`
 - **Install-relative** (next to `PSX.exe`, resolved by `RuntimeLocator`):
   - `psx.ini` — **active** app config (theme/font/shell). Note: NOT in `.psx\`
-  - `theme-presets/` — templates; manually copy one up to install dir to activate
+  - `theme-presets/` — built-in themes exposed by the global Theme picker
   - `tools/node/` — bundled portable Node.js
   - `tools/acp-seed/` — read-only seed manifest for the user-confirmed `npm ci`
   - `runtime/acp-current/` — live ACP adapter + bundled `claude.exe` (what Agent mode loads)
@@ -54,7 +56,7 @@ powershell -ExecutionPolicy Bypass -File tools/build-release.ps1
 
 **No test project exists** — `PSX.slnx` only references the single `PSX.csproj`. There is no `dotnet test` target. Don't suggest adding tests as if infrastructure exists; it doesn't.
 
-**SDK pinning** — `global.json` pins `9.0.300` with `rollForward: latestMajor` (allows resolving to the 10.0.x SDK). Target framework is `net10.0-windows`. Editing `psx.ini` requires a restart (theme brush injection happens once in `App.OnStartup`, see App.ApplyThemeResources).
+**SDK pinning** — `global.json` pins `9.0.300` with `rollForward: latestMajor` (allows resolving to the 10.0.x SDK). Target framework is `net10.0-windows`. Theme colors and fonts can be previewed and confirmed at runtime; other manual `psx.ini` changes still require a restart.
 
 ---
 
@@ -114,7 +116,7 @@ When `runtime/acp-current/` is missing, Agent mode publishes `runtime_status: mi
 
 3. **Async services use `ConfigureAwait(false)` everywhere** except the final hop that touches UI. `AcpJsonRpcTransport` is the canonical example (~15 occurrences).
 
-4. **The `XAML brush key` ↔ `psx.ini [theme] field` ↔ `JS CSS variable` are three faces of the same color.** When you add a new color, you must add it in: `Models/AppSettings.cs` (ThemeColors/AgentThemeColors), `psx.ini` (and the matching preset), `App.xaml.cs` ApplyThemeResources, and (if it shows in JS) `wwwroot/css/agent/tokens.css`. The preset README in `theme-presets/README.txt` requires users to close PSX before swapping presets — restart-required is a feature, not a bug, because of the WPF resource injection timing.
+4. **The `XAML brush key` ↔ `psx.ini [theme] field` ↔ `JS CSS variable` are three faces of the same color.** When you add a new color, update `Models/AppSettings.cs`, the active config and every preset, `AppearanceService`, and the matching WebView CSS variable. Eight-digit INI colors use CSS `#RRGGBBAA` semantics and are converted only when written to WPF resources.
 
 5. **The shutdown sequence is load-bearing.** `MainWindow.OnClosing` intercepts `Cancel`, disposes services in order (viewModel → tabService → bridgeService → agentBridgeService → agentSessionService), then re-issues `Close()` via `Dispatcher.BeginInvoke`. If you add a new `IDisposable` service, dispose it here **and** in `Dispose()` of the service itself, and add it to the DI registration as `AddSingleton<IXxxService, XxxService>()` in `App.ConfigureServices`.
 
@@ -131,7 +133,7 @@ When `runtime/acp-current/` is missing, Agent mode publishes `runtime_status: mi
 - `Services/AgentThreadStore.cs` — owns `~/.psx/` layout: `agent/threads/<threadId>.json`, `agent/attachments/<threadId>/<id>.<ext>`, `agent/index.json`. Path safety uses `char.IsLetterOrDigit` filtering, not path canonicalization — see "not solved" below.
 - `Controls/TerminalHost.cs` — sets `WebView2.DefaultBackgroundColor` from `Application.Current.Resources["WindowBackgroundBrush"]` **at construction time** to prevent white flash before the page loads. If you add another `WebView2` host, copy this pattern.
 - `MainWindow.OnSourceInitialized` — DWM dark title bar is set here (HWND created, window not yet shown). `OnLoaded` is too late.
-- `App.ApplyThemeResources` — overwrites 18 brush keys in `Application.Current.Resources`. Works only because every XAML reference uses `DynamicResource` (not `StaticResource`).
+- `AppearanceService.ApplyWpf` — overwrites 18 brush keys in `Application.Current.Resources`. Runtime preview works because XAML references use `DynamicResource`.
 
 ---
 

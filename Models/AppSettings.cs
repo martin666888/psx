@@ -2,6 +2,8 @@ namespace PSX.Models;
 
 public sealed class AppSettings
 {
+    public string ActiveThemeKey { get; set; } = "";
+    public string ThemeFingerprint { get; set; } = "";
     public string DefaultShellProfileId { get; set; } = "powershell";
     public int FontSize { get; set; } = 14;
     public string FontFamily { get; set; } = "Cascadia Code, Consolas, monospace";
@@ -18,6 +20,57 @@ public sealed class AppSettings
     public ThemeColors ThemeColors { get; set; } = new();
     public AgentThemeColors AgentTheme { get; set; } = new();
     public TerminalPalette TerminalColors { get; set; } = new();
+}
+
+public sealed class AppearanceSettings
+{
+    public int TerminalFontSize { get; set; }
+    public string TerminalFontFamily { get; set; } = "";
+    public int AgentFontSize { get; set; }
+    public string AgentFontFamily { get; set; } = "";
+    public string AgentMonoFontFamily { get; set; } = "";
+    public ThemeColors ThemeColors { get; set; } = new();
+    public AgentThemeColors AgentTheme { get; set; } = new();
+    public TerminalPalette TerminalColors { get; set; } = new();
+
+    public static AppearanceSettings FromSettings(AppSettings settings) => new()
+    {
+        TerminalFontSize = settings.FontSize,
+        TerminalFontFamily = settings.FontFamily,
+        AgentFontSize = settings.AgentFontSize,
+        AgentFontFamily = settings.AgentFontFamily,
+        AgentMonoFontFamily = settings.AgentMonoFontFamily,
+        ThemeColors = Clone(settings.ThemeColors),
+        AgentTheme = Clone(settings.AgentTheme),
+        TerminalColors = Clone(settings.TerminalColors)
+    };
+
+    public void ApplyTo(AppSettings settings)
+    {
+        settings.FontSize = TerminalFontSize;
+        settings.FontFamily = TerminalFontFamily;
+        settings.AgentFontSize = AgentFontSize;
+        settings.AgentFontFamily = AgentFontFamily;
+        settings.AgentMonoFontFamily = AgentMonoFontFamily;
+        settings.ThemeColors = Clone(ThemeColors);
+        settings.AgentTheme = Clone(AgentTheme);
+        settings.TerminalColors = Clone(TerminalColors);
+    }
+
+    public AppearanceSettings Clone()
+    {
+        var settings = new AppSettings();
+        ApplyTo(settings);
+        return FromSettings(settings);
+    }
+
+    private static T Clone<T>(T source) where T : new()
+    {
+        var clone = new T();
+        foreach (var property in typeof(T).GetProperties().Where(p => p.CanRead && p.CanWrite))
+            property.SetValue(clone, property.GetValue(source));
+        return clone;
+    }
 }
 
 public sealed class ThemeColors

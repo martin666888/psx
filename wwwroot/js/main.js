@@ -66,6 +66,10 @@
                 manager.setSettings(message.settings);
                 agentManager.setAgentSettings(message.settings);
                 break;
+            case 'appearance_settings':
+                manager.setSettings(message.settings);
+                agentManager.setAgentSettings(message.settings);
+                break;
             case 'create':
                 manager.createTerminal(message.sessionId);
                 break;

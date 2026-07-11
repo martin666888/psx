@@ -1,6 +1,5 @@
 ﻿using System.IO;
 using System.Windows;
-using System.Windows.Media;
 using Microsoft.Extensions.DependencyInjection;
 using PSX.Models;
 using PSX.Services;
@@ -20,7 +19,7 @@ public partial class App : Application
         {
             var settingsService = new SettingsService();
             var settings = settingsService.GetSettings();
-            ApplyThemeResources(settings);
+            AppearanceService.ApplyWpf(AppearanceSettings.FromSettings(settings));
 
             var services = new ServiceCollection();
             ConfigureServices(services, settingsService);
@@ -40,6 +39,8 @@ public partial class App : Application
     {
         // Services
         services.AddSingleton<ISettingsService>(settingsService);
+        services.AddSingleton<IThemeService, ThemeService>();
+        services.AddSingleton<IAppearanceService, AppearanceService>();
         services.AddSingleton<ConPtyService>();
         services.AddSingleton<ITerminalBridgeService, TerminalBridgeService>();
         services.AddSingleton<ITabManagementService, TabManagementService>();
@@ -62,47 +63,10 @@ public partial class App : Application
         // ViewModels
         services.AddTransient<MainViewModel>();
         services.AddTransient<SettingsViewModel>();
+        services.AddTransient<ThemePickerViewModel>();
 
         // Views
         services.AddTransient<MainWindow>();
-    }
-
-    private static void ApplyThemeResources(AppSettings settings)
-    {
-        var t = settings.ThemeColors;
-        var res = Current.Resources;
-
-        SetBrush(res, "WindowBackgroundBrush", t.Background);
-        SetBrush(res, "SurfaceBrush", t.Surface);
-        SetBrush(res, "SurfaceRaisedBrush", t.SurfaceRaised);
-        SetBrush(res, "SurfaceMutedBrush", t.SurfaceMuted);
-        SetBrush(res, "HoverBrush", t.Hover);
-        SetBrush(res, "BorderBrush", t.Border);
-        SetBrush(res, "BorderStrongBrush", t.BorderStrong);
-        SetBrush(res, "TextPrimaryBrush", t.Text);
-        SetBrush(res, "TextSecondaryBrush", t.TextMuted);
-        SetBrush(res, "TextDimBrush", t.TextDim);
-        SetBrush(res, "AccentBrush", t.Accent);
-        SetBrush(res, "AccentHoverBrush", t.AccentHover);
-        SetBrush(res, "ErrorBrush", t.Error);
-        SetBrush(res, "ErrorBgBrush", t.ErrorBg);
-        SetBrush(res, "WarningBrush", t.Warning);
-        SetBrush(res, "WarningBgBrush", t.WarningBg);
-        SetBrush(res, "ScrollbarBrush", t.Scrollbar);
-        SetBrush(res, "ScrollbarHoverBrush", t.ScrollbarHover);
-    }
-
-    private static void SetBrush(ResourceDictionary resources, string key, string colorHex)
-    {
-        try
-        {
-            var color = (Color)ColorConverter.ConvertFromString(colorHex);
-            resources[key] = new SolidColorBrush(color);
-        }
-        catch
-        {
-            // 非法颜色值，跳过，保留 XAML 默认值
-        }
     }
 
     protected override void OnExit(ExitEventArgs e)

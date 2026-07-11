@@ -101,6 +101,17 @@ class TerminalManager {
             this._setCssVar(root, '--term-scrollbar', tc.scrollbar);
             this._setCssVar(root, '--term-scrollbar-hover', tc.scrollbarHover);
         }
+
+        // Theme previews must update terminals that are already open, not only
+        // terminals created after the settings message.
+        for (const entry of this.terminals.values()) {
+            entry.terminal.options.theme = this._xtermTheme;
+            entry.terminal.options.fontSize = this.options.fontSize;
+            entry.terminal.options.fontFamily = this.options.fontFamily;
+            if (entry.element.style.display !== 'none') {
+                this._fitVisibleTerminal(entry, true);
+            }
+        }
     }
 
     createTerminal(sessionId) {

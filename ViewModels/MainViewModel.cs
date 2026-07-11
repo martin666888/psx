@@ -14,6 +14,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private bool _disposed;
 
     public ObservableCollection<TabItemViewModel> Tabs { get; } = new();
+    public ThemePickerViewModel ThemePicker { get; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasStatus))]
@@ -97,10 +98,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    public MainViewModel(ITabManagementService tabManagementService, ITerminalBridgeService terminalBridgeService)
+    public MainViewModel(
+        ITabManagementService tabManagementService,
+        ITerminalBridgeService terminalBridgeService,
+        ThemePickerViewModel themePicker)
     {
         _tabManagementService = tabManagementService;
         _terminalBridgeService = terminalBridgeService;
+        ThemePicker = themePicker;
 
         _tabManagementService.TabCreated += OnTabCreated;
         _tabManagementService.TabClosed += OnTabClosed;

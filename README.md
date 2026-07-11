@@ -97,14 +97,14 @@ PSX reads its active configuration from `psx.ini` in the application directory.
 In a portable release, this is the same folder as `PSX.exe`. When running from
 source, the active file is the copy in the build output directory (for example,
 `bin/Debug/net10.0-windows/psx.ini`), not the repository-root source file.
+The active file is managed by PSX: edit a custom theme instead of changing its
+appearance fields directly. Advanced users may still carefully edit non-theme
+settings that do not yet have a UI.
 
-The `theme-presets/` folder contains templates only. To use a preset:
-
-1. Close PSX.
-2. Back up the active `psx.ini`.
-3. Copy one preset ini file from `theme-presets/` to the application directory.
-4. Rename the copied file to `psx.ini`.
-5. Start PSX again.
+Use the global **Theme** menu to preview and confirm a preset without restarting
+PSX. Built-in themes come from `theme-presets/`; custom themes come from
+`%USERPROFILE%\.psx\themes`. Previewing is temporary. Confirming validates the
+theme, backs up the active configuration, and atomically updates `psx.ini`.
 
 Common sections:
 
@@ -132,8 +132,8 @@ Theme colors live in:
 - `[terminalColors]` - xterm.js foreground, cursor, selection, and ANSI color
   palette
 
-Most configuration changes require restarting PSX because WPF resources and the
-WebView frontend read theme values during startup.
+Theme colors and Terminal/Agent fonts update live. Other manual configuration
+changes continue to take effect on the next launch.
 
 ## Build From Source
 

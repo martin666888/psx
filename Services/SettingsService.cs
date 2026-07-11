@@ -1,8 +1,6 @@
-using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
-using System.Windows.Media;
 using PSX.Models;
 
 namespace PSX.Services;
@@ -10,7 +8,11 @@ namespace PSX.Services;
 public interface ISettingsService
 {
     AppSettings GetSettings();
+    AppSettings ReloadSettings();
     void SaveSettings(AppSettings settings);
+    void SaveThemeSettings(AppSettings settings, string activeThemeKey, string themeFingerprint);
+    string ConfigPath { get; }
+    string? StartupWarning { get; }
     List<ShellProfile> GetProfiles();
     ShellProfile GetDefaultProfile();
 }
@@ -20,6 +22,8 @@ public sealed class SettingsService : ISettingsService
     private readonly string _configPath;
     private AppSettings? _settings;
     private List<ShellProfile>? _profiles;
+    public string ConfigPath => _configPath;
+    public string? StartupWarning { get; private set; }
 
     public SettingsService()
     {
@@ -30,20 +34,32 @@ public sealed class SettingsService : ISettingsService
     {
         if (_settings != null) return _settings;
 
-        _settings = new AppSettings();
         if (!File.Exists(_configPath))
         {
+            _settings = new AppSettings();
             NormalizeAgentSettings(_settings);
             return _settings;
         }
 
         try
         {
-            LoadIni(_settings, File.ReadAllLines(_configPath));
+            _settings = LoadSettingsFile(_configPath);
         }
-        catch
+        catch (Exception activeError)
         {
-            _settings = new AppSettings();
+            var backupPath = _configPath + ".bak";
+            try
+            {
+                _settings = File.Exists(backupPath) ? LoadSettingsFile(backupPath) : new AppSettings();
+                StartupWarning = File.Exists(backupPath)
+                    ? $"psx.ini 无效，已加载最近一次有效备份：{activeError.Message}"
+                    : $"psx.ini 无效，已使用安全默认配置：{activeError.Message}";
+            }
+            catch (Exception backupError)
+            {
+                _settings = new AppSettings();
+                StartupWarning = $"psx.ini 及其备份均无效，已使用安全默认配置：{backupError.Message}";
+            }
         }
 
         NormalizeAgentSettings(_settings);
@@ -53,11 +69,44 @@ public sealed class SettingsService : ISettingsService
     public void SaveSettings(AppSettings settings)
     {
         NormalizeAgentSettings(settings);
-        _settings = settings;
         var ini = BuildIni(settings);
         var tmpPath = _configPath + ".tmp";
-        File.WriteAllText(tmpPath, ini, Encoding.UTF8);
-        File.Move(tmpPath, _configPath, overwrite: true);
+        try
+        {
+            using (var stream = new FileStream(tmpPath, FileMode.Create, FileAccess.Write, FileShare.None))
+            using (var writer = new StreamWriter(stream, new UTF8Encoding(false)))
+            {
+                writer.Write(ini);
+                writer.Flush();
+                stream.Flush(flushToDisk: true);
+            }
+
+            ValidateManagedIni(File.ReadAllLines(tmpPath, Encoding.UTF8), Path.GetFileName(tmpPath));
+            if (File.Exists(_configPath))
+                File.Replace(tmpPath, _configPath, _configPath + ".bak", ignoreMetadataErrors: true);
+            else
+                File.Move(tmpPath, _configPath);
+            _settings = settings;
+        }
+        finally
+        {
+            if (File.Exists(tmpPath))
+                File.Delete(tmpPath);
+        }
+    }
+
+    public void SaveThemeSettings(AppSettings settings, string activeThemeKey, string themeFingerprint)
+    {
+        settings.ActiveThemeKey = activeThemeKey;
+        settings.ThemeFingerprint = themeFingerprint;
+        SaveSettings(settings);
+    }
+
+    public AppSettings ReloadSettings()
+    {
+        var settings = LoadSettingsFile(_configPath);
+        NormalizeAgentSettings(settings);
+        return settings;
     }
 
     public List<ShellProfile> GetProfiles()
@@ -105,6 +154,9 @@ public sealed class SettingsService : ISettingsService
 
             switch (section)
             {
+                case "meta":
+                    ApplyMetaSetting(settings, key, value);
+                    break;
                 case "terminal":
                     ApplyTerminalSetting(settings, key, value);
                     break;
@@ -124,6 +176,15 @@ public sealed class SettingsService : ISettingsService
                     ApplyTerminalColorSetting(settings, key, value);
                     break;
             }
+        }
+    }
+
+    private static void ApplyMetaSetting(AppSettings settings, string key, string value)
+    {
+        switch (key)
+        {
+            case "activethemekey": settings.ActiveThemeKey = value; break;
+            case "themefingerprint": settings.ThemeFingerprint = value; break;
         }
     }
 
@@ -261,46 +322,15 @@ public sealed class SettingsService : ISettingsService
         }
     }
 
-    /// <summary>
-    /// 验证颜色值。支持 #RGB、#RRGGBB、#AARRGGBB、#RRGGBBAA 格式。
-    /// 非法值返回 defaultValue。
-    /// </summary>
     private static string ValidateColor(string value, string defaultValue)
     {
         if (string.IsNullOrWhiteSpace(value))
             return defaultValue;
 
         var trimmed = value.Trim();
-
-        // #RRGGBB or #AARRGGBB — try direct WPF parse
-        if (trimmed.StartsWith('#'))
-        {
-            try
-            {
-                ColorConverter.ConvertFromString(trimmed);
-                return trimmed;
-            }
-            catch
-            {
-                // 可能是 #RRGGBBAA 格式（CSS 标准，WPF 不支持）
-                if (Regex.IsMatch(trimmed, @"^#[0-9a-fA-F]{8}$"))
-                {
-                    // #RRGGBBAA → #AARRGGBB
-                    var rrggbbaa = trimmed[1..];
-                    var aarrggbb = "#" + rrggbbaa[6..8] + rrggbbaa[..6];
-                    try
-                    {
-                        ColorConverter.ConvertFromString(aarrggbb);
-                        return aarrggbb;
-                    }
-                    catch { }
-                }
-
-                return defaultValue;
-            }
-        }
-
-        return defaultValue;
+        return Regex.IsMatch(trimmed, @"^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$")
+            ? trimmed.ToLowerInvariant()
+            : defaultValue;
     }
 
     private static void NormalizeAgentSettings(AppSettings settings)
@@ -314,6 +344,15 @@ public sealed class SettingsService : ISettingsService
     private static string BuildIni(AppSettings settings)
     {
         var builder = new StringBuilder();
+        builder.AppendLine("; PSX 核心活动配置文件，由程序维护，请勿直接修改主题字段。");
+        builder.AppendLine("; 自定义颜色和字体请编辑用户主题文件；高级非主题设置可谨慎修改。");
+        builder.AppendLine();
+        builder.AppendLine("[meta]");
+        builder.AppendLine("kind=active-config");
+        builder.AppendLine("schemaVersion=1");
+        builder.AppendLine($"activeThemeKey={settings.ActiveThemeKey}");
+        builder.AppendLine($"themeFingerprint={settings.ThemeFingerprint}");
+        builder.AppendLine();
         builder.AppendLine("[terminal]");
         builder.AppendLine($"fontSize={settings.FontSize}");
         builder.AppendLine($"fontFamily={settings.FontFamily}");
@@ -403,5 +442,68 @@ public sealed class SettingsService : ISettingsService
         builder.AppendLine($"brightCyan={p.BrightCyan}");
         builder.AppendLine($"brightWhite={p.BrightWhite}");
         return builder.ToString();
+    }
+
+    private static AppSettings LoadSettingsFile(string path)
+    {
+        var lines = File.ReadAllLines(path, Encoding.UTF8);
+        if (lines.Any(line => string.Equals(line.Trim(), "[meta]", StringComparison.OrdinalIgnoreCase)))
+            ValidateManagedIni(lines, Path.GetFileName(path));
+
+        var settings = new AppSettings();
+        LoadIni(settings, lines);
+        return settings;
+    }
+
+    private static void ValidateManagedIni(string[] lines, string sourceName)
+    {
+        var document = IniDocument.Parse(lines, sourceName);
+        if (!string.Equals(document.Get("meta", "kind"), "active-config", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("[meta].kind must be 'active-config'.");
+        if (document.Get("meta", "schemaVersion") != "1")
+            throw new InvalidDataException("[meta].schemaVersion must be 1.");
+
+        RequireKeys(document, "terminal", ["fontSize", "fontFamily", "scrollback", "theme"]);
+        RequireKeys(document, "agent", ["fontSize", "fontFamily", "monoFontFamily"]);
+        RequireKeys(document, "shell", ["defaultProfile"]);
+        RequireColorProperties<ThemeColors>(document, "theme");
+        RequireColorProperties<AgentThemeColors>(document, "agentTheme");
+        RequireColorProperties<TerminalPalette>(document, "terminalColors");
+        ValidateInteger(document, "terminal", "fontSize", 6, 72);
+        ValidateInteger(document, "agent", "fontSize", 6, 72);
+        ValidateInteger(document, "terminal", "scrollback", 0, 1_000_000);
+    }
+
+    private static void RequireKeys(IniDocument document, string section, IEnumerable<string> keys)
+    {
+        if (!document.TryGetSection(section, out var values))
+            throw new InvalidDataException($"Missing required section [{section}].");
+        foreach (var key in keys)
+        {
+            if (!values.TryGetValue(key, out var value) || string.IsNullOrWhiteSpace(value))
+                throw new InvalidDataException($"Missing required field [{section}].{key}.");
+        }
+    }
+
+    private static void RequireColorProperties<T>(IniDocument document, string section)
+    {
+        var keys = typeof(T).GetProperties()
+            .Where(p => p.PropertyType == typeof(string))
+            .Select(p => char.ToLowerInvariant(p.Name[0]) + p.Name[1..])
+            .ToArray();
+        RequireKeys(document, section, keys);
+        foreach (var key in keys)
+        {
+            var value = document.Get(section, key)!;
+            if (!Regex.IsMatch(value, @"^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"))
+                throw new InvalidDataException($"[{section}].{key} must be #RRGGBB or #RRGGBBAA.");
+        }
+    }
+
+    private static void ValidateInteger(IniDocument document, string section, string key, int minimum, int maximum)
+    {
+        var raw = document.Get(section, key);
+        if (!int.TryParse(raw, out var value) || value < minimum || value > maximum)
+            throw new InvalidDataException($"[{section}].{key} must be between {minimum} and {maximum}.");
     }
 }

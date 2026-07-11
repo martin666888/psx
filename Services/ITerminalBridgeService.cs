@@ -11,6 +11,7 @@ public interface ITerminalBridgeService
     Task CloseTerminalAsync(Guid sessionId);
     Task ResizeTerminalAsync(Guid sessionId, int cols, int rows);
     Task SetViewModeAsync(string mode);
+    Task SendAppearanceAsync(AppearanceSettings appearance);
 
     event EventHandler<TerminalInputEventArgs>? InputReceived;
     event EventHandler<TerminalResizeEventArgs>? ResizeRequested;

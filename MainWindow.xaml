@@ -9,6 +9,10 @@
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource WindowBackgroundBrush}">
 
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+    </Window.Resources>
+
     <Window.InputBindings>
         <KeyBinding Gesture="Ctrl+Shift+T" Command="{Binding NewTabCommand}"/>
         <KeyBinding Gesture="Ctrl+Shift+W" Command="{Binding CloseTabCommand}" CommandParameter="{Binding ActiveTab.SessionId}"/>
@@ -29,8 +33,232 @@
 
             <controls:TabBar Grid.Column="0" DataContext="{Binding}"/>
 
-            <Border Grid.Column="1" Margin="8,6,10,6" Padding="2" Background="{DynamicResource SurfaceBrush}" CornerRadius="4">
-                <StackPanel Orientation="Horizontal">
+            <StackPanel Grid.Column="1" Margin="8,6,10,6" Orientation="Horizontal">
+                <Grid Margin="0,0,6,0">
+                    <ToggleButton x:Name="ThemeButton"
+                            Content="Theme"
+                            MinWidth="62"
+                            Padding="10,3"
+                            Background="{DynamicResource SurfaceBrush}"
+                            Foreground="{DynamicResource TextSecondaryBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1"
+                            Cursor="Hand"
+                            FontSize="12"
+                            IsChecked="{Binding ThemePicker.IsOpen, Mode=TwoWay}"/>
+                    <Popup x:Name="ThemePopup"
+                           PlacementTarget="{Binding ElementName=ThemeButton}"
+                           Placement="Bottom"
+                           HorizontalOffset="-218"
+                           VerticalOffset="6"
+                           AllowsTransparency="True"
+                           PopupAnimation="Fade"
+                           StaysOpen="False"
+                           IsOpen="{Binding ThemePicker.IsOpen, Mode=TwoWay}">
+                        <Border Width="300"
+                                MaxHeight="520"
+                                DataContext="{Binding PlacementTarget.DataContext, ElementName=ThemePopup}"
+                                Padding="8"
+                                Background="{DynamicResource SurfaceRaisedBrush}"
+                                BorderBrush="{DynamicResource BorderStrongBrush}"
+                                BorderThickness="1"
+                                CornerRadius="6">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <Grid Margin="6,3,6,8">
+                                    <TextBlock Text="Theme"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"
+                                               FontSize="13"
+                                               FontWeight="SemiBold"/>
+                                    <TextBlock Text="{Binding ThemePicker.CurrentLabel}"
+                                               HorizontalAlignment="Right"
+                                               Foreground="{DynamicResource TextDimBrush}"
+                                               FontSize="10"/>
+                                </Grid>
+
+                                <ScrollViewer Grid.Row="1" MaxHeight="360" VerticalScrollBarVisibility="Auto">
+                                    <StackPanel>
+                                        <TextBlock Text="BUILT-IN"
+                                                   Margin="6,4,6,3"
+                                                   Foreground="{DynamicResource TextDimBrush}"
+                                                   FontSize="9"
+                                                   FontWeight="SemiBold"/>
+                                        <ItemsControl ItemsSource="{Binding ThemePicker.BuiltInThemes}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid Margin="0,1">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <Button Grid.Column="0"
+                                                                Padding="7,6"
+                                                                HorizontalContentAlignment="Stretch"
+                                                                Background="Transparent"
+                                                                BorderThickness="0"
+                                                                Cursor="Hand"
+                                                                IsEnabled="{Binding IsAvailable}"
+                                                                ToolTip="{Binding DiagnosticSummary}"
+                                                                Command="{Binding DataContext.ThemePicker.PreviewThemeCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                CommandParameter="{Binding}">
+                                                            <Grid>
+                                                                <TextBlock Text="{Binding Name}"
+                                                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                                                           FontSize="12"
+                                                                           TextTrimming="CharacterEllipsis"/>
+                                                                <TextBlock Text="{Binding StatusText}"
+                                                                           HorizontalAlignment="Right"
+                                                                           Foreground="{DynamicResource AccentBrush}"
+                                                                           FontSize="10"/>
+                                                            </Grid>
+                                                        </Button>
+                                                        <Button Grid.Column="1"
+                                                                Margin="4,0,2,0"
+                                                                Padding="8,4"
+                                                                VerticalAlignment="Center"
+                                                                Content="Confirm"
+                                                                Background="{DynamicResource AccentBrush}"
+                                                                Foreground="White"
+                                                                BorderThickness="0"
+                                                                Cursor="Hand"
+                                                                Visibility="{Binding ShowConfirm, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                                                Command="{Binding DataContext.ThemePicker.ConfirmThemeCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                CommandParameter="{Binding}"/>
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+
+                                        <TextBlock Text="CUSTOM"
+                                                   Margin="6,10,6,3"
+                                                   Foreground="{DynamicResource TextDimBrush}"
+                                                   FontSize="9"
+                                                   FontWeight="SemiBold"/>
+                                        <TextBlock Text="No custom themes"
+                                                   Margin="7,6"
+                                                   Foreground="{DynamicResource TextDimBrush}"
+                                                   FontSize="11">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding ThemePicker.HasUserThemes}" Value="False">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                        <ItemsControl ItemsSource="{Binding ThemePicker.UserThemes}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid Margin="0,1">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <Button Grid.Column="0"
+                                                                Padding="7,6"
+                                                                HorizontalContentAlignment="Stretch"
+                                                                Background="Transparent"
+                                                                BorderThickness="0"
+                                                                Cursor="Hand"
+                                                                IsEnabled="{Binding IsAvailable}"
+                                                                ToolTip="{Binding DiagnosticSummary}"
+                                                                Command="{Binding DataContext.ThemePicker.PreviewThemeCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                CommandParameter="{Binding}">
+                                                            <Grid>
+                                                                <TextBlock Text="{Binding Name}"
+                                                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                                                           FontSize="12"
+                                                                           TextTrimming="CharacterEllipsis"/>
+                                                                <TextBlock Text="{Binding StatusText}"
+                                                                           HorizontalAlignment="Right"
+                                                                           Foreground="{DynamicResource AccentBrush}"
+                                                                           FontSize="10"/>
+                                                            </Grid>
+                                                        </Button>
+                                                        <Button Grid.Column="1"
+                                                                Margin="4,0,2,0"
+                                                                Padding="8,4"
+                                                                VerticalAlignment="Center"
+                                                                Content="Confirm"
+                                                                Background="{DynamicResource AccentBrush}"
+                                                                Foreground="White"
+                                                                BorderThickness="0"
+                                                                Cursor="Hand"
+                                                                Visibility="{Binding ShowConfirm, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                                                Command="{Binding DataContext.ThemePicker.ConfirmThemeCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                CommandParameter="{Binding}"/>
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </ScrollViewer>
+
+                                <Border Grid.Row="2" Margin="3,7,3,3" Padding="7,5" Background="{DynamicResource SurfaceMutedBrush}" CornerRadius="3">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding ThemePicker.Message}" Value="{x:Null}">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <TextBlock Text="{Binding ThemePicker.Message}"
+                                               FontSize="10"
+                                               TextWrapping="Wrap">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding ThemePicker.IsMessageError}" Value="True">
+                                                        <Setter Property="Foreground" Value="{DynamicResource ErrorBrush}"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </Border>
+
+                                <Grid Grid.Row="3" Margin="2,6,2,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Button Content="Refresh"
+                                            Padding="8,4"
+                                            Background="Transparent"
+                                            Foreground="{DynamicResource TextSecondaryBrush}"
+                                            BorderThickness="0"
+                                            Cursor="Hand"
+                                            Command="{Binding ThemePicker.RefreshThemesCommand}"/>
+                                    <Button Grid.Column="1"
+                                            HorizontalAlignment="Right"
+                                            Content="Open theme folder"
+                                            Padding="8,4"
+                                            Background="Transparent"
+                                            Foreground="{DynamicResource TextSecondaryBrush}"
+                                            BorderThickness="0"
+                                            Cursor="Hand"
+                                            Command="{Binding ThemePicker.OpenThemeFolderCommand}"/>
+                                </Grid>
+                            </Grid>
+                        </Border>
+                    </Popup>
+                </Grid>
+
+                <Border Padding="2" Background="{DynamicResource SurfaceBrush}" CornerRadius="4">
+                    <StackPanel Orientation="Horizontal">
                     <Button Content="Terminal"
                             MinWidth="72"
                             Padding="10,3"
@@ -73,8 +301,9 @@
                             </Style>
                         </Button.Style>
                     </Button>
-                </StackPanel>
-            </Border>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
         </Grid>
 
         <Border Grid.Row="1" Background="{DynamicResource WindowBackgroundBrush}">

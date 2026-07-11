@@ -176,6 +176,25 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
         });
     }
 
+    public Task SendAppearanceAsync(AppearanceSettings appearance)
+    {
+        return SendMessageToJs(new
+        {
+            type = "appearance_settings",
+            settings = new
+            {
+                fontSize = appearance.TerminalFontSize,
+                fontFamily = appearance.TerminalFontFamily,
+                agentFontSize = appearance.AgentFontSize,
+                agentFontFamily = appearance.AgentFontFamily,
+                agentMonoFontFamily = appearance.AgentMonoFontFamily,
+                themeColors = appearance.ThemeColors,
+                agentThemeColors = appearance.AgentTheme,
+                terminalColors = appearance.TerminalColors
+            }
+        });
+    }
+
     private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
         var json = e.TryGetWebMessageAsString();
