@@ -22,7 +22,6 @@
             </div>
             <div class="agent-toolbar-actions">
                 <button id="agent-new" title="Start a new Agent thread">New</button>
-                <button id="agent-history" title="Show Agent thread history">History</button>
                 <button id="agent-clear" title="Clear thread">Clear</button>
             </div>
         </header>
@@ -44,13 +43,42 @@
         </section>
         <div class="agent-workspace">
             <main id="agent-thread" class="agent-thread"></main>
-            <div id="agent-plan-resizer"
-                 class="agent-plan-resizer"
+            <div id="agent-inspector-resizer"
+                 class="agent-inspector-resizer"
                  role="separator"
-                 aria-label="Resize plan panel"
+                 aria-label="Resize Agent inspector"
                  aria-orientation="vertical"
                  tabindex="0"></div>
-            <aside id="agent-plan-panel" class="agent-plan-panel" aria-label="Plan panel"></aside>
+            <aside id="agent-inspector" class="agent-inspector" aria-label="Agent inspector">
+                <div class="agent-inspector-tabs" role="tablist" aria-label="Agent inspector views">
+                    <button id="agent-plan-tab"
+                            class="agent-inspector-tab"
+                            type="button"
+                            role="tab"
+                            aria-selected="true"
+                            aria-controls="agent-plan-panel"
+                            tabindex="0">
+                        <span>Plan</span>
+                        <span id="agent-plan-unread" class="agent-inspector-unread" aria-label="Plan updated" hidden></span>
+                    </button>
+                    <button id="agent-history-tab"
+                            class="agent-inspector-tab"
+                            type="button"
+                            role="tab"
+                            aria-selected="false"
+                            aria-controls="agent-history-panel"
+                            tabindex="-1">History</button>
+                </div>
+                <section id="agent-plan-panel"
+                         class="agent-inspector-panel agent-plan-panel"
+                         role="tabpanel"
+                         aria-labelledby="agent-plan-tab"></section>
+                <section id="agent-history-panel"
+                         class="agent-inspector-panel agent-history-panel"
+                         role="tabpanel"
+                         aria-labelledby="agent-history-tab"
+                         hidden></section>
+            </aside>
         </div>
         <footer class="agent-composer">
             <div id="agent-attachments-strip" class="agent-attachments-strip" hidden></div>
@@ -107,6 +135,7 @@
     <script src="js/agent/runtime.js"></script>
     <script src="js/agent/thread.js"></script>
     <script src="js/agent/messages.js"></script>
+    <script src="js/agent/inspector.js"></script>
     <script src="js/agent/plan.js"></script>
     <script src="js/agent/thinking.js"></script>
     <script src="js/agent/tools.js"></script>

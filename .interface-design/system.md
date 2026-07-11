@@ -175,6 +175,16 @@ Theme 弹层是全局选择器的参考实现：
 - 未在目录中的命令必须在 Composer 就地提示，不得发送 ACP、写入历史或进入 busy。
 - 不维护 Claude Code 命令黑名单；需要原生交互界面的命令统一引导用户通过 `/terminal` 使用。
 
+### Agent Inspector
+
+- Agent 右侧区域是可调整宽度的 Inspector，不是 Plan 专用侧栏；固定使用同级的 `Plan / History` 标签。
+- Plan 只展示当前任务计划，History 只负责全局 Thread 导航。历史列表、加载状态和错误不得写入主对话流。
+- 两个标签保留各自的 DOM 与滚动位置；隐藏标签仍可接收状态更新，但不能抢焦点或强制切换。
+- History 每次打开或再次点击当前标签时从磁盘刷新，并明确展示 Loading、Empty、Error 与 Current 状态。
+- 新建 Thread 回到 Plan；从 History 加载 Thread 时保持 History 打开。隐藏期间的新 Plan 使用轻量状态点提示，打开 Plan 后清除。
+- Inspector 宽度限制为 260–380px，并兼容旧的 `psx.agent.planPanelWidth` 本地设置；新设置使用 `psx.agent.inspectorWidth`。
+- 标签必须使用 `tablist`、`tab`、`tabpanel` 语义，支持左右方向键、Home 和 End 切换。
+
 ## 6. WPF 与 WebView2 一致性
 
 - WPF 和 WebView2 是同一个产品表面，不能各自发展独立的颜色、间距和状态语言。

@@ -1,40 +1,19 @@
-AgentThreadManager.prototype._initializePlanPanel = function() {
-        this.planPanelMinWidth = 260;
-        this.planPanelMaxWidth = 380;
-        this.planPanelDefaultWidth = 300;
-        this.planPanelStorageKey = 'psx.agent.planPanelWidth';
-
-        this.planPanelWidth = this._readPlanPanelWidth();
-        this._applyPlanPanelWidth(this.planPanelWidth);
-        this._resetPlanState();
-        this._wirePlanPanelResizer();
-};
-
 AgentThreadManager.prototype._resetPlanState = function() {
         this.currentPlanCard = null;
         this.currentPlanBody = null;
         this.currentPlanRunId = null;
+        this._clearPlanUnread();
 
         if (!this.planPanel) return;
 
         this.planPanel.innerHTML = '';
 
-        const header = document.createElement('div');
-        header.className = 'agent-plan-panel-header';
-        header.textContent = 'Plan';
-
-        const body = document.createElement('div');
-        body.className = 'agent-plan-panel-body';
-
         const empty = document.createElement('div');
         empty.className = 'agent-plan-empty';
         empty.textContent = 'No active plan';
 
-        body.appendChild(empty);
-        this.planPanel.appendChild(header);
-        this.planPanel.appendChild(body);
-
-        this.currentPlanBody = body;
+        this.planPanel.appendChild(empty);
+        this.currentPlanBody = this.planPanel;
 };
 
 AgentThreadManager.prototype._upsertPlan = function(event) {
@@ -55,6 +34,7 @@ AgentThreadManager.prototype._upsertPlan = function(event) {
         }
 
         this._renderPlanEntries(effectiveEntries, event.text || '');
+        this._markPlanUnread();
 };
 
 AgentThreadManager.prototype._createPlanPanelContent = function(runId) {
@@ -62,18 +42,8 @@ AgentThreadManager.prototype._createPlanPanelContent = function(runId) {
 
         this.planPanel.innerHTML = '';
 
-        const header = document.createElement('div');
-        header.className = 'agent-plan-panel-header';
-        header.textContent = 'Plan';
-
-        const body = document.createElement('div');
-        body.className = 'agent-plan-panel-body';
-
-        this.planPanel.appendChild(header);
-        this.planPanel.appendChild(body);
-
         this.currentPlanCard = this.planPanel;
-        this.currentPlanBody = body;
+        this.currentPlanBody = this.planPanel;
         this.currentPlanRunId = runId;
 };
 
@@ -175,103 +145,4 @@ AgentThreadManager.prototype._planStatusClass = function(status) {
 AgentThreadManager.prototype._planStatusMarker = function(status) {
         const value = String(status || '').toLowerCase();
         return value === 'completed' ? '\u2713' : '\u25cb';
-};
-
-AgentThreadManager.prototype._wirePlanPanelResizer = function() {
-        if (!this.planResizer || !this.planPanel) return;
-
-        this.planResizer.addEventListener('pointerdown', (event) => {
-            if (event.button !== 0) return;
-
-            this.isResizingPlanPanel = true;
-            this.planResizer.setPointerCapture(event.pointerId);
-            document.body.classList.add('agent-plan-resizing');
-            event.preventDefault();
-        });
-
-        this.planResizer.addEventListener('pointermove', (event) => {
-            if (!this.isResizingPlanPanel) return;
-
-            const rect = this.panel.getBoundingClientRect();
-            const width = rect.right - event.clientX - this.planResizer.offsetWidth;
-            this._setPlanPanelWidth(width, true);
-        });
-
-        const endResize = (event) => {
-            if (!this.isResizingPlanPanel) return;
-
-            this.isResizingPlanPanel = false;
-            document.body.classList.remove('agent-plan-resizing');
-            try {
-                this.planResizer.releasePointerCapture(event.pointerId);
-            } catch {
-                // Pointer capture may already be gone if the window lost focus.
-            }
-            this._savePlanPanelWidth();
-        };
-
-        this.planResizer.addEventListener('pointerup', endResize);
-        this.planResizer.addEventListener('pointercancel', endResize);
-
-        this.planResizer.addEventListener('keydown', (event) => {
-            const step = event.shiftKey ? 40 : 16;
-            if (event.key === 'ArrowLeft') {
-                this._setPlanPanelWidth(this.planPanelWidth + step, false);
-                event.preventDefault();
-            } else if (event.key === 'ArrowRight') {
-                this._setPlanPanelWidth(this.planPanelWidth - step, false);
-                event.preventDefault();
-            } else if (event.key === 'Home') {
-                this._setPlanPanelWidth(this.planPanelMaxWidth, false);
-                event.preventDefault();
-            } else if (event.key === 'End') {
-                this._setPlanPanelWidth(this.planPanelMinWidth, false);
-                event.preventDefault();
-            }
-        });
-};
-
-AgentThreadManager.prototype._readPlanPanelWidth = function() {
-        try {
-            const stored = window.localStorage?.getItem(this.planPanelStorageKey);
-            const width = Number(stored);
-            if (Number.isFinite(width)) {
-                return this._clampPlanPanelWidth(width);
-            }
-        } catch {
-            // localStorage can be unavailable in constrained WebView profiles.
-        }
-
-        return this.planPanelDefaultWidth;
-};
-
-AgentThreadManager.prototype._setPlanPanelWidth = function(width, deferSave) {
-        this.planPanelWidth = this._clampPlanPanelWidth(width);
-        this._applyPlanPanelWidth(this.planPanelWidth);
-        if (!deferSave) {
-            this._savePlanPanelWidth();
-        }
-};
-
-AgentThreadManager.prototype._applyPlanPanelWidth = function(width) {
-        if (!this.panel) return;
-
-        this.panel.style.setProperty('--agent-plan-panel-width', this._clampPlanPanelWidth(width) + 'px');
-};
-
-AgentThreadManager.prototype._savePlanPanelWidth = function() {
-        try {
-            window.localStorage?.setItem(this.planPanelStorageKey, String(this.planPanelWidth));
-        } catch {
-            // Width persistence is nice-to-have; resizing should still work.
-        }
-};
-
-AgentThreadManager.prototype._clampPlanPanelWidth = function(width) {
-        const numeric = Number(width);
-        if (!Number.isFinite(numeric)) {
-            return this.planPanelDefaultWidth;
-        }
-
-        return Math.max(this.planPanelMinWidth, Math.min(this.planPanelMaxWidth, Math.round(numeric)));
 };

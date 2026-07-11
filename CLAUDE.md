@@ -94,6 +94,8 @@ Output is batched in `Services/ConPtyService.ReadOutputLoopAsync`: `8ms` flush i
 
 Agent slash commands are allowlisted. `AcpAgentSessionService` is the authoritative gate: it accepts PSX commands plus the current filtered `available_commands_update` catalog, and rejects every other leading `/command` before `session/prompt`. Keep the JS composer validation and the C# gate synchronized; inline `/text` inside a normal prompt is not a command.
 
+The Agent workspace has a resizable right-side Inspector with persistent-in-process `Plan` and `History` tabs. History is a global cross-directory thread navigator backed by `agent_threads`; it never renders into the main transcript. `agent_history_error` is an inline Inspector state, and `agent_thread_loaded.selectPlan` distinguishes new-thread navigation from loading an existing History item. Preserve each tab's DOM/scroll state and keep the active tab across Terminal/Agent view switches.
+
 **Switching backends is a one-line change** in `App.ConfigureServices`. The whole point of the interface is to keep `AgentBridgeService` and the JS layer unaware of which one is running.
 
 ### 4. ACP's "request/response" pattern uses `TaskCompletionSource`

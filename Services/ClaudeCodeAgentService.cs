@@ -83,7 +83,7 @@ public sealed class ClaudeCodeAgentService : IAgentSessionService
         var cwd = string.IsNullOrWhiteSpace(workingDirectory) ? _workingDirectory : workingDirectory;
         _currentThread = _threadStore.CreateThread(cwd);
         ApplyThread(_currentThread);
-        await SendThreadLoadedAsync(clear: true);
+        await SendThreadLoadedAsync(clear: true, selectPlan: true);
         await _bridgeService.SendEventAsync(new { type = "command_result", text = "Started a new Agent thread." });
         await PublishStateAsync();
     }
@@ -136,20 +136,31 @@ public sealed class ClaudeCodeAgentService : IAgentSessionService
         await _bridgeService.SendEventAsync(new { type = "command_result", text = $"Working directory changed to: {fullPath}" });
     }
 
-    public Task ListThreadsAsync()
+    public async Task ListThreadsAsync()
     {
-        return _bridgeService.SendEventAsync(new
+        try
         {
-            type = "agent_threads",
-            threads = _threadStore.ListThreads().Select(t => new
+            await _bridgeService.SendEventAsync(new
             {
-                threadId = t.ThreadId,
-                title = t.Title,
-                cwd = t.Cwd,
-                sessionId = t.ClaudeSessionId ?? "",
-                updatedAt = t.UpdatedAt.ToString("u")
-            }).ToArray()
-        });
+                type = "agent_threads",
+                threads = _threadStore.ListThreads().Select(t => new
+                {
+                    threadId = t.ThreadId,
+                    title = t.Title,
+                    cwd = t.Cwd,
+                    sessionId = t.ClaudeSessionId ?? "",
+                    updatedAt = t.UpdatedAt.ToString("u")
+                }).ToArray()
+            });
+        }
+        catch (Exception ex)
+        {
+            await _bridgeService.SendEventAsync(new
+            {
+                type = "agent_history_error",
+                text = $"Unable to load Agent thread history. {ex.Message}"
+            });
+        }
     }
 
     public Task PublishStateAsync()
@@ -941,12 +952,13 @@ public sealed class ClaudeCodeAgentService : IAgentSessionService
         _currentToolSummary = "";
     }
 
-    private Task SendThreadLoadedAsync(bool clear)
+    private Task SendThreadLoadedAsync(bool clear, bool selectPlan = false)
     {
         return _bridgeService.SendEventAsync(new
         {
             type = "agent_thread_loaded",
             clear,
+            selectPlan,
             threadId = _currentThread.ThreadId,
             title = _currentThread.Title,
             cwd = _currentThread.Cwd,

@@ -18,10 +18,19 @@ class AgentThreadManager {
         this.currentPlanCard = null;
         this.currentPlanBody = null;
         this.currentPlanRunId = null;
+        this.inspector = meta.inspector || null;
+        this.inspectorResizer = meta.inspectorResizer || null;
+        this.planTab = meta.planTab || null;
+        this.planUnread = meta.planUnread || null;
         this.planPanel = meta.planPanel || null;
-        this.planResizer = meta.planResizer || null;
-        this.planPanelWidth = null;
-        this.isResizingPlanPanel = false;
+        this.historyTab = meta.historyTab || null;
+        this.historyPanel = meta.historyPanel || null;
+        this.inspectorWidth = null;
+        this.isResizingInspector = false;
+        this.activeInspectorTab = 'plan';
+        this.currentThreadId = '';
+        this.historyThreads = [];
+        this.historyScrollTop = 0;
         this.currentRunGroup = null;
         this.currentRunGroupBody = null;
         this.currentRunId = null;
@@ -58,7 +67,7 @@ class AgentThreadManager {
         this._wireModeControl();
         this._wireAttachments();
         this._wireRuntimeControls();
-        this._initializePlanPanel();
+        this._initializeInspector();
     }
 
     setAgentSettings(settings) {
@@ -158,7 +167,12 @@ class AgentThreadManager {
                 this._loadThread(event);
                 break;
             case 'agent_threads':
-                this._appendHistory(event.threads || []);
+                this.selectInspectorTab('history', false);
+                this._renderHistory(event.threads || []);
+                break;
+            case 'agent_history_error':
+                this.selectInspectorTab('history', false);
+                this._renderHistoryError(event.text || 'Unable to load Agent thread history.');
                 break;
             case 'agent_commands':
                 this._setClaudeCommands(event.commands || [], event.ready === true);

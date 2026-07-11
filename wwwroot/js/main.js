@@ -22,8 +22,13 @@
             attachmentStrip: document.getElementById('agent-attachments-strip'),
             imagePreview: document.getElementById('agent-image-preview'),
             imagePreviewImg: document.getElementById('agent-image-preview-img'),
+            inspector: document.getElementById('agent-inspector'),
+            inspectorResizer: document.getElementById('agent-inspector-resizer'),
+            planTab: document.getElementById('agent-plan-tab'),
+            planUnread: document.getElementById('agent-plan-unread'),
             planPanel: document.getElementById('agent-plan-panel'),
-            planResizer: document.getElementById('agent-plan-resizer'),
+            historyTab: document.getElementById('agent-history-tab'),
+            historyPanel: document.getElementById('agent-history-panel'),
             runtimeCard: document.getElementById('agent-runtime-card'),
             runtimeTitle: document.getElementById('agent-runtime-title'),
             runtimeMessage: document.getElementById('agent-runtime-message'),
@@ -32,11 +37,8 @@
         }
     );
     document.getElementById('agent-new').addEventListener('click', () => {
+        agentManager.selectInspectorTab('plan');
         Bridge.sendAgentCommand('new');
-    });
-
-    document.getElementById('agent-history').addEventListener('click', () => {
-        Bridge.sendAgentCommand('history');
     });
 
     document.getElementById('agent-clear').addEventListener('click', () => {
@@ -88,6 +90,7 @@
             case 'runtime_status':
             case 'agent_thread_loaded':
             case 'agent_threads':
+            case 'agent_history_error':
             case 'agent_commands':
             case 'agent_modes':
             case 'agent_config_options':

@@ -1,4 +1,4 @@
-.agent-plan-panel {
+.agent-inspector {
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
     min-width: 0;
@@ -7,22 +7,64 @@
     background: var(--agent-bg);
 }
 
-.agent-plan-panel-header {
-    padding: 12px 14px 10px;
+.agent-inspector-tabs {
+    display: flex;
+    align-items: stretch;
+    min-height: 44px;
     border-bottom: 1px solid var(--agent-border);
-    color: var(--agent-text);
-    font-size: 13px;
-    font-weight: 700;
-    line-height: 1.3;
 }
 
-.agent-plan-panel-body {
+.agent-inspector-tab {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 76px;
+    padding: 0 14px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: var(--agent-text-muted);
+    cursor: pointer;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.agent-inspector-tab:hover {
+    background: var(--agent-hover);
+    color: var(--agent-text);
+}
+
+.agent-inspector-tab[aria-selected="true"] {
+    border-bottom-color: var(--agent-accent);
+    color: var(--agent-text);
+}
+
+.agent-inspector-tab:focus-visible {
+    outline: 1px solid var(--agent-focus-ring);
+    outline-offset: -3px;
+}
+
+.agent-inspector-unread {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--agent-accent);
+}
+
+.agent-inspector-panel {
     min-height: 0;
     overflow-x: hidden;
     overflow-y: auto;
     padding: 12px 14px 18px;
     scrollbar-color: var(--agent-scrollbar) var(--agent-bg);
     scrollbar-width: thin;
+}
+
+.agent-inspector-panel[hidden] {
+    display: none;
 }
 
 .agent-plan-list {

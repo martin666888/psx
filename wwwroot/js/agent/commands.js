@@ -123,6 +123,13 @@ AgentThreadManager.prototype._applyCommand = function(command) {
         this._hideCommandMenu();
         this._resizeInput();
 
+        if (command.command === 'new') {
+            this.selectInspectorTab('plan', false);
+        } else if (command.command === 'history') {
+            this.selectInspectorTab('history', false);
+            this._showHistoryState('loading', 'Loading history...');
+        }
+
         if (command.claude) {
             Bridge.sendAgentCommand('claude_command', command.name);
         } else {
@@ -178,7 +185,8 @@ AgentThreadManager.prototype._validateSubmissionCommand = function(text, attachm
         const canonicalName = matched.name.trim().split(/\s/, 1)[0];
         return {
             allowed: true,
-            text: parsed.arguments ? canonicalName + ' ' + parsed.arguments : canonicalName
+            text: parsed.arguments ? canonicalName + ' ' + parsed.arguments : canonicalName,
+            psxCommand: psxCommand?.command || ''
         };
 };
 

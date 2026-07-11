@@ -343,7 +343,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         _currentThread.Provider = "acp-claude";
         ApplyThread(_currentThread);
         await SendAgentCommandsUnavailableAsync().ConfigureAwait(false);
-        await SendThreadLoadedAsync(clear: true).ConfigureAwait(false);
+        await SendThreadLoadedAsync(clear: true, selectPlan: true).ConfigureAwait(false);
         await _bridgeService.SendEventAsync(new { type = "command_result", text = "Started a new ACP Agent draft. Claude will start on the first message." }).ConfigureAwait(false);
         await PublishStateAsync().ConfigureAwait(false);
     }
@@ -445,20 +445,31 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         await _bridgeService.SendEventAsync(new { type = "command_result", text = $"Working directory changed to: {fullPath}" }).ConfigureAwait(false);
     }
 
-    public Task ListThreadsAsync()
+    public async Task ListThreadsAsync()
     {
-        return _bridgeService.SendEventAsync(new
+        try
         {
-            type = "agent_threads",
-            threads = _threadStore.ListThreads().Select(t => new
+            await _bridgeService.SendEventAsync(new
             {
-                threadId = t.ThreadId,
-                title = t.Title,
-                cwd = t.Cwd,
-                sessionId = t.AcpSessionId ?? t.ClaudeSessionId ?? "",
-                updatedAt = t.UpdatedAt.ToString("u")
-            }).ToArray()
-        });
+                type = "agent_threads",
+                threads = _threadStore.ListThreads().Select(t => new
+                {
+                    threadId = t.ThreadId,
+                    title = t.Title,
+                    cwd = t.Cwd,
+                    sessionId = t.AcpSessionId ?? t.ClaudeSessionId ?? "",
+                    updatedAt = t.UpdatedAt.ToString("u")
+                }).ToArray()
+            }).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            await _bridgeService.SendEventAsync(new
+            {
+                type = "agent_history_error",
+                text = $"Unable to load Agent thread history. {ex.Message}"
+            }).ConfigureAwait(false);
+        }
     }
 
     public async Task PublishStateAsync()
@@ -2536,12 +2547,13 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             && thread.Messages.Count == 0;
     }
 
-    private Task SendThreadLoadedAsync(bool clear)
+    private Task SendThreadLoadedAsync(bool clear, bool selectPlan = false)
     {
         return _bridgeService.SendEventAsync(new
         {
             type = "agent_thread_loaded",
             clear,
+            selectPlan,
             threadId = _currentThread.ThreadId,
             title = _currentThread.Title,
             cwd = _currentThread.Cwd,

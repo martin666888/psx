@@ -25,6 +25,10 @@ There is currently no test project or coverage threshold. For every change, run 
 
 The slash-command menu is PSX's complete public command surface. A leading command is executable only when it is a PSX built-in command or appears in the current filtered ACP `available_commands_update` catalog. Reject every other leading `/command` before `session/prompt`; it must not enter busy state or be written to thread history. Slash-like text inside a normal prompt is ordinary text. Keep the JavaScript composer validation and the authoritative `AcpAgentSessionService` gate synchronized, and direct Claude Code-only interactive commands to `/terminal` instead of maintaining a command blacklist.
 
+## Agent Inspector Contract
+
+The resizable right-side Agent region is an Inspector with peer `Plan` and `History` tabs. Keep thread messages in the main conversation only: history lists, loading states, and history errors belong in the History tab and must never be appended as chat cards. Plan and History retain independent DOM and scroll state. New threads select Plan; loading an existing thread from History keeps History selected. When changing the `agent_threads`, `agent_history_error`, or `agent_thread_loaded` bridge payloads, update both Agent backends and the frontend dispatcher.
+
 ## Commit & Pull Request Guidelines
 
 This repository has no commit history from which to infer a convention. Use short, imperative subjects (for example, `Fix ACP session shutdown`) and keep commits focused. Pull requests should explain the problem and solution, list verification steps, link related issues, and include screenshots or recordings for UI changes. Call out changes to runtime packaging, `psx.ini`, or the implicit C#/JavaScript bridge contract.

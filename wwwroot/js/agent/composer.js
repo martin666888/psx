@@ -50,6 +50,7 @@ AgentThreadManager.prototype._submit = function() {
         }
 
         if (this.isTranscriptOnly) {
+            this.selectInspectorTab('plan', false);
             Bridge.sendAgentCommand('new');
             return;
         }
@@ -68,6 +69,12 @@ AgentThreadManager.prototype._submit = function() {
             return;
         }
         text = commandValidation.text;
+        if (commandValidation.psxCommand === 'new') {
+            this.selectInspectorTab('plan', false);
+        } else if (commandValidation.psxCommand === 'history') {
+            this.selectInspectorTab('history', false);
+            this._showHistoryState('loading', 'Loading history...');
+        }
         if (!this._attachmentsReady()) {
             this._appendSystem('Images are still uploading. Wait for upload to finish, then send again.');
             return;

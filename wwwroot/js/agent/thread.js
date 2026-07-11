@@ -1,5 +1,9 @@
 AgentThreadManager.prototype._updateState = function(event) {
         this.lastState = event;
+        if (event.threadId) {
+            this.currentThreadId = event.threadId;
+            this._syncHistoryCurrentState();
+        }
         const status = event.status || 'ready';
         this.isRestoring = status === 'restoring';
         this.isTranscriptOnly = status === 'transcript_only';
@@ -62,6 +66,10 @@ AgentThreadManager.prototype._formatContextUsed = function(value) {
 };
 
 AgentThreadManager.prototype._loadThread = function(event) {
+            this.currentThreadId = event.threadId || '';
+            if (event.selectPlan === true) {
+                this.selectInspectorTab('plan', false);
+            }
             if (event.clear) {
                 this.thread.innerHTML = '';
                 this.currentTurn = null;
@@ -157,8 +165,10 @@ AgentThreadManager.prototype._loadThread = function(event) {
             status: this.lastState?.status || 'ready',
             busy: this.lastState?.busy || false,
             cwd: event.cwd,
-            sessionId: event.sessionId
+            sessionId: event.sessionId,
+            threadId: this.currentThreadId
         });
+        this._syncHistoryCurrentState();
 };
 
 AgentThreadManager.prototype._appendSystem = function(text) {
@@ -177,38 +187,6 @@ AgentThreadManager.prototype._markSessionReady = function(sessionId) {
         this.lastReadySessionId = sessionId;
 };
 
-AgentThreadManager.prototype._appendHistory = function(threads) {
-        const card = document.createElement('section');
-        card.className = 'agent-history';
-
-        const title = document.createElement('div');
-        title.className = 'agent-history-title';
-        title.textContent = 'Agent thread history';
-        card.appendChild(title);
-
-        if (threads.length === 0) {
-            const empty = document.createElement('div');
-            empty.className = 'agent-system';
-            empty.textContent = 'No saved Agent threads.';
-            card.appendChild(empty);
-        }
-
-        threads.forEach((thread) => {
-            const row = document.createElement('button');
-            row.type = 'button';
-            row.className = 'agent-history-item';
-            row.innerHTML =
-                '<strong>' + this._escape(thread.title || 'Agent Chat') + '</strong>' +
-                '<span>' + this._escape(thread.cwd || '') + '</span>' +
-                '<small>' + this._escape(this._historyMeta(thread)) + '</small>';
-            row.addEventListener('click', () => Bridge.sendAgentCommand('load_thread', thread.threadId || ''));
-            card.appendChild(row);
-        });
-
-        this.thread.appendChild(card);
-        this._scrollToBottom();
-};
-
 AgentThreadManager.prototype._appendRecovery = function(text) {
         const card = document.createElement('section');
         card.className = 'agent-decision';
@@ -222,7 +200,10 @@ AgentThreadManager.prototype._appendRecovery = function(text) {
 
         const actions = document.createElement('div');
         actions.className = 'agent-decision-actions';
-        actions.appendChild(this._decisionButton('Start new thread', () => Bridge.sendAgentCommand('new')));
+        actions.appendChild(this._decisionButton('Start new thread', () => {
+            this.selectInspectorTab('plan', false);
+            Bridge.sendAgentCommand('new');
+        }));
         actions.appendChild(this._decisionButton('Open terminal', () => Bridge.sendAgentCommand('terminal')));
 
         card.appendChild(title);

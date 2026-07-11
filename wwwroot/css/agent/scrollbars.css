@@ -4,7 +4,7 @@
 .agent-tool pre::-webkit-scrollbar,
 .agent-decision pre::-webkit-scrollbar,
 .agent-tool-card-content::-webkit-scrollbar,
-.agent-plan-panel-body::-webkit-scrollbar,
+.agent-inspector-panel::-webkit-scrollbar,
 .agent-command-menu::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -16,7 +16,7 @@
 .agent-tool pre::-webkit-scrollbar-track,
 .agent-decision pre::-webkit-scrollbar-track,
 .agent-tool-card-content::-webkit-scrollbar-track,
-.agent-plan-panel-body::-webkit-scrollbar-track,
+.agent-inspector-panel::-webkit-scrollbar-track,
 .agent-command-menu::-webkit-scrollbar-track {
     background: var(--agent-bg);
 }
@@ -27,7 +27,7 @@
 .agent-tool pre::-webkit-scrollbar-thumb,
 .agent-decision pre::-webkit-scrollbar-thumb,
 .agent-tool-card-content::-webkit-scrollbar-thumb,
-.agent-plan-panel-body::-webkit-scrollbar-thumb,
+.agent-inspector-panel::-webkit-scrollbar-thumb,
 .agent-command-menu::-webkit-scrollbar-thumb {
     background: var(--agent-scrollbar);
     border-radius: 4px;

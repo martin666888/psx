@@ -1,6 +1,5 @@
 ﻿.agent-tool,
 .agent-decision,
-.agent-history,
 .agent-run-group {
     width: 100%;
     box-sizing: border-box;
@@ -10,8 +9,7 @@
     background: var(--agent-surface);
 }
 
-.agent-tool,
-.agent-history {
+.agent-tool {
     padding: 12px;
 }
 

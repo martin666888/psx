@@ -8,7 +8,7 @@
         "workspace"
         "composer";
     grid-template-rows: auto auto minmax(0, 1fr) auto;
-    --agent-plan-panel-width: 300px;
+    --agent-inspector-width: 300px;
     background: var(--agent-bg);
     color: var(--agent-text);
     font-family: var(--agent-font-ui);
@@ -111,7 +111,7 @@
 .agent-workspace {
     grid-area: workspace;
     display: grid;
-    grid-template-columns: minmax(360px, 1fr) 7px var(--agent-plan-panel-width);
+    grid-template-columns: minmax(360px, 1fr) 7px var(--agent-inspector-width);
     min-height: 0;
     overflow: hidden;
 }
@@ -125,14 +125,14 @@
     min-height: 0;
 }
 
-.agent-plan-resizer {
+.agent-inspector-resizer {
     position: relative;
     min-width: 7px;
     cursor: col-resize;
     background: var(--agent-bg);
 }
 
-.agent-plan-resizer::before {
+.agent-inspector-resizer::before {
     content: "";
     position: absolute;
     top: 0;
@@ -142,18 +142,18 @@
     background: var(--agent-border);
 }
 
-.agent-plan-resizer:hover::before,
-.agent-plan-resizer:focus-visible::before,
-.agent-plan-resizing .agent-plan-resizer::before {
+.agent-inspector-resizer:hover::before,
+.agent-inspector-resizer:focus-visible::before,
+.agent-inspector-resizing .agent-inspector-resizer::before {
     background: var(--agent-border-strong);
 }
 
-.agent-plan-resizer:focus-visible {
+.agent-inspector-resizer:focus-visible {
     outline: 1px solid var(--agent-focus-ring);
     outline-offset: -2px;
 }
 
-.agent-plan-resizing {
+.agent-inspector-resizing {
     cursor: col-resize;
     user-select: none;
 }
