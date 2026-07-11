@@ -34,6 +34,7 @@ class AgentThreadManager {
         this.commandIndex = 0;
         this.visibleCommands = [];
         this.claudeCommands = [];
+        this.agentCommandsReady = false;
         this.modes = [];
         this.configOptions = [];
         this.currentModeId = '';
@@ -153,13 +154,17 @@ class AgentThreadManager {
                 this._updateRuntimeStatus(event);
                 break;
             case 'agent_thread_loaded':
+                this._clearCommandHint();
                 this._loadThread(event);
                 break;
             case 'agent_threads':
                 this._appendHistory(event.threads || []);
                 break;
             case 'agent_commands':
-                this._setClaudeCommands(event.commands || []);
+                this._setClaudeCommands(event.commands || [], event.ready === true);
+                break;
+            case 'agent_command_rejected':
+                this._showCommandHint(event.command || '', event.reason || 'unsupported');
                 break;
             case 'agent_modes':
                 this._setModes(event.modes || [], event.currentModeId || '');

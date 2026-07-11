@@ -13,6 +13,7 @@ AgentThreadManager.prototype._wireComposer = function() {
             }
         });
         this.input.addEventListener('input', () => {
+            this._clearCommandHint();
             this._resizeInput();
             this._updateCommandMenu();
         });
@@ -58,13 +59,20 @@ AgentThreadManager.prototype._submit = function() {
             return;
         }
 
-        const text = this.input.value.trim();
+        let text = this.input.value.trim();
         const attachmentIds = this._pendingAttachmentIds();
         if (!text && attachmentIds.length === 0) return;
+        const commandValidation = this._validateSubmissionCommand(text, this.pendingAttachments);
+        if (!commandValidation.allowed) {
+            this._showCommandHint(commandValidation.command || '', commandValidation.reason);
+            return;
+        }
+        text = commandValidation.text;
         if (!this._attachmentsReady()) {
             this._appendSystem('Images are still uploading. Wait for upload to finish, then send again.');
             return;
         }
+        this._clearCommandHint();
         this.input.value = '';
         this._resizeInput();
         this._hideCommandMenu();

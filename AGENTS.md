@@ -21,6 +21,10 @@ Use four spaces in C# and follow existing .NET conventions: `PascalCase` for typ
 
 There is currently no test project or coverage threshold. For every change, run `dotnet build PSX.slnx` and manually exercise the affected terminal or Agent workflow. Verify startup, tab lifecycle, shutdown, and theme/config reload when relevant. If adding tests, create a dedicated `*.Tests` project and name cases by behavior, such as `SaveSettings_InvalidColor_UsesFallback`.
 
+## Agent Slash Command Contract
+
+The slash-command menu is PSX's complete public command surface. A leading command is executable only when it is a PSX built-in command or appears in the current filtered ACP `available_commands_update` catalog. Reject every other leading `/command` before `session/prompt`; it must not enter busy state or be written to thread history. Slash-like text inside a normal prompt is ordinary text. Keep the JavaScript composer validation and the authoritative `AcpAgentSessionService` gate synchronized, and direct Claude Code-only interactive commands to `/terminal` instead of maintaining a command blacklist.
+
 ## Commit & Pull Request Guidelines
 
 This repository has no commit history from which to infer a convention. Use short, imperative subjects (for example, `Fix ACP session shutdown`) and keep commits focused. Pull requests should explain the problem and solution, list verification steps, link related issues, and include screenshots or recordings for UI changes. Call out changes to runtime packaging, `psx.ini`, or the implicit C#/JavaScript bridge contract.

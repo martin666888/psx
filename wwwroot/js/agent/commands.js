@@ -1,4 +1,5 @@
-AgentThreadManager.prototype._setClaudeCommands = function(commands) {
+AgentThreadManager.prototype._setClaudeCommands = function(commands, ready) {
+        this.agentCommandsReady = ready === true;
         this.claudeCommands = commands
             .map((command) => {
                 if (typeof command === 'string') {
@@ -16,8 +17,7 @@ AgentThreadManager.prototype._setClaudeCommands = function(commands) {
                     label: command.description || 'Send to Claude Agent',
                     claude: true
                 };
-            })
-            .filter((command) => command.name.toLowerCase() !== '/model');
+            });
         this._updateCommandMenu();
 };
 
@@ -26,7 +26,7 @@ AgentThreadManager.prototype._allCommands = function() {
 };
 
 AgentThreadManager.prototype._updateCommandMenu = function() {
-        const value = this.input.value;
+        const value = this.input.value.trimStart();
         if (!value.startsWith('/')) {
             this._hideCommandMenu();
             return;
@@ -104,6 +104,7 @@ AgentThreadManager.prototype._handleCommandKey = function(event) {
 
 AgentThreadManager.prototype._applyCommand = function(command) {
         if (command.fill) {
+            this._clearCommandHint();
             this.input.value = command.fill;
             this.input.focus();
             this.input.setSelectionRange(this.input.value.length, this.input.value.length);
@@ -112,6 +113,12 @@ AgentThreadManager.prototype._applyCommand = function(command) {
             return;
         }
 
+        if (this.pendingAttachments.length > 0) {
+            this._showCommandHint(command.name, 'attachments_not_allowed');
+            return;
+        }
+
+        this._clearCommandHint();
         this.input.value = '';
         this._hideCommandMenu();
         this._resizeInput();
@@ -127,4 +134,72 @@ AgentThreadManager.prototype._hideCommandMenu = function() {
         this.commandMenu.hidden = true;
         this.visibleCommands = [];
         this.commandIndex = 0;
+};
+
+AgentThreadManager.prototype._parseLeadingSlashCommand = function(text) {
+        const trimmed = String(text || '').trim();
+        if (!trimmed.startsWith('/')) return null;
+
+        const separator = trimmed.search(/\s/);
+        if (separator < 0) {
+            return { name: trimmed, arguments: '' };
+        }
+
+        return {
+            name: trimmed.slice(0, separator),
+            arguments: trimmed.slice(separator).trimStart()
+        };
+};
+
+AgentThreadManager.prototype._validateSubmissionCommand = function(text, attachmentIds) {
+        const parsed = this._parseLeadingSlashCommand(text);
+        if (!parsed) return { allowed: true, text };
+
+        const psxCommand = this.psxCommands.find((command) => {
+            const commandName = command.name.trim().split(/\s/, 1)[0];
+            return commandName.toLowerCase() === parsed.name.toLowerCase();
+        });
+        const agentCommand = this.claudeCommands.find(
+            (command) => command.name.toLowerCase() === parsed.name.toLowerCase());
+        const matched = psxCommand || agentCommand;
+
+        if (attachmentIds.length > 0) {
+            return { allowed: false, command: parsed.name, reason: 'attachments_not_allowed' };
+        }
+
+        if (!matched) {
+            return {
+                allowed: false,
+                command: parsed.name,
+                reason: this.agentCommandsReady ? 'unsupported' : 'commands_loading'
+            };
+        }
+
+        const canonicalName = matched.name.trim().split(/\s/, 1)[0];
+        return {
+            allowed: true,
+            text: parsed.arguments ? canonicalName + ' ' + parsed.arguments : canonicalName
+        };
+};
+
+AgentThreadManager.prototype._showCommandHint = function(command, reason) {
+        const hint = this.meta.commandHint;
+        if (!hint) return;
+
+        if (reason === 'attachments_not_allowed') {
+            hint.textContent = '斜杠命令不能与附件同时发送，请先移除附件。';
+        } else if (reason === 'commands_loading') {
+            hint.textContent = 'Agent 命令列表仍在加载，请稍后重试。';
+        } else {
+            hint.textContent = '无法识别命令：' + command
+                + '\nPSX 只支持命令菜单中显示的指令。输入 / 查看可用命令；部分 Claude Code 指令需要在原生 Terminal 中使用。';
+        }
+        hint.hidden = false;
+};
+
+AgentThreadManager.prototype._clearCommandHint = function() {
+        const hint = this.meta.commandHint;
+        if (!hint) return;
+        hint.textContent = '';
+        hint.hidden = true;
 };

@@ -37,6 +37,18 @@
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--agent-accent) 16%, transparent);
 }
 
+.agent-command-hint {
+    margin: 7px 0 0 46px;
+    color: var(--agent-text-muted);
+    font-size: 12px;
+    line-height: 1.45;
+    white-space: pre-line;
+}
+
+.agent-command-hint[hidden] {
+    display: none;
+}
+
 .agent-composer-footer {
     display: flex;
     flex-wrap: wrap;

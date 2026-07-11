@@ -19,6 +19,10 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         "image/webp",
         "image/gif"
     };
+    private static readonly HashSet<string> HiddenAgentCommands = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "/model"
+    };
 
     private sealed class AcpMode
     {
@@ -89,6 +93,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
     private readonly RuntimeLocator _runtimeLocator;
     private readonly AcpRuntimeManager _acpRuntime;
     private readonly object _runLock = new();
+    private readonly object _commandLock = new();
     private readonly object _runtimeInstallLock = new();
     private readonly SemaphoreSlim _transportLock = new(1, 1);
     private readonly SemaphoreSlim _sessionRestoreLock = new(1, 1);
@@ -102,6 +107,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
     private readonly Dictionary<string, string> _toolSummaries = new();
     private readonly Dictionary<string, string> _toolOutputs = new();
     private readonly HashSet<string> _startedToolCallIds = new();
+    private readonly Dictionary<string, string> _availableAgentCommands = new(StringComparer.OrdinalIgnoreCase);
     private AgentThread _currentThread;
     private AcpJsonRpcTransport? _transport;
     private string _workingDirectory = "";
@@ -125,6 +131,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
     private CancellationTokenSource? _transportLifetimeCts;
     private long _transportGeneration;
     private bool _requiresSessionReload;
+    private bool _agentCommandsReady;
     private CancellationTokenSource? _runtimeInstallCts;
     private bool _runtimeInstallInProgress;
     private string _runtimeInstallState = "missing";
@@ -175,10 +182,31 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray() ?? Array.Empty<string>();
 
-        if (trimmed.StartsWith('/') && attachments.Length == 0 && TryHandlePsxSlashCommand(trimmed, out var commandTask))
+        if (TryParseLeadingSlashCommand(trimmed, out var commandName, out var arguments))
         {
-            await commandTask.ConfigureAwait(false);
-            return;
+            if (attachments.Length > 0)
+            {
+                await SendCommandRejectedAsync(commandName, "attachments_not_allowed").ConfigureAwait(false);
+                return;
+            }
+
+            if (TryHandlePsxSlashCommand(trimmed, out var commandTask))
+            {
+                await commandTask.ConfigureAwait(false);
+                return;
+            }
+
+            if (!TryResolveAgentCommand(commandName, out var canonicalName, out var commandsReady))
+            {
+                await SendCommandRejectedAsync(
+                    commandName,
+                    commandsReady ? "unsupported" : "commands_loading").ConfigureAwait(false);
+                return;
+            }
+
+            trimmed = string.IsNullOrWhiteSpace(arguments)
+                ? canonicalName
+                : canonicalName + " " + arguments;
         }
 
         await StartAcpRunAsync(trimmed, attachments).ConfigureAwait(false);
@@ -314,6 +342,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         _currentThread = _threadStore.CreateThread(cwd);
         _currentThread.Provider = "acp-claude";
         ApplyThread(_currentThread);
+        await SendAgentCommandsUnavailableAsync().ConfigureAwait(false);
         await SendThreadLoadedAsync(clear: true).ConfigureAwait(false);
         await _bridgeService.SendEventAsync(new { type = "command_result", text = "Started a new ACP Agent draft. Claude will start on the first message." }).ConfigureAwait(false);
         await PublishStateAsync().ConfigureAwait(false);
@@ -331,6 +360,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         await CancelRunAsync(notify: false).ConfigureAwait(false);
         _currentThread = thread;
         ApplyThread(_currentThread);
+        await SendAgentCommandsUnavailableAsync().ConfigureAwait(false);
         _acpSessionId = null;
         _threadStore.SaveLastThread(_currentThread);
         await SendThreadLoadedAsync(clear: true).ConfigureAwait(false);
@@ -392,6 +422,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             : _threadStore.CreateThread(_workingDirectory);
         _currentThread.Provider = "acp-claude";
         ApplyThread(_currentThread);
+        await SendAgentCommandsUnavailableAsync().ConfigureAwait(false);
         await SendThreadLoadedAsync(clear: true).ConfigureAwait(false);
         await _bridgeService.SendEventAsync(new { type = "command_result", text = "Deleted thread." }).ConfigureAwait(false);
         await PublishStateAsync().ConfigureAwait(false);
@@ -516,7 +547,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
                 break;
             case "claude_command":
                 if (!string.IsNullOrWhiteSpace(e.Value))
-                    await StartAcpRunAsync(e.Value).ConfigureAwait(false);
+                    await SubmitMessageAsync(e.Value).ConfigureAwait(false);
                 break;
             case "set_mode":
                 if (!string.IsNullOrWhiteSpace(e.Value))
@@ -723,9 +754,13 @@ public sealed class AcpAgentSessionService : IAgentSessionService
 
     private bool TryHandlePsxSlashCommand(string commandText, out Task task)
     {
-        var parts = commandText.Split(' ', 2, StringSplitOptions.TrimEntries);
-        var command = parts[0].ToLowerInvariant();
-        var value = parts.Length > 1 ? parts[1] : "";
+        if (!TryParseLeadingSlashCommand(commandText, out var commandName, out var value))
+        {
+            task = Task.CompletedTask;
+            return false;
+        }
+
+        var command = commandName.ToLowerInvariant();
 
         task = command switch
         {
@@ -743,6 +778,69 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         };
 
         return command is "/clear" or "/new" or "/cwd" or "/terminal" or "/stop" or "/history" or "/delete" or "/help";
+    }
+
+    private static bool TryParseLeadingSlashCommand(
+        string text,
+        out string commandName,
+        out string arguments)
+    {
+        commandName = "";
+        arguments = "";
+        if (string.IsNullOrWhiteSpace(text) || text[0] != '/')
+            return false;
+
+        var separator = text.IndexOfAny([' ', '\t', '\r', '\n']);
+        if (separator < 0)
+        {
+            commandName = text;
+            return true;
+        }
+
+        commandName = text[..separator];
+        arguments = text[(separator + 1)..].TrimStart();
+        return true;
+    }
+
+    private bool TryResolveAgentCommand(
+        string commandName,
+        out string canonicalName,
+        out bool commandsReady)
+    {
+        lock (_commandLock)
+        {
+            commandsReady = _agentCommandsReady;
+            return _availableAgentCommands.TryGetValue(commandName, out canonicalName!);
+        }
+    }
+
+    private Task SendCommandRejectedAsync(string commandName, string reason)
+    {
+        return _bridgeService.SendEventAsync(new
+        {
+            type = "agent_command_rejected",
+            command = commandName,
+            reason
+        });
+    }
+
+    private void ClearAvailableAgentCommands()
+    {
+        lock (_commandLock)
+        {
+            _availableAgentCommands.Clear();
+            _agentCommandsReady = false;
+        }
+    }
+
+    private Task SendAgentCommandsUnavailableAsync()
+    {
+        return _bridgeService.SendEventAsync(new
+        {
+            type = "agent_commands",
+            ready = false,
+            commands = Array.Empty<object>()
+        });
     }
 
     private async Task PickDirectoryAsync()
@@ -1197,7 +1295,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
                 paths.AcpActiveDirectory,
                 logPath,
                 HandleAgentRequestAsync,
-                HandleAgentNotificationAsync);
+                notification => HandleAgentNotificationAsync(notification, generation));
 
             _transport = transport;
             _transportLifetimeCts = transportLifetimeCts;
@@ -1313,6 +1411,9 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         if (!ReferenceEquals(_transport, expectedTransport) || _transportGeneration != expectedGeneration)
             return false;
 
+        ClearAvailableAgentCommands();
+        if (!_disposed)
+            _ = SendAgentCommandsUnavailableAsync();
         _sessionIdPendingReload ??= _acpSessionId ?? _currentThread.AcpSessionId;
         _acpSessionId = null;
         _requiresSessionReload = !string.IsNullOrWhiteSpace(_sessionIdPendingReload);
@@ -1671,8 +1772,11 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         return terminal;
     }
 
-    private Task HandleAgentNotificationAsync(JsonElement notification)
+    private Task HandleAgentNotificationAsync(JsonElement notification, long generation)
     {
+        if (_transport == null || _transportGeneration != generation)
+            return Task.CompletedTask;
+
         var method = GetString(notification, "method");
         if (method != "session/update")
             return Task.CompletedTask;
@@ -2084,11 +2188,23 @@ public sealed class AcpAgentSessionService : IAgentSessionService
                 description = GetString(command, "description")
             })
             .Where(command => !string.IsNullOrWhiteSpace(command.name))
+            .Where(command => !HiddenAgentCommands.Contains(command.name!))
+            .GroupBy(command => command.name!, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
             .ToArray();
+
+        lock (_commandLock)
+        {
+            _availableAgentCommands.Clear();
+            foreach (var item in items)
+                _availableAgentCommands[item.name!] = item.name!;
+            _agentCommandsReady = true;
+        }
 
         return _bridgeService.SendEventAsync(new
         {
             type = "agent_commands",
+            ready = true,
             commands = items
         });
     }
@@ -2383,6 +2499,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
 
     private void ApplyThread(AgentThread thread)
     {
+        ClearAvailableAgentCommands();
         EnsureImageContextFlag(thread);
         _workingDirectory = Directory.Exists(thread.Cwd) ? thread.Cwd : ResolveWorkspaceRoot();
         _acpSessionId = null;

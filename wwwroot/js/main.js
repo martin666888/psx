@@ -16,6 +16,7 @@
             mode: document.getElementById('agent-mode'),
             configOptions: document.getElementById('agent-config-options'),
             contextUsed: document.getElementById('agent-context-used'),
+            commandHint: document.getElementById('agent-command-hint'),
             attachButton: document.getElementById('agent-attach'),
             attachmentInput: document.getElementById('agent-attachment-input'),
             attachmentStrip: document.getElementById('agent-attachments-strip'),
