@@ -1,9 +1,9 @@
-AgentThreadManager.prototype._setClaudeCommands = function(commands, ready) {
+AgentThreadManager.prototype._setAgentCommands = function(commands, ready) {
         this.agentCommandsReady = ready === true;
-        this.claudeCommands = commands
+        this.agentCommands = commands
             .map((command) => {
                 if (typeof command === 'string') {
-                    return { name: command, description: 'Send to Claude Agent' };
+                    return { name: command, description: 'Send to ' + this.assistantName + ' Agent' };
                 }
                 return command || {};
             })
@@ -12,17 +12,17 @@ AgentThreadManager.prototype._setClaudeCommands = function(commands, ready) {
                 const trimmed = command.name.trim();
                 const name = trimmed.startsWith('/') ? trimmed : '/' + trimmed;
                 return {
-                    source: 'Claude Agent',
+                    source: this.assistantName + ' Agent',
                     name,
-                    label: command.description || 'Send to Claude Agent',
-                    claude: true
+                    label: command.description || 'Send to ' + this.assistantName + ' Agent',
+                    agent: true
                 };
             });
         this._updateCommandMenu();
 };
 
 AgentThreadManager.prototype._allCommands = function() {
-        return this.psxCommands.concat(this.claudeCommands);
+        return this.psxCommands.concat(this.agentCommands);
 };
 
 AgentThreadManager.prototype._updateCommandMenu = function() {
@@ -130,8 +130,8 @@ AgentThreadManager.prototype._applyCommand = function(command) {
             this._showHistoryState('loading', 'Loading history...');
         }
 
-        if (command.claude) {
-            Bridge.sendAgentCommand('claude_command', command.name);
+        if (command.agent) {
+            Bridge.sendAgentCommand('agent_command', command.name);
         } else {
             Bridge.sendAgentCommand(command.command);
         }
@@ -166,7 +166,7 @@ AgentThreadManager.prototype._validateSubmissionCommand = function(text, attachm
             const commandName = command.name.trim().split(/\s/, 1)[0];
             return commandName.toLowerCase() === parsed.name.toLowerCase();
         });
-        const agentCommand = this.claudeCommands.find(
+        const agentCommand = this.agentCommands.find(
             (command) => command.name.toLowerCase() === parsed.name.toLowerCase());
         const matched = psxCommand || agentCommand;
 
@@ -200,7 +200,7 @@ AgentThreadManager.prototype._showCommandHint = function(command, reason) {
             hint.textContent = 'Agent 命令列表仍在加载，请稍后重试。';
         } else {
             hint.textContent = '无法识别命令：' + command
-                + '\nPSX 只支持命令菜单中显示的指令。输入 / 查看可用命令；部分 Claude Code 指令需要在原生 Terminal 中使用。';
+                + '\nPSX 只支持命令菜单中显示的指令。输入 / 查看可用命令；部分 ' + this.agentName + ' 指令需要在原生 Terminal 中使用。';
         }
         hint.hidden = false;
 };

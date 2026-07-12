@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this project is
 
-PSX is a Windows desktop terminal shell (C# + WPF + WebView2 + xterm.js + ConPTY) for running AI Agent CLIs (Claude Code, opencode, qodercli) and dev tools (node, npm, git). Two coexisting views in one window: a `Terminal` view (real ConPTY shells via xterm.js) and an `Agent` view (Claude chat workspace backed by the Agent Client Protocol). Multi-tab, themeable, persistent threads.
+PSX is a Windows desktop terminal shell (C# + WPF + WebView2 + xterm.js + ConPTY) for running AI Agent CLIs and dev tools. Two coexisting views share one window: a `Terminal` view (real ConPTY shells via xterm.js) and an `Agent` view backed by the Agent Client Protocol. Agent mode uses a curated provider architecture; Claude Code is currently the only registered/default provider. Multi-tab, themeable, persistent threads.
 
 Project-level interface rules live in `.interface-design/system.md`. Read and follow them before changing WPF or WebView2 UI.
 
@@ -85,18 +85,21 @@ Output is batched in `Services/ConPtyService.ReadOutputLoopAsync`: `8ms` flush i
 
 `OutputPipeRead` is a `SafeFileHandle` that needs `DangerousAddRef/DangerousRelease` across the P/Invoke boundary — see `ConPtyService.cs:174, 235-238`. Don't refactor to a plain `IntPtr`.
 
-### 3. Agent has two backends behind one interface
+### 3. Agent uses one shared ACP engine with curated providers
 
-`IAgentSessionService` has two implementations registered separately in git history:
+`AcpAgentSessionService` is the active, provider-agnostic ACP session engine registered as `IAgentSessionService`. It obtains the only active provider from `IAgentProviderRegistry.DefaultProvider`; there is intentionally no hidden switchable-provider state before an Agent selector is designed. Standard ACP session, permissions, elicitation, Plan, terminal and filesystem behavior stays in this shared engine.
 
-- `AcpAgentSessionService` — **the active one**, registered in DI in `App.ConfigureServices` (look for `AddSingleton<IAgentSessionService, AcpAgentSessionService>`). Spawns the bundled portable `node.exe` running `@agentclientprotocol/claude-agent-acp` (currently 0.57.x) from `runtime/acp-current/node_modules/.../dist/index.js` — resolved by `AcpAgentSessionService.ResolveAdapterFromRuntime`, which deliberately has **no fallback** to the legacy `tools/acp/` directory (version-skew hazard, see its doc comment). The ACP adapter in turn spawns the bundled `claude.exe` from `@anthropic-ai/claude-agent-sdk-win32-x64`. Communicates via JSON-RPC 2.0 over stdin/stdout through `AcpJsonRpcTransport` (uses `ConcurrentDictionary<int, TaskCompletionSource>` for async correlation, NDJSON logging at `_logPath`).
-- `ClaudeCodeAgentService` — **legacy/fallback**, parses `stream-json` from a direct `claude.exe` subprocess. Still in the codebase but not wired into DI. Don't delete without checking; the slash command `/terminal` (dispatched in `AcpAgentSessionService.TryHandlePsxSlashCommand`, which calls `OpenRawClaudeTerminalAsync`) deliberately falls back to opening a raw PowerShell tab running system `claude --resume`.
+Provider identity and compatibility policy live in `IAcpAgentProvider`. Runtime installation, update and process launch descriptions live in `IAcpAgentRuntime`. `AcpJsonRpcTransport` accepts an `AcpProcessSpec` and knows only how to run a process and exchange JSON-RPC over stdio. The session service tracks `_transportProviderKey` and rebuilds the transport before using a different provider. Do not add provider-name conditionals to the shared engine.
+
+`ClaudeAcpAgentProvider` is currently the only registered/default provider. It owns the `acp-claude` identity, the legacy `claude-cli` alias, command filtering, ACP session parameters and the native `claude --resume` Terminal profile. `AcpRuntimeManager` currently implements `IAcpAgentRuntime` for the bundled Node + `@agentclientprotocol/claude-agent-acp` runtime. Unknown thread providers open transcript-only and must never be restored through Claude.
+
+`ClaudeCodeAgentService` is legacy dead code in the current DI graph. Do not modify or delete it as part of provider work without a separate migration decision.
 
 Agent slash commands are allowlisted. `AcpAgentSessionService` is the authoritative gate: it accepts PSX commands plus the current filtered `available_commands_update` catalog, and rejects every other leading `/command` before `session/prompt`. Keep the JS composer validation and the C# gate synchronized; inline `/text` inside a normal prompt is not a command.
 
 The Agent workspace has a resizable right-side Inspector with persistent-in-process `Plan` and `History` tabs. History is a global cross-directory thread navigator backed by `agent_threads`; it never renders into the main transcript. `agent_history_error` is an inline Inspector state, and `agent_thread_loaded.selectPlan` distinguishes new-thread navigation from loading an existing History item. Preserve each tab's DOM/scroll state and keep the active tab across Terminal/Agent view switches.
 
-**Switching backends is a one-line change** in `App.ConfigureServices`. The whole point of the interface is to keep `AgentBridgeService` and the JS layer unaware of which one is running.
+Provider identity is sent to the frontend in `agent_state` and `runtime_status`. JavaScript uses `providerKey`, `agentName` and `assistantName`, with Claude fallbacks for bridge compatibility. Keep these payloads and the frontend identity handling synchronized.
 
 ### 4. ACP's "request/response" pattern uses `TaskCompletionSource`
 
@@ -104,7 +107,7 @@ Long-running ACP requests (permission prompts, elicitation forms) block on a `TC
 
 ### 5. ACP runtime: dual-directory install + background refresh
 
-`AcpRuntimeManager` owns the installed ACP adapter across two directories:
+`AcpRuntimeManager` is the current Claude implementation of `IAcpAgentRuntime` and owns the installed ACP adapter across two directories:
 - `runtime/acp-current/` — what the live Agent session reads, exclusively
 - `runtime/acp-next/` — where background `npm update` writes
 
@@ -133,7 +136,8 @@ When `runtime/acp-current/` is missing, Agent mode publishes `runtime_status: mi
 ## File-to-purpose map (only the non-obvious ones)
 
 - `Helpers/ProcessFactory.cs` — only place that knows how to start a ConPTY child process. Reused by `ConPtyService`.
-- `Services/AcpAgentSessionService.cs` — ~2100 lines, the bulk of the Agent mode. Has internal state machine (`ready` / `running` / `restoring` / `transcript_only` / `error` / `fallback`) and a `ReplayHistoryState` that distinguishes live vs replay event handling. Two parallel handler paths (`HandleSessionUpdateAsync` vs `HandleReplaySessionUpdateAsync`) — easy to get wrong, read both before editing.
+- `Services/AcpAgentSessionService.cs` — the shared ACP Agent engine. Has an internal state machine (`ready` / `running` / `restoring` / `transcript_only` / `error` / `fallback`) and a `ReplayHistoryState` that distinguishes live vs replay event handling. Provider-specific paths and CLI commands do not belong here.
+- `Services/ClaudeAcpAgentProvider.cs` — the curated Claude identity and compatibility policy. New official integrations add their own provider/runtime instead of copying the session engine.
 - `Services/AcpJsonRpcTransport.cs` — generic JSON-RPC 2.0 client over stdio. Could be lifted out as a standalone library.
 - `Services/SettingsService.cs` — hand-rolled INI parser, **no third-party INI library**. `ValidateColor` accepts CSS `#RRGGBBAA` and silently normalizes to WPF `#AARRGGBB`. Bad colors fall back to XAML defaults — never throw.
 - `Services/AgentThreadStore.cs` — owns `~/.psx/` layout: `agent/threads/<threadId>.json`, `agent/attachments/<threadId>/<id>.<ext>`, `agent/index.json`. Path safety uses `char.IsLetterOrDigit` filtering, not path canonicalization — see "not solved" below.
@@ -177,4 +181,4 @@ Note: `RuntimeLocator.Locate()` resolves all install-relative paths at startup. 
 - `TabManagementService.cs:11-14` — two `HashSet`s (`_closingSessions` and `_closedSessions`) with non-atomic reads across `OnConPtySessionExited` vs `OnClosing`. A duplicate `TabClosed` event is possible under load.
 - `AgentThreadStore.cs:340-352` — path-traversal defense is character-class filtering, not `Path.GetFullPath` + `StartsWith` verification. Acceptable for the current use case (GUID-derived `threadId`), but if `threadId` ever becomes user-supplied, replace it.
 - `AcpAgentSessionService` — `"__cancelled__"` magic string as cancel signal (referenced from both the cancellation path and the response-handling path). Replace with enum if you add a second signal.
-- `ClaudeCodeAgentService.cs` is dead code in the current DI graph but still shipped. Removing it requires checking that the `/terminal` slash command handler (`AcpAgentSessionService.TryHandlePsxSlashCommand` → `OpenRawClaudeTerminalAsync`) doesn't reference it.
+- `ClaudeCodeAgentService.cs` is dead code in the current DI graph but still shipped. Provider integration must use `IAcpAgentProvider`; do not revive or modify the legacy service incidentally.

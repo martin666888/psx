@@ -29,6 +29,10 @@ The slash-command menu is PSX's complete public command surface. A leading comma
 
 The resizable right-side Agent region is an Inspector with peer `Plan` and `History` tabs. Keep thread messages in the main conversation only: history lists, loading states, and history errors belong in the History tab and must never be appended as chat cards. Plan and History retain independent DOM and scroll state. New threads select Plan; loading an existing thread from History keeps History selected. When changing the `agent_threads`, `agent_history_error`, or `agent_thread_loaded` bridge payloads, update both Agent backends and the frontend dispatcher.
 
+## Agent Provider Architecture
+
+Agent mode uses one shared ACP session engine with curated PSX providers. `AcpAgentSessionService` must depend on `IAgentProviderRegistry.DefaultProvider`; it must not contain provider package paths, executable names, hidden-command lists, or native CLI launch commands. Provider identity and compatibility policy belong in `IAcpAgentProvider`, runtime installation and `AcpProcessSpec` creation belong in `IAcpAgentRuntime`, and `AcpJsonRpcTransport` remains provider-agnostic. Until an Agent selector is implemented, Claude is the only registered default provider. Unknown thread providers must open transcript-only and must never be restored through the default adapter. Do not add provider-name conditionals to the shared session engine or expose arbitrary user-defined ACP executables.
+
 ## Commit & Pull Request Guidelines
 
 This repository has no commit history from which to infer a convention. Use short, imperative subjects (for example, `Fix ACP session shutdown`) and keep commits focused. Pull requests should explain the problem and solution, list verification steps, link related issues, and include screenshots or recordings for UI changes. Call out changes to runtime packaging, `psx.ini`, or the implicit C#/JavaScript bridge contract.

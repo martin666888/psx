@@ -42,7 +42,10 @@ class AgentThreadManager {
         this._historyToolCounts = null;
         this.commandIndex = 0;
         this.visibleCommands = [];
-        this.claudeCommands = [];
+        this.providerKey = 'acp-claude';
+        this.agentName = 'Claude Code';
+        this.assistantName = 'Claude';
+        this.agentCommands = [];
         this.agentCommandsReady = false;
         this.modes = [];
         this.configOptions = [];
@@ -56,8 +59,8 @@ class AgentThreadManager {
             { source: 'PSX', name: '/clear', label: 'Clear visible messages only', command: 'clear' },
             { source: 'PSX', name: '/cwd', label: 'Show current working directory', command: 'cwd' },
             { source: 'PSX', name: '/cwd <path>', label: 'Switch cwd and start a new thread', fill: '/cwd ' },
-            { source: 'PSX', name: '/terminal', label: 'Open raw Claude terminal here', command: 'terminal' },
-            { source: 'PSX', name: '/stop', label: 'Stop the current Claude run', command: 'stop' },
+            { source: 'PSX', name: '/terminal', label: 'Open raw ' + this.assistantName + ' terminal here', command: 'terminal' },
+            { source: 'PSX', name: '/stop', label: 'Stop the current ' + this.assistantName + ' run', command: 'stop' },
             { source: 'PSX', name: '/history', label: 'Show saved Agent threads', command: 'history' },
             { source: 'PSX', name: '/delete', label: 'Delete the current thread', command: 'delete' },
             { source: 'PSX', name: '/help', label: 'Show PSX Agent commands', command: 'help' }
@@ -143,6 +146,28 @@ class AgentThreadManager {
         }
     }
 
+    _updateAgentIdentity(event) {
+        if (!event || typeof event !== 'object') return;
+
+        if (typeof event.providerKey === 'string' && event.providerKey.trim()) {
+            this.providerKey = event.providerKey.trim();
+        }
+        if (typeof event.agentName === 'string' && event.agentName.trim()) {
+            this.agentName = event.agentName.trim();
+        }
+        if (typeof event.assistantName === 'string' && event.assistantName.trim()) {
+            this.assistantName = event.assistantName.trim();
+        }
+
+        const terminal = this.psxCommands.find((command) => command.command === 'terminal');
+        if (terminal) terminal.label = 'Open raw ' + this.assistantName + ' terminal here';
+        const stop = this.psxCommands.find((command) => command.command === 'stop');
+        if (stop) stop.label = 'Stop the current ' + this.assistantName + ' run';
+
+        const modeLabel = this.meta.mode?.closest('.agent-mode-control');
+        if (modeLabel) modeLabel.title = this.assistantName + ' Agent mode';
+    }
+
     setVisible(visible) {
         this.panel.hidden = !visible;
         if (visible && this._runtimeReady()) {
@@ -175,7 +200,7 @@ class AgentThreadManager {
                 this._renderHistoryError(event.text || 'Unable to load Agent thread history.');
                 break;
             case 'agent_commands':
-                this._setClaudeCommands(event.commands || [], event.ready === true);
+                this._setAgentCommands(event.commands || [], event.ready === true);
                 break;
             case 'agent_command_rejected':
                 this._showCommandHint(event.command || '', event.reason || 'unsupported');
@@ -220,7 +245,7 @@ class AgentThreadManager {
                 this._historyGroupBody = null;
                 this._historyToolCounts = null;
                 this._clearPendingAttachments();
-                this._appendSystem('Thread UI cleared. Claude session context is unchanged.');
+                this._appendSystem('Thread UI cleared. ' + this.assistantName + ' session context is unchanged.');
                 break;
             case 'command_result':
                 this._appendSystem(event.text || '');
@@ -318,13 +343,13 @@ class AgentThreadManager {
                     this.currentRunGroup.classList.add('agent-run-group-error');
                 }
                 this._finalizeRunGroup();
-                this._appendTool('Claude error', event.text || 'Unknown error.', 'error');
+                this._appendTool(this.assistantName + ' error', event.text || 'Unknown error.', 'error');
                 if (event.visionContextHint) {
                     this._appendSystem(event.visionContextHint);
                 }
                 break;
             case 'resume_failed':
-                this._appendRecovery(event.text || 'Claude could not resume this session.');
+                this._appendRecovery(event.text || this.assistantName + ' could not resume this session.');
                 break;
         }
     }

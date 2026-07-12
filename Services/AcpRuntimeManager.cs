@@ -43,7 +43,7 @@ public sealed record AcpRuntimeVersionInfo(
 /// node_modules hazard where the foreground Agent could read a node_modules
 /// that a background npm update was mid-way through rewriting.
 /// </summary>
-public sealed class AcpRuntimeManager
+public sealed class AcpRuntimeManager : IAcpAgentRuntime
 {
     private static readonly string AcpAdapterSubpath =
         Path.Combine("node_modules", "@agentclientprotocol", "claude-agent-acp", "dist", "index.js");
@@ -81,6 +81,41 @@ public sealed class AcpRuntimeManager
     public string LogPath => _logPath;
 
     public RuntimePaths Paths => _locator.Locate();
+
+    public bool IsReady()
+    {
+        return IsAdapterInstalled() && IsBundledClaudeCodeInstalled();
+    }
+
+    public async Task PrepareForStartupAsync(CancellationToken cancellationToken = default)
+    {
+        await TryPromoteNextToCurrentAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public AcpProcessSpec CreateProcessSpec(string workingDirectory)
+    {
+        var paths = Paths;
+        var nodePath = paths.PortableNodePath;
+        if (string.IsNullOrWhiteSpace(nodePath))
+        {
+            throw new InvalidOperationException(
+                "Portable Node.js was not found next to PSX.exe. The release zip should include tools/node/node.exe.");
+        }
+
+        var adapterPath = Path.Combine(paths.AcpActiveDirectory, AcpAdapterSubpath);
+        if (!File.Exists(adapterPath))
+        {
+            throw new InvalidOperationException(
+                $"ACP adapter is missing at {paths.AcpActiveDirectory}. See log: {LogPath}");
+        }
+
+        return new AcpProcessSpec
+        {
+            FileName = nodePath,
+            WorkingDirectory = paths.AcpActiveDirectory,
+            Arguments = new[] { adapterPath }
+        };
+    }
 
     /// <summary>True when the active adapter JS entry point is present on disk.</summary>
     public bool IsAdapterInstalled()
@@ -147,6 +182,10 @@ public sealed class AcpRuntimeManager
                 "ACP runtime is already installed.");
         }
 
+        var writeFailure = await CheckRuntimeDirectoryWritableAsync(cancellationToken).ConfigureAwait(false);
+        if (writeFailure != null)
+            return writeFailure;
+
         await _npmLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -156,6 +195,44 @@ public sealed class AcpRuntimeManager
         {
             _npmLock.Release();
         }
+    }
+
+    private async Task<AcpRuntimeOperationResult?> CheckRuntimeDirectoryWritableAsync(
+        CancellationToken cancellationToken)
+    {
+        var paths = Paths;
+        string? probePath = null;
+        try
+        {
+            Directory.CreateDirectory(paths.RuntimeRoot);
+            probePath = Path.Combine(paths.RuntimeRoot, $".psx-write-probe-{Guid.NewGuid():N}.tmp");
+            await File.WriteAllTextAsync(probePath, "PSX runtime write probe", cancellationToken)
+                .ConfigureAwait(false);
+            File.Delete(probePath);
+            return null;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            if (probePath != null)
+            {
+                try { File.Delete(probePath); } catch { }
+            }
+
+            var message =
+                $"PSX cannot write to its runtime folder. Extract PSX to a writable folder and retry. {ex.Message}";
+            StatusChanged?.Invoke(message);
+            return new AcpRuntimeOperationResult(AcpRuntimeOperationKind.Failed, message);
+        }
+    }
+
+    Task<AcpRuntimeOperationResult> IAcpAgentRuntime.EnsureInstalledAsync(
+        CancellationToken cancellationToken)
+    {
+        return EnsureInstalledAsync(cancellationToken: cancellationToken);
     }
 
     private async Task<AcpRuntimeOperationResult> EnsureInstalledCoreAsync(
@@ -356,6 +433,12 @@ public sealed class AcpRuntimeManager
         {
             _npmLock.Release();
         }
+    }
+
+    Task<AcpRuntimeOperationResult> IAcpAgentRuntime.RefreshAsync(
+        CancellationToken cancellationToken)
+    {
+        return RefreshAsync(cancellationToken: cancellationToken);
     }
 
     /// <summary>

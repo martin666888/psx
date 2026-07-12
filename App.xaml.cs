@@ -48,14 +48,16 @@ public partial class App : Application
         services.AddSingleton<IAgentThreadStore, AgentThreadStore>();
         services.AddSingleton<IAgentDirectoryPicker, WpfAgentDirectoryPicker>();
 
-        // Runtime / ACP install pipeline. RuntimeLocator is pure and cheap;
-        // AcpRuntimeManager depends on AgentThreadStore for its log directory
+        // Runtime / ACP install pipeline. RuntimeLocator remains shared by
+        // Terminal/WebView2 and the concrete Claude runtime implementation.
         // (so logs land in the same %USERPROFILE%/.psx/ tree as thread data).
         services.AddSingleton<RuntimeLocator>();
         services.AddSingleton<AcpRuntimeManager>(sp =>
             new AcpRuntimeManager(
                 sp.GetRequiredService<RuntimeLocator>(),
                 Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "agent", "acp-logs")));
+        services.AddSingleton<ClaudeAcpAgentProvider>();
+        services.AddSingleton<IAgentProviderRegistry, AgentProviderRegistry>();
         services.AddSingleton<RuntimePreflightService>();
 
         services.AddSingleton<IAgentSessionService, AcpAgentSessionService>();

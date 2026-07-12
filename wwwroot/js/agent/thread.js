@@ -1,4 +1,5 @@
 AgentThreadManager.prototype._updateState = function(event) {
+        this._updateAgentIdentity(event);
         this.lastState = event;
         if (event.threadId) {
             this.currentThreadId = event.threadId;
@@ -25,7 +26,7 @@ AgentThreadManager.prototype._updateState = function(event) {
             this.sendButton.title = 'Start a new ACP Agent thread';
         } else {
             this.sendButton.textContent = this.isBusy ? 'Stop' : 'Send';
-            this.sendButton.title = this.isBusy ? 'Stop Claude' : 'Send message';
+            this.sendButton.title = this.isBusy ? 'Stop ' + this.assistantName : 'Send message';
         }
         this.sendButton.disabled = this.isRestoring || !this._runtimeReady();
         this.sendButton.classList.toggle('agent-send-stop', this.isBusy);
@@ -158,7 +159,7 @@ AgentThreadManager.prototype._loadThread = function(event) {
         this.currentTurn = null;
 
         if (messages.length === 0) {
-            this._appendSystem('Ready. Claude will start on the first message. Working directory and session state are shown above.');
+            this._appendSystem('Ready. ' + this.assistantName + ' will start on the first message. Working directory and session state are shown above.');
         }
 
         this._updateState({

@@ -18,7 +18,7 @@ public partial class MainWindow : Window
     private readonly ITerminalBridgeService? _bridgeService;
     private readonly IAgentBridgeService? _agentBridgeService;
     private readonly IAgentSessionService? _agentSessionService;
-    private readonly AcpRuntimeManager? _acpRuntime;
+    private readonly IAcpAgentRuntime? _agentRuntime;
     private readonly RuntimePreflightService? _preflight;
     private readonly ISettingsService? _settingsService;
     private bool _isShuttingDown;
@@ -35,7 +35,7 @@ public partial class MainWindow : Window
         ITerminalBridgeService bridgeService,
         IAgentBridgeService agentBridgeService,
         IAgentSessionService agentSessionService,
-        AcpRuntimeManager acpRuntime,
+        IAgentProviderRegistry providerRegistry,
         RuntimePreflightService preflight,
         ISettingsService settingsService)
     {
@@ -46,7 +46,7 @@ public partial class MainWindow : Window
         _bridgeService = bridgeService;
         _agentBridgeService = agentBridgeService;
         _agentSessionService = agentSessionService;
-        _acpRuntime = acpRuntime;
+        _agentRuntime = providerRegistry.DefaultProvider.Runtime;
         _preflight = preflight;
         _settingsService = settingsService;
 
@@ -78,11 +78,11 @@ public partial class MainWindow : Window
             if (_bridgeService == null || TerminalHostControl.WebView == null)
                 return;
 
-            // Wire ACP runtime progress to the status bar. New installations
+            // Wire the default Agent runtime progress to the status bar. New installations
             // only begin after the user confirms from Agent mode.
-            if (_acpRuntime != null)
+            if (_agentRuntime != null)
             {
-                _acpRuntime.StatusChanged += msg => _viewModel?.SetStatus(msg);
+                _agentRuntime.StatusChanged += msg => _viewModel?.SetStatus(msg);
             }
 
             // Run preflight before any WebView2-dependent service starts. The
@@ -107,7 +107,7 @@ public partial class MainWindow : Window
                 await _agentSessionService.PublishStateAsync();
             }
 
-            await InitializeAcpRuntimeStatusAsync();
+            await InitializeAgentRuntimeStatusAsync();
         }
         catch (Exception ex)
         {
@@ -115,36 +115,36 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task InitializeAcpRuntimeStatusAsync()
+    private async Task InitializeAgentRuntimeStatusAsync()
     {
-        if (_acpRuntime == null)
+        if (_agentRuntime == null)
             return;
 
         try
         {
-            await _acpRuntime.TryPromoteNextToCurrentAsync().ConfigureAwait(false);
-            _viewModel?.SetStatus(_acpRuntime.BuildStatusText());
+            await _agentRuntime.PrepareForStartupAsync().ConfigureAwait(false);
+            _viewModel?.SetStatus(_agentRuntime.BuildStatusText());
 
-            if (!_acpRuntime.GetVersionInfo().IsInstalled)
+            if (!_agentRuntime.IsReady())
                 return;
 
             _ = Task.Run(async () =>
             {
                 try
                 {
-                    await _acpRuntime.RefreshAsync().ConfigureAwait(false);
+                    await _agentRuntime.RefreshAsync().ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
                     System.Diagnostics.Debug.WriteLine("ACP runtime background refresh failed: " + ex);
-                    _viewModel?.SetStatus(_acpRuntime.BuildStatusText("更新失败，当前版本可继续使用，请下次重启尝试"));
+                    _viewModel?.SetStatus(_agentRuntime.BuildStatusText("更新失败，当前版本可继续使用，请下次重启尝试"));
                 }
             });
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine("ACP runtime status initialization failed: " + ex);
-            _viewModel?.SetStatus(_acpRuntime.BuildStatusText("更新失败，当前版本可继续使用，请下次重启尝试"));
+            _viewModel?.SetStatus(_agentRuntime.BuildStatusText("更新失败，当前版本可继续使用，请下次重启尝试"));
         }
     }
 

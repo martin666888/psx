@@ -19,11 +19,6 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         "image/webp",
         "image/gif"
     };
-    private static readonly HashSet<string> HiddenAgentCommands = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "/model"
-    };
-
     private sealed class AcpMode
     {
         public string Id { get; init; } = "";
@@ -97,8 +92,9 @@ public sealed class AcpAgentSessionService : IAgentSessionService
     private readonly ITerminalBridgeService _terminalBridgeService;
     private readonly IAgentThreadStore _threadStore;
     private readonly IAgentDirectoryPicker _directoryPicker;
-    private readonly RuntimeLocator _runtimeLocator;
-    private readonly AcpRuntimeManager _acpRuntime;
+    private readonly IAgentProviderRegistry _providerRegistry;
+    private readonly IAcpAgentProvider _provider;
+    private readonly IAcpAgentRuntime _runtime;
     private readonly object _runLock = new();
     private readonly object _commandLock = new();
     private readonly object _runtimeInstallLock = new();
@@ -119,6 +115,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
     private readonly Dictionary<string, string> _availableAgentCommands = new(StringComparer.OrdinalIgnoreCase);
     private AgentThread _currentThread;
     private AcpJsonRpcTransport? _transport;
+    private string? _transportProviderKey;
     private string _workingDirectory = "";
     private string? _acpSessionId;
     private string? _sessionIdPendingReload;
@@ -155,16 +152,16 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         ITerminalBridgeService terminalBridgeService,
         IAgentThreadStore threadStore,
         IAgentDirectoryPicker directoryPicker,
-        RuntimeLocator runtimeLocator,
-        AcpRuntimeManager acpRuntime)
+        IAgentProviderRegistry providerRegistry)
     {
         _bridgeService = bridgeService;
         _tabManagementService = tabManagementService;
         _terminalBridgeService = terminalBridgeService;
         _threadStore = threadStore;
         _directoryPicker = directoryPicker;
-        _runtimeLocator = runtimeLocator;
-        _acpRuntime = acpRuntime;
+        _providerRegistry = providerRegistry;
+        _provider = providerRegistry.DefaultProvider;
+        _runtime = _provider.Runtime;
         if (IsAgentRuntimeReady())
         {
             _runtimeInstallState = "ready";
@@ -174,12 +171,12 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         _currentThread = IsEmptyAgentDraft(initialThread)
             ? initialThread
             : _threadStore.CreateThread(initialThread.Cwd);
-        _currentThread.Provider = "acp-claude";
+        _currentThread.Provider = _provider.Descriptor.Key;
         ApplyThread(_currentThread);
         _bridgeService.UserMessageSubmitted += OnUserMessageSubmitted;
         _bridgeService.CommandReceived += OnCommandReceived;
         _bridgeService.AttachmentUploadReceived += OnAttachmentUploadReceived;
-        _acpRuntime.StatusChanged += OnRuntimeStatusChanged;
+        _runtime.StatusChanged += OnRuntimeStatusChanged;
     }
 
     public async Task SubmitMessageAsync(string text, IReadOnlyList<string>? attachmentIds = null)
@@ -377,12 +374,16 @@ public sealed class AcpAgentSessionService : IAgentSessionService
 
             var cwd = string.IsNullOrWhiteSpace(workingDirectory) ? _workingDirectory : workingDirectory;
             _currentThread = _threadStore.CreateThread(cwd);
-            _currentThread.Provider = "acp-claude";
+            _currentThread.Provider = _provider.Descriptor.Key;
             ApplyThread(_currentThread);
             await SendAgentCommandsUnavailableAsync().ConfigureAwait(false);
             navigation.Token.ThrowIfCancellationRequested();
             await SendThreadLoadedAsync(clear: true, selectPlan: true).ConfigureAwait(false);
-            await _bridgeService.SendEventAsync(new { type = "command_result", text = "Started a new ACP Agent draft. Claude will start on the first message." }).ConfigureAwait(false);
+            await _bridgeService.SendEventAsync(new
+            {
+                type = "command_result",
+                text = $"Started a new ACP Agent draft. {_provider.Descriptor.AssistantName} will start on the first message."
+            }).ConfigureAwait(false);
             navigation.Token.ThrowIfCancellationRequested();
             await PublishStateAsync().ConfigureAwait(false);
         }).ConfigureAwait(false);
@@ -409,6 +410,20 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             _acpSessionId = null;
             _threadStore.SaveLastThread(_currentThread);
             await SendThreadLoadedAsync(clear: true).ConfigureAwait(false);
+
+            if (!IsDefaultProviderThread(_currentThread))
+            {
+                _status = "transcript_only";
+                await _bridgeService.SendEventAsync(new
+                {
+                    type = "resume_failed",
+                    text = BuildUnsupportedProviderMessage(_currentThread.Provider)
+                }).ConfigureAwait(false);
+                navigation.Token.ThrowIfCancellationRequested();
+                await PublishStateAsync().ConfigureAwait(false);
+                return;
+            }
+
             await _bridgeService.SendEventAsync(new { type = "command_result", text = "Loading ACP session history..." }).ConfigureAwait(false);
             navigation.Token.ThrowIfCancellationRequested();
 
@@ -499,14 +514,25 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             {
                 await SendHistoryErrorAsync(ex).ConfigureAwait(false);
             }
-            _currentThread = next != null
-                ? _threadStore.LoadThread(next.ThreadId) ?? _threadStore.CreateThread(_workingDirectory)
-                : _threadStore.CreateThread(_workingDirectory);
-            _currentThread.Provider = "acp-claude";
+            var nextThread = next != null ? _threadStore.LoadThread(next.ThreadId) : null;
+            if (nextThread == null)
+            {
+                nextThread = _threadStore.CreateThread(_workingDirectory);
+                nextThread.Provider = _provider.Descriptor.Key;
+            }
+            _currentThread = nextThread;
             ApplyThread(_currentThread);
             await SendAgentCommandsUnavailableAsync().ConfigureAwait(false);
             navigation.Token.ThrowIfCancellationRequested();
             await SendThreadLoadedAsync(clear: true).ConfigureAwait(false);
+            if (!IsDefaultProviderThread(_currentThread))
+            {
+                await _bridgeService.SendEventAsync(new
+                {
+                    type = "resume_failed",
+                    text = BuildUnsupportedProviderMessage(_currentThread.Provider)
+                }).ConfigureAwait(false);
+            }
             await _bridgeService.SendEventAsync(new { type = "command_result", text = "Deleted thread." }).ConfigureAwait(false);
             navigation.Token.ThrowIfCancellationRequested();
             await PublishStateAsync().ConfigureAwait(false);
@@ -644,6 +670,9 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             title = _currentThread.Title,
             status = _status,
             busy = _isRunning,
+            providerKey = _provider.Descriptor.Key,
+            agentName = _provider.Descriptor.DisplayName,
+            assistantName = _provider.Descriptor.AssistantName,
             supportsImage = _supportsImage,
             contextUsedTokens = _currentThread.ContextUsedTokens,
             store = _threadStore.RootDirectory
@@ -699,7 +728,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
                 await PickDirectoryAsync().ConfigureAwait(false);
                 break;
             case "terminal":
-                await OpenRawClaudeTerminalAsync().ConfigureAwait(false);
+                await OpenNativeAgentTerminalAsync().ConfigureAwait(false);
                 break;
             case "stop":
                 await CancelAsync().ConfigureAwait(false);
@@ -717,6 +746,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             case "help":
                 await SendHelpAsync().ConfigureAwait(false);
                 break;
+            case "agent_command":
             case "claude_command":
                 if (!string.IsNullOrWhiteSpace(e.Value))
                     await SubmitMessageAsync(e.Value).ConfigureAwait(false);
@@ -753,7 +783,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
 
     private bool IsAgentRuntimeReady()
     {
-        return _acpRuntime.IsAdapterInstalled() && _acpRuntime.IsBundledClaudeCodeInstalled();
+        return _runtime.IsReady();
     }
 
     private void OnRuntimeStatusChanged(string message)
@@ -803,31 +833,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         {
             await PublishRuntimeStatusAsync().ConfigureAwait(false);
 
-            var paths = _runtimeLocator.Locate();
-            try
-            {
-                Directory.CreateDirectory(paths.RuntimeRoot);
-                var probePath = Path.Combine(paths.RuntimeRoot, $".psx-write-probe-{Guid.NewGuid():N}.tmp");
-                await File.WriteAllTextAsync(probePath, "PSX runtime write probe", installCts.Token).ConfigureAwait(false);
-                File.Delete(probePath);
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                lock (_runtimeInstallLock)
-                {
-                    _runtimeInstallState = "failed";
-                    _runtimeInstallMessage =
-                        $"PSX cannot write to its runtime folder. Extract PSX to a writable folder and retry. {ex.Message}";
-                }
-                return;
-            }
-
-            var result = await _acpRuntime.EnsureInstalledAsync(
-                cancellationToken: installCts.Token).ConfigureAwait(false);
+            var result = await _runtime.EnsureInstalledAsync(installCts.Token).ConfigureAwait(false);
 
             lock (_runtimeInstallLock)
             {
@@ -917,6 +923,8 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         return _bridgeService.SendEventAsync(new
         {
             type = "runtime_status",
+            providerKey = _provider.Descriptor.Key,
+            agentName = _provider.Descriptor.DisplayName,
             state,
             message,
             canInstall = state is "missing" or "failed" or "cancelled",
@@ -941,7 +949,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             "/cwd" => string.IsNullOrWhiteSpace(value)
                 ? _bridgeService.SendEventAsync(new { type = "command_result", text = $"Current working directory: {_workingDirectory}" })
                 : ChangeDirectoryAsync(value),
-            "/terminal" => OpenRawClaudeTerminalAsync(),
+            "/terminal" => OpenNativeAgentTerminalAsync(),
             "/stop" => CancelAsync(),
             "/history" => ListThreadsAsync(),
             "/delete" => DeleteThreadAsync(_currentThread.ThreadId),
@@ -1027,7 +1035,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         return _bridgeService.SendEventAsync(new
         {
             type = "command_result",
-            text = "PSX commands: /clear, /new, /cwd, /cwd <path>, /terminal, /stop, /history, /delete, /help. ACP commands are sent through Claude Agent."
+            text = $"PSX commands: /clear, /new, /cwd, /cwd <path>, /terminal, /stop, /history, /delete, /help. ACP commands are sent through {_provider.Descriptor.AssistantName} Agent."
         });
     }
 
@@ -1078,27 +1086,25 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         }
     }
 
-    private async Task OpenRawClaudeTerminalAsync()
+    private async Task OpenNativeAgentTerminalAsync()
     {
-        var escapedCwd = _workingDirectory.Replace("'", "''");
-        var claudeCommand = string.IsNullOrWhiteSpace(_acpSessionId)
-            ? "claude"
-            : $"claude --resume {_acpSessionId}";
-        var profile = new ShellProfile
+        var profile = _provider.CreateNativeTerminalProfile(_workingDirectory, _acpSessionId);
+        if (profile == null)
         {
-            Id = "claude-code",
-            Name = "Claude Code",
-            Command = "powershell.exe",
-            Arguments = $"-NoExit -Command Set-Location -LiteralPath '{escapedCwd}'; {claudeCommand}",
-            StartingDirectory = _workingDirectory
-        };
+            await _bridgeService.SendEventAsync(new
+            {
+                type = "command_result",
+                text = $"{_provider.Descriptor.DisplayName} does not provide a native Terminal entry point."
+            }).ConfigureAwait(false);
+            return;
+        }
 
         await _tabManagementService.CreateTabAsync(profile).ConfigureAwait(false);
         await _terminalBridgeService.SetViewModeAsync("terminal").ConfigureAwait(false);
         await _bridgeService.SendEventAsync(new
         {
             type = "raw_terminal_fallback",
-            text = "Opened a raw Claude Code terminal tab in the current working directory."
+            text = $"Opened a raw {_provider.Descriptor.DisplayName} terminal tab in the current working directory."
         }).ConfigureAwait(false);
         _status = "fallback";
         await PublishStateAsync().ConfigureAwait(false);
@@ -1179,7 +1185,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             {
                 cts.Dispose();
                 requestCts.Dispose();
-                _ = SendRunFailedAsync("Claude Agent is still responding. Wait for the current run to finish or use /stop.");
+                _ = SendRunFailedAsync($"{_provider.Descriptor.AssistantName} Agent is still responding. Wait for the current run to finish or use /stop.");
                 return;
             }
 
@@ -1352,16 +1358,16 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         if (!createIfMissing)
             return;
 
-        var result = await _transport!.SendRequestAsync("session/new", new
-        {
-            cwd = _workingDirectory,
-            mcpServers = Array.Empty<object>()
-        }, TimeSpan.FromSeconds(30), GetEffectiveCancellationToken(cancellationToken)).ConfigureAwait(false);
+        var result = await _transport!.SendRequestAsync(
+            "session/new",
+            _provider.CreateNewSessionParameters(_workingDirectory),
+            TimeSpan.FromSeconds(30),
+            GetEffectiveCancellationToken(cancellationToken)).ConfigureAwait(false);
 
         _acpSessionId = GetString(result, "sessionId");
         _sessionIdPendingReload = null;
         _requiresSessionReload = false;
-        _currentThread.Provider = "acp-claude";
+        _currentThread.Provider = _provider.Descriptor.Key;
         _currentThread.AcpSessionId = _acpSessionId;
         _currentThread.AdapterVersion = _adapterVersion;
         CaptureModes(result);
@@ -1384,12 +1390,11 @@ public sealed class AcpAgentSessionService : IAgentSessionService
 
         try
         {
-            var loadResult = await _transport!.SendRequestAsync("session/load", new
-            {
-                sessionId,
-                cwd = _workingDirectory,
-                mcpServers = Array.Empty<object>()
-            }, TimeSpan.FromSeconds(45), GetEffectiveCancellationToken(cancellationToken)).ConfigureAwait(false);
+            var loadResult = await _transport!.SendRequestAsync(
+                "session/load",
+                _provider.CreateLoadSessionParameters(sessionId, _workingDirectory),
+                TimeSpan.FromSeconds(45),
+                GetEffectiveCancellationToken(cancellationToken)).ConfigureAwait(false);
 
             _acpSessionId = sessionId;
             _sessionIdPendingReload = null;
@@ -1425,35 +1430,29 @@ public sealed class AcpAgentSessionService : IAgentSessionService
     private async Task EnsureTransportAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!IsDefaultProviderThread(_currentThread))
+            throw new InvalidOperationException(BuildUnsupportedProviderMessage(_currentThread.Provider));
+
         var effectiveToken = GetEffectiveCancellationToken(cancellationToken);
         await _transportLock.WaitAsync(effectiveToken).ConfigureAwait(false);
         try
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (_transport?.IsRunning == true)
-                return;
+            {
+                if (string.Equals(_transportProviderKey, _provider.Descriptor.Key, StringComparison.OrdinalIgnoreCase))
+                    return;
+
+                ResetTransportCore(_transport, _transportGeneration);
+            }
 
             if (_transport != null)
                 ResetTransportCore(_transport, _transportGeneration);
-
-            var paths = _runtimeLocator.Locate();
-            if (paths.PortableNodePath == null)
-            {
-                throw new InvalidOperationException(
-                    "Portable Node.js was not found next to PSX.exe. The release zip should include tools/node/node.exe.");
-            }
 
             if (!IsAgentRuntimeReady())
             {
                 throw new InvalidOperationException(
                     "Agent runtime is not installed. Open Agent mode and choose Install runtime first.");
-            }
-
-            var adapter = ResolveAdapterFromRuntime(paths);
-            if (adapter == null)
-            {
-                throw new InvalidOperationException(
-                    $"ACP adapter is still missing after install at {paths.AcpActiveDirectory}. See log: {_acpRuntime.LogPath}");
             }
 
             var logDirectory = Path.Combine(_threadStore.RootDirectory, "agent", "acp-logs");
@@ -1462,14 +1461,13 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             var generation = ++_transportGeneration;
             var transportLifetimeCts = CancellationTokenSource.CreateLinkedTokenSource(_serviceLifetimeCts.Token);
             var transport = new AcpJsonRpcTransport(
-                paths.PortableNodePath,
-                adapter,
-                paths.AcpActiveDirectory,
+                _runtime.CreateProcessSpec(_workingDirectory),
                 logPath,
                 HandleAgentRequestAsync,
                 notification => HandleAgentNotificationAsync(notification, generation));
 
             _transport = transport;
+            _transportProviderKey = _provider.Descriptor.Key;
             _transportLifetimeCts = transportLifetimeCts;
 
             try
@@ -1595,6 +1593,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         _transportLifetimeCts = null;
 
         _transport = null;
+        _transportProviderKey = null;
         expectedTransport.Dispose();
         CleanupTerminalsForGeneration(expectedGeneration);
         return true;
@@ -1674,7 +1673,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         var title = GetString(toolCall, "title");
         if (string.IsNullOrWhiteSpace(title))
         {
-            title = GetString(toolCall, "name") ?? "Claude permission request";
+            title = GetString(toolCall, "name") ?? $"{_provider.Descriptor.AssistantName} permission request";
         }
 
         // 提取工具输入参数：尝试多个可能的字段
@@ -1748,7 +1747,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             type = "elicitation_request",
             requestId,
             mode = GetString(parameters, "mode"),
-            message = GetString(parameters, "message", "Claude needs more information."),
+            message = GetString(parameters, "message", $"{_provider.Descriptor.AssistantName} needs more information."),
             schema = parameters.TryGetProperty("requestedSchema", out var schema) ? JsonElementToObject(schema) : null,
             url = GetString(parameters, "url")
         }).ConfigureAwait(false);
@@ -2360,7 +2359,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
                 description = GetString(command, "description")
             })
             .Where(command => !string.IsNullOrWhiteSpace(command.name))
-            .Where(command => !HiddenAgentCommands.Contains(command.name!))
+            .Where(command => _provider.IsCommandVisible(command.name!))
             .GroupBy(command => command.name!, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.First())
             .ToArray();
@@ -2648,11 +2647,14 @@ public sealed class AcpAgentSessionService : IAgentSessionService
 
     private void SaveCurrentThread()
     {
-        _currentThread.Cwd = _workingDirectory;
-        _currentThread.Provider = "acp-claude";
-        _currentThread.AcpSessionId = _acpSessionId ?? _sessionIdPendingReload;
-        _currentThread.ModeId = _currentModeId;
-        _currentThread.AdapterVersion = _adapterVersion;
+        if (IsDefaultProviderThread(_currentThread))
+        {
+            _currentThread.Cwd = _workingDirectory;
+            _currentThread.Provider = _provider.Descriptor.Key;
+            _currentThread.AcpSessionId = _acpSessionId ?? _sessionIdPendingReload;
+            _currentThread.ModeId = _currentModeId;
+            _currentThread.AdapterVersion = _adapterVersion;
+        }
         _threadStore.SaveThread(_currentThread);
     }
 
@@ -2679,7 +2681,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         _requiresSessionReload = false;
         _currentModeId = thread.ModeId;
         _adapterVersion = thread.AdapterVersion;
-        _status = "ready";
+        _status = IsDefaultProviderThread(thread) ? "ready" : "transcript_only";
         _thinkingBuffer.Clear();
         _assistantBuffer.Clear();
         _toolNames.Clear();
@@ -2706,6 +2708,17 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         return string.IsNullOrWhiteSpace(thread.ClaudeSessionId)
             && string.IsNullOrWhiteSpace(thread.AcpSessionId)
             && thread.Messages.Count == 0;
+    }
+
+    private bool IsDefaultProviderThread(AgentThread thread)
+    {
+        return ReferenceEquals(_providerRegistry.Find(thread.Provider), _provider);
+    }
+
+    private static string BuildUnsupportedProviderMessage(string? providerKey)
+    {
+        var displayKey = string.IsNullOrWhiteSpace(providerKey) ? "(missing)" : providerKey;
+        return $"This thread belongs to an unsupported Agent provider ({displayKey}). Showing local transcript only.";
     }
 
     private Task SendThreadLoadedAsync(bool clear, bool selectPlan = false)
@@ -2844,22 +2857,6 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             || string.Equals(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
                 root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
                 StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string? ResolveAdapterFromRuntime(RuntimePaths paths)
-    {
-        // Single canonical path inside the runtime dir; RuntimeLocator fixes
-        // this under AppContext.BaseDirectory/runtime/. Do not fall back anywhere else —
-        // mixing the legacy tools/acp/ with the new runtime/ causes version
-        // skew between seed, install, and runtime.
-        var candidate = Path.Combine(
-            paths.AcpActiveDirectory,
-            "node_modules",
-            "@agentclientprotocol",
-            "claude-agent-acp",
-            "dist",
-            "index.js");
-        return File.Exists(candidate) ? candidate : null;
     }
 
     private static IEnumerable<string> FindRepositoryRoots()
@@ -3210,7 +3207,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         _bridgeService.UserMessageSubmitted -= OnUserMessageSubmitted;
         _bridgeService.CommandReceived -= OnCommandReceived;
         _bridgeService.AttachmentUploadReceived -= OnAttachmentUploadReceived;
-        _acpRuntime.StatusChanged -= OnRuntimeStatusChanged;
+        _runtime.StatusChanged -= OnRuntimeStatusChanged;
         CancellationTokenSource? navigationCts;
         lock (_navigationStateLock)
         {

@@ -21,13 +21,13 @@ AgentThreadManager.prototype._appendDecision = function(event, kind) {
 
         const titleSpan = document.createElement('span');
         titleSpan.className = 'agent-decision-header-title';
-        titleSpan.textContent = event.title || (kind === 'permission' ? 'Permission request' : 'Claude question');
+        titleSpan.textContent = event.title || (kind === 'permission' ? 'Permission request' : this.assistantName + ' question');
 
         const subtitleSpan = document.createElement('span');
         subtitleSpan.className = 'agent-decision-header-subtitle';
         subtitleSpan.textContent = kind === 'permission'
-            ? 'Claude Agent needs your approval before continuing.'
-            : 'Claude Agent is waiting for your answer.';
+            ? this.assistantName + ' Agent needs your approval before continuing.'
+            : this.assistantName + ' Agent is waiting for your answer.';
 
         titleRow.appendChild(chevron);
         titleRow.appendChild(titleSpan);
@@ -109,7 +109,7 @@ AgentThreadManager.prototype._appendElicitation = function(event) {
 
         const title = document.createElement('div');
         title.className = 'agent-decision-title';
-        title.textContent = 'Claude Agent needs input';
+        title.textContent = this.assistantName + ' Agent needs input';
 
         const subtitle = document.createElement('div');
         subtitle.className = 'agent-decision-subtitle';

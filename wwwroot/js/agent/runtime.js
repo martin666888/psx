@@ -16,6 +16,7 @@ AgentThreadManager.prototype._wireRuntimeControls = function() {
 };
 
 AgentThreadManager.prototype._updateRuntimeStatus = function(event) {
+    this._updateAgentIdentity(event);
     const allowedStates = new Set(['missing', 'installing', 'ready', 'failed', 'cancelled']);
     this.runtimeState = allowedStates.has(event.state) ? event.state : 'missing';
     this.runtimeMessage = event.message || 'Agent runtime is not installed.';
@@ -59,7 +60,7 @@ AgentThreadManager.prototype._syncRuntimeControls = function() {
     this.input.disabled = blocked || this.isRestoring;
     this.input.placeholder = blocked
         ? 'Install the Agent runtime to start messaging'
-        : 'Message Claude Agent - / for commands';
+        : 'Message ' + this.assistantName + ' Agent - / for commands';
     this.sendButton.disabled = blocked || this.isRestoring;
     this._syncAttachmentControls();
     this._syncConfigOptionDisabledState();

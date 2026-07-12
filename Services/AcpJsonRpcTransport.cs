@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using PSX.Models;
 
 namespace PSX.Services;
 
@@ -13,9 +14,7 @@ public sealed class AcpJsonRpcTransport : IDisposable
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
-    private readonly string _nodePath;
-    private readonly string _adapterPath;
-    private readonly string _workingDirectory;
+    private readonly AcpProcessSpec _processSpec;
     private readonly string _logPath;
     private readonly Func<JsonElement, Task<object?>> _requestHandler;
     private readonly Func<JsonElement, Task> _notificationHandler;
@@ -29,16 +28,12 @@ public sealed class AcpJsonRpcTransport : IDisposable
     private volatile bool _disposed;
 
     public AcpJsonRpcTransport(
-        string nodePath,
-        string adapterPath,
-        string workingDirectory,
+        AcpProcessSpec processSpec,
         string logPath,
         Func<JsonElement, Task<object?>> requestHandler,
         Func<JsonElement, Task> notificationHandler)
     {
-        _nodePath = nodePath;
-        _adapterPath = adapterPath;
-        _workingDirectory = workingDirectory;
+        _processSpec = processSpec;
         _logPath = logPath;
         _requestHandler = requestHandler;
         _notificationHandler = notificationHandler;
@@ -76,8 +71,8 @@ public sealed class AcpJsonRpcTransport : IDisposable
 
             var startInfo = new ProcessStartInfo
             {
-                FileName = _nodePath,
-                WorkingDirectory = _workingDirectory,
+                FileName = _processSpec.FileName,
+                WorkingDirectory = _processSpec.WorkingDirectory,
                 UseShellExecute = false,
                 RedirectStandardInput = true,
                 RedirectStandardOutput = true,
@@ -87,7 +82,15 @@ public sealed class AcpJsonRpcTransport : IDisposable
                 StandardOutputEncoding = Encoding.UTF8,
                 StandardErrorEncoding = Encoding.UTF8
             };
-            startInfo.ArgumentList.Add(_adapterPath);
+            foreach (var argument in _processSpec.Arguments)
+                startInfo.ArgumentList.Add(argument);
+            foreach (var variable in _processSpec.Environment)
+            {
+                if (variable.Value == null)
+                    startInfo.Environment.Remove(variable.Key);
+                else
+                    startInfo.Environment[variable.Key] = variable.Value;
+            }
 
             var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
             if (!process.Start())

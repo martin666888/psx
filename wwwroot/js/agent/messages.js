@@ -11,7 +11,7 @@ AgentThreadManager.prototype._appendMessage = function(role, text) {
 
         const label = document.createElement('div');
         label.className = 'agent-message-label';
-        label.textContent = role === 'user' ? 'You' : 'Claude';
+        label.textContent = role === 'user' ? 'You' : this.assistantName;
 
         const body = document.createElement('div');
         body.className = 'agent-message-body';
