@@ -73,7 +73,7 @@ public partial class MainWindow : Window
         try
         {
             if (!string.IsNullOrWhiteSpace(_settingsService?.StartupWarning))
-                _viewModel?.SetStatus(_settingsService.StartupWarning);
+                _viewModel?.SetPersistentWarning(_settingsService.StartupWarning);
 
             if (_bridgeService == null || TerminalHostControl.WebView == null)
                 return;

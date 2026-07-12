@@ -328,10 +328,31 @@
                     </Style.Triggers>
                 </Style>
             </Border.Style>
-            <TextBlock Text="{Binding StatusMessage}"
-                       Foreground="{DynamicResource TextSecondaryBrush}"
-                       FontSize="11"
-                       TextTrimming="CharacterEllipsis"/>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding StatusMessage}"
+                           ToolTip="{Binding StatusMessage}"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
+                           FontSize="11"
+                           TextTrimming="CharacterEllipsis"/>
+                <Button Grid.Column="1"
+                        Width="22"
+                        Height="20"
+                        Margin="8,0,0,0"
+                        Padding="0"
+                        Content="×"
+                        ToolTip="Dismiss warning"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        Foreground="{DynamicResource TextSecondaryBrush}"
+                        Cursor="Hand"
+                        Command="{Binding DismissPersistentWarningCommand}"
+                        Visibility="{Binding HasPersistentWarning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+            </Grid>
         </Border>
     </Grid>
 </Window>

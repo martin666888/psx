@@ -12,6 +12,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly ITerminalBridgeService _terminalBridgeService;
     private bool _isCreatingReplacementTab;
     private bool _disposed;
+    private string? _routineStatus;
+    private string? _persistentWarning;
 
     public ObservableCollection<TabItemViewModel> Tabs { get; } = new();
     public ThemePickerViewModel ThemePicker { get; }
@@ -23,6 +25,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private bool _isStatusVisible;
 
+    [ObservableProperty]
+    private bool _hasPersistentWarning;
+
     public bool HasStatus => !string.IsNullOrEmpty(StatusMessage);
 
     public void SetStatus(string? message)
@@ -31,9 +36,34 @@ public partial class MainViewModel : ObservableObject, IDisposable
         System.Windows.Application.Current.Dispatcher.BeginInvoke(() =>
         {
             if (_disposed) return;
-            StatusMessage = message;
-            IsStatusVisible = !string.IsNullOrEmpty(message);
+            _routineStatus = message;
+            RefreshStatusMessage();
         });
+    }
+
+    public void SetPersistentWarning(string? message)
+    {
+        if (_disposed) return;
+        System.Windows.Application.Current.Dispatcher.BeginInvoke(() =>
+        {
+            if (_disposed) return;
+            _persistentWarning = message;
+            RefreshStatusMessage();
+        });
+    }
+
+    [RelayCommand]
+    private void DismissPersistentWarning()
+    {
+        _persistentWarning = null;
+        RefreshStatusMessage();
+    }
+
+    private void RefreshStatusMessage()
+    {
+        HasPersistentWarning = !string.IsNullOrWhiteSpace(_persistentWarning);
+        StatusMessage = HasPersistentWarning ? _persistentWarning : _routineStatus;
+        IsStatusVisible = !string.IsNullOrWhiteSpace(StatusMessage);
     }
 
     [ObservableProperty]

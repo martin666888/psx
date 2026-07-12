@@ -71,6 +71,13 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         public CancellationToken TransportToken { get; init; }
     }
 
+    private sealed class NavigationOperation
+    {
+        public long Generation { get; init; }
+        public CancellationTokenSource Cancellation { get; init; } = null!;
+        public CancellationToken Token => Cancellation.Token;
+    }
+
     private sealed class ReplayHistoryState
     {
         public List<AgentMessage> Messages { get; } = new();
@@ -95,8 +102,10 @@ public sealed class AcpAgentSessionService : IAgentSessionService
     private readonly object _runLock = new();
     private readonly object _commandLock = new();
     private readonly object _runtimeInstallLock = new();
+    private readonly object _navigationStateLock = new();
     private readonly SemaphoreSlim _transportLock = new(1, 1);
     private readonly SemaphoreSlim _sessionRestoreLock = new(1, 1);
+    private readonly SemaphoreSlim _navigationLock = new(1, 1);
     private readonly CancellationTokenSource _serviceLifetimeCts = new();
     private readonly ConcurrentDictionary<string, PendingPermission> _pendingPermissions = new();
     private readonly ConcurrentDictionary<string, PendingElicitation> _pendingElicitations = new();
@@ -133,6 +142,8 @@ public sealed class AcpAgentSessionService : IAgentSessionService
     private bool _requiresSessionReload;
     private bool _agentCommandsReady;
     private CancellationTokenSource? _runtimeInstallCts;
+    private CancellationTokenSource? _navigationCts;
+    private long _navigationGeneration;
     private bool _runtimeInstallInProgress;
     private string _runtimeInstallState = "missing";
     private string _runtimeInstallMessage = "Agent runtime is not installed.";
@@ -231,11 +242,18 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         Task? oldTask;
         AcpJsonRpcTransport? runTransport;
         long runTransportGeneration;
+        string? stoppingRunId;
+        bool hadRun;
         lock (_runLock)
         {
             cts = _runCts;
             requestCts = _runRequestCts;
             oldTask = _currentRunTask;
+            // Capture the run we are stopping so the tail cleanup below can
+            // tell it apart from a newer run the user may have started while
+            // we waited for the old task to finish.
+            stoppingRunId = _currentRunId;
+            hadRun = stoppingRunId != null || cts != null || requestCts != null || oldTask != null;
             runTransport = _currentRunTransport ?? _transport;
             runTransportGeneration = _currentRunTransportGeneration != 0
                 ? _currentRunTransportGeneration
@@ -320,112 +338,250 @@ public sealed class AcpAgentSessionService : IAgentSessionService
 
         lock (_runLock)
         {
-            _isRunning = false;
-            _status = "ready";
-            _currentRunId = null;
-            _runCts = null;
-            _runRequestCts = null;
-            _currentRunTask = null;
-            _currentRunTransport = null;
-            _currentRunTransportGeneration = 0;
+            // Only reset run state if the run we were cancelling is still the
+            // current one. If a newer run started while we awaited the old
+            // task, its id/cts/task must be left intact (otherwise the new
+            // run becomes uncancellable because _runCts would be nulled).
+            if (hadRun
+                && _currentRunId == stoppingRunId
+                && ReferenceEquals(_runCts, cts))
+            {
+                _isRunning = false;
+                _status = "ready";
+                _currentRunId = null;
+                _runCts = null;
+                _runRequestCts = null;
+                _currentRunTask = null;
+                _currentRunTransport = null;
+                _currentRunTransportGeneration = 0;
+            }
         }
 
         if (notify)
-            await _bridgeService.SendEventAsync(new { type = "command_result", text = "ACP run stopped." }).ConfigureAwait(false);
+        {
+            await _bridgeService.SendEventAsync(new
+            {
+                type = "command_result",
+                text = hadRun ? "ACP run stopped." : "No ACP run is currently active."
+            }).ConfigureAwait(false);
+        }
         await PublishStateAsync().ConfigureAwait(false);
     }
 
     public async Task NewThreadAsync(string? workingDirectory = null)
     {
-        await CancelRunAsync(notify: true).ConfigureAwait(false);
-        var cwd = string.IsNullOrWhiteSpace(workingDirectory) ? _workingDirectory : workingDirectory;
-        _currentThread = _threadStore.CreateThread(cwd);
-        _currentThread.Provider = "acp-claude";
-        ApplyThread(_currentThread);
-        await SendAgentCommandsUnavailableAsync().ConfigureAwait(false);
-        await SendThreadLoadedAsync(clear: true, selectPlan: true).ConfigureAwait(false);
-        await _bridgeService.SendEventAsync(new { type = "command_result", text = "Started a new ACP Agent draft. Claude will start on the first message." }).ConfigureAwait(false);
-        await PublishStateAsync().ConfigureAwait(false);
+        await RunNavigationAsync(async navigation =>
+        {
+            await CancelRunAsync(notify: false).ConfigureAwait(false);
+            navigation.Token.ThrowIfCancellationRequested();
+
+            var cwd = string.IsNullOrWhiteSpace(workingDirectory) ? _workingDirectory : workingDirectory;
+            _currentThread = _threadStore.CreateThread(cwd);
+            _currentThread.Provider = "acp-claude";
+            ApplyThread(_currentThread);
+            await SendAgentCommandsUnavailableAsync().ConfigureAwait(false);
+            navigation.Token.ThrowIfCancellationRequested();
+            await SendThreadLoadedAsync(clear: true, selectPlan: true).ConfigureAwait(false);
+            await _bridgeService.SendEventAsync(new { type = "command_result", text = "Started a new ACP Agent draft. Claude will start on the first message." }).ConfigureAwait(false);
+            navigation.Token.ThrowIfCancellationRequested();
+            await PublishStateAsync().ConfigureAwait(false);
+        }).ConfigureAwait(false);
     }
 
     public async Task LoadThreadAsync(string threadId)
     {
-        var thread = _threadStore.LoadThread(threadId);
-        if (thread == null)
+        await RunNavigationAsync(async navigation =>
         {
-            await SendRunFailedAsync($"Thread not found: {threadId}").ConfigureAwait(false);
-            return;
-        }
+            await CancelRunAsync(notify: false).ConfigureAwait(false);
+            navigation.Token.ThrowIfCancellationRequested();
 
-        await CancelRunAsync(notify: false).ConfigureAwait(false);
-        _currentThread = thread;
-        ApplyThread(_currentThread);
-        await SendAgentCommandsUnavailableAsync().ConfigureAwait(false);
-        _acpSessionId = null;
-        _threadStore.SaveLastThread(_currentThread);
-        await SendThreadLoadedAsync(clear: true).ConfigureAwait(false);
-        await _bridgeService.SendEventAsync(new { type = "command_result", text = "Loading ACP session history..." }).ConfigureAwait(false);
-
-        if (string.IsNullOrWhiteSpace(_currentThread.AcpSessionId))
-        {
-            _status = "transcript_only";
-            await _bridgeService.SendEventAsync(new { type = "command_result", text = "This thread has no ACP session id. Showing local transcript only." }).ConfigureAwait(false);
-            await PublishStateAsync().ConfigureAwait(false);
-            return;
-        }
-
-        try
-        {
-            var restored = await LoadAcpHistoryAsync(_currentThread.AcpSessionId).ConfigureAwait(false);
-            if (restored)
+            var thread = _threadStore.LoadThread(threadId);
+            if (thread == null)
             {
-                _status = "restored";
-                await _bridgeService.SendEventAsync(new { type = "command_result", text = "ACP session history restored. Continuing will use this session." }).ConfigureAwait(false);
+                await SendRunFailedAsync($"Thread not found: {threadId}").ConfigureAwait(false);
+                return;
             }
-            else
+
+            _currentThread = thread;
+            ApplyThread(_currentThread);
+            await SendAgentCommandsUnavailableAsync().ConfigureAwait(false);
+            navigation.Token.ThrowIfCancellationRequested();
+            _acpSessionId = null;
+            _threadStore.SaveLastThread(_currentThread);
+            await SendThreadLoadedAsync(clear: true).ConfigureAwait(false);
+            await _bridgeService.SendEventAsync(new { type = "command_result", text = "Loading ACP session history..." }).ConfigureAwait(false);
+            navigation.Token.ThrowIfCancellationRequested();
+
+            if (string.IsNullOrWhiteSpace(_currentThread.AcpSessionId))
             {
                 _status = "transcript_only";
-                await _bridgeService.SendEventAsync(new { type = "resume_failed", text = "ACP session loaded, but no transcript was replayed. Showing local transcript only." }).ConfigureAwait(false);
+                await _bridgeService.SendEventAsync(new { type = "command_result", text = "This thread has no ACP session id. Showing local transcript only." }).ConfigureAwait(false);
+                navigation.Token.ThrowIfCancellationRequested();
+                await PublishStateAsync().ConfigureAwait(false);
+                return;
             }
-        }
-        catch (Exception ex)
-        {
-            _acpSessionId = null;
-            _status = "transcript_only";
-            await _bridgeService.SendEventAsync(new { type = "resume_failed", text = $"ACP session could not be restored. Showing local transcript only. {ex.Message}" }).ConfigureAwait(false);
-        }
 
-        await PublishStateAsync().ConfigureAwait(false);
+            var loadStarted = false;
+            try
+            {
+                loadStarted = true;
+                var restored = await LoadAcpHistoryAsync(_currentThread.AcpSessionId, navigation.Token).ConfigureAwait(false);
+                navigation.Token.ThrowIfCancellationRequested();
+                if (restored)
+                {
+                    _status = "restored";
+                    await _bridgeService.SendEventAsync(new { type = "command_result", text = "ACP session history restored. Continuing will use this session." }).ConfigureAwait(false);
+                }
+                else
+                {
+                    _status = "transcript_only";
+                    await _bridgeService.SendEventAsync(new { type = "resume_failed", text = "ACP session loaded, but no transcript was replayed. Showing local transcript only." }).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException) when (navigation.Token.IsCancellationRequested)
+            {
+                if (loadStarted && !_disposed && !_serviceLifetimeCts.IsCancellationRequested)
+                    await ResetCancelledNavigationTransportAsync().ConfigureAwait(false);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _acpSessionId = null;
+                _status = "transcript_only";
+                await _bridgeService.SendEventAsync(new { type = "resume_failed", text = $"ACP session could not be restored. Showing local transcript only. {ex.Message}" }).ConfigureAwait(false);
+            }
+
+            navigation.Token.ThrowIfCancellationRequested();
+            await PublishStateAsync().ConfigureAwait(false);
+        }).ConfigureAwait(false);
     }
 
     public async Task DeleteThreadAsync(string threadId)
     {
-        if (_currentThread.ThreadId == threadId && !string.IsNullOrWhiteSpace(_acpSessionId) && _transport != null)
+        await RunNavigationAsync(async navigation =>
         {
+            await CancelRunAsync(notify: false).ConfigureAwait(false);
+            navigation.Token.ThrowIfCancellationRequested();
+
+            var thread = _threadStore.LoadThread(threadId);
+            if (thread == null)
+            {
+                await SendRunFailedAsync($"Thread not found: {threadId}").ConfigureAwait(false);
+                return;
+            }
+
+            if (_currentThread.ThreadId == threadId && !string.IsNullOrWhiteSpace(_acpSessionId) && _transport != null)
+            {
+                try
+                {
+                    await _transport.SendRequestAsync(
+                            "session/delete",
+                            new { sessionId = _acpSessionId },
+                            TimeSpan.FromSeconds(15),
+                            navigation.Token)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (navigation.Token.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch { }
+            }
+
+            navigation.Token.ThrowIfCancellationRequested();
+            _threadStore.DeleteThread(threadId);
+            AgentThreadSummary? next = null;
             try
             {
-                await _transport.SendRequestAsync(
-                        "session/delete",
-                        new { sessionId = _acpSessionId },
-                        TimeSpan.FromSeconds(15),
-                        _serviceLifetimeCts.Token)
-                    .ConfigureAwait(false);
+                next = _threadStore.ListThreads().FirstOrDefault();
             }
-            catch { }
+            catch (Exception ex)
+            {
+                await SendHistoryErrorAsync(ex).ConfigureAwait(false);
+            }
+            _currentThread = next != null
+                ? _threadStore.LoadThread(next.ThreadId) ?? _threadStore.CreateThread(_workingDirectory)
+                : _threadStore.CreateThread(_workingDirectory);
+            _currentThread.Provider = "acp-claude";
+            ApplyThread(_currentThread);
+            await SendAgentCommandsUnavailableAsync().ConfigureAwait(false);
+            navigation.Token.ThrowIfCancellationRequested();
+            await SendThreadLoadedAsync(clear: true).ConfigureAwait(false);
+            await _bridgeService.SendEventAsync(new { type = "command_result", text = "Deleted thread." }).ConfigureAwait(false);
+            navigation.Token.ThrowIfCancellationRequested();
+            await PublishStateAsync().ConfigureAwait(false);
+        }).ConfigureAwait(false);
+    }
+
+    private async Task RunNavigationAsync(Func<NavigationOperation, Task> action)
+    {
+        var navigation = BeginNavigation();
+        if (navigation == null)
+            return;
+
+        var lockTaken = false;
+        try
+        {
+            await _navigationLock.WaitAsync(navigation.Token).ConfigureAwait(false);
+            lockTaken = true;
+            navigation.Token.ThrowIfCancellationRequested();
+            await action(navigation).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (navigation.Token.IsCancellationRequested)
+        {
+            // A newer navigation or service shutdown superseded this operation.
+        }
+        finally
+        {
+            if (lockTaken)
+                _navigationLock.Release();
+            CompleteNavigation(navigation);
+        }
+    }
+
+    private NavigationOperation? BeginNavigation()
+    {
+        CancellationTokenSource? previous;
+        NavigationOperation navigation;
+        lock (_navigationStateLock)
+        {
+            if (_disposed)
+                return null;
+
+            previous = _navigationCts;
+            var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_serviceLifetimeCts.Token);
+            navigation = new NavigationOperation
+            {
+                Generation = ++_navigationGeneration,
+                Cancellation = cancellation
+            };
+            _navigationCts = cancellation;
         }
 
-        await CancelRunAsync(notify: false).ConfigureAwait(false);
-        _threadStore.DeleteThread(threadId);
-        var next = _threadStore.ListThreads().FirstOrDefault();
-        _currentThread = next != null
-            ? _threadStore.LoadThread(next.ThreadId) ?? _threadStore.CreateThread(_workingDirectory)
-            : _threadStore.CreateThread(_workingDirectory);
-        _currentThread.Provider = "acp-claude";
-        ApplyThread(_currentThread);
-        await SendAgentCommandsUnavailableAsync().ConfigureAwait(false);
-        await SendThreadLoadedAsync(clear: true).ConfigureAwait(false);
-        await _bridgeService.SendEventAsync(new { type = "command_result", text = "Deleted thread." }).ConfigureAwait(false);
-        await PublishStateAsync().ConfigureAwait(false);
+        try { previous?.Cancel(); } catch { }
+        return navigation;
+    }
+
+    private void CompleteNavigation(NavigationOperation navigation)
+    {
+        lock (_navigationStateLock)
+        {
+            if (_navigationGeneration == navigation.Generation
+                && ReferenceEquals(_navigationCts, navigation.Cancellation))
+            {
+                _navigationCts = null;
+            }
+        }
+
+        navigation.Cancellation.Dispose();
+    }
+
+    private async Task ResetCancelledNavigationTransportAsync()
+    {
+        var transport = _transport;
+        var generation = _transportGeneration;
+        if (transport != null)
+            await ResetTransportAsync(transport, generation).ConfigureAwait(false);
     }
 
     public async Task ChangeDirectoryAsync(string path)
@@ -464,12 +620,17 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         }
         catch (Exception ex)
         {
-            await _bridgeService.SendEventAsync(new
-            {
-                type = "agent_history_error",
-                text = $"Unable to load Agent thread history. {ex.Message}"
-            }).ConfigureAwait(false);
+            await SendHistoryErrorAsync(ex).ConfigureAwait(false);
         }
+    }
+
+    private Task SendHistoryErrorAsync(Exception exception)
+    {
+        return _bridgeService.SendEventAsync(new
+        {
+            type = "agent_history_error",
+            text = $"Unable to load Agent thread history. {exception.Message}"
+        });
     }
 
     public async Task PublishStateAsync()
@@ -3050,6 +3211,14 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         _bridgeService.CommandReceived -= OnCommandReceived;
         _bridgeService.AttachmentUploadReceived -= OnAttachmentUploadReceived;
         _acpRuntime.StatusChanged -= OnRuntimeStatusChanged;
+        CancellationTokenSource? navigationCts;
+        lock (_navigationStateLock)
+        {
+            navigationCts = _navigationCts;
+            _navigationCts = null;
+            _navigationGeneration++;
+        }
+        try { navigationCts?.Cancel(); } catch { }
         try { _serviceLifetimeCts.Cancel(); } catch { }
         try { _runCts?.Cancel(); } catch { }
         try { _runRequestCts?.Cancel(); } catch { }

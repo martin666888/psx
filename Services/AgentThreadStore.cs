@@ -101,13 +101,14 @@ public sealed class AgentThreadStore : IAgentThreadStore
     public IReadOnlyList<AgentThreadSummary> ListThreads()
     {
         EnsureDirectories();
-        var index = PruneMissingThreads();
+        var index = PruneMissingThreads(LoadIndex());
         var visibleThreads = new List<AgentThreadSummary>();
 
         foreach (var summary in index.Threads.OrderByDescending(t => t.UpdatedAt))
         {
-            var thread = LoadThread(summary.ThreadId);
-            if (thread == null || IsEmptyDraft(thread))
+            var thread = LoadThreadStrict(summary.ThreadId);
+
+            if (IsEmptyDraft(thread))
                 continue;
 
             visibleThreads.Add(new AgentThreadSummary
@@ -122,10 +123,31 @@ public sealed class AgentThreadStore : IAgentThreadStore
             });
         }
 
+        // Only publish a rewritten index after every existing thread was read
+        // successfully. A corrupt or locked file must leave the old index intact.
         index.Threads = visibleThreads;
         SaveIndex(index);
         RepairLastThreadReference(index);
         return visibleThreads;
+    }
+
+    private AgentThread LoadThreadStrict(string threadId)
+    {
+        var path = GetThreadPath(threadId);
+        if (!File.Exists(path))
+            throw new FileNotFoundException($"Agent thread file was not found: {Path.GetFileName(path)}", path);
+
+        try
+        {
+            return JsonSerializer.Deserialize<AgentThread>(ReadTextWithRetry(path), JsonOptions)
+                ?? throw new InvalidDataException($"Agent thread file is empty: {Path.GetFileName(path)}");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            throw new InvalidDataException(
+                $"Unable to read Agent thread '{Path.GetFileName(path)}': {ex.Message}",
+                ex);
+        }
     }
 
     public void SaveThread(AgentThread thread)
@@ -339,11 +361,14 @@ public sealed class AgentThreadStore : IAgentThreadStore
 
         try
         {
-            return JsonSerializer.Deserialize<AgentThreadIndex>(ReadTextWithRetry(_indexPath), JsonOptions) ?? new AgentThreadIndex();
+            return JsonSerializer.Deserialize<AgentThreadIndex>(ReadTextWithRetry(_indexPath), JsonOptions)
+                ?? throw new InvalidDataException($"Agent thread index is empty: {_indexPath}");
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
-            return new AgentThreadIndex();
+            throw new InvalidDataException(
+                $"Unable to read Agent thread index '{Path.GetFileName(_indexPath)}': {ex.Message}",
+                ex);
         }
     }
 

@@ -28,10 +28,21 @@ public sealed partial class ThemeService : IThemeService
 
     public IReadOnlyList<ThemeDescriptor> ScanThemes()
     {
-        Directory.CreateDirectory(UserThemeDirectory);
         var themes = new List<ThemeDescriptor>();
+        var userDirectoryAvailable = true;
+        try
+        {
+            Directory.CreateDirectory(UserThemeDirectory);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            userDirectoryAvailable = false;
+            AddDirectoryDiagnostic(UserThemeDirectory, ThemeSource.User, ex, themes);
+        }
+
         ScanDirectory(_builtInDirectory, ThemeSource.BuiltIn, themes);
-        ScanDirectory(UserThemeDirectory, ThemeSource.User, themes);
+        if (userDirectoryAvailable)
+            ScanDirectory(UserThemeDirectory, ThemeSource.User, themes);
 
         foreach (var group in themes
                      .Where(t => t.Availability == ThemeAvailability.Available)
@@ -155,8 +166,36 @@ public sealed partial class ThemeService : IThemeService
     {
         if (!Directory.Exists(directory))
             return;
-        foreach (var path in Directory.EnumerateFiles(directory, "*.ini", SearchOption.TopDirectoryOnly))
-            destination.Add(LoadTheme(path, source).Descriptor);
+        try
+        {
+            foreach (var path in Directory.EnumerateFiles(directory, "*.ini", SearchOption.TopDirectoryOnly))
+                destination.Add(LoadTheme(path, source).Descriptor);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AddDirectoryDiagnostic(directory, source, ex, destination);
+        }
+    }
+
+    private static void AddDirectoryDiagnostic(
+        string directory,
+        ThemeSource source,
+        Exception exception,
+        List<ThemeDescriptor> destination)
+    {
+        var descriptor = new ThemeDescriptor
+        {
+            Name = source == ThemeSource.User ? "User themes" : "Built-in themes",
+            FilePath = directory,
+            Source = source,
+            Availability = ThemeAvailability.Invalid
+        };
+        descriptor.Diagnostics.Add(new ThemeDiagnostic
+        {
+            IsError = true,
+            Message = $"{directory}: {exception.Message}"
+        });
+        destination.Add(descriptor);
     }
 
     private static string Require(IniDocument document, string section, string key)

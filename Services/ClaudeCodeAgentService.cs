@@ -109,7 +109,15 @@ public sealed class ClaudeCodeAgentService : IAgentSessionService
     {
         await CancelAsync(silent: true);
         _threadStore.DeleteThread(threadId);
-        var next = _threadStore.ListThreads().FirstOrDefault();
+        AgentThreadSummary? next = null;
+        try
+        {
+            next = _threadStore.ListThreads().FirstOrDefault();
+        }
+        catch (Exception ex)
+        {
+            await SendHistoryErrorAsync(ex);
+        }
         _currentThread = next != null
             ? _threadStore.LoadThread(next.ThreadId) ?? _threadStore.CreateThread(_workingDirectory)
             : _threadStore.CreateThread(_workingDirectory);
@@ -155,12 +163,17 @@ public sealed class ClaudeCodeAgentService : IAgentSessionService
         }
         catch (Exception ex)
         {
-            await _bridgeService.SendEventAsync(new
-            {
-                type = "agent_history_error",
-                text = $"Unable to load Agent thread history. {ex.Message}"
-            });
+            await SendHistoryErrorAsync(ex);
         }
+    }
+
+    private Task SendHistoryErrorAsync(Exception exception)
+    {
+        return _bridgeService.SendEventAsync(new
+        {
+            type = "agent_history_error",
+            text = $"Unable to load Agent thread history. {exception.Message}"
+        });
     }
 
     public Task PublishStateAsync()

@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -163,7 +164,7 @@ public partial class ThemePickerViewModel : ObservableObject
         {
             _themeService.OpenUserThemeDirectory();
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Win32Exception)
         {
             SetMessage(ex.Message, isError: true);
         }
@@ -184,7 +185,18 @@ public partial class ThemePickerViewModel : ObservableObject
     {
         var currentSettings = _settingsService.GetSettings();
         var currentFingerprint = _themeService.ComputeFingerprint(AppearanceSettings.FromSettings(currentSettings));
-        var themes = _themeService.ScanThemes();
+        IReadOnlyList<ThemeDescriptor> themes;
+        try
+        {
+            themes = _themeService.ScanThemes();
+        }
+        catch (Exception ex)
+        {
+            // Keep the previously-rendered lists rather than clearing them on
+            // a directory-level failure.
+            SetMessage($"无法读取主题目录：{ex.Message}", isError: true);
+            return;
+        }
 
         BuiltInThemes.Clear();
         UserThemes.Clear();
