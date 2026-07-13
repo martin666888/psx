@@ -317,9 +317,9 @@ public sealed class AcpRuntimeManager : IAcpAgentRuntime
     /// <summary>
     /// Background refresh. Writes into <c>acp-next</c> only — never touches
     /// <c>acp-current</c>, which the live Agent session is reading from.
-    /// On success, flips the active pointer to "next"; the next PSX launch
-    /// will load from acp-next. On failure, leaves the pointer alone so
-    /// the user keeps using the previously-working version.
+    /// Installs the registry latest ACP adapter (not the seed lock pin).
+    /// On success with a newer version, flips the pointer to "next"; the next
+    /// PSX launch promotes it. On failure or no version change, leaves current alone.
     /// </summary>
     public async Task<AcpRuntimeOperationResult> RefreshAsync(
         IProgress<string>? progress = null,
@@ -345,16 +345,15 @@ public sealed class AcpRuntimeManager : IAcpAgentRuntime
         try
         {
             StatusChanged?.Invoke(BuildStatusText("正在检查更新"));
-            // Refresh target is acp-next, NOT acp-current. Prepare a clean
-            // staging dir: clear any leftover from a previous failed update,
-            // copy manifests from seed (so lock + .npmrc are correct), then
-            // run npm update.
+            // Refresh target is acp-next only. Do NOT copy package-lock.json:
+            // the seed lock pins the first-install baseline; refresh must be
+            // free to pull the latest registry version into staging.
             try
             {
                 if (Directory.Exists(paths.AcpNextDirectory))
                     Directory.Delete(paths.AcpNextDirectory, recursive: true);
                 Directory.CreateDirectory(paths.AcpNextDirectory);
-                SeedDirectoryFromInstallDirectory(paths, paths.AcpNextDirectory);
+                SeedDirectoryForRefresh(paths, paths.AcpNextDirectory);
             }
             catch (Exception ex)
             {
@@ -364,25 +363,15 @@ public sealed class AcpRuntimeManager : IAcpAgentRuntime
                     $"Failed to prepare acp-next: {ex.Message}");
             }
 
-            // Seed the package.json's version range into acp-next, but PRESERVE
-            // any user-edited acp-next/package.json if the user previously
-            // pinned to a specific version. Same rule as before.
-            if (!File.Exists(Path.Combine(paths.AcpNextDirectory, "package.json")))
-            {
-                var seedPkg = Path.Combine(paths.AcpSeedDirectory, "package.json");
-                if (File.Exists(seedPkg))
-                {
-                    File.Copy(seedPkg, Path.Combine(paths.AcpNextDirectory, "package.json"));
-                }
-            }
-
+            // Explicit @latest so npm does not stay on a seed-pinned lockfile
+            // version. package.json uses "*" so the installed tree stays valid.
             var updateResult = await RunNpmAsync(
                 paths,
                 paths.AcpNextDirectory,
-                "update",
+                "install",
                 progress,
                 cancellationToken,
-                "@agentclientprotocol/claude-agent-acp").ConfigureAwait(false);
+                "@agentclientprotocol/claude-agent-acp@latest").ConfigureAwait(false);
 
             if (updateResult.Kind != AcpRuntimeOperationKind.Success)
             {
@@ -392,7 +381,7 @@ public sealed class AcpRuntimeManager : IAcpAgentRuntime
 
             // Validate the freshly-updated adapter is structurally complete
             // before flipping the pointer. This guards against partial writes
-            // (npm update exit 0 but a file is still being flushed).
+            // (npm exit 0 but a file is still being flushed).
             if (!IsAdapterCompleteInDirectory(paths.AcpNextDirectory))
             {
                 Log("Post-update validation failed: adapter entry point missing in acp-next.");
@@ -416,7 +405,8 @@ public sealed class AcpRuntimeManager : IAcpAgentRuntime
                 try { Directory.Delete(paths.AcpNextDirectory, recursive: true); }
                 catch (Exception ex) { Log($"WARN: could not clear unchanged acp-next: {ex.Message}"); }
                 WriteActivePointer(paths, ActiveCurrentToken);
-                StatusChanged?.Invoke(BuildStatusText());
+                // Already on latest — restore normal status (not a failure).
+                StatusChanged?.Invoke(BuildStatusText("已是最新版本"));
                 return updateResult;
             }
 
@@ -544,20 +534,31 @@ public sealed class AcpRuntimeManager : IAcpAgentRuntime
 
     private void SeedDirectoryFromInstallDirectory(RuntimePaths paths, string destination)
     {
-        // We only copy manifest files (package.json, package-lock.json, .npmrc).
-        // node_modules is filled by `npm ci` — never copy it; it's 100s of MB.
-        foreach (var name in new[] { "package.json", "package-lock.json", ".npmrc" })
+        // First install: package.json + lock + .npmrc so `npm ci` is reproducible.
+        // node_modules is filled by npm — never copy it; it's 100s of MB.
+        SeedManifestFiles(paths, destination, includePackageLock: true);
+    }
+
+    private void SeedDirectoryForRefresh(RuntimePaths paths, string destination)
+    {
+        // Background refresh: package.json + .npmrc only. Omitting the seed
+        // lockfile lets `npm install ...@latest` resolve the newest registry
+        // version instead of reinstalling the pin from package-lock.json.
+        SeedManifestFiles(paths, destination, includePackageLock: false);
+    }
+
+    private void SeedManifestFiles(RuntimePaths paths, string destination, bool includePackageLock)
+    {
+        var names = includePackageLock
+            ? new[] { "package.json", "package-lock.json", ".npmrc" }
+            : new[] { "package.json", ".npmrc" };
+
+        foreach (var name in names)
         {
             var source = Path.Combine(paths.AcpSeedDirectory, name);
             if (!File.Exists(source)) continue;
 
             var dest = Path.Combine(destination, name);
-            // Skip package.json if destination already has one — preserve any
-            // user-edited version range. lock + .npmrc always come from seed
-            // so the runtime never pins a stale or wrong-mirror lock.
-            if (File.Exists(dest) && name == "package.json")
-                continue;
-
             File.Copy(source, dest, overwrite: true);
             Log($"Seeded {name} -> {dest}");
         }
@@ -705,10 +706,10 @@ public sealed class AcpRuntimeManager : IAcpAgentRuntime
         startInfo.ArgumentList.Add("--include=optional");
         startInfo.ArgumentList.Add("--no-audit");
         startInfo.ArgumentList.Add("--no-fund");
-        // install is only used as a fallback when npm ci fails. Keep the
-        // lockfile untouched so the user can recover by retrying. update
-        // lets npm advance the lock so users pick up new acp versions.
-        if (command == "install")
+        // install without packageName: fallback when npm ci fails — keep lock
+        // untouched. install with packageName (@latest refresh): allow npm to
+        // write a lock that matches the resolved registry version.
+        if (command == "install" && string.IsNullOrEmpty(packageName))
         {
             startInfo.ArgumentList.Add("--package-lock=false");
         }
@@ -718,7 +719,8 @@ public sealed class AcpRuntimeManager : IAcpAgentRuntime
             : $"npm {command}";
 
         Log($"Starting: {label} in {workingDirectory}");
-        var status = command == "update"
+        var isRefreshInstall = command == "install" && !string.IsNullOrEmpty(packageName);
+        var status = command == "update" || isRefreshInstall
             ? BuildStatusText("正在更新 ACP")
             : "正在安装 ACP Adapter";
         progress?.Report(status);
