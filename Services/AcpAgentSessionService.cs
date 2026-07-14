@@ -414,23 +414,16 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             if (!IsDefaultProviderThread(_currentThread))
             {
                 _status = "transcript_only";
-                await _bridgeService.SendEventAsync(new
-                {
-                    type = "resume_failed",
-                    text = BuildUnsupportedProviderMessage(_currentThread.Provider)
-                }).ConfigureAwait(false);
+                await SendResumeFailedAsync(BuildUnsupportedProviderMessage(_currentThread.Provider)).ConfigureAwait(false);
                 navigation.Token.ThrowIfCancellationRequested();
                 await PublishStateAsync().ConfigureAwait(false);
                 return;
             }
 
-            await _bridgeService.SendEventAsync(new { type = "command_result", text = "Loading ACP session history..." }).ConfigureAwait(false);
-            navigation.Token.ThrowIfCancellationRequested();
-
             if (string.IsNullOrWhiteSpace(_currentThread.AcpSessionId))
             {
                 _status = "transcript_only";
-                await _bridgeService.SendEventAsync(new { type = "command_result", text = "This thread has no ACP session id. Showing local transcript only." }).ConfigureAwait(false);
+                await SendResumeFailedAsync("This thread has no ACP session ID. The saved local transcript is still available to read.").ConfigureAwait(false);
                 navigation.Token.ThrowIfCancellationRequested();
                 await PublishStateAsync().ConfigureAwait(false);
                 return;
@@ -450,7 +443,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
                 else
                 {
                     _status = "transcript_only";
-                    await _bridgeService.SendEventAsync(new { type = "resume_failed", text = "ACP session loaded, but no transcript was replayed. Showing local transcript only." }).ConfigureAwait(false);
+                    await SendResumeFailedAsync("The Agent session loaded, but its transcript could not be replayed. The saved local transcript is still available to read.").ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException) when (navigation.Token.IsCancellationRequested)
@@ -463,7 +456,9 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             {
                 _acpSessionId = null;
                 _status = "transcript_only";
-                await _bridgeService.SendEventAsync(new { type = "resume_failed", text = $"ACP session could not be restored. Showing local transcript only. {ex.Message}" }).ConfigureAwait(false);
+                await SendResumeFailedAsync(
+                    "PSX could not restore the Agent session. The saved local transcript is still available to read.",
+                    ex.Message).ConfigureAwait(false);
             }
 
             navigation.Token.ThrowIfCancellationRequested();
@@ -527,11 +522,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             await SendThreadLoadedAsync(clear: true).ConfigureAwait(false);
             if (!IsDefaultProviderThread(_currentThread))
             {
-                await _bridgeService.SendEventAsync(new
-                {
-                    type = "resume_failed",
-                    text = BuildUnsupportedProviderMessage(_currentThread.Provider)
-                }).ConfigureAwait(false);
+                await SendResumeFailedAsync(BuildUnsupportedProviderMessage(_currentThread.Provider)).ConfigureAwait(false);
             }
             await _bridgeService.SendEventAsync(new { type = "command_result", text = "Deleted thread." }).ConfigureAwait(false);
             navigation.Token.ThrowIfCancellationRequested();
@@ -1135,7 +1126,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
 
         if (_status == "transcript_only")
         {
-            await _bridgeService.SendEventAsync(new { type = "resume_failed", text = "This transcript is local only. Start a new thread or open terminal before continuing." }).ConfigureAwait(false);
+            await SendResumeFailedAsync("This conversation is available as a local transcript only. Start a new thread or open terminal to continue.").ConfigureAwait(false);
             return;
         }
 
@@ -1154,11 +1145,9 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             catch (Exception ex)
             {
                 _status = "transcript_only";
-                await _bridgeService.SendEventAsync(new
-                {
-                    type = "resume_failed",
-                    text = $"ACP session could not be restored after reconnect. Showing local transcript only. {ex.Message}"
-                }).ConfigureAwait(false);
+                await SendResumeFailedAsync(
+                    "PSX could not restore the Agent session after reconnecting. The saved local transcript is still available to read.",
+                    ex.Message).ConfigureAwait(false);
                 await PublishStateAsync().ConfigureAwait(false);
                 return;
             }
@@ -2668,6 +2657,16 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             visionContextHint = _currentThread.ContainsImages
                 ? "提示：当前对话曾发送过图片，这个错误可能是因为当前模型或供应商不支持图片上下文，或当前模型不是多模态模型导致，建议切换至多模态模型。"
                 : ""
+        });
+    }
+
+    private Task SendResumeFailedAsync(string message, string? detail = null)
+    {
+        return _bridgeService.SendEventAsync(new
+        {
+            type = "resume_failed",
+            message,
+            detail = string.IsNullOrWhiteSpace(detail) ? null : detail
         });
     }
 

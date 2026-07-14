@@ -349,7 +349,10 @@ class AgentThreadManager {
                 }
                 break;
             case 'resume_failed':
-                this._appendRecovery(event.text || this.assistantName + ' could not resume this session.');
+                this._appendRecovery(
+                    event.message || event.text || this.assistantName + ' could not resume this session.',
+                    event.detail || ''
+                );
                 break;
         }
     }

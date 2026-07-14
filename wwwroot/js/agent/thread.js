@@ -188,28 +188,68 @@ AgentThreadManager.prototype._markSessionReady = function(sessionId) {
         this.lastReadySessionId = sessionId;
 };
 
-AgentThreadManager.prototype._appendRecovery = function(text) {
-        const card = document.createElement('section');
-        card.className = 'agent-decision';
+AgentThreadManager.prototype._appendRecovery = function(message, detail) {
+        let card = this.thread.querySelector('.agent-recovery');
+        if (!card) {
+            card = document.createElement('section');
+            card.className = 'agent-recovery';
+            card.setAttribute('role', 'status');
+            card.setAttribute('aria-live', 'polite');
+            card.setAttribute('aria-atomic', 'true');
 
-        const title = document.createElement('div');
-        title.className = 'agent-decision-title';
-        title.textContent = 'Resume failed';
+            const content = document.createElement('div');
+            content.className = 'agent-recovery-content';
 
-        const body = document.createElement('pre');
-        body.textContent = text;
+            const title = document.createElement('div');
+            title.className = 'agent-recovery-title';
+            title.textContent = 'Session could not be resumed';
 
-        const actions = document.createElement('div');
-        actions.className = 'agent-decision-actions';
-        actions.appendChild(this._decisionButton('Start new thread', () => {
-            this.selectInspectorTab('plan', false);
-            Bridge.sendAgentCommand('new');
-        }));
-        actions.appendChild(this._decisionButton('Open terminal', () => Bridge.sendAgentCommand('terminal')));
+            const body = document.createElement('p');
+            body.className = 'agent-recovery-message';
 
-        card.appendChild(title);
-        card.appendChild(body);
-        card.appendChild(actions);
+            const technicalDetails = document.createElement('details');
+            technicalDetails.className = 'agent-recovery-details';
+
+            const technicalSummary = document.createElement('summary');
+            technicalSummary.textContent = 'Technical details';
+
+            const technicalBody = document.createElement('pre');
+            technicalBody.className = 'agent-recovery-technical';
+
+            technicalDetails.appendChild(technicalSummary);
+            technicalDetails.appendChild(technicalBody);
+            content.appendChild(title);
+            content.appendChild(body);
+            content.appendChild(technicalDetails);
+
+            const actions = document.createElement('div');
+            actions.className = 'agent-recovery-actions';
+            actions.appendChild(this._decisionButton('Start new thread', () => {
+                this.selectInspectorTab('plan', false);
+                Bridge.sendAgentCommand('new');
+            }, 'agent-btn-primary'));
+            actions.appendChild(this._decisionButton(
+                'Open terminal',
+                () => Bridge.sendAgentCommand('terminal'),
+                'agent-btn-subtle'
+            ));
+
+            card.appendChild(content);
+            card.appendChild(actions);
+        }
+
+        const body = card.querySelector('.agent-recovery-message');
+        const technicalDetails = card.querySelector('.agent-recovery-details');
+        const technicalBody = card.querySelector('.agent-recovery-technical');
+        const technicalText = typeof detail === 'string' ? detail.trim() : '';
+
+        body.textContent = message;
+        technicalBody.textContent = technicalText;
+        technicalDetails.hidden = !technicalText;
+        if (!technicalText) {
+            technicalDetails.open = false;
+        }
+
         this.thread.appendChild(card);
         this._scrollToBottom();
 };

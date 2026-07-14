@@ -27,7 +27,7 @@ PSX 是一个面向 AI Agent 工作流的 Windows 桌面终端。它把 Terminal
 请从 GitHub Releases 下载最新版本：
 
 ```text
-PSX-1.1.0-win-x64-portable.zip
+PSX-1.1.1-win-x64-portable.zip
 ```
 
 1. 下载 ZIP。

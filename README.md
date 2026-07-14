@@ -54,7 +54,7 @@ controllable, and easy to distribute on work machines.
 Download the latest Windows build from GitHub Releases:
 
 ```text
-PSX-1.1.0-win-x64-portable.zip
+PSX-1.1.1-win-x64-portable.zip
 ```
 
 Usage:

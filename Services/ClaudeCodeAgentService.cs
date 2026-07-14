@@ -457,7 +457,8 @@ public sealed class ClaudeCodeAgentService : IAgentSessionService
                     await _bridgeService.SendEventAsync(new
                     {
                         type = "resume_failed",
-                        text = error
+                        message = "PSX could not restore the Agent session. The saved local transcript is still available to read.",
+                        detail = error
                     });
                 }
                 _status = "error";
