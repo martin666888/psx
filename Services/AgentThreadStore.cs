@@ -31,9 +31,16 @@ public sealed class AgentThreadStore : IAgentThreadStore
     public string AttachmentsDirectory { get; }
 
     public AgentThreadStore()
+        : this(Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".psx"))
     {
-        var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        RootDirectory = Path.Combine(userProfile, ".psx");
+    }
+
+    internal AgentThreadStore(string rootDirectory)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(rootDirectory);
+        RootDirectory = Path.GetFullPath(rootDirectory);
         _configPath = Path.Combine(RootDirectory, "config.json");
         _threadsDirectory = Path.Combine(RootDirectory, "agent", "threads");
         AttachmentsDirectory = Path.Combine(RootDirectory, "agent", "attachments");

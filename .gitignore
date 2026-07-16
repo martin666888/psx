@@ -403,5 +403,7 @@ Desktop.ini
 # Coverage reports and crash dumps
 [Cc]overage/
 [Cc]overage-[Rr]eport/
+playwright-report/
+test-results/
 *.dmp
 *.dump

@@ -1378,7 +1378,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
 
         var modeTransitionSnapshots = _currentThread.Messages
             .Where(message => message.Role == "mode_transition")
-            .Select(CloneModeTransitionMessage)
+            .Select(ModeTransitionSnapshotMerger.CloneMessage)
             .ToArray();
         var replay = new ReplayHistoryState();
         _isLoadingHistory = true;
@@ -1400,7 +1400,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             CaptureModes(loadResult);
             CaptureConfigOptions(loadResult);
             FinishReplayHistory(replay);
-            MergeModeTransitionSnapshots(replay.Messages, modeTransitionSnapshots);
+            ModeTransitionSnapshotMerger.Merge(replay.Messages, modeTransitionSnapshots);
 
             if (replay.Messages.Count > 0)
             {
@@ -1652,22 +1652,14 @@ public sealed class AcpAgentSessionService : IAgentSessionService
     private async Task<object?> HandlePermissionRequestAsync(JsonElement request, JsonElement parameters)
     {
         var requestId = request.GetProperty("id").ToString();
-        var options = parameters.TryGetProperty("options", out var optionsElement) && optionsElement.ValueKind == JsonValueKind.Array
-            ? optionsElement.EnumerateArray().Select(option => new AgentDecisionOption
-            {
-                OptionId = GetString(option, "optionId"),
-                Name = GetString(option, "name"),
-                Kind = GetString(option, "kind")
-            }).Where(option => !string.IsNullOrWhiteSpace(option.OptionId)).ToArray()
-            : Array.Empty<AgentDecisionOption>();
+        var options = AcpPermissionPolicy.ReadOptions(parameters);
 
         var toolCall = parameters.TryGetProperty("toolCall", out var tc) ? tc : default;
         var toolCallId = GetString(toolCall, "toolCallId");
         var toolKind = GetString(toolCall, "kind");
         var toolStatus = GetString(toolCall, "status");
-        var documentText = ReadModeTransitionDocument(toolCall);
-        var isModeTransition = string.Equals(toolKind, "switch_mode", StringComparison.Ordinal)
-                               && !string.IsNullOrWhiteSpace(documentText);
+        var documentText = AcpPermissionPolicy.ReadDocument(toolCall);
+        var isModeTransition = AcpPermissionPolicy.IsModeTransition(toolKind, documentText);
         var pending = new PendingPermission
         {
             Options = options,
@@ -1761,8 +1753,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             return new { outcome = new { outcome = "cancelled" } };
         }
 
-        var selectedOption = pending.Options.FirstOrDefault(option =>
-            string.Equals(option.OptionId, selected, StringComparison.OrdinalIgnoreCase));
+        var selectedOption = AcpPermissionPolicy.FindOfferedOption(pending.Options, selected);
         if (selectedOption == null)
         {
             if (isModeTransition)
@@ -2783,7 +2774,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
 
     private void ApplyThread(AgentThread thread)
     {
-        if (InterruptPendingModeTransitions(thread))
+        if (ModeTransitionSnapshotMerger.InterruptPending(thread))
             _threadStore.SaveThread(thread);
 
         ClearAvailableAgentCommands();
@@ -3093,38 +3084,6 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         return string.Join(Environment.NewLine, parts.Where(p => !string.IsNullOrWhiteSpace(p)));
     }
 
-    private static string ReadModeTransitionDocument(JsonElement toolCall)
-    {
-        if (toolCall.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null
-            || !toolCall.TryGetProperty("content", out var content)
-            || content.ValueKind != JsonValueKind.Array)
-        {
-            return "";
-        }
-
-        var parts = new List<string>();
-        foreach (var item in content.EnumerateArray())
-        {
-            var itemType = GetString(item, "type");
-            if (itemType == "content"
-                && item.TryGetProperty("content", out var block)
-                && GetString(block, "type") == "text")
-            {
-                var text = GetString(block, "text");
-                if (!string.IsNullOrWhiteSpace(text))
-                    parts.Add(text.Trim());
-            }
-            else if (itemType == "text")
-            {
-                var text = GetString(item, "text");
-                if (!string.IsNullOrWhiteSpace(text))
-                    parts.Add(text.Trim());
-            }
-        }
-
-        return string.Join(Environment.NewLine + Environment.NewLine, parts);
-    }
-
     private static string BuildToolSummary(string name, string input, JsonElement update)
     {
         var title = GetString(update, "title");
@@ -3216,7 +3175,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             ToolCallId = toolCallId,
             RequestId = requestId,
             DecisionState = state,
-            DecisionOptions = options.Select(CloneDecisionOption).ToList(),
+            DecisionOptions = options.Select(ModeTransitionSnapshotMerger.CloneOption).ToList(),
             CreatedAt = existing?.CreatedAt ?? DateTimeOffset.Now
         };
 
@@ -3247,83 +3206,6 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         message.DecisionState = state;
         message.SelectedOptionId = selectedOptionId;
         SaveCurrentThread();
-    }
-
-    private static AgentDecisionOption CloneDecisionOption(AgentDecisionOption option)
-    {
-        return new AgentDecisionOption
-        {
-            OptionId = option.OptionId,
-            Name = option.Name,
-            Kind = option.Kind
-        };
-    }
-
-    private static AgentMessage CloneModeTransitionMessage(AgentMessage message)
-    {
-        return new AgentMessage
-        {
-            Role = "mode_transition",
-            Name = message.Name,
-            Text = message.Text,
-            RunId = message.RunId,
-            ToolCallId = message.ToolCallId,
-            RequestId = message.RequestId,
-            DecisionState = message.DecisionState is "pending" or "sending"
-                ? "interrupted"
-                : message.DecisionState,
-            SelectedOptionId = message.SelectedOptionId,
-            DecisionOptions = message.DecisionOptions?.Select(CloneDecisionOption).ToList(),
-            CreatedAt = message.CreatedAt
-        };
-    }
-
-    private static void MergeModeTransitionSnapshots(
-        List<AgentMessage> replayMessages,
-        IReadOnlyList<AgentMessage> snapshots)
-    {
-        foreach (var snapshot in snapshots)
-        {
-            var message = CloneModeTransitionMessage(snapshot);
-            var index = !string.IsNullOrWhiteSpace(message.ToolCallId)
-                ? replayMessages.FindLastIndex(candidate =>
-                    candidate.Role == "tool"
-                    && string.Equals(candidate.ToolCallId, message.ToolCallId, StringComparison.Ordinal))
-                : -1;
-
-            if (index >= 0)
-            {
-                message.RunId = replayMessages[index].RunId ?? message.RunId;
-                replayMessages[index] = message;
-            }
-            else
-            {
-                replayMessages.Add(message);
-            }
-
-            if (!string.IsNullOrWhiteSpace(message.ToolCallId))
-            {
-                replayMessages.RemoveAll(candidate =>
-                    !ReferenceEquals(candidate, message)
-                    && candidate.Role == "tool"
-                    && string.Equals(candidate.ToolCallId, message.ToolCallId, StringComparison.Ordinal));
-            }
-        }
-    }
-
-    private static bool InterruptPendingModeTransitions(AgentThread thread)
-    {
-        var changed = false;
-        foreach (var message in thread.Messages.Where(message => message.Role == "mode_transition"))
-        {
-            if (message.DecisionState is not ("pending" or "sending"))
-                continue;
-
-            message.DecisionState = "interrupted";
-            changed = true;
-        }
-
-        return changed;
     }
 
     private static List<AgentPlanEntry> ReadPlanEntries(JsonElement update)
