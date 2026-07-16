@@ -35,6 +35,8 @@ class AgentThreadManager {
         this.currentRunGroupBody = null;
         this.currentRunId = null;
         this.toolCards = {};
+        this.modeTransitionCards = {};
+        this.activeModeTransitionRequestId = '';
         this.currentToolCardId = null;
         this._runToolCounts = null;
         this._historyGroup = null;
@@ -227,6 +229,7 @@ class AgentThreadManager {
                 this._markSessionReady(event.sessionId || '');
                 break;
             case 'agent_cleared':
+                this._clearModeTransitionPrompt('', false);
                 this.thread.innerHTML = '';
                 this.currentTurn = null;
                 this.currentAssistant = null;
@@ -239,6 +242,7 @@ class AgentThreadManager {
                 this.currentRunGroupBody = null;
                 this.currentRunId = null;
                 this.toolCards = {};
+                this.modeTransitionCards = {};
                 this.currentToolCardId = null;
                 this._runToolCounts = null;
                 this._historyGroup = null;
@@ -275,6 +279,7 @@ class AgentThreadManager {
                 this.currentAssistant = null;
                 break;
             case 'run_finished':
+                this._interruptModeTransition('This request is no longer active.');
                 this._finalizeAssistantMessage(this.currentAssistant);
                 this.currentAssistant = null;
                 this._hideThinking();
@@ -307,8 +312,11 @@ class AgentThreadManager {
                     if (!resolved.card.pre.textContent.trim()) {
                         resolved.card.pre.textContent = 'Finished.';
                     }
-                    resolved.card.details.classList.remove('agent-tool-card-running');
-                    resolved.card.details.classList.add('agent-tool-card-' + (event.status || 'done'));
+                    if (resolved.card.details.dataset.state === 'running' && this._runToolCounts) {
+                        this._runToolCounts.running = Math.max(0, this._runToolCounts.running - 1);
+                    }
+                    this._setToolCardState(resolved.card, event.status || 'done');
+                    this._updateRunGroupSummary();
                     resolved.card.details.removeAttribute('open');
                     delete this.toolCards[resolved.toolCallId];
                 } else {
@@ -318,7 +326,14 @@ class AgentThreadManager {
                 break;
             }
             case 'permission_request':
-                this._appendDecision(event, 'permission');
+                if (event.presentation === 'mode_transition' && event.documentText) {
+                    this._appendModeTransition(event, false);
+                } else {
+                    this._appendDecision(event, 'permission');
+                }
+                break;
+            case 'permission_resolved':
+                this._resolvePermission(event);
                 break;
             case 'question_request':
                 this._appendDecision(event, 'question');
@@ -337,10 +352,20 @@ class AgentThreadManager {
                 this._upsertPlan(event);
                 break;
             case 'run_failed':
+                this._interruptModeTransition('The request ended before a selection was completed.');
                 this._hideThinking();
                 this._restoreSubmittedDraft();
                 if (this.currentRunGroup) {
                     this.currentRunGroup.classList.add('agent-run-group-error');
+                    Object.values(this.toolCards).forEach((card) => {
+                        if (card.details.dataset.state === 'running') {
+                            this._setToolCardState(card, 'error');
+                        }
+                    });
+                    if (this._runToolCounts) {
+                        this._runToolCounts.running = 0;
+                        this._updateRunGroupSummary();
+                    }
                 }
                 this._finalizeRunGroup();
                 this._appendTool(this.assistantName + ' error', event.text || 'Unknown error.', 'error');

@@ -48,7 +48,8 @@ public sealed class AcpAgentSessionService : IAgentSessionService
     {
         public TaskCompletionSource<string> Completion { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public string[] OptionIds { get; init; } = Array.Empty<string>();
+        public IReadOnlyList<AgentDecisionOption> Options { get; init; } = Array.Empty<AgentDecisionOption>();
+        public bool IsModeTransition { get; init; }
     }
 
     private sealed class PendingElicitation
@@ -112,6 +113,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
     private readonly Dictionary<string, string> _toolSummaries = new();
     private readonly Dictionary<string, string> _toolOutputs = new();
     private readonly HashSet<string> _startedToolCallIds = new();
+    private readonly HashSet<string> _modeTransitionToolCallIds = new();
     private readonly Dictionary<string, string> _availableAgentCommands = new(StringComparer.OrdinalIgnoreCase);
     private AgentThread _currentThread;
     private AcpJsonRpcTransport? _transport;
@@ -277,6 +279,8 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             if (_pendingPermissions.TryRemove(item.Key, out var pending))
             {
                 pending.Completion.TrySetResult("__cancelled__");
+                if (pending.IsModeTransition)
+                    UpdateModeTransitionState(item.Key, "cancelled");
                 await _bridgeService.SendEventAsync(new
                 {
                     type = "permission_cancelled",
@@ -1186,6 +1190,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             _toolSummaries.Clear();
             _toolOutputs.Clear();
             _startedToolCallIds.Clear();
+            _modeTransitionToolCallIds.Clear();
             _currentRunId = Guid.NewGuid().ToString();
             _runCts = cts;
             _runRequestCts = requestCts;
@@ -1371,6 +1376,10 @@ public sealed class AcpAgentSessionService : IAgentSessionService
     {
         await EnsureTransportAsync(cancellationToken).ConfigureAwait(false);
 
+        var modeTransitionSnapshots = _currentThread.Messages
+            .Where(message => message.Role == "mode_transition")
+            .Select(CloneModeTransitionMessage)
+            .ToArray();
         var replay = new ReplayHistoryState();
         _isLoadingHistory = true;
         _replayHistory = replay;
@@ -1391,6 +1400,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             CaptureModes(loadResult);
             CaptureConfigOptions(loadResult);
             FinishReplayHistory(replay);
+            MergeModeTransitionSnapshots(replay.Messages, modeTransitionSnapshots);
 
             if (replay.Messages.Count > 0)
             {
@@ -1643,22 +1653,28 @@ public sealed class AcpAgentSessionService : IAgentSessionService
     {
         var requestId = request.GetProperty("id").ToString();
         var options = parameters.TryGetProperty("options", out var optionsElement) && optionsElement.ValueKind == JsonValueKind.Array
-            ? optionsElement.EnumerateArray().Select(option => new
+            ? optionsElement.EnumerateArray().Select(option => new AgentDecisionOption
             {
-                optionId = GetString(option, "optionId"),
-                name = GetString(option, "name"),
-                kind = GetString(option, "kind")
-            }).Where(o => !string.IsNullOrWhiteSpace(o.optionId)).ToArray()
-            : Array.Empty<object>();
+                OptionId = GetString(option, "optionId"),
+                Name = GetString(option, "name"),
+                Kind = GetString(option, "kind")
+            }).Where(option => !string.IsNullOrWhiteSpace(option.OptionId)).ToArray()
+            : Array.Empty<AgentDecisionOption>();
 
         var toolCall = parameters.TryGetProperty("toolCall", out var tc) ? tc : default;
+        var toolCallId = GetString(toolCall, "toolCallId");
+        var toolKind = GetString(toolCall, "kind");
+        var toolStatus = GetString(toolCall, "status");
+        var documentText = ReadModeTransitionDocument(toolCall);
+        var isModeTransition = string.Equals(toolKind, "switch_mode", StringComparison.Ordinal)
+                               && !string.IsNullOrWhiteSpace(documentText);
         var pending = new PendingPermission
         {
-            OptionIds = options.Select(o => (string)o.GetType().GetProperty("optionId")!.GetValue(o)!).ToArray()
+            Options = options,
+            IsModeTransition = isModeTransition
         };
         _pendingPermissions[requestId] = pending;
 
-        // 提取标题
         var title = GetString(toolCall, "title");
         if (string.IsNullOrWhiteSpace(title))
         {
@@ -1690,30 +1706,88 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             }
         }
 
+        if (isModeTransition)
+        {
+            if (!string.IsNullOrWhiteSpace(toolCallId))
+                _modeTransitionToolCallIds.Add(toolCallId);
+
+            UpsertModeTransitionMessage(
+                requestId,
+                toolCallId,
+                title,
+                documentText,
+                options,
+                "pending");
+        }
+
         await _bridgeService.SendEventAsync(new
         {
             type = "permission_request",
             requestId,
             title,
             text = toolInput,
-            options
+            presentation = isModeTransition ? "mode_transition" : null,
+            toolCallId,
+            toolKind,
+            toolStatus,
+            documentText = isModeTransition ? documentText : null,
+            options = options.Select(option => new
+            {
+                optionId = option.OptionId,
+                name = option.Name,
+                kind = option.Kind
+            }).ToArray()
         }).ConfigureAwait(false);
+
+        if (options.Length == 0)
+        {
+            _pendingPermissions.TryRemove(requestId, out _);
+            if (isModeTransition)
+                UpdateModeTransitionState(requestId, "cancelled");
+            await _bridgeService.SendEventAsync(new
+            {
+                type = "permission_cancelled",
+                requestId,
+                text = "The ACP Agent did not provide any response options."
+            }).ConfigureAwait(false);
+            return new { outcome = new { outcome = "cancelled" } };
+        }
 
         var selected = await pending.Completion.Task.ConfigureAwait(false);
         if (selected == "__cancelled__")
         {
+            if (isModeTransition)
+                UpdateModeTransitionState(requestId, "cancelled");
             return new { outcome = new { outcome = "cancelled" } };
         }
 
-        // 处理 always_allow 选项
-        if (selected == "always_allow")
+        var selectedOption = pending.Options.FirstOrDefault(option =>
+            string.Equals(option.OptionId, selected, StringComparison.OrdinalIgnoreCase));
+        if (selectedOption == null)
         {
-            // TODO: 保存用户的 always_allow 选择到配置文件
-            selected = "allow";
+            if (isModeTransition)
+                UpdateModeTransitionState(requestId, "cancelled");
+
+            await _bridgeService.SendEventAsync(new
+            {
+                type = "permission_cancelled",
+                requestId,
+                text = "The selected option was not offered by the ACP Agent."
+            }).ConfigureAwait(false);
+            return new { outcome = new { outcome = "cancelled" } };
         }
 
-        if (!pending.OptionIds.Contains(selected, StringComparer.OrdinalIgnoreCase))
-            selected = pending.OptionIds.FirstOrDefault() ?? selected;
+        selected = selectedOption.OptionId;
+        if (isModeTransition)
+            UpdateModeTransitionState(requestId, "selected", selected);
+
+        await _bridgeService.SendEventAsync(new
+        {
+            type = "permission_resolved",
+            requestId,
+            optionId = selected,
+            optionName = selectedOption.Name
+        }).ConfigureAwait(false);
 
         return new
         {
@@ -2049,6 +2123,13 @@ public sealed class AcpAgentSessionService : IAgentSessionService
 
     private async Task HandleToolCallAsync(JsonElement update)
     {
+        var reportedToolCallId = GetString(update, "toolCallId");
+        if (ShouldSuppressModeTransitionTool(reportedToolCallId))
+        {
+            CleanupToolTracking(reportedToolCallId);
+            return;
+        }
+
         var toolCallId = await EnsureToolStartedAsync(update).ConfigureAwait(false);
 
         var initialOutput = FormatToolOutput(update);
@@ -2071,6 +2152,13 @@ public sealed class AcpAgentSessionService : IAgentSessionService
 
     private async Task HandleToolCallUpdateAsync(JsonElement update)
     {
+        var reportedToolCallId = GetString(update, "toolCallId");
+        if (ShouldSuppressModeTransitionTool(reportedToolCallId))
+        {
+            CleanupToolTracking(reportedToolCallId);
+            return;
+        }
+
         // Some adapters can surface an update before the corresponding
         // tool_call notification. Normalize that sequence for the frontend so
         // every delta has a keyed, collapsible tool card to attach to.
@@ -2321,6 +2409,12 @@ public sealed class AcpAgentSessionService : IAgentSessionService
 
     private async Task FinishToolAsync(string toolCallId, string status)
     {
+        if (ShouldSuppressModeTransitionTool(toolCallId))
+        {
+            CleanupToolTracking(toolCallId);
+            return;
+        }
+
         var name = _toolNames.TryGetValue(toolCallId, out var n) ? n : "Tool";
         var summary = _toolSummaries.TryGetValue(toolCallId, out var s) ? s : name;
         var output = _toolOutputs.TryGetValue(toolCallId, out var o) ? o : "";
@@ -2334,6 +2428,23 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             summary,
             status
         }).ConfigureAwait(false);
+    }
+
+    private bool ShouldSuppressModeTransitionTool(string toolCallId)
+    {
+        return !string.IsNullOrWhiteSpace(toolCallId)
+               && _modeTransitionToolCallIds.Contains(toolCallId);
+    }
+
+    private void CleanupToolTracking(string toolCallId)
+    {
+        if (string.IsNullOrWhiteSpace(toolCallId))
+            return;
+
+        _toolNames.Remove(toolCallId);
+        _toolSummaries.Remove(toolCallId);
+        _toolOutputs.Remove(toolCallId);
+        _startedToolCallIds.Remove(toolCallId);
     }
 
     private Task SendAvailableCommandsAsync(JsonElement update)
@@ -2672,6 +2783,9 @@ public sealed class AcpAgentSessionService : IAgentSessionService
 
     private void ApplyThread(AgentThread thread)
     {
+        if (InterruptPendingModeTransitions(thread))
+            _threadStore.SaveThread(thread);
+
         ClearAvailableAgentCommands();
         EnsureImageContextFlag(thread);
         _workingDirectory = Directory.Exists(thread.Cwd) ? thread.Cwd : ResolveWorkspaceRoot();
@@ -2687,6 +2801,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         _toolSummaries.Clear();
         _toolOutputs.Clear();
         _startedToolCallIds.Clear();
+        _modeTransitionToolCallIds.Clear();
         _currentRunId = null;
     }
 
@@ -2744,6 +2859,15 @@ public sealed class AcpAgentSessionService : IAgentSessionService
                 toolInput = m.ToolInput,
                 toolOutput = m.ToolOutput,
                 toolStatus = m.ToolStatus,
+                requestId = m.RequestId,
+                decisionState = m.DecisionState,
+                selectedOptionId = m.SelectedOptionId,
+                decisionOptions = m.DecisionOptions?.Select(option => new
+                {
+                    optionId = option.OptionId,
+                    name = option.Name,
+                    kind = option.Kind
+                }).ToArray(),
                 planEntries = m.PlanEntries?.Select(entry => new
                 {
                     content = entry.Content,
@@ -2969,6 +3093,38 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         return string.Join(Environment.NewLine, parts.Where(p => !string.IsNullOrWhiteSpace(p)));
     }
 
+    private static string ReadModeTransitionDocument(JsonElement toolCall)
+    {
+        if (toolCall.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null
+            || !toolCall.TryGetProperty("content", out var content)
+            || content.ValueKind != JsonValueKind.Array)
+        {
+            return "";
+        }
+
+        var parts = new List<string>();
+        foreach (var item in content.EnumerateArray())
+        {
+            var itemType = GetString(item, "type");
+            if (itemType == "content"
+                && item.TryGetProperty("content", out var block)
+                && GetString(block, "type") == "text")
+            {
+                var text = GetString(block, "text");
+                if (!string.IsNullOrWhiteSpace(text))
+                    parts.Add(text.Trim());
+            }
+            else if (itemType == "text")
+            {
+                var text = GetString(item, "text");
+                if (!string.IsNullOrWhiteSpace(text))
+                    parts.Add(text.Trim());
+            }
+        }
+
+        return string.Join(Environment.NewLine + Environment.NewLine, parts);
+    }
+
     private static string BuildToolSummary(string name, string input, JsonElement update)
     {
         var title = GetString(update, "title");
@@ -3027,6 +3183,147 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         {
             messages.Add(planMessage);
         }
+    }
+
+    private void UpsertModeTransitionMessage(
+        string requestId,
+        string toolCallId,
+        string title,
+        string documentText,
+        IReadOnlyList<AgentDecisionOption> options,
+        string state)
+    {
+        var index = _currentThread.Messages.FindLastIndex(message =>
+            message.Role == "mode_transition"
+            && (string.Equals(message.RequestId, requestId, StringComparison.Ordinal)
+                || (!string.IsNullOrWhiteSpace(toolCallId)
+                    && string.Equals(message.ToolCallId, toolCallId, StringComparison.Ordinal))));
+
+        if (index < 0 && !string.IsNullOrWhiteSpace(toolCallId))
+        {
+            index = _currentThread.Messages.FindLastIndex(message =>
+                message.Role == "tool"
+                && string.Equals(message.ToolCallId, toolCallId, StringComparison.Ordinal));
+        }
+
+        var existing = index >= 0 ? _currentThread.Messages[index] : null;
+        var message = new AgentMessage
+        {
+            Role = "mode_transition",
+            Name = title,
+            Text = documentText,
+            RunId = existing?.RunId ?? _currentRunId,
+            ToolCallId = toolCallId,
+            RequestId = requestId,
+            DecisionState = state,
+            DecisionOptions = options.Select(CloneDecisionOption).ToList(),
+            CreatedAt = existing?.CreatedAt ?? DateTimeOffset.Now
+        };
+
+        if (index >= 0)
+            _currentThread.Messages[index] = message;
+        else
+            _currentThread.Messages.Add(message);
+
+        if (!string.IsNullOrWhiteSpace(toolCallId))
+        {
+            _currentThread.Messages.RemoveAll(candidate =>
+                !ReferenceEquals(candidate, message)
+                && candidate.Role == "tool"
+                && string.Equals(candidate.ToolCallId, toolCallId, StringComparison.Ordinal));
+        }
+
+        SaveCurrentThread();
+    }
+
+    private void UpdateModeTransitionState(string requestId, string state, string? selectedOptionId = null)
+    {
+        var message = _currentThread.Messages.FindLast(candidate =>
+            candidate.Role == "mode_transition"
+            && string.Equals(candidate.RequestId, requestId, StringComparison.Ordinal));
+        if (message == null)
+            return;
+
+        message.DecisionState = state;
+        message.SelectedOptionId = selectedOptionId;
+        SaveCurrentThread();
+    }
+
+    private static AgentDecisionOption CloneDecisionOption(AgentDecisionOption option)
+    {
+        return new AgentDecisionOption
+        {
+            OptionId = option.OptionId,
+            Name = option.Name,
+            Kind = option.Kind
+        };
+    }
+
+    private static AgentMessage CloneModeTransitionMessage(AgentMessage message)
+    {
+        return new AgentMessage
+        {
+            Role = "mode_transition",
+            Name = message.Name,
+            Text = message.Text,
+            RunId = message.RunId,
+            ToolCallId = message.ToolCallId,
+            RequestId = message.RequestId,
+            DecisionState = message.DecisionState is "pending" or "sending"
+                ? "interrupted"
+                : message.DecisionState,
+            SelectedOptionId = message.SelectedOptionId,
+            DecisionOptions = message.DecisionOptions?.Select(CloneDecisionOption).ToList(),
+            CreatedAt = message.CreatedAt
+        };
+    }
+
+    private static void MergeModeTransitionSnapshots(
+        List<AgentMessage> replayMessages,
+        IReadOnlyList<AgentMessage> snapshots)
+    {
+        foreach (var snapshot in snapshots)
+        {
+            var message = CloneModeTransitionMessage(snapshot);
+            var index = !string.IsNullOrWhiteSpace(message.ToolCallId)
+                ? replayMessages.FindLastIndex(candidate =>
+                    candidate.Role == "tool"
+                    && string.Equals(candidate.ToolCallId, message.ToolCallId, StringComparison.Ordinal))
+                : -1;
+
+            if (index >= 0)
+            {
+                message.RunId = replayMessages[index].RunId ?? message.RunId;
+                replayMessages[index] = message;
+            }
+            else
+            {
+                replayMessages.Add(message);
+            }
+
+            if (!string.IsNullOrWhiteSpace(message.ToolCallId))
+            {
+                replayMessages.RemoveAll(candidate =>
+                    !ReferenceEquals(candidate, message)
+                    && candidate.Role == "tool"
+                    && string.Equals(candidate.ToolCallId, message.ToolCallId, StringComparison.Ordinal));
+            }
+        }
+    }
+
+    private static bool InterruptPendingModeTransitions(AgentThread thread)
+    {
+        var changed = false;
+        foreach (var message in thread.Messages.Where(message => message.Role == "mode_transition"))
+        {
+            if (message.DecisionState is not ("pending" or "sending"))
+                continue;
+
+            message.DecisionState = "interrupted";
+            changed = true;
+        }
+
+        return changed;
     }
 
     private static List<AgentPlanEntry> ReadPlanEntries(JsonElement update)

@@ -51,12 +51,17 @@ AgentThreadManager.prototype._updateCommandMenu = function() {
                 currentGroup = command.source;
                 const group = document.createElement('div');
                 group.className = 'agent-command-group';
+                group.setAttribute('role', 'presentation');
                 group.textContent = currentGroup;
                 this.commandMenu.appendChild(group);
             }
 
             const row = document.createElement('button');
             row.type = 'button';
+            row.id = 'agent-command-option-' + index;
+            row.tabIndex = -1;
+            row.setAttribute('role', 'option');
+            row.setAttribute('aria-selected', index === this.commandIndex ? 'true' : 'false');
             row.className = 'agent-command-item' + (index === this.commandIndex ? ' is-active' : '');
             row.innerHTML = '<span>' + this._escape(command.name) + '</span><small>' + this._escape(command.label) + '</small>';
             row.addEventListener('mousedown', (event) => {
@@ -66,6 +71,8 @@ AgentThreadManager.prototype._updateCommandMenu = function() {
             this.commandMenu.appendChild(row);
         });
         this.commandMenu.hidden = false;
+        this.input.setAttribute('aria-expanded', 'true');
+        this.input.setAttribute('aria-activedescendant', 'agent-command-option-' + this.commandIndex);
         this.visibleCommands = matches;
 };
 
@@ -139,6 +146,8 @@ AgentThreadManager.prototype._applyCommand = function(command) {
 
 AgentThreadManager.prototype._hideCommandMenu = function() {
         this.commandMenu.hidden = true;
+        this.input.setAttribute('aria-expanded', 'false');
+        this.input.removeAttribute('aria-activedescendant');
         this.visibleCommands = [];
         this.commandIndex = 0;
 };

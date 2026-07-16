@@ -43,7 +43,7 @@
 }
 
 .agent-inspector-tab:focus-visible {
-    outline: 1px solid var(--agent-focus-ring);
+    outline: 2px solid var(--agent-focus-ring);
     outline-offset: -3px;
 }
 
@@ -86,7 +86,7 @@
 }
 
 .agent-plan-marker {
-    color: var(--agent-text-dim);
+    color: var(--agent-text-muted);
     font-family: var(--agent-font-mono);
     font-size: 0.94em;
     line-height: 1.45;
@@ -103,7 +103,7 @@
 }
 
 .agent-plan-item-completed .agent-plan-content {
-    color: var(--agent-text-dim);
+    color: var(--agent-text-muted);
     text-decoration: line-through;
     text-decoration-thickness: 1px;
 }
@@ -113,9 +113,14 @@
 }
 
 .agent-plan-empty {
-    color: var(--agent-text-dim);
+    color: var(--agent-text-muted);
     font-size: 13px;
     line-height: 1.5;
+}
+
+.agent-plan-item-in-progress .agent-plan-marker,
+.agent-plan-item-running .agent-plan-marker {
+    color: var(--agent-accent);
 }
 
 .agent-plan-fallback {

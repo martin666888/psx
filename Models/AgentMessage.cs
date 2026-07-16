@@ -15,7 +15,18 @@ public sealed class AgentMessage
     public string? ToolStatus { get; set; }
     public string? Summary { get; set; }
     public List<AgentPlanEntry>? PlanEntries { get; set; }
+    public string? RequestId { get; set; }
+    public string? DecisionState { get; set; }
+    public string? SelectedOptionId { get; set; }
+    public List<AgentDecisionOption>? DecisionOptions { get; set; }
     public List<AgentAttachment>? Attachments { get; set; }
+}
+
+public sealed class AgentDecisionOption
+{
+    public string OptionId { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string Kind { get; set; } = "";
 }
 
 public sealed class AgentPlanEntry

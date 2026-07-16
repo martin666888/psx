@@ -121,7 +121,7 @@ public sealed partial class ThemeService : IThemeService
             };
 
             AddUnknownWarnings(document, descriptor);
-            AddContrastWarning(descriptor);
+            AddContrastWarnings(descriptor);
             return new ThemeValidationResult { Descriptor = descriptor };
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or DecoderFallbackException)
@@ -274,15 +274,58 @@ public sealed partial class ThemeService : IThemeService
             .Select(p => char.ToLowerInvariant(p.Name[0]) + p.Name[1..]),
         StringComparer.OrdinalIgnoreCase);
 
-    private static void AddContrastWarning(ThemeDescriptor descriptor)
+    private static void AddContrastWarnings(ThemeDescriptor descriptor)
     {
         var appearance = descriptor.Appearance;
-        if (appearance == null || ContrastRatio(appearance.ThemeColors.Background, appearance.ThemeColors.Text) >= 4.5)
+        if (appearance == null)
             return;
-        descriptor.Diagnostics.Add(new ThemeDiagnostic
+
+        var theme = appearance.ThemeColors;
+        var agent = appearance.AgentTheme;
+        var checks = new (string Foreground, string Background, double Minimum, string Label)[]
         {
-            Message = "Background and primary text contrast is below 4.5:1."
-        });
+            (theme.Text, theme.Background, 4.5, "Primary text on background"),
+            (theme.Text, theme.Surface, 4.5, "Primary text on surface"),
+            (theme.Text, theme.SurfaceRaised, 4.5, "Primary text on raised surface"),
+            (theme.Text, theme.SurfaceMuted, 4.5, "Primary text on muted surface"),
+            (theme.TextMuted, theme.Background, 4.5, "Muted text on background"),
+            (theme.TextMuted, theme.Surface, 4.5, "Muted text on surface"),
+            (theme.TextMuted, theme.SurfaceRaised, 4.5, "Muted text on raised surface"),
+            (theme.TextMuted, theme.SurfaceMuted, 4.5, "Muted text on muted surface"),
+            (theme.Accent, theme.Background, 4.5, "Accent text on background"),
+            (theme.AccentHover, theme.Background, 4.5, "Accent hover text on background"),
+            (theme.Error, theme.Background, 4.5, "Error text on background"),
+            (theme.Warning, theme.Background, 4.5, "Warning text on background"),
+            (agent.CodeBlockText, agent.CodeBlockBg, 4.5, "Code block text"),
+            (theme.Text, agent.PermissionBg, 4.5, "Permission text"),
+            (theme.Text, agent.ElicitationBg, 4.5, "Elicitation text"),
+            (agent.AllowColor, theme.Background, 3.0, "Success indicator"),
+            (agent.DenyColor, theme.Background, 3.0, "Denied indicator"),
+            (agent.CautionColor, theme.Background, 3.0, "Caution indicator"),
+            (agent.PermissionBorder, agent.PermissionBg, 3.0, "Permission boundary"),
+            (agent.ElicitationBorder, agent.ElicitationBg, 3.0, "Elicitation boundary"),
+            (agent.SendBtnText, agent.SendBtn, 4.5, "Send button text"),
+            (agent.SendBtnText, agent.SendBtnHover, 4.5, "Send button hover text"),
+            (agent.SendBtnText, agent.StopBtn, 4.5, "Stop button text"),
+            (agent.SendBtnText, agent.StopBtnHover, 4.5, "Stop button hover text"),
+            (agent.DecisionPrimaryText, agent.DecisionPrimary, 4.5, "Decision button text"),
+            (agent.DecisionPrimaryText, agent.DecisionPrimaryHover, 4.5, "Decision button hover text"),
+            (agent.FocusRing, theme.Background, 3.0, "Focus ring on background"),
+            (agent.FocusRing, theme.Surface, 3.0, "Focus ring on surface"),
+            (agent.FocusRing, theme.SurfaceRaised, 3.0, "Focus ring on raised surface"),
+            (agent.FocusRing, theme.SurfaceMuted, 3.0, "Focus ring on muted surface")
+        };
+
+        foreach (var check in checks)
+        {
+            var ratio = ContrastRatio(check.Foreground, check.Background);
+            if (ratio >= check.Minimum)
+                continue;
+            descriptor.Diagnostics.Add(new ThemeDiagnostic
+            {
+                Message = $"{check.Label} contrast is {ratio:F2}:1; expected at least {check.Minimum:F1}:1."
+            });
+        }
     }
 
     private static double ContrastRatio(string first, string second)

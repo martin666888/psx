@@ -1,3 +1,4 @@
+/* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V4 · genre: modern-minimal · macrostructure: Workbench · design-system: design.md · designed-as-app */
 :root {
     /* === 基础色 (来自 [theme]) === */
     --agent-bg: #1d1d1a;
@@ -52,5 +53,22 @@
     --agent-font-size: 15px;
     --agent-font-ui: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
     --agent-font-mono: "Cascadia Code", Consolas, monospace;
-    --agent-composer-control-height: 46px;
+    --agent-space-1: 4px;
+    --agent-space-2: 8px;
+    --agent-space-3: 12px;
+    --agent-space-4: 16px;
+    --agent-space-5: 20px;
+    --agent-space-6: 24px;
+    --agent-space-8: 32px;
+    --agent-radius-sm: 4px;
+    --agent-radius-md: 6px;
+    --agent-radius-lg: 8px;
+    --agent-layer-menu: 20;
+    --agent-layer-dialog: 100;
+    --agent-duration-fast: 120ms;
+    --agent-duration-state: 160ms;
+    --agent-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+    --agent-ease-emphasized: cubic-bezier(0.2, 0, 0, 1.2);
+    --agent-conversation-max-width: 1120px;
+    --agent-composer-control-height: 44px;
 }

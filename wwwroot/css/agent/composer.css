@@ -1,15 +1,46 @@
 ﻿.agent-composer {
     grid-area: composer;
     position: relative;
+    display: grid;
+    grid-template-columns: minmax(360px, 1fr) 7px var(--agent-inspector-width);
     border-top: 1px solid var(--agent-border);
     background: var(--agent-bg);
-    padding: 12px;
+    padding: 0;
+}
+
+.agent-composer::after {
+    content: "";
+    grid-column: 3;
+    grid-row: 1;
+    border-left: 1px solid var(--agent-border);
+    pointer-events: none;
+}
+
+.agent-composer-main {
+    position: relative;
+    z-index: 1;
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+    padding: var(--agent-space-2) var(--agent-content-inline-padding);
+}
+
+.agent-composer-main > .agent-attachments-strip,
+.agent-composer-main > .agent-composer-mode-transition,
+.agent-input-row,
+.agent-command-hint,
+.agent-composer-footer {
+    width: 100%;
+    max-width: var(--agent-conversation-max-width);
+    box-sizing: border-box;
+    margin-left: auto;
+    margin-right: auto;
 }
 
 .agent-input-row {
     display: flex;
     align-items: flex-start;
-    gap: 10px;
+    gap: var(--agent-space-2);
 }
 
 .agent-composer textarea {
@@ -19,26 +50,28 @@
     resize: none;
     box-sizing: border-box;
     border: 1px solid var(--agent-border-strong);
-    border-radius: 6px;
-    padding: 11px 12px;
-    outline: none;
+    border-radius: var(--agent-radius-md);
+    padding: 9px var(--agent-space-3);
+    outline: 2px solid transparent;
     overflow-y: hidden;
     background: var(--agent-surface);
     color: var(--agent-text);
-    font-family: var(--agent-font-mono);
+    font-family: var(--agent-font-ui);
     font-size: var(--agent-font-size);
     line-height: 1.45;
     scrollbar-color: var(--agent-scrollbar) var(--agent-surface);
     scrollbar-width: thin;
 }
 
-.agent-composer textarea:focus {
+.agent-composer textarea:focus-visible {
     border-color: var(--agent-accent);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--agent-accent) 16%, transparent);
+    outline: 2px solid var(--agent-focus-ring);
+    outline-offset: 1px;
 }
 
 .agent-command-hint {
-    margin: 7px 0 0 46px;
+    margin-top: 7px;
+    padding-left: calc(var(--agent-composer-control-height) + var(--agent-space-2));
     color: var(--agent-text-muted);
     font-size: 12px;
     line-height: 1.45;
@@ -54,25 +87,31 @@
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
-    margin-top: 9px;
+    gap: var(--agent-space-2);
+    margin-top: var(--agent-space-2);
+}
+
+.agent-input-row[hidden],
+.agent-composer-mode-transition[hidden] {
+    display: none;
 }
 
 .agent-hints {
     display: flex;
-    flex: 1 1 auto;
-    gap: 12px;
-    color: var(--agent-text-dim);
+    flex: 0 0 auto;
+    gap: var(--agent-space-2);
+    color: var(--agent-text-muted);
     font-size: 12px;
+    white-space: nowrap;
 }
 
 .agent-config-options {
     display: flex;
-    flex: 0 1 auto;
+    flex: 1 1 auto;
     flex-wrap: wrap;
     align-items: center;
     justify-content: flex-end;
-    gap: 8px;
+    gap: var(--agent-space-2);
     min-width: 0;
 }
 
@@ -82,8 +121,9 @@
     min-width: 0;
     align-items: center;
     gap: 6px;
-    color: var(--agent-text-dim);
+    color: var(--agent-text-muted);
     font-size: 12px;
+    white-space: nowrap;
 }
 
 .agent-mode-control[hidden],
@@ -95,7 +135,7 @@
 .agent-config-control select {
     max-width: 180px;
     border: 1px solid var(--agent-border);
-    border-radius: 5px;
+    border-radius: var(--agent-radius-sm);
     background: var(--agent-surface);
     color: var(--agent-text-muted);
     padding: 3px 6px;
@@ -107,9 +147,22 @@
     max-width: 230px;
 }
 
+.agent-mode-control select:hover,
+.agent-config-control select:hover {
+    border-color: var(--agent-border-strong);
+    background: var(--agent-hover);
+}
+
+.agent-mode-control select:focus-visible,
+.agent-config-control select:focus-visible {
+    outline: 2px solid var(--agent-focus-ring);
+    outline-offset: 2px;
+}
+
 .agent-mode-control select:disabled,
 .agent-config-control select:disabled {
-    opacity: 0.55;
+    color: var(--agent-text-dim);
+    opacity: 0.72;
 }
 
 .agent-send {
@@ -128,6 +181,11 @@
     border-color: var(--agent-send-btn-hover);
 }
 
+.agent-send:disabled:hover {
+    border-color: var(--agent-send-btn);
+    background: var(--agent-send-btn);
+}
+
 .agent-send-stop {
     background: var(--agent-stop-btn);
     border-color: var(--agent-stop-btn);
@@ -136,4 +194,9 @@
 .agent-send-stop:hover {
     background: var(--agent-stop-btn-hover);
     border-color: var(--agent-stop-btn-hover);
+}
+
+.agent-send-stop:disabled:hover {
+    background: var(--agent-stop-btn);
+    border-color: var(--agent-stop-btn);
 }

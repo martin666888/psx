@@ -11,6 +11,50 @@
 
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+        <Style x:Key="ShellFocusVisualStyle">
+            <Setter Property="Control.Template">
+                <Setter.Value>
+                    <ControlTemplate>
+                        <Border Margin="1"
+                                BorderBrush="{DynamicResource AccentBrush}"
+                                BorderThickness="2"
+                                CornerRadius="4"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="ModeButtonStyle" TargetType="Button">
+            <Setter Property="MinHeight" Value="32"/>
+            <Setter Property="Padding" Value="10,3"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FontFamily" Value="Segoe UI Variable"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FocusVisualStyle" Value="{StaticResource ShellFocusVisualStyle}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="3">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="{DynamicResource TextDimBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Window.InputBindings>
@@ -33,11 +77,12 @@
 
             <controls:TabBar Grid.Column="0" DataContext="{Binding}"/>
 
-            <StackPanel Grid.Column="1" Margin="8,6,10,6" Orientation="Horizontal">
+            <StackPanel Grid.Column="1" Margin="8,4,10,4" Orientation="Horizontal">
                 <Grid Margin="0,0,6,0">
                     <ToggleButton x:Name="ThemeButton"
                             Content="Theme"
                             MinWidth="62"
+                            MinHeight="32"
                             Padding="10,3"
                             Background="{DynamicResource SurfaceBrush}"
                             Foreground="{DynamicResource TextSecondaryBrush}"
@@ -45,6 +90,7 @@
                             BorderThickness="1"
                             Cursor="Hand"
                             FontSize="12"
+                            FocusVisualStyle="{StaticResource ShellFocusVisualStyle}"
                             IsChecked="{Binding ThemePicker.IsOpen, Mode=TwoWay}"/>
                     <Popup x:Name="ThemePopup"
                            PlacementTarget="{Binding ElementName=ThemeButton}"
@@ -52,7 +98,7 @@
                            HorizontalOffset="-218"
                            VerticalOffset="6"
                            AllowsTransparency="True"
-                           PopupAnimation="Fade"
+                           PopupAnimation="None"
                            StaysOpen="False"
                            IsOpen="{Binding ThemePicker.IsOpen, Mode=TwoWay}">
                         <Border Width="300"
@@ -78,7 +124,7 @@
                                                FontWeight="SemiBold"/>
                                     <TextBlock Text="{Binding ThemePicker.CurrentLabel}"
                                                HorizontalAlignment="Right"
-                                               Foreground="{DynamicResource TextDimBrush}"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"
                                                FontSize="10"/>
                                 </Grid>
 
@@ -86,7 +132,7 @@
                                     <StackPanel>
                                         <TextBlock Text="BUILT-IN"
                                                    Margin="6,4,6,3"
-                                                   Foreground="{DynamicResource TextDimBrush}"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"
                                                    FontSize="9"
                                                    FontWeight="SemiBold"/>
                                         <ItemsControl ItemsSource="{Binding ThemePicker.BuiltInThemes}">
@@ -114,7 +160,7 @@
                                                                            TextTrimming="CharacterEllipsis"/>
                                                                 <TextBlock Text="{Binding StatusText}"
                                                                            HorizontalAlignment="Right"
-                                                                           Foreground="{DynamicResource AccentBrush}"
+                                                                           Foreground="{DynamicResource TextSecondaryBrush}"
                                                                            FontSize="10"/>
                                                             </Grid>
                                                         </Button>
@@ -123,9 +169,10 @@
                                                                 Padding="8,4"
                                                                 VerticalAlignment="Center"
                                                                 Content="Confirm"
-                                                                Background="{DynamicResource AccentBrush}"
-                                                                Foreground="White"
-                                                                BorderThickness="0"
+                                                                Background="{DynamicResource SurfaceMutedBrush}"
+                                                                Foreground="{DynamicResource TextPrimaryBrush}"
+                                                                BorderBrush="{DynamicResource AccentBrush}"
+                                                                BorderThickness="1"
                                                                 Cursor="Hand"
                                                                 Visibility="{Binding ShowConfirm, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                                 Command="{Binding DataContext.ThemePicker.ConfirmThemeCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
@@ -137,12 +184,12 @@
 
                                         <TextBlock Text="CUSTOM"
                                                    Margin="6,10,6,3"
-                                                   Foreground="{DynamicResource TextDimBrush}"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"
                                                    FontSize="9"
                                                    FontWeight="SemiBold"/>
                                         <TextBlock Text="No custom themes"
                                                    Margin="7,6"
-                                                   Foreground="{DynamicResource TextDimBrush}"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"
                                                    FontSize="11">
                                             <TextBlock.Style>
                                                 <Style TargetType="TextBlock">
@@ -180,7 +227,7 @@
                                                                            TextTrimming="CharacterEllipsis"/>
                                                                 <TextBlock Text="{Binding StatusText}"
                                                                            HorizontalAlignment="Right"
-                                                                           Foreground="{DynamicResource AccentBrush}"
+                                                                           Foreground="{DynamicResource TextSecondaryBrush}"
                                                                            FontSize="10"/>
                                                             </Grid>
                                                         </Button>
@@ -189,9 +236,10 @@
                                                                 Padding="8,4"
                                                                 VerticalAlignment="Center"
                                                                 Content="Confirm"
-                                                                Background="{DynamicResource AccentBrush}"
-                                                                Foreground="White"
-                                                                BorderThickness="0"
+                                                                Background="{DynamicResource SurfaceMutedBrush}"
+                                                                Foreground="{DynamicResource TextPrimaryBrush}"
+                                                                BorderBrush="{DynamicResource AccentBrush}"
+                                                                BorderThickness="1"
                                                                 Cursor="Hand"
                                                                 Visibility="{Binding ShowConfirm, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                                 Command="{Binding DataContext.ThemePicker.ConfirmThemeCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
@@ -261,16 +309,10 @@
                     <StackPanel Orientation="Horizontal">
                     <Button Content="Terminal"
                             MinWidth="72"
-                            Padding="10,3"
                             Margin="0"
                             Command="{Binding ShowTerminalCommand}">
                         <Button.Style>
-                            <Style TargetType="Button">
-                                <Setter Property="Background" Value="Transparent"/>
-                                <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
-                                <Setter Property="BorderThickness" Value="0"/>
-                                <Setter Property="Cursor" Value="Hand"/>
-                                <Setter Property="FontSize" Value="12"/>
+                            <Style TargetType="Button" BasedOn="{StaticResource ModeButtonStyle}">
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsTerminalView}" Value="True">
                                         <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}"/>
@@ -282,16 +324,10 @@
                     </Button>
                     <Button Content="Agent"
                             MinWidth="62"
-                            Padding="10,3"
                             Margin="2,0,0,0"
                             Command="{Binding ShowAgentCommand}">
                         <Button.Style>
-                            <Style TargetType="Button">
-                                <Setter Property="Background" Value="Transparent"/>
-                                <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
-                                <Setter Property="BorderThickness" Value="0"/>
-                                <Setter Property="Cursor" Value="Hand"/>
-                                <Setter Property="FontSize" Value="12"/>
+                            <Style TargetType="Button" BasedOn="{StaticResource ModeButtonStyle}">
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsAgentView}" Value="True">
                                         <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}"/>
