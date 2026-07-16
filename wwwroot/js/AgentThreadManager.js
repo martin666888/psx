@@ -307,8 +307,11 @@ class AgentThreadManager {
                     if (!resolved.card.pre.textContent.trim()) {
                         resolved.card.pre.textContent = 'Finished.';
                     }
-                    resolved.card.details.classList.remove('agent-tool-card-running');
-                    resolved.card.details.classList.add('agent-tool-card-' + (event.status || 'done'));
+                    if (resolved.card.details.dataset.state === 'running' && this._runToolCounts) {
+                        this._runToolCounts.running = Math.max(0, this._runToolCounts.running - 1);
+                    }
+                    this._setToolCardState(resolved.card, event.status || 'done');
+                    this._updateRunGroupSummary();
                     resolved.card.details.removeAttribute('open');
                     delete this.toolCards[resolved.toolCallId];
                 } else {
@@ -341,6 +344,15 @@ class AgentThreadManager {
                 this._restoreSubmittedDraft();
                 if (this.currentRunGroup) {
                     this.currentRunGroup.classList.add('agent-run-group-error');
+                    Object.values(this.toolCards).forEach((card) => {
+                        if (card.details.dataset.state === 'running') {
+                            this._setToolCardState(card, 'error');
+                        }
+                    });
+                    if (this._runToolCounts) {
+                        this._runToolCounts.running = 0;
+                        this._updateRunGroupSummary();
+                    }
                 }
                 this._finalizeRunGroup();
                 this._appendTool(this.assistantName + ' error', event.text || 'Unknown error.', 'error');

@@ -2,6 +2,9 @@ AgentThreadManager.prototype._showThinking = function() {
         if (this.thinkingRow) return;
         const row = document.createElement('div');
         row.className = 'agent-thinking';
+        row.setAttribute('role', 'status');
+        row.setAttribute('aria-live', 'polite');
+        row.setAttribute('aria-busy', 'true');
         row.innerHTML = '<span class="agent-spinner"></span><span>Thinking</span>';
         this.thinkingRow = row;
         this.thinkingContent = null;
@@ -29,6 +32,7 @@ AgentThreadManager.prototype._hideThinking = function() {
         } else {
             this.thinkingRow.classList.remove('agent-thinking-running');
             this.thinkingRow.removeAttribute('open');
+            this.thinkingRow.setAttribute('aria-busy', 'false');
             const spinner = this.thinkingRow.querySelector('.agent-spinner');
             if (spinner) spinner.remove();
         }
@@ -60,6 +64,7 @@ AgentThreadManager.prototype._createThinkingBlock = function(text, running) {
         const details = document.createElement('details');
         details.className = 'agent-thinking-block' + (running ? ' agent-thinking-running' : '');
         details.open = !!running;
+        details.setAttribute('aria-busy', running ? 'true' : 'false');
 
         const header = document.createElement('summary');
         header.className = 'agent-thinking-header';

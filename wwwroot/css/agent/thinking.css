@@ -2,7 +2,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    margin: 0 0 18px;
+    margin: 0 0 var(--agent-space-4);
     color: var(--agent-text-muted);
     font-size: var(--agent-font-size);
 }
@@ -19,17 +19,17 @@
 .agent-thinking-block {
     width: 100%;
     box-sizing: border-box;
-    margin: 0 0 14px;
-    border: 1px solid var(--agent-border);
-    border-radius: 6px;
-    background: var(--agent-surface);
+    margin: 0 0 var(--agent-space-4);
+    border-top: 1px solid var(--agent-border);
+    border-bottom: 1px solid var(--agent-border);
+    background: transparent;
 }
 
 .agent-thinking-header {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 12px;
+    padding: var(--agent-space-2) 0;
     color: var(--agent-text-muted);
     cursor: pointer;
     font-size: 13px;
@@ -45,9 +45,9 @@
 .agent-thinking-chevron::before {
     content: '\25b6';
     display: inline-block;
-    color: var(--agent-text-dim);
+    color: var(--agent-text-muted);
     font-size: 10px;
-    transition: transform 150ms;
+    transition: transform var(--agent-duration-state) var(--agent-ease-standard);
 }
 
 .agent-thinking-block[open] > .agent-thinking-header .agent-thinking-chevron::before {
@@ -61,13 +61,18 @@
 .agent-thinking-content {
     max-height: 260px;
     overflow: auto;
-    margin: 0 8px 8px;
-    padding: 8px 10px;
-    border-radius: 4px;
+    margin: 0 0 var(--agent-space-2) var(--agent-space-4);
+    padding: var(--agent-space-2) var(--agent-space-3);
+    border-radius: var(--agent-radius-sm);
     background: var(--agent-surface-muted);
     color: var(--agent-text-muted);
     font-family: var(--agent-font-mono);
     font-size: clamp(11px, calc(var(--agent-font-size) * 0.8), 18px);
     line-height: 1.5;
     white-space: pre-wrap;
+}
+
+.agent-thinking-header:focus-visible {
+    outline: 2px solid var(--agent-focus-ring);
+    outline-offset: -2px;
 }

@@ -1,16 +1,17 @@
 .agent-history-list {
     display: grid;
-    gap: 8px;
+    gap: 0;
 }
 
 .agent-history-item {
     width: 100%;
     display: grid;
     gap: 3px;
-    padding: 9px 10px;
-    border: 1px solid var(--agent-border);
-    border-radius: 5px;
-    background: var(--agent-surface-raised);
+    padding: var(--agent-space-3) var(--agent-space-2);
+    border: 0;
+    border-bottom: 1px solid var(--agent-border);
+    border-radius: 0;
+    background: transparent;
     color: var(--agent-text);
     text-align: left;
     cursor: pointer;
@@ -23,7 +24,7 @@
 }
 
 .agent-history-item[aria-current="true"] {
-    border-color: var(--agent-accent);
+    background: var(--agent-surface-muted);
 }
 
 .agent-history-heading {
@@ -59,7 +60,7 @@
 }
 
 .agent-history-state {
-    color: var(--agent-text-dim);
+    color: var(--agent-text-muted);
     font-size: 13px;
     line-height: 1.5;
 }

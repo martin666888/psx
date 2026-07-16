@@ -22,6 +22,7 @@
             attachmentStrip: document.getElementById('agent-attachments-strip'),
             imagePreview: document.getElementById('agent-image-preview'),
             imagePreviewImg: document.getElementById('agent-image-preview-img'),
+            imagePreviewClose: document.getElementById('agent-image-preview-close'),
             inspector: document.getElementById('agent-inspector'),
             inspectorResizer: document.getElementById('agent-inspector-resizer'),
             planTab: document.getElementById('agent-plan-tab'),

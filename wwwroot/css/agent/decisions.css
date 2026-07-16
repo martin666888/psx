@@ -86,7 +86,7 @@
 
 .agent-decision-status {
     margin-top: 10px;
-    color: var(--agent-text-dim);
+    color: var(--agent-text-muted);
     font-size: 12px;
 }
 
@@ -103,7 +103,7 @@
     text-align: center;
     padding: 4px 14px;
     font-size: 12px;
-    border-radius: 20px;
+    border-radius: var(--agent-radius-sm);
 }
 
 .agent-decision-actions button:disabled {
@@ -130,13 +130,13 @@
 /* Raw Input 折叠区域 */
 .agent-decision-raw-input {
     margin-top: 10px;
-    border: 1px solid var(--agent-border);
-    border-radius: 4px;
-    background: var(--agent-surface);
+    border-top: 1px solid var(--agent-border);
+    border-bottom: 1px solid var(--agent-border);
+    background: transparent;
 }
 
 .agent-decision-raw-input[open] {
-    background: var(--agent-surface-raised);
+    background: transparent;
 }
 
 .agent-decision-raw-input-summary {
@@ -187,35 +187,35 @@
 /* 按钮颜色样式 */
 .agent-btn-allow {
     background: color-mix(in srgb, var(--agent-allow-color) 15%, transparent);
-    border-color: color-mix(in srgb, var(--agent-allow-color) 30%, transparent);
-    color: var(--agent-allow-color);
+    border-color: var(--agent-border-strong);
+    color: var(--agent-text);
 }
 
 .agent-btn-allow:hover {
     background: color-mix(in srgb, var(--agent-allow-color) 25%, transparent);
-    border-color: color-mix(in srgb, var(--agent-allow-color) 50%, transparent);
+    border-color: var(--agent-border-strong);
 }
 
 .agent-btn-reject {
     background: color-mix(in srgb, var(--agent-deny-color) 15%, transparent);
-    border-color: color-mix(in srgb, var(--agent-deny-color) 30%, transparent);
-    color: var(--agent-deny-color);
+    border-color: var(--agent-border-strong);
+    color: var(--agent-text);
 }
 
 .agent-btn-reject:hover {
     background: color-mix(in srgb, var(--agent-deny-color) 25%, transparent);
-    border-color: color-mix(in srgb, var(--agent-deny-color) 50%, transparent);
+    border-color: var(--agent-border-strong);
 }
 
 .agent-btn-always-allow {
     background: color-mix(in srgb, var(--agent-caution-color) 15%, transparent);
-    border-color: color-mix(in srgb, var(--agent-caution-color) 30%, transparent);
-    color: var(--agent-caution-color);
+    border-color: var(--agent-border-strong);
+    color: var(--agent-text);
 }
 
 .agent-btn-always-allow:hover {
     background: color-mix(in srgb, var(--agent-caution-color) 25%, transparent);
-    border-color: color-mix(in srgb, var(--agent-caution-color) 50%, transparent);
+    border-color: var(--agent-border-strong);
 }
 
 .agent-elicitation-form {
@@ -259,9 +259,10 @@
     resize: vertical;
 }
 
-.agent-elicitation-field input:focus,
-.agent-elicitation-field textarea:focus {
-    outline: 2px solid color-mix(in srgb, var(--agent-focus-ring) 55%, transparent);
+.agent-elicitation-field input:focus-visible,
+.agent-elicitation-field textarea:focus-visible,
+.agent-elicitation-field select:focus-visible {
+    outline: 2px solid var(--agent-focus-ring);
     outline-offset: 1px;
 }
 
@@ -275,7 +276,7 @@
 }
 
 .agent-elicitation-field small {
-    color: var(--agent-text-dim);
+    color: var(--agent-text-muted);
 }
 
 .agent-elicitation-option-list {
@@ -308,8 +309,8 @@
     background: var(--agent-hover);
 }
 
-.agent-elicitation-option:focus {
-    outline: 2px solid color-mix(in srgb, var(--agent-focus-ring) 55%, transparent);
+.agent-elicitation-option:focus-visible {
+    outline: 2px solid var(--agent-focus-ring);
     outline-offset: 1px;
 }
 
@@ -326,7 +327,7 @@
 }
 
 .agent-elicitation-option-description {
-    color: var(--agent-text-dim);
+    color: var(--agent-text-muted);
     font-size: 12px;
     line-height: 1.45;
     overflow-wrap: anywhere;

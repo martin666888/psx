@@ -97,11 +97,11 @@
 }
 
 .agent-message-user .agent-message-body {
-    padding: 12px 14px;
-    border: 1px solid var(--agent-code-block-border);
-    border-radius: 6px;
-    background: var(--agent-code-block-bg);
-    color: var(--agent-code-block-text);
+    padding: var(--agent-space-3) var(--agent-space-4);
+    border: 1px solid var(--agent-border);
+    border-radius: var(--agent-radius-md);
+    background: var(--agent-surface);
+    color: var(--agent-text);
 }
 
 .agent-message-assistant .agent-message-body {

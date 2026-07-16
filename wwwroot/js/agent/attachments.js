@@ -43,14 +43,17 @@ AgentThreadManager.prototype._wireAttachments = function() {
         });
 
         if (this.meta.imagePreview) {
-            this.meta.imagePreview.addEventListener('click', () => this._hideImagePreview());
-        }
-
-        document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape') {
+            this.meta.imagePreview.addEventListener('cancel', (event) => {
+                event.preventDefault();
                 this._hideImagePreview();
-            }
-        });
+            });
+            this.meta.imagePreview.addEventListener('click', (event) => {
+                if (event.target === this.meta.imagePreview) {
+                    this._hideImagePreview();
+                }
+            });
+        }
+        this.meta.imagePreviewClose?.addEventListener('click', () => this._hideImagePreview());
 
         this._syncAttachmentControls();
 };
@@ -175,10 +178,14 @@ AgentThreadManager.prototype._renderPendingAttachments = function() {
 };
 
 AgentThreadManager.prototype._createAttachmentTile = function(attachment, removable) {
+        const shell = document.createElement('div');
+        shell.className = 'agent-attachment-shell';
+
         const tile = document.createElement('button');
         tile.type = 'button';
         tile.className = 'agent-attachment-tile agent-attachment-' + (attachment.status || 'ready');
         tile.title = attachment.fileName || 'Image attachment';
+        tile.setAttribute('aria-label', 'Preview ' + (attachment.fileName || 'image attachment'));
 
         const image = document.createElement('img');
         image.src = attachment.url;
@@ -193,19 +200,22 @@ AgentThreadManager.prototype._createAttachmentTile = function(attachment, remova
         }
 
         tile.addEventListener('click', () => this._showImagePreview(attachment.url));
+        shell.appendChild(tile);
 
         if (removable) {
-            const remove = document.createElement('span');
+            const remove = document.createElement('button');
+            remove.type = 'button';
             remove.className = 'agent-attachment-remove';
             remove.textContent = '×';
+            remove.setAttribute('aria-label', 'Remove ' + (attachment.fileName || 'image attachment'));
             remove.addEventListener('click', (event) => {
                 event.stopPropagation();
                 this._removePendingAttachment(attachment.clientId);
             });
-            tile.appendChild(remove);
+            shell.appendChild(remove);
         }
 
-        return tile;
+        return shell;
 };
 
 AgentThreadManager.prototype._removePendingAttachment = function(clientId) {
@@ -271,14 +281,25 @@ AgentThreadManager.prototype._appendMessageAttachments = function(attachments) {
 
 AgentThreadManager.prototype._showImagePreview = function(url) {
         if (!this.meta.imagePreview || !this.meta.imagePreviewImg || !url) return;
+        this.imagePreviewReturnFocus = document.activeElement;
         this.meta.imagePreviewImg.src = url;
-        this.meta.imagePreview.hidden = false;
+        if (!this.meta.imagePreview.open) {
+            this.meta.imagePreview.showModal();
+        }
+        this.meta.imagePreviewClose?.focus();
 };
 
 AgentThreadManager.prototype._hideImagePreview = function() {
         if (!this.meta.imagePreview || !this.meta.imagePreviewImg) return;
-        this.meta.imagePreview.hidden = true;
+        if (this.meta.imagePreview.open) {
+            this.meta.imagePreview.close();
+        }
         this.meta.imagePreviewImg.removeAttribute('src');
+        const returnFocus = this.imagePreviewReturnFocus;
+        this.imagePreviewReturnFocus = null;
+        if (returnFocus?.isConnected && typeof returnFocus.focus === 'function') {
+            returnFocus.focus();
+        }
 };
 
 AgentThreadManager.prototype._syncAttachmentControls = function() {

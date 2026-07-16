@@ -67,6 +67,7 @@ AgentThreadManager.prototype._renderPlanEntries = function(entries, fallbackText
             const item = document.createElement('li');
             const statusClass = this._planStatusClass(entry.status);
             item.className = 'agent-plan-item ' + statusClass;
+            item.setAttribute('aria-label', this._planStatusLabel(entry.status) + ': ' + entry.content);
             if (entry.priority) {
                 item.dataset.priority = entry.priority;
             }
@@ -137,12 +138,20 @@ AgentThreadManager.prototype._readRawPlanEntries = function(text) {
 
 AgentThreadManager.prototype._planStatusClass = function(status) {
         const value = String(status || '').toLowerCase();
-        return value === 'completed'
-            ? 'agent-plan-item-completed'
-            : 'agent-plan-item-pending';
+        return value === 'completed' ? 'agent-plan-item-completed'
+            : ['in_progress', 'in-progress', 'running', 'current'].includes(value)
+                ? 'agent-plan-item-in-progress'
+                : 'agent-plan-item-pending';
 };
 
 AgentThreadManager.prototype._planStatusMarker = function(status) {
         const value = String(status || '').toLowerCase();
-        return value === 'completed' ? '\u2713' : '\u25cb';
+        return value === 'completed' ? '\u2713'
+            : ['in_progress', 'in-progress', 'running', 'current'].includes(value) ? '\u25c9' : '\u25cb';
+};
+
+AgentThreadManager.prototype._planStatusLabel = function(status) {
+        const value = String(status || '').toLowerCase();
+        return value === 'completed' ? 'Completed'
+            : ['in_progress', 'in-progress', 'running', 'current'].includes(value) ? 'Current' : 'Pending';
 };

@@ -26,7 +26,7 @@ AgentThreadManager.prototype._createRunGroup = function(runId) {
         this.currentRunGroupBody = body;
         this.currentRunId = runId;
         this.toolCards = {};
-        this._runToolCounts = { total: 0, byName: {} };
+        this._runToolCounts = { total: 0, running: 0 };
         this._scrollToBottom();
 };
 
@@ -50,13 +50,40 @@ AgentThreadManager.prototype._ensureRunGroup = function(runId) {
 
 AgentThreadManager.prototype._updateRunGroupSummary = function() {
         if (!this.currentRunGroup || !this._runToolCounts) return;
-        const { total, byName } = this._runToolCounts;
-        const parts = Object.entries(byName)
-            .sort((a, b) => b[1] - a[1])
-            .map(([name, count]) => count + ' ' + name);
+        const { total, running } = this._runToolCounts;
         const label = total === 0 ? 'Tool activity'
-            : total + ' tool call' + (total > 1 ? 's' : '') + (parts.length ? ' \u00b7 ' + parts.join(' \u00b7 ') : '');
+            : 'Tool activity \u00b7 ' + total + ' call' + (total > 1 ? 's' : '')
+                + (running > 0 ? ' \u00b7 ' + running + ' running' : '');
         this.currentRunGroup.querySelector('.agent-run-group-summary').textContent = label;
+};
+
+AgentThreadManager.prototype._setToolCardState = function(card, state) {
+        if (!card?.details) return;
+        const raw = String(state || 'done').toLowerCase();
+        const normalized = ['done', 'completed', 'complete', 'success', 'succeeded'].includes(raw) ? 'done'
+            : ['error', 'failed', 'failure'].includes(raw) ? 'error'
+            : ['cancelled', 'canceled'].includes(raw) ? 'cancelled'
+            : raw === 'fallback' ? 'fallback'
+            : raw === 'running' ? 'running'
+            : 'done';
+        const labels = {
+            running: 'Running',
+            done: 'Done',
+            error: 'Failed',
+            cancelled: 'Cancelled',
+            fallback: 'Needs terminal'
+        };
+
+        Array.from(card.details.classList)
+            .filter((name) => name.startsWith('agent-tool-card-'))
+            .forEach((name) => card.details.classList.remove(name));
+        card.details.classList.add('agent-tool-card-' + normalized);
+        card.details.dataset.state = normalized;
+        const status = card.details.querySelector('.agent-tool-card-status');
+        if (status) {
+            status.textContent = labels[normalized];
+            status.setAttribute('aria-label', 'Tool status: ' + labels[normalized]);
+        }
 };
 
 AgentThreadManager.prototype._createToolCard = function(toolCallId, name, input, summary, state) {
@@ -71,7 +98,7 @@ AgentThreadManager.prototype._createToolCard = function(toolCallId, name, input,
         }
 
         const details = document.createElement('details');
-        details.className = 'agent-tool-card agent-tool-card-' + state;
+        details.className = 'agent-tool-card';
         details.open = true;
         details.dataset.toolId = toolCallId;
 
@@ -97,11 +124,12 @@ AgentThreadManager.prototype._createToolCard = function(toolCallId, name, input,
         this.currentRunGroupBody.appendChild(details);
 
         this.toolCards[toolCallId] = { details, body, pre };
+        this._setToolCardState(this.toolCards[toolCallId], state);
         this.currentToolCardId = toolCallId;
 
         if (this._runToolCounts) {
             this._runToolCounts.total++;
-            this._runToolCounts.byName[name] = (this._runToolCounts.byName[name] || 0) + 1;
+            if (details.dataset.state === 'running') this._runToolCounts.running++;
             this._updateRunGroupSummary();
         }
 
@@ -169,14 +197,14 @@ AgentThreadManager.prototype._createHistoryGroup = function(runId) {
 
         this._historyGroup = details;
         this._historyGroupBody = body;
-        this._historyToolCounts = { total: 0, byName: {} };
+        this._historyToolCounts = { total: 0 };
 };
 
 AgentThreadManager.prototype._appendHistoryToolCard = function(msg) {
         if (!this._historyGroupBody) return;
 
         const details = document.createElement('details');
-        details.className = 'agent-tool-card agent-tool-card-' + (msg.toolStatus || 'done');
+        details.className = 'agent-tool-card';
         details.dataset.toolId = msg.toolCallId || '';
 
         const header = document.createElement('summary');
@@ -199,17 +227,12 @@ AgentThreadManager.prototype._appendHistoryToolCard = function(msg) {
         details.appendChild(header);
         details.appendChild(body);
         this._historyGroupBody.appendChild(details);
+        this._setToolCardState({ details, body, pre }, msg.toolStatus || 'done');
 
         if (this._historyToolCounts) {
             this._historyToolCounts.total++;
-            var name = msg.name || 'Tool';
-            this._historyToolCounts.byName[name] = (this._historyToolCounts.byName[name] || 0) + 1;
             var total = this._historyToolCounts.total;
-            var byName = this._historyToolCounts.byName;
-            var parts = Object.entries(byName)
-                .sort((a, b) => b[1] - a[1])
-                .map(([n, c]) => c + ' ' + n);
-            var label = total + ' tool call' + (total > 1 ? 's' : '') + (parts.length ? ' \u00b7 ' + parts.join(' \u00b7 ') : '');
+            var label = 'Tool activity \u00b7 ' + total + ' call' + (total > 1 ? 's' : '');
             this._historyGroup.querySelector('.agent-run-group-summary').textContent = label;
         }
 };
@@ -223,9 +246,16 @@ AgentThreadManager.prototype._finalizeHistoryGroup = function() {
 AgentThreadManager.prototype._appendTool = function(name, text, state) {
         const card = document.createElement('section');
         card.className = 'agent-tool agent-tool-' + state;
+        card.dataset.state = state;
         const header = document.createElement('div');
         header.className = 'agent-tool-header';
-        header.textContent = name;
+        const title = document.createElement('span');
+        title.textContent = name;
+        const status = document.createElement('span');
+        status.className = 'agent-tool-card-status';
+        status.textContent = state === 'error' ? 'Failed' : state === 'fallback' ? 'Needs terminal' : 'Done';
+        header.appendChild(title);
+        header.appendChild(status);
         const body = document.createElement('pre');
         body.textContent = text;
         card.appendChild(header);

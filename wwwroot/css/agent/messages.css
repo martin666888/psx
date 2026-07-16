@@ -1,5 +1,5 @@
 ﻿.agent-system {
-    color: var(--agent-text-dim);
+    color: var(--agent-text-muted);
     font-size: 12px;
     margin: 0 0 14px;
 }
@@ -7,7 +7,7 @@
 .agent-message {
     width: 100%;
     box-sizing: border-box;
-    margin: 0 0 18px;
+    margin: 0 0 var(--agent-space-5);
 }
 
 .agent-turn {
@@ -16,17 +16,23 @@
 }
 
 .agent-message-label {
-    margin-bottom: 6px;
+    margin-bottom: var(--agent-space-2);
     color: var(--agent-text-muted);
     font-size: 13px;
     font-weight: 600;
 }
 
 .agent-message-body {
+    width: 100%;
+    box-sizing: border-box;
     color: var(--agent-text);
     font-size: var(--agent-font-size);
     line-height: 1.65;
     white-space: normal;
+}
+
+.agent-message-continuation {
+    margin-top: calc(var(--agent-space-2) * -1);
 }
 
 .agent-message-content {
@@ -46,9 +52,10 @@
     left: 0;
     right: 0;
     bottom: 0;
-    height: 70px;
+    height: 48px;
     pointer-events: none;
-    background: linear-gradient(to bottom, color-mix(in srgb, var(--agent-code-block-bg) 0%, transparent), var(--agent-code-block-bg) 70%);
+    border-top: 1px solid var(--agent-border);
+    background: var(--agent-surface);
 }
 
 .agent-message-collapse-toggle {
@@ -58,8 +65,8 @@
     margin: 2px 0 0;
     padding: 3px 6px;
     border: 0;
-    border-radius: 4px;
-    background: color-mix(in srgb, var(--agent-code-block-bg) 88%, transparent);
+    border-radius: var(--agent-radius-sm);
+    background: var(--agent-surface-raised);
     color: var(--agent-accent-hover);
     cursor: pointer;
     font: inherit;
@@ -96,7 +103,6 @@
     background: transparent;
     color: var(--agent-text-dim);
     cursor: pointer;
-    transition: color 0.15s ease, background-color 0.15s ease;
 }
 
 .agent-copy-button:hover {
@@ -115,6 +121,11 @@
 
 .agent-copy-button.agent-copy-fail {
     color: var(--agent-error);
+}
+
+.agent-message-collapse-toggle:focus-visible {
+    outline: 2px solid var(--agent-focus-ring);
+    outline-offset: 2px;
 }
 
 .agent-copy-button svg {

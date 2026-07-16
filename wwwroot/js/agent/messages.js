@@ -8,10 +8,17 @@ AgentThreadManager.prototype._appendMessage = function(role, text) {
 
         const row = document.createElement('article');
         row.className = 'agent-message agent-message-' + role;
+        row.setAttribute('aria-label', role === 'user' ? 'You' : this.assistantName);
 
-        const label = document.createElement('div');
-        label.className = 'agent-message-label';
-        label.textContent = role === 'user' ? 'You' : this.assistantName;
+        const hasTurnLabel = !!this.currentTurn.querySelector('.agent-message-' + role);
+        if (!hasTurnLabel) {
+            const label = document.createElement('div');
+            label.className = 'agent-message-label';
+            label.textContent = role === 'user' ? 'You' : this.assistantName;
+            row.appendChild(label);
+        } else {
+            row.classList.add('agent-message-continuation');
+        }
 
         const body = document.createElement('div');
         body.className = 'agent-message-body';
@@ -29,7 +36,6 @@ AgentThreadManager.prototype._appendMessage = function(role, text) {
             body.innerHTML = this._renderMarkdown(text);
         }
 
-        row.appendChild(label);
         row.appendChild(body);
         this._appendToCurrentHost(row);
         if (role === 'user') {
@@ -82,7 +88,8 @@ AgentThreadManager.prototype._maybeCollapseUserMessage = function(body) {
                         requestAnimationFrame(() => {
                             const rect = body.getBoundingClientRect();
                             if (rect.bottom > window.innerHeight) {
-                                body.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                                const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                                body.scrollIntoView({ block: 'nearest', behavior: reduceMotion ? 'auto' : 'smooth' });
                             }
                         });
                     }
