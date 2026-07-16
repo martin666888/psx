@@ -35,6 +35,8 @@ class AgentThreadManager {
         this.currentRunGroupBody = null;
         this.currentRunId = null;
         this.toolCards = {};
+        this.modeTransitionCards = {};
+        this.activeModeTransitionRequestId = '';
         this.currentToolCardId = null;
         this._runToolCounts = null;
         this._historyGroup = null;
@@ -227,6 +229,7 @@ class AgentThreadManager {
                 this._markSessionReady(event.sessionId || '');
                 break;
             case 'agent_cleared':
+                this._clearModeTransitionPrompt('', false);
                 this.thread.innerHTML = '';
                 this.currentTurn = null;
                 this.currentAssistant = null;
@@ -239,6 +242,7 @@ class AgentThreadManager {
                 this.currentRunGroupBody = null;
                 this.currentRunId = null;
                 this.toolCards = {};
+                this.modeTransitionCards = {};
                 this.currentToolCardId = null;
                 this._runToolCounts = null;
                 this._historyGroup = null;
@@ -275,6 +279,7 @@ class AgentThreadManager {
                 this.currentAssistant = null;
                 break;
             case 'run_finished':
+                this._interruptModeTransition('This request is no longer active.');
                 this._finalizeAssistantMessage(this.currentAssistant);
                 this.currentAssistant = null;
                 this._hideThinking();
@@ -321,7 +326,14 @@ class AgentThreadManager {
                 break;
             }
             case 'permission_request':
-                this._appendDecision(event, 'permission');
+                if (event.presentation === 'mode_transition' && event.documentText) {
+                    this._appendModeTransition(event, false);
+                } else {
+                    this._appendDecision(event, 'permission');
+                }
+                break;
+            case 'permission_resolved':
+                this._resolvePermission(event);
                 break;
             case 'question_request':
                 this._appendDecision(event, 'question');
@@ -340,6 +352,7 @@ class AgentThreadManager {
                 this._upsertPlan(event);
                 break;
             case 'run_failed':
+                this._interruptModeTransition('The request ended before a selection was completed.');
                 this._hideThinking();
                 this._restoreSubmittedDraft();
                 if (this.currentRunGroup) {

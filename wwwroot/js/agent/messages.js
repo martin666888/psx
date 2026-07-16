@@ -114,6 +114,13 @@ AgentThreadManager.prototype._finalizeAssistantMessage = function(body) {
         const actions = document.createElement('div');
         actions.className = 'agent-message-actions';
 
+        const button = this._createCopyButton(() => body.dataset.raw || '');
+
+        actions.appendChild(button);
+        article.appendChild(actions);
+};
+
+AgentThreadManager.prototype._createCopyButton = function(getText) {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'agent-copy-button';
@@ -121,20 +128,19 @@ AgentThreadManager.prototype._finalizeAssistantMessage = function(body) {
         button.setAttribute('aria-label', '复制');
         button.title = '复制';
         button.addEventListener('click', () => {
-            this._copyAssistantMessage(body, button);
+            const text = typeof getText === 'function' ? getText() : getText;
+            this._copyText(text, button);
         });
-
-        actions.appendChild(button);
-        article.appendChild(actions);
+        return button;
 };
 
-AgentThreadManager.prototype._copyAssistantMessage = async function(body, button) {
+AgentThreadManager.prototype._copyText = async function(text, button) {
         if (button._copyTimer) {
             clearTimeout(button._copyTimer);
             button._copyTimer = null;
         }
 
-        const raw = body.dataset.raw || '';
+        const raw = typeof text === 'string' ? text : '';
         let ok = false;
 
         try {

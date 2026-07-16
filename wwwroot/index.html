@@ -83,7 +83,11 @@
         <footer class="agent-composer">
             <div class="agent-composer-main">
                 <div id="agent-attachments-strip" class="agent-attachments-strip" hidden></div>
-                <div class="agent-input-row">
+                <section id="agent-mode-transition-prompt"
+                         class="agent-composer-mode-transition"
+                         aria-label="Agent decision"
+                         hidden></section>
+                <div id="agent-input-row" class="agent-input-row">
                     <button id="agent-attach" class="agent-attach" type="button" title="Attach images" aria-label="Attach images">+</button>
                     <input id="agent-attachment-input" type="file" accept="image/*" multiple hidden>
                     <textarea id="agent-input"

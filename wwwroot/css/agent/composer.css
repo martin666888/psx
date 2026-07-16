@@ -26,6 +26,7 @@
 }
 
 .agent-composer-main > .agent-attachments-strip,
+.agent-composer-main > .agent-composer-mode-transition,
 .agent-input-row,
 .agent-command-hint,
 .agent-composer-footer {
@@ -88,6 +89,11 @@
     justify-content: space-between;
     gap: var(--agent-space-2);
     margin-top: var(--agent-space-2);
+}
+
+.agent-input-row[hidden],
+.agent-composer-mode-transition[hidden] {
+    display: none;
 }
 
 .agent-hints {

@@ -954,6 +954,18 @@ public sealed class ClaudeCodeAgentService : IAgentSessionService
 
     private void ApplyThread(AgentThread thread)
     {
+        var interrupted = false;
+        foreach (var message in thread.Messages.Where(message => message.Role == "mode_transition"))
+        {
+            if (message.DecisionState is not ("pending" or "sending"))
+                continue;
+
+            message.DecisionState = "interrupted";
+            interrupted = true;
+        }
+        if (interrupted)
+            _threadStore.SaveThread(thread);
+
         _workingDirectory = Directory.Exists(thread.Cwd) ? thread.Cwd : ResolveWorkspaceRoot();
         _claudeSessionId = thread.ClaudeSessionId;
         _status = "ready";
@@ -988,7 +1000,16 @@ public sealed class ClaudeCodeAgentService : IAgentSessionService
                 summary = m.Summary,
                 toolInput = m.ToolInput,
                 toolOutput = m.ToolOutput,
-                toolStatus = m.ToolStatus
+                toolStatus = m.ToolStatus,
+                requestId = m.RequestId,
+                decisionState = m.DecisionState,
+                selectedOptionId = m.SelectedOptionId,
+                decisionOptions = m.DecisionOptions?.Select(option => new
+                {
+                    optionId = option.OptionId,
+                    name = option.Name,
+                    kind = option.Kind
+                }).ToArray()
             }).ToArray()
         });
     }

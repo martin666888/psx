@@ -17,6 +17,8 @@
             configOptions: document.getElementById('agent-config-options'),
             contextUsed: document.getElementById('agent-context-used'),
             commandHint: document.getElementById('agent-command-hint'),
+            inputRow: document.getElementById('agent-input-row'),
+            modeTransitionPrompt: document.getElementById('agent-mode-transition-prompt'),
             attachButton: document.getElementById('agent-attach'),
             attachmentInput: document.getElementById('agent-attachment-input'),
             attachmentStrip: document.getElementById('agent-attachments-strip'),
@@ -112,6 +114,7 @@
             case 'tool_delta':
             case 'tool_finished':
             case 'permission_request':
+            case 'permission_resolved':
             case 'question_request':
             case 'elicitation_request':
             case 'permission_cancelled':

@@ -71,7 +71,8 @@ AgentThreadManager.prototype._loadThread = function(event) {
             if (event.selectPlan === true) {
                 this.selectInspectorTab('plan', false);
             }
-            if (event.clear) {
+        if (event.clear) {
+                this._clearModeTransitionPrompt('', false);
                 this.thread.innerHTML = '';
                 this.currentTurn = null;
                 this.currentAssistant = null;
@@ -84,6 +85,7 @@ AgentThreadManager.prototype._loadThread = function(event) {
                 this.currentRunGroupBody = null;
             this.currentRunId = null;
             this.toolCards = {};
+            this.modeTransitionCards = {};
             this.currentToolCardId = null;
             this._runToolCounts = null;
             this._historyGroup = null;
@@ -131,6 +133,26 @@ AgentThreadManager.prototype._loadThread = function(event) {
                     entries: msg.planEntries || [],
                     text: msg.text || ''
                 });
+                lastRunId = null;
+                continue;
+            }
+
+            if (msg.role === 'mode_transition') {
+                if (this._historyGroup) {
+                    this._finalizeHistoryGroup();
+                }
+                if (!this.currentTurn) {
+                    this._startTurn();
+                }
+                this._appendModeTransition({
+                    requestId: msg.requestId || '',
+                    toolCallId: msg.toolCallId || '',
+                    title: msg.name || '',
+                    documentText: msg.text || '',
+                    options: msg.decisionOptions || [],
+                    selectedOptionId: msg.selectedOptionId || '',
+                    decisionState: msg.decisionState || 'interrupted'
+                }, true);
                 lastRunId = null;
                 continue;
             }
