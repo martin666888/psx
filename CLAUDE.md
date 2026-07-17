@@ -93,8 +93,6 @@ Provider identity and compatibility policy live in `IAcpAgentProvider`. Runtime 
 
 `ClaudeAcpAgentProvider` is currently the only registered/default provider. It owns the `acp-claude` identity, the legacy `claude-cli` alias, command filtering, ACP session parameters and the native `claude --resume` Terminal profile. `AcpRuntimeManager` currently implements `IAcpAgentRuntime` for the bundled Node + `@agentclientprotocol/claude-agent-acp` runtime. Unknown thread providers open transcript-only and must never be restored through Claude.
 
-`ClaudeCodeAgentService` is legacy dead code in the current DI graph. Do not modify or delete it as part of provider work without a separate migration decision.
-
 Agent slash commands are allowlisted. `AcpAgentSessionService` is the authoritative gate: it accepts PSX commands plus the current filtered `available_commands_update` catalog, and rejects every other leading `/command` before `session/prompt`. Keep the JS composer validation and the C# gate synchronized; inline `/text` inside a normal prompt is not a command.
 
 The Agent workspace has a resizable right-side Inspector with persistent-in-process `Plan` and `History` tabs. History is a global cross-directory thread navigator backed by `agent_threads`; it never renders into the main transcript. `agent_history_error` is an inline Inspector state, and `agent_thread_loaded.selectPlan` distinguishes new-thread navigation from loading an existing History item. Preserve each tab's DOM/scroll state and keep the active tab across Terminal/Agent view switches.
@@ -181,4 +179,3 @@ Note: `RuntimeLocator.Locate()` resolves all install-relative paths at startup. 
 - `TabManagementService.cs:11-14` — two `HashSet`s (`_closingSessions` and `_closedSessions`) with non-atomic reads across `OnConPtySessionExited` vs `OnClosing`. A duplicate `TabClosed` event is possible under load.
 - `AgentThreadStore.cs:340-352` — path-traversal defense is character-class filtering, not `Path.GetFullPath` + `StartsWith` verification. Acceptable for the current use case (GUID-derived `threadId`), but if `threadId` ever becomes user-supplied, replace it.
 - `AcpAgentSessionService` — `"__cancelled__"` magic string as cancel signal (referenced from both the cancellation path and the response-handling path). Replace with enum if you add a second signal.
-- `ClaudeCodeAgentService.cs` is dead code in the current DI graph but still shipped. Provider integration must use `IAcpAgentProvider`; do not revive or modify the legacy service incidentally.

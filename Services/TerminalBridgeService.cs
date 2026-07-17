@@ -198,64 +198,21 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
     private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
         var json = e.TryGetWebMessageAsString();
-        if (string.IsNullOrEmpty(json)) return;
-
-        TerminalMessage message;
-        try
-        {
-            message = JsonSerializer.Deserialize<TerminalMessage>(json)!;
-        }
-        catch
-        {
+        if (!TerminalBridgeMessageParser.TryParse(json, out var message) || message == null)
             return;
-        }
 
-        switch (message.Type)
+        switch (message.Kind)
         {
-            case "input":
-                if (message.Data != null && Guid.TryParse(message.SessionId, out var inputId))
-                {
-                    try
-                    {
-                        var inputData = Convert.FromBase64String(message.Data);
-                        InputReceived?.Invoke(this, new TerminalInputEventArgs
-                        {
-                            SessionId = inputId,
-                            Data = inputData
-                        });
-                    }
-                    catch (FormatException)
-                    {
-                        // Malformed base64 from JS, ignore
-                    }
-                }
+            case TerminalBridgeMessageKind.Input:
+                InputReceived?.Invoke(this, message.Input!);
                 break;
-
-            case "resize":
-                if (Guid.TryParse(message.SessionId, out var resizeId)
-                    && message.Cols.HasValue && message.Rows.HasValue)
-                {
-                    ResizeRequested?.Invoke(this, new TerminalResizeEventArgs
-                    {
-                        SessionId = resizeId,
-                        Cols = message.Cols.Value,
-                        Rows = message.Rows.Value
-                    });
-                }
+            case TerminalBridgeMessageKind.Resize:
+                ResizeRequested?.Invoke(this, message.Resize!);
                 break;
-
-            case "title":
-                if (Guid.TryParse(message.SessionId, out var titleId))
-                {
-                    TitleChanged?.Invoke(this, new TerminalTitleEventArgs
-                    {
-                        SessionId = titleId,
-                        Title = message.Title ?? "Terminal"
-                    });
-                }
+            case TerminalBridgeMessageKind.Title:
+                TitleChanged?.Invoke(this, message.Title!);
                 break;
-
-            case "ready":
+            case TerminalBridgeMessageKind.Ready:
                 _ = HandleFrontendReadyAsync();
                 break;
         }

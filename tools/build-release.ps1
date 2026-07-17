@@ -237,6 +237,7 @@ $forbiddenFiles = @(Get-ChildItem -LiteralPath $StagingDir -Recurse -File | Wher
         -or $relative.StartsWith('TestResults/', [StringComparison]::OrdinalIgnoreCase) `
         -or $_.Name -like 'PSX.Tests.*' `
         -or $_.Name -like 'PSX.TestAgent.*' `
+        -or $_.Name -like 'PSX.TestNpm.*' `
         -or $_.Name -like 'PSX.DesktopProbe.*'
 })
 if ($forbiddenFiles.Count -gt 0) {
@@ -292,6 +293,7 @@ try {
             -or $leaf -ieq 'claude.exe' `
             -or $leaf -like 'PSX.Tests.*' `
             -or $leaf -like 'PSX.TestAgent.*' `
+            -or $leaf -like 'PSX.TestNpm.*' `
             -or $leaf -like 'PSX.DesktopProbe.*' `
             -or $extension -in @('.log', '.tmp', '.binlog')
     })

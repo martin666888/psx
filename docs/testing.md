@@ -4,10 +4,11 @@ PSX 的测试体系采用“本地优先、CI 兼容”的分层结构。自动�
 
 ## 分层结构
 
-- `tests/PSX.Tests/Unit/`：INI 解析、ACP Permission 策略和 Mode Transition 历史合并等无副作用逻辑。
-- `tests/PSX.Tests/Integration/`：线程存储、Fake ACP JSON-RPC 传输、完整会话、权限选择、取消与历史 replay。
+- `tests/PSX.Tests/Unit/`：INI/Bridge JSON 解析、设置与主题路径隔离、Theme Picker 状态、ACP Permission 策略和 Mode Transition 历史合并等无副作用逻辑。
+- `tests/PSX.Tests/Integration/`：线程存储、Fake ACP JSON-RPC 传输、完整会话、权限选择、取消、历史 replay，以及 ACP runtime 安装与升级编排。
 - `tests/PSX.Web.Tests/`：使用 Node 内置测试运行器、jsdom 和 c8，加载与生产页面相同顺序的真实前端脚本，覆盖 Markdown、Composer、Permission、Mode Transition 和 Plan Inspector。
 - `tests/PSX.TestAgent/`：可控的 Fake ACP Agent，支持正常响应、通知、并发请求、超时、协议错误、权限请求、取消和历史 replay。
+- `tests/PSX.TestNpm/`：作为假 `node.exe` 启动的独立进程，模拟 npm 成功、退出码、网络错误、挂起与安装产物，验证 `AcpRuntimeManager` 而不访问 registry。
 - `tests/PSX.DesktopProbe/`：无窗口 WinExe 探针，在与正式应用相同的宿主类型下验证 ConPTY 输出、自然退出、resize 和进程树清理。
 - `MainWindowSmokeTests`：在 STA 线程构建 WPF XAML 树，但不显示窗口、不初始化 WebView2 用户数据，也不加载真实配置。
 
@@ -36,7 +37,7 @@ powershell -ExecutionPolicy Bypass -File tools/test.ps1 -Suite Desktop
 - 前端生产脚本 bundle 与覆盖率：`TestResults/web/`
 - GitHub Actions 无论成功或失败都会上传 `TestResults/`，保留 14 天。
 
-当前覆盖率是观察指标，不设百分比门槛。测试命令通过“最少发现测试数”防止筛选错误导致零测试却显示成功。Release 构建会再次检查 zip，不允许包含测试程序集、Fake Agent、Desktop Probe、测试目录、日志或已安装 ACP runtime。
+当前覆盖率是观察指标，不设百分比门槛。测试命令通过“最少发现测试数”防止筛选错误导致零测试却显示成功。Release 构建会再次检查 zip，不允许包含测试程序集、Fake Agent、Fake npm、Desktop Probe、测试目录、日志或已安装 ACP runtime。
 
 ## 仍需人工验收的真实 Agent 流程
 

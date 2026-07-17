@@ -118,19 +118,19 @@ try {
     }
 
     if ($runDotNet) {
-        Invoke-Checked "Build application, probes, Fake ACP Agent, and tests" {
+        Invoke-Checked "Build application, probes, Fake ACP Agent, Fake npm, and tests" {
             dotnet build $solution --configuration Release
         }
 
         switch ($Suite) {
             "Unit" {
                 Invoke-Checked "Run C# unit tests with coverage" {
-                    Invoke-DotNetTests -Filter "TestCategory=Unit" -MinimumExpectedTests 1
+                    Invoke-DotNetTests -Filter "TestCategory=Unit" -MinimumExpectedTests 50
                 }
             }
             "Integration" {
                 Invoke-Checked "Run ACP and persistence integration tests with coverage" {
-                    Invoke-DotNetTests -Filter "TestCategory=Integration" -MinimumExpectedTests 1
+                    Invoke-DotNetTests -Filter "TestCategory=Integration" -MinimumExpectedTests 30
                 }
             }
             "Desktop" {
@@ -140,12 +140,12 @@ try {
             }
             "Fast" {
                 Invoke-Checked "Run C# unit and integration tests with coverage" {
-                    Invoke-DotNetTests -Filter "(TestCategory=Unit)|(TestCategory=Integration)" -MinimumExpectedTests 30
+                    Invoke-DotNetTests -Filter "(TestCategory=Unit)|(TestCategory=Integration)" -MinimumExpectedTests 85
                 }
             }
             "Full" {
                 Invoke-Checked "Run all C# tests, including desktop probes, with coverage" {
-                    Invoke-DotNetTests -Filter "" -MinimumExpectedTests 40
+                    Invoke-DotNetTests -Filter "" -MinimumExpectedTests 90
                 }
             }
         }

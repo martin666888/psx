@@ -51,92 +51,21 @@ public sealed class AgentBridgeService : IAgentBridgeService, IDisposable
     private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
         var json = e.TryGetWebMessageAsString();
-        if (string.IsNullOrWhiteSpace(json))
+        if (!AgentBridgeMessageParser.TryParse(json, out var message) || message == null)
             return;
 
-        try
+        switch (message.Kind)
         {
-            using var document = JsonDocument.Parse(json);
-            var root = document.RootElement;
-            var type = GetString(root, "type");
-
-            switch (type)
-            {
-                case "agent_submit":
-                    var text = GetString(root, "text");
-                    var attachments = GetStringArray(root, "attachments");
-                    if (!string.IsNullOrWhiteSpace(text) || attachments.Count > 0)
-                    {
-                        UserMessageSubmitted?.Invoke(this, new AgentSubmitEventArgs
-                        {
-                            Text = text,
-                            AttachmentIds = attachments
-                        });
-                    }
-                    break;
-
-                case "agent_upload_attachment":
-                    AttachmentUploadReceived?.Invoke(this, new AgentAttachmentUploadEventArgs
-                    {
-                        ClientId = GetString(root, "clientId"),
-                        FileName = GetString(root, "fileName"),
-                        MimeType = GetString(root, "mimeType"),
-                        Size = GetLong(root, "size"),
-                        DataBase64 = GetString(root, "dataBase64")
-                    });
-                    break;
-
-                case "agent_command":
-                case "agent_permission_response":
-                case "agent_question_response":
-                case "agent_elicitation_response":
-                    CommandReceived?.Invoke(this, new AgentCommandEventArgs
-                    {
-                        Command = type == "agent_command" ? GetString(root, "command") : type,
-                        RequestId = GetString(root, "requestId"),
-                        Value = GetString(root, "value")
-                    });
-                    break;
-            }
+            case AgentBridgeMessageKind.Submit:
+                UserMessageSubmitted?.Invoke(this, message.Submit!);
+                break;
+            case AgentBridgeMessageKind.AttachmentUpload:
+                AttachmentUploadReceived?.Invoke(this, message.AttachmentUpload!);
+                break;
+            case AgentBridgeMessageKind.Command:
+                CommandReceived?.Invoke(this, message.Command!);
+                break;
         }
-        catch
-        {
-            // Ignore malformed frontend messages.
-        }
-    }
-
-    private static string GetString(JsonElement element, string propertyName)
-    {
-        return element.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
-            ? value.GetString() ?? ""
-            : "";
-    }
-
-    private static long GetLong(JsonElement element, string propertyName)
-    {
-        return element.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.Number
-            && value.TryGetInt64(out var number)
-            ? number
-            : 0;
-    }
-
-    private static List<string> GetStringArray(JsonElement element, string propertyName)
-    {
-        if (!element.TryGetProperty(propertyName, out var value) || value.ValueKind != JsonValueKind.Array)
-            return new List<string>();
-
-        var result = new List<string>();
-        foreach (var item in value.EnumerateArray())
-        {
-            if (item.ValueKind == JsonValueKind.String)
-            {
-                var text = item.GetString();
-                if (!string.IsNullOrWhiteSpace(text))
-                    result.Add(text);
-            }
-        }
-
-        return result;
     }
 
     public void Dispose()

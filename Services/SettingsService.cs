@@ -26,8 +26,14 @@ public sealed class SettingsService : ISettingsService
     public string? StartupWarning { get; private set; }
 
     public SettingsService()
+        : this(Path.Combine(AppContext.BaseDirectory, "psx.ini"))
     {
-        _configPath = Path.Combine(AppContext.BaseDirectory, "psx.ini");
+    }
+
+    internal SettingsService(string configPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(configPath);
+        _configPath = Path.GetFullPath(configPath);
     }
 
     public AppSettings GetSettings()

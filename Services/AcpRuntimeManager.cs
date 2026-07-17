@@ -56,6 +56,7 @@ public sealed class AcpRuntimeManager : IAcpAgentRuntime
 
     private readonly RuntimeLocator _locator;
     private readonly string _logPath;
+    private readonly TimeSpan _processTimeout;
 
     /// <summary>
     /// Serializes npm invocations so <c>EnsureInstalledAsync</c> and
@@ -72,8 +73,16 @@ public sealed class AcpRuntimeManager : IAcpAgentRuntime
     public event Action<string>? StatusChanged;
 
     public AcpRuntimeManager(RuntimeLocator locator, string logDirectory)
+        : this(locator, logDirectory, ProcessTimeout)
     {
+    }
+
+    internal AcpRuntimeManager(RuntimeLocator locator, string logDirectory, TimeSpan processTimeout)
+    {
+        if (processTimeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(processTimeout));
         _locator = locator;
+        _processTimeout = processTimeout;
         Directory.CreateDirectory(logDirectory);
         _logPath = Path.Combine(logDirectory, "acp-runtime.log");
     }
@@ -758,7 +767,7 @@ public sealed class AcpRuntimeManager : IAcpAgentRuntime
         var stderrTask = process.StandardError.ReadToEndAsync();
 
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(ProcessTimeout);
+        timeoutCts.CancelAfter(_processTimeout);
 
         try
         {
@@ -767,7 +776,7 @@ public sealed class AcpRuntimeManager : IAcpAgentRuntime
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             TryKill(process);
-            Log($"{label} timed out after {ProcessTimeout.TotalMinutes:0} minutes.");
+            Log($"{label} timed out after {_processTimeout.TotalMinutes:0.##} minutes.");
             return new AcpRuntimeOperationResult(AcpRuntimeOperationKind.Failed,
                 $"{label} timed out.");
         }

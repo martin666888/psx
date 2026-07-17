@@ -21,10 +21,24 @@ public interface IThemeService
 public sealed partial class ThemeService : IThemeService
 {
     private static readonly string[] RequiredSections = ["meta", "terminal", "agent", "theme", "agentTheme", "terminalColors"];
-    private readonly string _builtInDirectory = Path.Combine(AppContext.BaseDirectory, "theme-presets");
+    private readonly string _builtInDirectory;
 
-    public string UserThemeDirectory { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".psx", "themes");
+    public string UserThemeDirectory { get; }
+
+    public ThemeService()
+        : this(
+            Path.Combine(AppContext.BaseDirectory, "theme-presets"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".psx", "themes"))
+    {
+    }
+
+    internal ThemeService(string builtInDirectory, string userThemeDirectory)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(builtInDirectory);
+        ArgumentException.ThrowIfNullOrWhiteSpace(userThemeDirectory);
+        _builtInDirectory = Path.GetFullPath(builtInDirectory);
+        UserThemeDirectory = Path.GetFullPath(userThemeDirectory);
+    }
 
     public IReadOnlyList<ThemeDescriptor> ScanThemes()
     {

@@ -18,6 +18,18 @@ public sealed class RuntimeLocator
     private const string NpmCliRelativePath = "node_modules/npm/bin/npm-cli.js";
     private const string WebView2FixedRuntimeSubdirectoryName = "webview2-fixed";
     private const string WebView2ExecutableName = "msedgewebview2.exe";
+    private readonly string _installDirectory;
+
+    public RuntimeLocator()
+        : this(AppContext.BaseDirectory)
+    {
+    }
+
+    internal RuntimeLocator(string installDirectory)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(installDirectory);
+        _installDirectory = Path.GetFullPath(installDirectory);
+    }
 
     /// <summary>
     /// Compute all runtime paths for the current process. Call once at startup.
@@ -38,7 +50,7 @@ public sealed class RuntimeLocator
     /// </summary>
     public RuntimePaths Locate()
     {
-        var installDirectory = AppContext.BaseDirectory;
+        var installDirectory = _installDirectory;
 
         var nodeDirectory = Path.Combine(installDirectory, "tools", NodeSubdirectoryName);
         var nodePath = Path.Combine(nodeDirectory, NodeExecutableName);

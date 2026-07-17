@@ -15,6 +15,8 @@
                       ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\PSX.TestAgent\PSX.TestAgent.csproj"
                       ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\PSX.TestNpm\PSX.TestNpm.csproj"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>

@@ -21,7 +21,7 @@ Use four spaces in C# and follow existing .NET conventions: `PascalCase` for typ
 
 ## Testing Guidelines
 
-Use `tests/PSX.Tests` for C# Unit, Integration, and Desktop categories; `tests/PSX.Web.Tests` for jsdom frontend tests; `tests/PSX.TestAgent` for deterministic ACP protocol scenarios; and `tests/PSX.DesktopProbe` for WinExe-hosted ConPTY checks. Name cases by behavior, such as `SaveSettings_InvalidColor_UsesFallback`. Keep every test workspace, dependency cache, diagnostic, and coverage artifact under the ignored repository `TestResults/` directory; tests must never touch the user's real `%USERPROFILE%\.psx`. Coverage is reported but has no percentage gate yet. Run `tools/test.ps1 -Suite Fast` during development and `-Suite Full` before a release. Real provider login, quota, network failure, and subjective UI checks remain manual as documented in `docs/testing.md`.
+Use `tests/PSX.Tests` for C# Unit, Integration, and Desktop categories; `tests/PSX.Web.Tests` for jsdom frontend tests; `tests/PSX.TestAgent` for deterministic ACP protocol scenarios; `tests/PSX.TestNpm` for process-level ACP runtime installation scenarios; and `tests/PSX.DesktopProbe` for WinExe-hosted ConPTY checks. Name cases by behavior, such as `SaveSettings_InvalidColor_UsesFallback`. Keep every test workspace, dependency cache, diagnostic, and coverage artifact under the ignored repository `TestResults/` directory; tests must never touch the user's real `%USERPROFILE%\.psx`. Coverage is reported but has no percentage gate yet. Run `tools/test.ps1 -Suite Fast` during development and `-Suite Full` before a release. Real provider login, quota, network failure, and subjective UI checks remain manual as documented in `docs/testing.md`.
 
 ## Agent Slash Command Contract
 
