@@ -1,6 +1,10 @@
 using System.IO;
 using System.Diagnostics;
+using System.ComponentModel;
+using System.Collections.Concurrent;
+using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Windows;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
@@ -17,6 +21,7 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
 
     private readonly ISettingsService _settingsService;
     private readonly RuntimeLocator _runtimeLocator;
+    private readonly ConcurrentDictionary<Guid, byte> _terminalSessionIds = new();
     private WebView2? _webView;
     private CoreWebView2? _coreWebView;
     private string _viewMode = "terminal";
@@ -65,9 +70,15 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
         // Keep browser-level shortcuts from stealing terminal shortcuts like Ctrl+Shift+C.
         _coreWebView.Settings.AreDevToolsEnabled = false;
         _coreWebView.Settings.AreBrowserAcceleratorKeysEnabled = false;
+        _coreWebView.Settings.IsZoomControlEnabled = false;
+        webView.ZoomFactor = 1.0;
 
-        // Subscribe to messages from JS
+        // Keep the embedded renderer on PSX-owned origins. User-initiated external
+        // links are handed to Windows instead of creating browser-style popups.
         _coreWebView.WebMessageReceived += OnWebMessageReceived;
+        _coreWebView.NewWindowRequested += OnNewWindowRequested;
+        _coreWebView.NavigationStarting += OnNavigationStarting;
+        _coreWebView.PermissionRequested += OnPermissionRequested;
 
         // Navigate to the terminal page
         _coreWebView.Navigate("https://psx.local/index.html");
@@ -114,6 +125,7 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
 
     public Task CreateTerminalAsync(Guid sessionId)
     {
+        _terminalSessionIds[sessionId] = 0;
         return SendMessageToJs(new TerminalMessage
         {
             Type = "create",
@@ -142,6 +154,7 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
 
     public Task CloseTerminalAsync(Guid sessionId)
     {
+        _terminalSessionIds.TryRemove(sessionId, out _);
         return SendMessageToJs(new TerminalMessage
         {
             Type = "close",
@@ -212,10 +225,94 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
             case TerminalBridgeMessageKind.Title:
                 TitleChanged?.Invoke(this, message.Title!);
                 break;
+            case TerminalBridgeMessageKind.PasteRequest:
+                HandlePasteRequest(message.PasteRequest!);
+                break;
             case TerminalBridgeMessageKind.Ready:
                 _ = HandleFrontendReadyAsync();
                 break;
         }
+    }
+
+    private void OnNewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
+    {
+        e.Handled = true;
+        if (e.IsUserInitiated && WebViewNavigationPolicy.Classify(e.Uri) == WebViewNavigationTarget.External)
+            OpenExternalUri(e.Uri);
+    }
+
+    private void OnNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
+    {
+        var target = WebViewNavigationPolicy.Classify(e.Uri);
+        if (target == WebViewNavigationTarget.Internal)
+            return;
+
+        e.Cancel = true;
+        if (target == WebViewNavigationTarget.External && e.IsUserInitiated)
+            OpenExternalUri(e.Uri);
+    }
+
+    private static void OnPermissionRequested(object? sender, CoreWebView2PermissionRequestedEventArgs e)
+    {
+        if (e.PermissionKind != CoreWebView2PermissionKind.ClipboardRead)
+            return;
+
+        e.State = CoreWebView2PermissionState.Deny;
+        e.SavesInProfile = false;
+        e.Handled = true;
+    }
+
+    private static void OpenExternalUri(string uri)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = uri,
+                UseShellExecute = true
+            });
+        }
+        catch (Win32Exception ex)
+        {
+            Debug.WriteLine("Unable to open external URI: " + ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Debug.WriteLine("Unable to open external URI: " + ex.Message);
+        }
+    }
+
+    private void HandlePasteRequest(TerminalPasteRequest request)
+    {
+        if (!_terminalSessionIds.ContainsKey(request.SessionId))
+        {
+            _ = SendPasteResponseAsync(request, ok: false, text: "");
+            return;
+        }
+
+        try
+        {
+            var text = Clipboard.ContainsText(TextDataFormat.UnicodeText)
+                ? Clipboard.GetText(TextDataFormat.UnicodeText)
+                : "";
+            _ = SendPasteResponseAsync(request, ok: true, text);
+        }
+        catch (COMException)
+        {
+            _ = SendPasteResponseAsync(request, ok: false, text: "");
+        }
+    }
+
+    private Task SendPasteResponseAsync(TerminalPasteRequest request, bool ok, string text)
+    {
+        return SendMessageToJs(new TerminalMessage
+        {
+            Type = "paste_response",
+            SessionId = request.SessionId.ToString(),
+            RequestId = request.RequestId.ToString(),
+            Ok = ok,
+            Text = text
+        });
     }
 
     private async Task HandleFrontendReadyAsync()
@@ -259,6 +356,9 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
         if (_coreWebView != null)
         {
             _coreWebView.WebMessageReceived -= OnWebMessageReceived;
+            _coreWebView.NewWindowRequested -= OnNewWindowRequested;
+            _coreWebView.NavigationStarting -= OnNavigationStarting;
+            _coreWebView.PermissionRequested -= OnPermissionRequested;
         }
 
         InputReceived = null;
@@ -266,6 +366,7 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
         TitleChanged = null;
         ViewModeChanged = null;
         FrontendReady = null;
+        _terminalSessionIds.Clear();
 
         _coreWebView = null;
         _webView = null;

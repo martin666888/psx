@@ -10,6 +10,34 @@ namespace PSX.Tests.Integration;
 public sealed class AgentThreadStoreTests
 {
     [TestMethod]
+    public void ThinkingNormalization_RemainsStableAcrossSaveAndReload()
+    {
+        using var temporaryDirectory = TestWorkspace.Create(nameof(ThinkingNormalization_RemainsStableAcrossSaveAndReload));
+        var store = new AgentThreadStore(temporaryDirectory.Path);
+        var thread = store.CreateThread(temporaryDirectory.Path);
+        thread.Messages =
+        [
+            new AgentMessage { Role = "user", Text = "Question" },
+            new AgentMessage { Role = "assistant", Text = "Before" },
+            new AgentMessage { Role = "thinking", Text = "First" },
+            new AgentMessage { Role = "tool", Text = "Tool", ToolCallId = "tool-1" },
+            new AgentMessage { Role = "thinking", Text = "Second" }
+        ];
+
+        Assert.IsTrue(ThinkingMessageNormalizer.Normalize(thread.Messages));
+        store.SaveThread(thread);
+
+        var loaded = store.LoadThread(thread.ThreadId);
+        Assert.IsNotNull(loaded);
+        Assert.IsFalse(ThinkingMessageNormalizer.Normalize(loaded.Messages));
+        CollectionAssert.AreEqual(
+            new[] { "user", "thinking", "assistant", "tool" },
+            loaded.Messages.Select(message => message.Role).ToArray());
+        Assert.AreEqual("First\n\nSecond", loaded.Messages[1].Text);
+        Assert.AreEqual(loaded.Messages[0].RunId, loaded.Messages[1].RunId);
+    }
+
+    [TestMethod]
     public void CreateSaveLoadAndDelete_UsesOnlyConfiguredRoot()
     {
         using var temporaryDirectory = TestWorkspace.Create(nameof(CreateSaveLoadAndDelete_UsesOnlyConfiguredRoot));

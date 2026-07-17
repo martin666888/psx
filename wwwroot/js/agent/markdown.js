@@ -163,7 +163,7 @@ AgentThreadManager.prototype._renderInline = function(text) {
         html = html.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label, href) => {
             const safeHref = this._safeHref(href);
             if (!safeHref) return label;
-            return '<a href="' + safeHref + '" target="_blank" rel="noreferrer">' + label + '</a>';
+            return '<a href="' + this._escape(safeHref) + '" target="_blank" rel="noreferrer">' + label + '</a>';
         });
         html = html.replace(/\n/g, '<br>');
 
@@ -186,8 +186,12 @@ AgentThreadManager.prototype._restoreSafeHtml = function(html) {
 
 AgentThreadManager.prototype._safeHref = function(href) {
         const value = String(href).replace(/&amp;/g, '&').replace(/&quot;/g, '"');
-        if (/^(https?:|mailto:)/i.test(value)) {
-            return this._escape(value);
+        try {
+            const url = new URL(value);
+            if (url.username || url.password || url.port) return '';
+            if ((url.protocol === 'http:' || url.protocol === 'https:') && url.hostname) return url.href;
+            if (url.protocol === 'mailto:') return url.href;
+        } catch (_) {
         }
 
         return '';

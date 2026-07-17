@@ -125,4 +125,18 @@ describe('Permission and mode transition UI', () => {
 
     assert.deepEqual(copied, [event.documentText]);
   });
+
+  it('renders unsafe elicitation URLs as plain text', () => {
+    manager.handleEvent({
+      type: 'elicitation_request',
+      requestId: 'url-1',
+      mode: 'url',
+      url: 'javascript:alert(1)',
+      schema: {}
+    });
+
+    const row = manager.thread.querySelector('.agent-elicitation-url');
+    assert.equal(row.textContent, 'javascript:alert(1)');
+    assert.equal(row.querySelector('a'), null);
+  });
 });

@@ -284,8 +284,35 @@ internal sealed class FakeAcpAgent
         WriteSessionUpdate(new
         {
             sessionId,
+            sessionUpdate = "agent_thought_chunk",
+            content = new { type = "text", text = "Historical thought one." }
+        });
+        WriteSessionUpdate(new
+        {
+            sessionId,
             sessionUpdate = "agent_message_chunk",
-            content = new { type = "text", text = "Historical assistant" }
+            content = new { type = "text", text = "Historical assistant before tool." }
+        });
+        WriteSessionUpdate(new
+        {
+            sessionId,
+            sessionUpdate = "tool_call",
+            toolCallId = "stored-tool",
+            title = "Ready?",
+            kind = "switch_mode",
+            status = "completed"
+        });
+        WriteSessionUpdate(new
+        {
+            sessionId,
+            sessionUpdate = "agent_thought_chunk",
+            content = new { type = "text", text = "Historical thought two." }
+        });
+        WriteSessionUpdate(new
+        {
+            sessionId,
+            sessionUpdate = "agent_message_chunk",
+            content = new { type = "text", text = "Historical assistant after tool." }
         });
         WriteSessionUpdate(new
         {

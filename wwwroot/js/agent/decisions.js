@@ -560,12 +560,17 @@ AgentThreadManager.prototype._appendElicitation = function(event) {
         if (event.mode === 'url' && event.url) {
             const urlRow = document.createElement('div');
             urlRow.className = 'agent-elicitation-url';
-            const link = document.createElement('a');
-            link.href = event.url;
-            link.target = '_blank';
-            link.rel = 'noreferrer';
-            link.textContent = event.url;
-            urlRow.appendChild(link);
+            const safeUrl = this._safeHref(event.url);
+            if (safeUrl) {
+                const link = document.createElement('a');
+                link.href = safeUrl;
+                link.target = '_blank';
+                link.rel = 'noreferrer';
+                link.textContent = event.url;
+                urlRow.appendChild(link);
+            } else {
+                urlRow.textContent = event.url;
+            }
             form.appendChild(urlRow);
         }
 

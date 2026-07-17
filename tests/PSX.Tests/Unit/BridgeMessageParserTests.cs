@@ -82,6 +82,7 @@ public sealed class AgentBridgeMessageParserTests
 public sealed class TerminalBridgeMessageParserTests
 {
     private static readonly Guid SessionId = Guid.Parse("7a5e9fba-61a6-442a-94e5-34e3f72a26f1");
+    private static readonly Guid RequestId = Guid.Parse("8bc6bfac-6d4d-4fdb-a43b-dd7024bd4ccf");
 
     [TestMethod]
     public void TryParse_Input_DecodesBase64AfterValidatingSession()
@@ -129,6 +130,29 @@ public sealed class TerminalBridgeMessageParserTests
             out var message));
 
         Assert.AreEqual("Terminal", message!.Title!.Title);
+    }
+
+    [TestMethod]
+    public void TryParse_PasteRequest_RequiresValidSessionAndRequestIds()
+    {
+        Assert.IsTrue(TerminalBridgeMessageParser.TryParse(
+            $$"""{"type":"paste_request","sessionId":"{{SessionId}}","requestId":"{{RequestId}}"}""",
+            out var message));
+
+        Assert.AreEqual(TerminalBridgeMessageKind.PasteRequest, message!.Kind);
+        Assert.AreEqual(SessionId, message.PasteRequest!.SessionId);
+        Assert.AreEqual(RequestId, message.PasteRequest.RequestId);
+    }
+
+    [TestMethod]
+    [DataRow("bad-session", "8bc6bfac-6d4d-4fdb-a43b-dd7024bd4ccf")]
+    [DataRow("7a5e9fba-61a6-442a-94e5-34e3f72a26f1", "bad-request")]
+    [DataRow("7a5e9fba-61a6-442a-94e5-34e3f72a26f1", "")]
+    public void TryParse_PasteRequestWithInvalidIdentity_IsRejected(string sessionId, string requestId)
+    {
+        Assert.IsFalse(TerminalBridgeMessageParser.TryParse(
+            $$"""{"type":"paste_request","sessionId":"{{sessionId}}","requestId":"{{requestId}}"}""",
+            out _));
     }
 
     [TestMethod]

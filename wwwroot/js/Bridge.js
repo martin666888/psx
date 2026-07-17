@@ -46,6 +46,14 @@ const Bridge = {
         });
     },
 
+    sendPasteRequest(sessionId, requestId) {
+        this.sendToHost({
+            type: 'paste_request',
+            sessionId: sessionId,
+            requestId: requestId
+        });
+    },
+
     sendReady() {
         this.sendToHost({ type: 'ready' });
     },

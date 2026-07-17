@@ -109,6 +109,7 @@ internal enum TerminalBridgeMessageKind
     Input,
     Resize,
     Title,
+    PasteRequest,
     Ready
 }
 
@@ -116,7 +117,10 @@ internal sealed record TerminalBridgeMessage(
     TerminalBridgeMessageKind Kind,
     TerminalInputEventArgs? Input = null,
     TerminalResizeEventArgs? Resize = null,
-    TerminalTitleEventArgs? Title = null);
+    TerminalTitleEventArgs? Title = null,
+    TerminalPasteRequest? PasteRequest = null);
+
+internal sealed record TerminalPasteRequest(Guid SessionId, Guid RequestId);
 
 internal static class TerminalBridgeMessageParser
 {
@@ -178,6 +182,13 @@ internal static class TerminalBridgeMessageParser
                         SessionId = titleId,
                         Title = source.Title ?? "Terminal"
                     });
+                return true;
+
+            case "paste_request" when Guid.TryParse(source.SessionId, out var pasteSessionId)
+                                      && Guid.TryParse(source.RequestId, out var pasteRequestId):
+                message = new TerminalBridgeMessage(
+                    TerminalBridgeMessageKind.PasteRequest,
+                    PasteRequest: new TerminalPasteRequest(pasteSessionId, pasteRequestId));
                 return true;
 
             case "ready":

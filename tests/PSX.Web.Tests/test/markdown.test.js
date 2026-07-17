@@ -33,11 +33,12 @@ Console.WriteLine("ok");
   });
 
   it('allows only safe link schemes', () => {
-    const html = manager._renderMarkdown('[safe](https://example.com) [mail](mailto:test@example.com) [bad](javascript:alert(1))');
+    const html = manager._renderMarkdown('[safe](https://example.com) [mail](mailto:test@example.com) [bad](javascript:alert(1)) [port](https://example.com:8443)');
 
-    assert.match(html, /href="https:\/\/example\.com"/);
+    assert.match(html, /href="https:\/\/example\.com\/"/);
     assert.match(html, /href="mailto:test@example\.com"/);
     assert.doesNotMatch(html, /javascript:/);
+    assert.doesNotMatch(html, /8443/);
   });
 
   it('escapes scripts, event handlers and attributes while preserving the small safe tag list', () => {

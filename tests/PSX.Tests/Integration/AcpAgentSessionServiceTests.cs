@@ -23,6 +23,8 @@ public sealed class AcpAgentSessionServiceTests
         CollectionAssert.Contains(thread.Messages.Select(message => message.Role).ToList(), "plan");
         CollectionAssert.Contains(thread.Messages.Select(message => message.Role).ToList(), "tool");
         Assert.AreEqual("Fake response completed.", thread.Messages.Single(message => message.Role == "assistant").Text);
+        Assert.AreEqual("thinking", thread.Messages[1].Role);
+        Assert.AreEqual(thread.Messages[0].RunId, thread.Messages[1].RunId);
         Assert.AreEqual(4321, thread.ContextUsedTokens);
         Assert.AreEqual("fake-session-new", thread.AcpSessionId);
         Assert.AreEqual("1.0-test", thread.AdapterVersion);
@@ -178,10 +180,20 @@ public sealed class AcpAgentSessionServiceTests
         var messages = loaded.GetProperty("messages").EnumerateArray().ToArray();
         Assert.IsTrue(messages.Any(message => message.GetProperty("role").GetString() == "user"
             && message.GetProperty("text").GetString() == "Historical user"));
-        Assert.IsTrue(messages.Any(message => message.GetProperty("role").GetString() == "assistant"
-            && message.GetProperty("text").GetString() == "Historical assistant"));
+        var thinking = messages.Single(message => message.GetProperty("role").GetString() == "thinking");
+        Assert.AreEqual("Historical thought one.Historical thought two.", thinking.GetProperty("text").GetString());
+        Assert.AreEqual("thinking", messages[1].GetProperty("role").GetString());
+        Assert.AreEqual(
+            messages[0].GetProperty("runId").GetString(),
+            thinking.GetProperty("runId").GetString());
+        CollectionAssert.AreEqual(
+            new[] { "Historical assistant before tool.", "Historical assistant after tool." },
+            messages.Where(message => message.GetProperty("role").GetString() == "assistant")
+                .Select(message => message.GetProperty("text").GetString()).ToArray());
         var snapshot = messages.Single(message => message.GetProperty("role").GetString() == "mode_transition");
         Assert.AreEqual("interrupted", snapshot.GetProperty("decisionState").GetString());
+        Assert.IsFalse(messages.Any(message => message.GetProperty("role").GetString() == "tool"
+            && message.GetProperty("toolCallId").GetString() == "stored-tool"));
 
         var persisted = fixture.Store.LoadThread(historical.ThreadId);
         Assert.AreEqual(

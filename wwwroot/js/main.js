@@ -75,6 +75,9 @@
             case 'resize':
                 manager.resizeTerminal(message.sessionId, message.cols, message.rows);
                 break;
+            case 'paste_response':
+                manager.handlePasteResponse(message);
+                break;
             case 'close':
                 manager.closeTerminal(message.sessionId);
                 break;

@@ -31,6 +31,7 @@ class TerminalManager {
         this.container = container;
         this.terminals = new Map();
         this.activeSessionId = null;
+        this._pendingPasteRequests = new Map();
         this.viewVisible = !container.hidden;
         this._encoder = new TextEncoder();
         this._xtermTheme = { ...defaultXtermTheme };
@@ -329,6 +330,11 @@ class TerminalManager {
         entry.terminal.dispose();
         entry.element.remove();
         this.terminals.delete(sessionId);
+        for (const [requestId, pending] of this._pendingPasteRequests) {
+            if (pending.sessionId === sessionId) {
+                this._pendingPasteRequests.delete(requestId);
+            }
+        }
 
         if (this.activeSessionId === sessionId) {
             this.activeSessionId = null;
@@ -507,15 +513,41 @@ class TerminalManager {
         });
     }
 
-    async _pasteFromClipboard(sessionId, terminal) {
-        try {
-            const text = await navigator.clipboard.readText();
-            if (text) {
-                this._pasteText(sessionId, terminal, text);
-            }
-        } catch (e) {
-            console.warn('Failed to paste from clipboard', e);
+    _pasteFromClipboard(sessionId, terminal) {
+        const requestId = this._newPasteRequestId();
+        if (!requestId) return;
+
+        this._pendingPasteRequests.set(requestId, { sessionId, terminal });
+        Bridge.sendPasteRequest(sessionId, requestId);
+    }
+
+    handlePasteResponse(message) {
+        if (!message || typeof message.requestId !== 'string' || typeof message.sessionId !== 'string') return;
+
+        const pending = this._pendingPasteRequests.get(message.requestId);
+        if (!pending || pending.sessionId !== message.sessionId) return;
+
+        this._pendingPasteRequests.delete(message.requestId);
+        const entry = this.terminals.get(message.sessionId);
+        if (!message.ok || !entry || entry.terminal !== pending.terminal || typeof message.text !== 'string') return;
+
+        if (message.text) {
+            this._pasteText(message.sessionId, pending.terminal, message.text);
         }
+    }
+
+    _newPasteRequestId() {
+        if (globalThis.crypto?.randomUUID) {
+            return globalThis.crypto.randomUUID();
+        }
+
+        if (!globalThis.crypto?.getRandomValues) return '';
+        const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
+        bytes[6] = (bytes[6] & 0x0f) | 0x40;
+        bytes[8] = (bytes[8] & 0x3f) | 0x80;
+        const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('');
+        return hex.slice(0, 8) + '-' + hex.slice(8, 12) + '-' + hex.slice(12, 16)
+            + '-' + hex.slice(16, 20) + '-' + hex.slice(20);
     }
 
     _pasteText(sessionId, terminal, text) {

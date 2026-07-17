@@ -13,6 +13,15 @@ public sealed class TerminalMessage
     [JsonPropertyName("data")]
     public string? Data { get; set; }
 
+    [JsonPropertyName("requestId")]
+    public string? RequestId { get; set; }
+
+    [JsonPropertyName("ok")]
+    public bool? Ok { get; set; }
+
+    [JsonPropertyName("text")]
+    public string? Text { get; set; }
+
     [JsonPropertyName("cols")]
     public int? Cols { get; set; }
 

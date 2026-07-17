@@ -408,6 +408,8 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             }
 
             _currentThread = thread;
+            if (ThinkingMessageNormalizer.Normalize(_currentThread.Messages))
+                _threadStore.SaveThread(_currentThread);
             ApplyThread(_currentThread);
             await SendAgentCommandsUnavailableAsync().ConfigureAwait(false);
             navigation.Token.ThrowIfCancellationRequested();
@@ -1401,6 +1403,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             CaptureConfigOptions(loadResult);
             FinishReplayHistory(replay);
             ModeTransitionSnapshotMerger.Merge(replay.Messages, modeTransitionSnapshots);
+            ThinkingMessageNormalizer.Normalize(replay.Messages);
 
             if (replay.Messages.Count > 0)
             {
@@ -2247,7 +2250,6 @@ public sealed class AcpAgentSessionService : IAgentSessionService
         if (string.IsNullOrEmpty(text))
             return;
 
-        FlushReplayThinking(replay);
         if (string.IsNullOrWhiteSpace(replay.CurrentRunId))
             replay.CurrentRunId = $"history-{++replay.TurnIndex}";
 
@@ -2256,7 +2258,6 @@ public sealed class AcpAgentSessionService : IAgentSessionService
 
     private static void CaptureReplayToolCall(ReplayHistoryState replay, JsonElement update)
     {
-        FlushReplayThinking(replay);
         FlushReplayAssistant(replay);
         if (string.IsNullOrWhiteSpace(replay.CurrentRunId))
             replay.CurrentRunId = $"history-{++replay.TurnIndex}";
@@ -2280,7 +2281,6 @@ public sealed class AcpAgentSessionService : IAgentSessionService
 
     private static void CaptureReplayToolUpdate(ReplayHistoryState replay, JsonElement update)
     {
-        FlushReplayThinking(replay);
         FlushReplayAssistant(replay);
         if (string.IsNullOrWhiteSpace(replay.CurrentRunId))
             replay.CurrentRunId = $"history-{++replay.TurnIndex}";
@@ -2313,7 +2313,6 @@ public sealed class AcpAgentSessionService : IAgentSessionService
 
     private static void UpsertReplayPlan(ReplayHistoryState replay, JsonElement update)
     {
-        FlushReplayThinking(replay);
         FlushReplayAssistant(replay);
         if (string.IsNullOrWhiteSpace(replay.CurrentRunId))
             replay.CurrentRunId = $"history-{++replay.TurnIndex}";
@@ -2692,7 +2691,17 @@ public sealed class AcpAgentSessionService : IAgentSessionService
     {
         var text = _thinkingBuffer.ToString();
         if (!string.IsNullOrWhiteSpace(text))
-            AddMessage("thinking", text);
+        {
+            _currentThread.Messages.Add(new AgentMessage
+            {
+                Role = "thinking",
+                Text = text,
+                RunId = _currentRunId,
+                CreatedAt = DateTimeOffset.Now
+            });
+            ThinkingMessageNormalizer.Normalize(_currentThread.Messages);
+            SaveCurrentThread();
+        }
 
         _thinkingBuffer.Clear();
     }
@@ -2710,7 +2719,7 @@ public sealed class AcpAgentSessionService : IAgentSessionService
             Role = role,
             Text = text,
             Name = name,
-            RunId = role is "user" or "assistant" ? _currentRunId : null,
+            RunId = role is "user" or "assistant" or "thinking" ? _currentRunId : null,
             Attachments = attachments?.Select(CloneAttachment).ToList(),
             CreatedAt = DateTimeOffset.Now
         });
