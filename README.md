@@ -163,6 +163,19 @@ Create a portable release package:
 powershell -ExecutionPolicy Bypass -File tools/build-release.ps1
 ```
 
+Run the automated test gates:
+
+```powershell
+# Daily development and CI
+powershell -ExecutionPolicy Bypass -File tools/test.ps1 -Suite Fast
+
+# Local release gate, including Windows desktop probes and package validation
+powershell -ExecutionPolicy Bypass -File tools/test.ps1 -Suite Full
+```
+
+See [docs/testing.md](docs/testing.md) for the test layers, repository-isolation rules,
+diagnostic artifacts, and the real-Agent checks that remain manual.
+
 The release zip is written to:
 
 ```text

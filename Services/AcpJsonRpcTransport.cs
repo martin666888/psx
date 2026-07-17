@@ -9,6 +9,8 @@ namespace PSX.Services;
 
 public sealed class AcpJsonRpcTransport : IDisposable
 {
+    private static readonly Encoding Utf8WithoutBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
@@ -78,9 +80,9 @@ public sealed class AcpJsonRpcTransport : IDisposable
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 CreateNoWindow = true,
-                StandardInputEncoding = Encoding.UTF8,
-                StandardOutputEncoding = Encoding.UTF8,
-                StandardErrorEncoding = Encoding.UTF8
+                StandardInputEncoding = Utf8WithoutBom,
+                StandardOutputEncoding = Utf8WithoutBom,
+                StandardErrorEncoding = Utf8WithoutBom
             };
             foreach (var argument in _processSpec.Arguments)
                 startInfo.ArgumentList.Add(argument);
@@ -383,7 +385,10 @@ public sealed class AcpJsonRpcTransport : IDisposable
             try
             {
                 if (_process is { HasExited: false })
+                {
                     _process.Kill(entireProcessTree: true);
+                    _process.WaitForExit(milliseconds: 5000);
+                }
             }
             catch { }
 

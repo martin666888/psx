@@ -6,10 +6,15 @@
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <UseWPF>true</UseWPF>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\PSX.csproj" />
+    <ProjectReference Include="..\PSX.DesktopProbe\PSX.DesktopProbe.csproj"
+                      ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\PSX.TestAgent\PSX.TestAgent.csproj"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>

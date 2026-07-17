@@ -1,0 +1,201 @@
+using System.Collections.Concurrent;
+using System.Text.Json;
+using Microsoft.Web.WebView2.Wpf;
+using PSX.Models;
+using PSX.Services;
+
+namespace PSX.Tests.Support;
+
+internal sealed class FakeAcpSessionFixture : IDisposable
+{
+    public FakeAcpSessionFixture(string scope)
+    {
+        Workspace = TestWorkspace.Create(scope);
+        Store = new AgentThreadStore(Path.Combine(Workspace.Path, "store"));
+        Bridge = new RecordingAgentBridgeService();
+        Runtime = new FakeAcpRuntime(Workspace);
+        Provider = new FakeAcpProvider(Runtime);
+        Registry = new FakeAgentProviderRegistry(Provider);
+        Service = new AcpAgentSessionService(
+            Bridge,
+            new NullTabManagementService(),
+            new NullTerminalBridgeService(),
+            Store,
+            new NullAgentDirectoryPicker(),
+            Registry);
+    }
+
+    public TestWorkspace Workspace { get; }
+    public AgentThreadStore Store { get; }
+    public RecordingAgentBridgeService Bridge { get; }
+    public FakeAcpRuntime Runtime { get; }
+    public FakeAcpProvider Provider { get; }
+    public FakeAgentProviderRegistry Registry { get; }
+    public AcpAgentSessionService Service { get; }
+
+    public AgentThread LoadOnlyVisibleThread()
+    {
+        var summary = Store.ListThreads().Single();
+        return Store.LoadThread(summary.ThreadId)
+            ?? throw new AssertFailedException("The Agent thread was not persisted.");
+    }
+
+    public void Dispose()
+    {
+        Service.Dispose();
+        Workspace.Dispose();
+    }
+}
+
+internal sealed class RecordingAgentBridgeService : IAgentBridgeService
+{
+    private readonly ConcurrentQueue<JsonElement> _events = new();
+    private readonly SemaphoreSlim _eventSignal = new(0);
+
+    public event EventHandler<AgentSubmitEventArgs>? UserMessageSubmitted;
+    public event EventHandler<AgentCommandEventArgs>? CommandReceived;
+    public event EventHandler<AgentAttachmentUploadEventArgs>? AttachmentUploadReceived;
+
+    public IReadOnlyList<JsonElement> Events => _events.ToArray();
+
+    public Task InitializeAsync(WebView2 webView) => Task.CompletedTask;
+
+    public Task SendEventAsync(object message)
+    {
+        _events.Enqueue(JsonSerializer.SerializeToElement(message));
+        _eventSignal.Release();
+        return Task.CompletedTask;
+    }
+
+    public void RaiseCommand(string command, string? requestId = null, string? value = null)
+    {
+        CommandReceived?.Invoke(this, new AgentCommandEventArgs
+        {
+            Command = command,
+            RequestId = requestId,
+            Value = value
+        });
+    }
+
+    public async Task<JsonElement> WaitForEventAsync(
+        string type,
+        Func<JsonElement, bool>? predicate = null,
+        TimeSpan? timeout = null)
+    {
+        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(10));
+        while (true)
+        {
+            var match = _events.FirstOrDefault(candidate =>
+                candidate.TryGetProperty("type", out var eventType)
+                && eventType.GetString() == type
+                && (predicate == null || predicate(candidate)));
+            if (match.ValueKind != JsonValueKind.Undefined)
+                return match.Clone();
+
+            var remaining = deadline - DateTime.UtcNow;
+            if (remaining <= TimeSpan.Zero)
+                Assert.Fail($"Timed out waiting for bridge event '{type}'.");
+
+            await _eventSignal.WaitAsync(remaining).ConfigureAwait(false);
+        }
+    }
+
+    public void Submit(string text) =>
+        UserMessageSubmitted?.Invoke(this, new AgentSubmitEventArgs { Text = text });
+
+    public void Upload(AgentAttachmentUploadEventArgs args) =>
+        AttachmentUploadReceived?.Invoke(this, args);
+}
+
+internal sealed class FakeAcpRuntime(TestWorkspace workspace) : IAcpAgentRuntime
+{
+    public event Action<string>? StatusChanged;
+
+    public string LogPath => Path.Combine(workspace.Path, "runtime.log");
+
+    public bool IsReady() => true;
+
+    public string BuildStatusText(string? suffix = null) => suffix ?? "Fake ACP runtime ready.";
+
+    public Task<AcpRuntimeOperationResult> EnsureInstalledAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(new AcpRuntimeOperationResult(AcpRuntimeOperationKind.AlreadyReady, "Fake ACP runtime ready."));
+
+    public Task<AcpRuntimeOperationResult> RefreshAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(new AcpRuntimeOperationResult(AcpRuntimeOperationKind.AlreadyReady, "Fake ACP runtime ready."));
+
+    public Task PrepareForStartupAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    public AcpProcessSpec CreateProcessSpec(string workingDirectory) => workspace.CreateTestAgentSpec();
+
+    public void Dispose() { }
+
+    public void PublishStatus(string status) => StatusChanged?.Invoke(status);
+}
+
+internal sealed class FakeAcpProvider(IAcpAgentRuntime runtime) : IAcpAgentProvider
+{
+    public AgentDescriptor Descriptor { get; } = new(
+        "fake-acp",
+        "Fake ACP",
+        "Fake",
+        ["fake-legacy"]);
+
+    public IAcpAgentRuntime Runtime { get; } = runtime;
+
+    public object CreateNewSessionParameters(string workingDirectory) => new { cwd = workingDirectory };
+
+    public object CreateLoadSessionParameters(string sessionId, string workingDirectory) =>
+        new { sessionId, cwd = workingDirectory };
+
+    public bool IsCommandVisible(string normalizedCommand) => true;
+
+    public ShellProfile? CreateNativeTerminalProfile(string workingDirectory, string? sessionId) => null;
+}
+
+internal sealed class FakeAgentProviderRegistry(FakeAcpProvider provider) : IAgentProviderRegistry
+{
+    public IAcpAgentProvider DefaultProvider => provider;
+    public IReadOnlyList<IAcpAgentProvider> Providers { get; } = [provider];
+
+    public IAcpAgentProvider? Find(string? providerKey) =>
+        string.Equals(providerKey, provider.Descriptor.Key, StringComparison.OrdinalIgnoreCase)
+        || provider.Descriptor.LegacyKeys.Contains(providerKey ?? "", StringComparer.OrdinalIgnoreCase)
+            ? provider
+            : null;
+}
+
+internal sealed class NullAgentDirectoryPicker : IAgentDirectoryPicker
+{
+    public string? PickDirectory(string initialDirectory) => null;
+}
+
+internal sealed class NullTabManagementService : ITabManagementService
+{
+    public event EventHandler<TabCreatedEventArgs>? TabCreated { add { } remove { } }
+    public event EventHandler<TabClosedEventArgs>? TabClosed { add { } remove { } }
+    public event EventHandler<TabTitleChangedEventArgs>? TabTitleChanged { add { } remove { } }
+
+    public Task<Guid> CreateTabAsync(ShellProfile? profile = null) => Task.FromResult(Guid.NewGuid());
+    public Task CloseTabAsync(Guid sessionId) => Task.CompletedTask;
+    public Task SwitchTabAsync(Guid sessionId) => Task.CompletedTask;
+    public Task ResizeTabAsync(Guid sessionId, int cols, int rows) => Task.CompletedTask;
+    public TerminalSession? GetSession(Guid sessionId) => null;
+}
+
+internal sealed class NullTerminalBridgeService : ITerminalBridgeService
+{
+    public event EventHandler<TerminalInputEventArgs>? InputReceived { add { } remove { } }
+    public event EventHandler<TerminalResizeEventArgs>? ResizeRequested { add { } remove { } }
+    public event EventHandler<TerminalTitleEventArgs>? TitleChanged { add { } remove { } }
+    public event EventHandler<string>? ViewModeChanged { add { } remove { } }
+    public event EventHandler? FrontendReady { add { } remove { } }
+
+    public Task InitializeAsync(WebView2 webView) => Task.CompletedTask;
+    public Task CreateTerminalAsync(Guid sessionId) => Task.CompletedTask;
+    public Task SendOutputAsync(Guid sessionId, string base64Data) => Task.CompletedTask;
+    public Task SwitchTerminalAsync(Guid sessionId) => Task.CompletedTask;
+    public Task CloseTerminalAsync(Guid sessionId) => Task.CompletedTask;
+    public Task ResizeTerminalAsync(Guid sessionId, int cols, int rows) => Task.CompletedTask;
+    public Task SetViewModeAsync(string mode) => Task.CompletedTask;
+    public Task SendAppearanceAsync(AppearanceSettings appearance) => Task.CompletedTask;
+}

@@ -230,7 +230,14 @@ if (Test-Path -LiteralPath $forbiddenAcpRuntime) {
 }
 
 $forbiddenFiles = @(Get-ChildItem -LiteralPath $StagingDir -Recurse -File | Where-Object {
-    $_.Name -ieq "claude.exe" -or $_.Extension -in @(".log", ".tmp", ".binlog")
+    $relative = $_.FullName.Substring($StagingDir.Length).TrimStart('\').Replace('\', '/')
+    $_.Name -ieq "claude.exe" `
+        -or $_.Extension -in @(".log", ".tmp", ".binlog") `
+        -or $relative.StartsWith('tests/', [StringComparison]::OrdinalIgnoreCase) `
+        -or $relative.StartsWith('TestResults/', [StringComparison]::OrdinalIgnoreCase) `
+        -or $_.Name -like 'PSX.Tests.*' `
+        -or $_.Name -like 'PSX.TestAgent.*' `
+        -or $_.Name -like 'PSX.DesktopProbe.*'
 })
 if ($forbiddenFiles.Count -gt 0) {
     $paths = ($forbiddenFiles | ForEach-Object { $_.FullName.Substring($StagingDir.Length).TrimStart('\') }) -join ", "
@@ -280,7 +287,12 @@ try {
         $leaf = [IO.Path]::GetFileName($normalized)
         $extension = [IO.Path]::GetExtension($normalized)
         $normalized.StartsWith('runtime/acp-current/', [StringComparison]::OrdinalIgnoreCase) `
+            -or $normalized.StartsWith('tests/', [StringComparison]::OrdinalIgnoreCase) `
+            -or $normalized.StartsWith('TestResults/', [StringComparison]::OrdinalIgnoreCase) `
             -or $leaf -ieq 'claude.exe' `
+            -or $leaf -like 'PSX.Tests.*' `
+            -or $leaf -like 'PSX.TestAgent.*' `
+            -or $leaf -like 'PSX.DesktopProbe.*' `
             -or $extension -in @('.log', '.tmp', '.binlog')
     })
     if ($forbiddenEntries.Count -gt 0) {

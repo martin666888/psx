@@ -2,13 +2,15 @@
 
 ## Project Structure & Module Organization
 
-PSX is a Windows desktop terminal built with C#, WPF, WebView2, xterm.js, and ConPTY. The root contains the application entry points and the single project, `PSX.csproj`. Keep domain records in `Models/`, UI state in `ViewModels/`, WPF controls in `Controls/`, runtime and bridge logic in `Services/`, and native interop in `Helpers/`. The WebView frontend lives in `wwwroot/`. Configuration and visual resources belong in `psx.ini`, `theme-presets/`, `Themes/`, and `Assets/`. Release tooling is under `tools/`; documentation is under `docs/`.
+PSX is a Windows desktop terminal built with C#, WPF, WebView2, xterm.js, and ConPTY. The root contains the application entry points and production project, `PSX.csproj`; test projects and probes live under `tests/`. Keep domain records in `Models/`, UI state in `ViewModels/`, WPF controls in `Controls/`, runtime and bridge logic in `Services/`, and native interop in `Helpers/`. The WebView frontend lives in `wwwroot/`. Configuration and visual resources belong in `psx.ini`, `theme-presets/`, `Themes/`, and `Assets/`. Release tooling is under `tools/`; documentation is under `docs/`.
 
 ## Build, Test, and Development Commands
 
 - `dotnet build PSX.slnx` - restore packages and compile the application.
 - `dotnet run --project PSX.csproj` - launch a development build on Windows.
 - `dotnet format PSX.slnx --verify-no-changes` - check standard .NET formatting.
+- `powershell -ExecutionPolicy Bypass -File tools/test.ps1 -Suite Fast` - run the local/CI unit, integration, frontend, coverage, format, and Release build gate.
+- `powershell -ExecutionPolicy Bypass -File tools/test.ps1 -Suite Full` - add WPF/ConPTY desktop probes and validate the portable Release package.
 - `powershell -ExecutionPolicy Bypass -File tools/build-release.ps1` - create the self-contained Windows x64 package in `bin/releases/`; this may download the verified Portable Node archive but never pre-installs the ACP runtime.
 
 Use the SDK selected by `global.json`. The release script assembles the public portable package; users install the Agent runtime later from Agent mode after explicit confirmation.
@@ -19,7 +21,7 @@ Use four spaces in C# and follow existing .NET conventions: `PascalCase` for typ
 
 ## Testing Guidelines
 
-There is currently no test project or coverage threshold. For every change, run `dotnet build PSX.slnx` and manually exercise the affected terminal or Agent workflow. Verify startup, tab lifecycle, shutdown, and theme/config reload when relevant. If adding tests, create a dedicated `*.Tests` project and name cases by behavior, such as `SaveSettings_InvalidColor_UsesFallback`.
+Use `tests/PSX.Tests` for C# Unit, Integration, and Desktop categories; `tests/PSX.Web.Tests` for jsdom frontend tests; `tests/PSX.TestAgent` for deterministic ACP protocol scenarios; and `tests/PSX.DesktopProbe` for WinExe-hosted ConPTY checks. Name cases by behavior, such as `SaveSettings_InvalidColor_UsesFallback`. Keep every test workspace, dependency cache, diagnostic, and coverage artifact under the ignored repository `TestResults/` directory; tests must never touch the user's real `%USERPROFILE%\.psx`. Coverage is reported but has no percentage gate yet. Run `tools/test.ps1 -Suite Fast` during development and `-Suite Full` before a release. Real provider login, quota, network failure, and subjective UI checks remain manual as documented in `docs/testing.md`.
 
 ## Agent Slash Command Contract
 

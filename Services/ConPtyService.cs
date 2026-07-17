@@ -35,7 +35,47 @@ public sealed class ConPtyService : IDisposable
             _readTasks[session.SessionId] = readTask;
         }
 
+        _ = MonitorProcessExitAsync(session);
+
         return session;
+    }
+
+    private static async Task MonitorProcessExitAsync(TerminalSession session)
+    {
+        var process = session.Process;
+        if (process == null)
+            return;
+
+        try
+        {
+            await process.WaitForExitAsync().ConfigureAwait(false);
+            // Give the ConPTY host a brief opportunity to flush bytes that
+            // were written immediately before process termination. Closing
+            // the pseudo console in the same scheduling turn can discard the
+            // final output of very short commands.
+            await Task.Delay(100).ConfigureAwait(false);
+        }
+        catch
+        {
+            return;
+        }
+
+        // The ConPTY output pipe can remain open after its child process exits
+        // while PSX still owns the pseudo-console handle. Release our input and
+        // pseudo-console endpoints so the blocking ReadFile observes EOF and the
+        // normal SessionExited cleanup path can complete.
+        lock (session)
+        {
+            try { session.InputPipeWrite?.Dispose(); }
+            catch { }
+
+            if (session.ConPtyHandle != IntPtr.Zero)
+            {
+                try { Helpers.NativeMethods.ClosePseudoConsole(session.ConPtyHandle); }
+                catch { }
+                session.ConPtyHandle = IntPtr.Zero;
+            }
+        }
     }
 
     /// <summary>
@@ -308,33 +348,36 @@ public sealed class ConPtyService : IDisposable
         bool killProcess,
         bool disposeOutputPipe)
     {
-        try { session.InputPipeWrite?.Dispose(); }
-        catch { }
-
-        if (killProcess && session.Process is not null)
+        lock (session)
         {
-            try
+            try { session.InputPipeWrite?.Dispose(); }
+            catch { }
+
+            if (killProcess && session.Process is not null)
             {
-                if (!session.Process.HasExited)
-                    session.Process.Kill(entireProcessTree: true);
+                try
+                {
+                    if (!session.Process.HasExited)
+                        session.Process.Kill(entireProcessTree: true);
+                }
+                catch { }
             }
-            catch { }
-        }
 
-        if (session.ConPtyHandle != IntPtr.Zero)
-        {
-            try { Helpers.NativeMethods.ClosePseudoConsole(session.ConPtyHandle); }
-            catch { }
-            session.ConPtyHandle = IntPtr.Zero;
-        }
+            if (session.ConPtyHandle != IntPtr.Zero)
+            {
+                try { Helpers.NativeMethods.ClosePseudoConsole(session.ConPtyHandle); }
+                catch { }
+                session.ConPtyHandle = IntPtr.Zero;
+            }
 
-        if (disposeOutputPipe)
-        {
-            try { session.OutputPipeRead?.Dispose(); }
-            catch { }
+            if (disposeOutputPipe)
+            {
+                try { session.OutputPipeRead?.Dispose(); }
+                catch { }
 
-            try { session.Process?.Dispose(); }
-            catch { }
+                try { session.Process?.Dispose(); }
+                catch { }
+            }
         }
     }
 

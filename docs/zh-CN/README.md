@@ -91,6 +91,19 @@ dotnet run --project PSX.csproj
 powershell -ExecutionPolicy Bypass -File tools/build-release.ps1
 ```
 
+运行自动化测试门禁：
+
+```powershell
+# 日常开发与 CI
+powershell -ExecutionPolicy Bypass -File tools/test.ps1 -Suite Fast
+
+# 本机发布前全量门禁（含 Windows 桌面探针与发布包校验）
+powershell -ExecutionPolicy Bypass -File tools/test.ps1 -Suite Full
+```
+
+测试分层、仓库隔离约束、诊断产物以及仍需人工执行的真实 Agent 验收项，见
+[自动化测试指南](../testing.md)。
+
 发布包输出到 `bin/releases/`。
 
 ## 项目结构

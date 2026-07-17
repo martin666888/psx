@@ -1,6 +1,7 @@
 using System.Text.Json;
 using PSX.Models;
 using PSX.Services;
+using PSX.Tests.Support;
 
 namespace PSX.Tests.Integration;
 
@@ -11,7 +12,7 @@ public sealed class AgentThreadStoreTests
     [TestMethod]
     public void CreateSaveLoadAndDelete_UsesOnlyConfiguredRoot()
     {
-        using var temporaryDirectory = new TemporaryDirectory();
+        using var temporaryDirectory = TestWorkspace.Create(nameof(CreateSaveLoadAndDelete_UsesOnlyConfiguredRoot));
         var store = new AgentThreadStore(temporaryDirectory.Path);
 
         var thread = store.CreateThread(temporaryDirectory.Path);
@@ -32,7 +33,7 @@ public sealed class AgentThreadStoreTests
     [TestMethod]
     public void ListThreads_SortsVisibleThreadsByMostRecentUpdate()
     {
-        using var temporaryDirectory = new TemporaryDirectory();
+        using var temporaryDirectory = TestWorkspace.Create(nameof(ListThreads_SortsVisibleThreadsByMostRecentUpdate));
         var store = new AgentThreadStore(temporaryDirectory.Path);
         var first = store.CreateThread(temporaryDirectory.Path);
         first.Messages.Add(new AgentMessage { Role = "user", Text = "First" });
@@ -52,7 +53,7 @@ public sealed class AgentThreadStoreTests
     [TestMethod]
     public void LoadThread_DeserializesLegacyJsonWithMissingOptionalFields()
     {
-        using var temporaryDirectory = new TemporaryDirectory();
+        using var temporaryDirectory = TestWorkspace.Create(nameof(LoadThread_DeserializesLegacyJsonWithMissingOptionalFields));
         var store = new AgentThreadStore(temporaryDirectory.Path);
         var threadDirectory = Path.Combine(temporaryDirectory.Path, "agent", "threads");
         Directory.CreateDirectory(threadDirectory);
@@ -79,7 +80,7 @@ public sealed class AgentThreadStoreTests
     [TestMethod]
     public void ListThreads_CorruptThreadLeavesExistingIndexUntouched()
     {
-        using var temporaryDirectory = new TemporaryDirectory();
+        using var temporaryDirectory = TestWorkspace.Create(nameof(ListThreads_CorruptThreadLeavesExistingIndexUntouched));
         var store = new AgentThreadStore(temporaryDirectory.Path);
         var thread = store.CreateThread(temporaryDirectory.Path);
         thread.Messages.Add(new AgentMessage { Role = "user", Text = "Keep index" });
@@ -97,7 +98,7 @@ public sealed class AgentThreadStoreTests
     [TestMethod]
     public void Attachments_AreIsolatedAndCleanedPerThread()
     {
-        using var temporaryDirectory = new TemporaryDirectory();
+        using var temporaryDirectory = TestWorkspace.Create(nameof(Attachments_AreIsolatedAndCleanedPerThread));
         var store = new AgentThreadStore(temporaryDirectory.Path);
 
         var first = store.SaveAttachment("thread-one", "..\\unsafe.png", "image/png", [1, 2, 3]);
@@ -115,23 +116,4 @@ public sealed class AgentThreadStoreTests
         Assert.IsTrue(File.Exists(second.Path));
     }
 
-    private sealed class TemporaryDirectory : IDisposable
-    {
-        public TemporaryDirectory()
-        {
-            Path = System.IO.Path.Combine(
-                System.IO.Path.GetTempPath(),
-                "PSX.Tests",
-                Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(Path);
-        }
-
-        public string Path { get; }
-
-        public void Dispose()
-        {
-            if (Directory.Exists(Path))
-                Directory.Delete(Path, recursive: true);
-        }
-    }
 }
