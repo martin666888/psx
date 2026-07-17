@@ -102,9 +102,13 @@ public sealed class AcpRuntimeManagerTests
     [TestMethod]
     public async Task EnsureInstalled_ProcessTimeout_IsKilledAndReportedFailed()
     {
+        // The fake npm is a full .NET process; under parallel test load its CLR
+        // startup alone can exceed a few hundred milliseconds. The timeout must
+        // stay comfortably above that or the kill can land before the process
+        // writes its invocation marker, making this assertion flaky.
         using var fixture = new FakeNpmFixture(
             nameof(EnsureInstalled_ProcessTimeout_IsKilledAndReportedFailed),
-            TimeSpan.FromMilliseconds(250));
+            TimeSpan.FromSeconds(5));
         fixture.Configure(
             Hanging("ci", "acp-current"),
             Hanging("install", "acp-current"));
