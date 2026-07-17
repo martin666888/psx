@@ -1,0 +1,14 @@
+{
+  "include": [
+    "wwwroot/js/BridgeMessages.js",
+    "wwwroot/js/Bridge.js",
+    "wwwroot/js/**/*.d.ts"
+  ],
+  "compilerOptions": {
+    "checkJs": true,
+    "noEmit": true,
+    "target": "ES2022",
+    "module": "none",
+    "strict": true
+  }
+}

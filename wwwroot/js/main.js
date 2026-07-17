@@ -55,33 +55,33 @@
     // Listen for messages from C# host
     Bridge.onHostMessage((message) => {
         switch (message.type) {
-            case 'settings':
+            case BridgeEventType.Settings:
                 manager.setSettings(message.settings);
                 agentManager.setAgentSettings(message.settings);
                 break;
-            case 'appearance_settings':
+            case BridgeEventType.AppearanceSettings:
                 manager.setSettings(message.settings);
                 agentManager.setAgentSettings(message.settings);
                 break;
-            case 'create':
+            case BridgeEventType.Create:
                 manager.createTerminal(message.sessionId);
                 break;
-            case 'switch':
+            case BridgeEventType.Switch:
                 manager.switchTerminal(message.sessionId);
                 break;
-            case 'output':
+            case BridgeEventType.Output:
                 manager.writeOutput(message.sessionId, message.data);
                 break;
-            case 'resize':
+            case BridgeEventType.Resize:
                 manager.resizeTerminal(message.sessionId, message.cols, message.rows);
                 break;
-            case 'paste_response':
+            case BridgeEventType.PasteResponse:
                 manager.handlePasteResponse(message);
                 break;
-            case 'close':
+            case BridgeEventType.Close:
                 manager.closeTerminal(message.sessionId);
                 break;
-            case 'view_mode':
+            case BridgeEventType.ViewMode:
                 if (message.mode === 'agent') {
                     manager.setViewVisible(false);
                     agentManager.setVisible(true);
@@ -91,41 +91,42 @@
                     manager.setViewVisible(true);
                 }
                 break;
-            case 'agent_ready':
-            case 'agent_state':
-            case 'runtime_status':
-            case 'agent_thread_loaded':
-            case 'agent_threads':
-            case 'agent_history_error':
-            case 'agent_commands':
-            case 'agent_modes':
-            case 'agent_config_options':
-            case 'agent_usage_update':
-            case 'agent_mode_current':
-            case 'agent_attachment_uploaded':
-            case 'agent_attachment_failed':
-            case 'agent_cleared':
-            case 'command_result':
-            case 'user_message':
-            case 'run_finished':
-            case 'assistant_delta':
-            case 'assistant_message_done':
-            case 'thinking_started':
-            case 'thinking_finished':
-            case 'thinking_delta':
-            case 'tool_started':
-            case 'tool_delta':
-            case 'tool_finished':
-            case 'permission_request':
-            case 'permission_resolved':
-            case 'question_request':
-            case 'elicitation_request':
-            case 'permission_cancelled':
-            case 'elicitation_cancelled':
-            case 'run_failed':
-            case 'resume_failed':
-            case 'plan_update':
-            case 'raw_terminal_fallback':
+            case BridgeEventType.AgentReady:
+            case BridgeEventType.AgentState:
+            case BridgeEventType.RuntimeStatus:
+            case BridgeEventType.AgentThreadLoaded:
+            case BridgeEventType.AgentThreads:
+            case BridgeEventType.AgentHistoryError:
+            case BridgeEventType.AgentCommands:
+            case BridgeEventType.AgentCommandRejected:
+            case BridgeEventType.AgentModes:
+            case BridgeEventType.AgentConfigOptions:
+            case BridgeEventType.AgentUsageUpdate:
+            case BridgeEventType.AgentModeCurrent:
+            case BridgeEventType.AgentAttachmentUploaded:
+            case BridgeEventType.AgentAttachmentFailed:
+            case BridgeEventType.AgentCleared:
+            case BridgeEventType.CommandResult:
+            case BridgeEventType.UserMessage:
+            case BridgeEventType.RunFinished:
+            case BridgeEventType.AssistantDelta:
+            case BridgeEventType.AssistantMessageDone:
+            case BridgeEventType.ThinkingStarted:
+            case BridgeEventType.ThinkingFinished:
+            case BridgeEventType.ThinkingDelta:
+            case BridgeEventType.ToolStarted:
+            case BridgeEventType.ToolDelta:
+            case BridgeEventType.ToolFinished:
+            case BridgeEventType.PermissionRequest:
+            case BridgeEventType.PermissionResolved:
+            case BridgeEventType.QuestionRequest:
+            case BridgeEventType.ElicitationRequest:
+            case BridgeEventType.PermissionCancelled:
+            case BridgeEventType.ElicitationCancelled:
+            case BridgeEventType.RunFailed:
+            case BridgeEventType.ResumeFailed:
+            case BridgeEventType.PlanUpdate:
+            case BridgeEventType.RawTerminalFallback:
                 agentManager.handleEvent(message);
                 break;
         }

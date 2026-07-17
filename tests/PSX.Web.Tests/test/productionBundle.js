@@ -6,7 +6,11 @@ const testDirectory = path.dirname(fileURLToPath(import.meta.url));
 export const repositoryRoot = path.resolve(testDirectory, '..', '..', '..');
 export const generatedBundlePath = path.join(repositoryRoot, 'TestResults', 'web', 'runtime', 'agent-production.bundle.js');
 
-const scriptPaths = [
+// Kept in sync with the js/ script order in wwwroot/index.html by
+// test/scriptOrder.test.js. TerminalManager.js and main.js are intentionally
+// excluded from the test bundle.
+export const scriptPaths = [
+  'wwwroot/js/BridgeMessages.js',
   'wwwroot/js/Bridge.js',
   'wwwroot/js/AgentThreadManager.js',
   'wwwroot/js/agent/composer.js',
@@ -20,7 +24,9 @@ const scriptPaths = [
   'wwwroot/js/agent/plan.js',
   'wwwroot/js/agent/thinking.js',
   'wwwroot/js/agent/tools.js',
-  'wwwroot/js/agent/decisions.js',
+  'wwwroot/js/agent/permissions.js',
+  'wwwroot/js/agent/modeTransition.js',
+  'wwwroot/js/agent/elicitation.js',
   'wwwroot/js/agent/markdown.js',
   'wwwroot/js/agent/scroll.js'
 ];
@@ -29,7 +35,7 @@ export function buildProductionBundle() {
   const source = scriptPaths
     .map((relativePath) => fs.readFileSync(path.join(repositoryRoot, relativePath), 'utf8'))
     .join('\n;\n');
-  const bundle = `(function () {\n${source}\n;globalThis.Bridge = Bridge; globalThis.AgentThreadManager = AgentThreadManager;\n})();\n`;
+  const bundle = `(function () {\n${source}\n;globalThis.Bridge = Bridge; globalThis.AgentThreadManager = AgentThreadManager; globalThis.BridgeSendType = BridgeSendType; globalThis.BridgeEventType = BridgeEventType;\n})();\n`;
   fs.mkdirSync(path.dirname(generatedBundlePath), { recursive: true });
   fs.writeFileSync(generatedBundlePath, bundle, 'utf8');
   return generatedBundlePath;

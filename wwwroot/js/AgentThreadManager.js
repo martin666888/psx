@@ -183,52 +183,52 @@ class AgentThreadManager {
 
     handleEvent(event) {
         switch (event.type) {
-            case 'agent_state':
+            case BridgeEventType.AgentState:
                 this._updateState(event);
                 break;
-            case 'runtime_status':
+            case BridgeEventType.RuntimeStatus:
                 this._updateRuntimeStatus(event);
                 break;
-            case 'agent_thread_loaded':
+            case BridgeEventType.AgentThreadLoaded:
                 this._clearCommandHint();
                 this._loadThread(event);
                 break;
-            case 'agent_threads':
+            case BridgeEventType.AgentThreads:
                 this.selectInspectorTab('history', false);
                 this._renderHistory(event.threads || []);
                 break;
-            case 'agent_history_error':
+            case BridgeEventType.AgentHistoryError:
                 this.selectInspectorTab('history', false);
                 this._renderHistoryError(event.text || 'Unable to load Agent thread history.');
                 break;
-            case 'agent_commands':
+            case BridgeEventType.AgentCommands:
                 this._setAgentCommands(event.commands || [], event.ready === true);
                 break;
-            case 'agent_command_rejected':
+            case BridgeEventType.AgentCommandRejected:
                 this._showCommandHint(event.command || '', event.reason || 'unsupported');
                 break;
-            case 'agent_modes':
+            case BridgeEventType.AgentModes:
                 this._setModes(event.modes || [], event.currentModeId || '');
                 break;
-            case 'agent_config_options':
+            case BridgeEventType.AgentConfigOptions:
                 this._setConfigOptions(event.options || []);
                 break;
-            case 'agent_usage_update':
+            case BridgeEventType.AgentUsageUpdate:
                 this._setContextUsed(event.contextUsedTokens);
                 break;
-            case 'agent_attachment_uploaded':
+            case BridgeEventType.AgentAttachmentUploaded:
                 this._handleAttachmentUploaded(event);
                 break;
-            case 'agent_attachment_failed':
+            case BridgeEventType.AgentAttachmentFailed:
                 this._handleAttachmentFailed(event);
                 break;
-            case 'agent_mode_current':
+            case BridgeEventType.AgentModeCurrent:
                 this._setCurrentMode(event.currentModeId || '');
                 break;
-            case 'agent_ready':
+            case BridgeEventType.AgentReady:
                 this._markSessionReady(event.sessionId || '');
                 break;
-            case 'agent_cleared':
+            case BridgeEventType.AgentCleared:
                 this._clearModeTransitionPrompt('', false);
                 this.thread.innerHTML = '';
                 this.currentTurn = null;
@@ -251,10 +251,10 @@ class AgentThreadManager {
                 this._clearPendingAttachments();
                 this._appendSystem('Thread UI cleared. ' + this.assistantName + ' session context is unchanged.');
                 break;
-            case 'command_result':
+            case BridgeEventType.CommandResult:
                 this._appendSystem(event.text || '');
                 break;
-            case 'user_message':
+            case BridgeEventType.UserMessage:
                 this._finalizeRunGroup();
                 this._startTurn();
                 this._appendMessage('user', event.text || '');
@@ -262,23 +262,23 @@ class AgentThreadManager {
                 this.lastSubmittedDraft = null;
                 this.currentAssistant = null;
                 break;
-            case 'thinking_started':
+            case BridgeEventType.ThinkingStarted:
                 this._showThinking();
                 break;
-            case 'thinking_delta':
+            case BridgeEventType.ThinkingDelta:
                 this._appendThinkingDelta(event.text || '');
                 break;
-            case 'thinking_finished':
+            case BridgeEventType.ThinkingFinished:
                 this._hideThinking();
                 break;
-            case 'assistant_delta':
+            case BridgeEventType.AssistantDelta:
                 this._appendAssistantDelta(event.text || '');
                 break;
-            case 'assistant_message_done':
+            case BridgeEventType.AssistantMessageDone:
                 this._finalizeAssistantMessage(this.currentAssistant);
                 this.currentAssistant = null;
                 break;
-            case 'run_finished':
+            case BridgeEventType.RunFinished:
                 this._interruptModeTransition('This request is no longer active.');
                 this._finalizeAssistantMessage(this.currentAssistant);
                 this.currentAssistant = null;
@@ -286,7 +286,7 @@ class AgentThreadManager {
                 this._finalizeRunGroup();
                 this.currentTurn = null;
                 break;
-            case 'tool_started':
+            case BridgeEventType.ToolStarted:
                 this._ensureRunGroup(event.runId || '');
                 this._createToolCard(
                     event.toolCallId || ('local-' + Date.now()),
@@ -296,7 +296,7 @@ class AgentThreadManager {
                     'running'
                 );
                 break;
-            case 'tool_delta': {
+            case BridgeEventType.ToolDelta: {
                 const resolved = this._resolveToolCard(event);
                 if (resolved) {
                     resolved.card.pre.textContent += (event.text || '');
@@ -306,7 +306,7 @@ class AgentThreadManager {
                 this._scrollToBottom();
                 break;
             }
-            case 'tool_finished': {
+            case BridgeEventType.ToolFinished: {
                 const resolved = this._resolveToolCard(event);
                 if (resolved) {
                     if (!resolved.card.pre.textContent.trim()) {
@@ -325,33 +325,33 @@ class AgentThreadManager {
                 this.currentToolCardId = null;
                 break;
             }
-            case 'permission_request':
+            case BridgeEventType.PermissionRequest:
                 if (event.presentation === 'mode_transition' && event.documentText) {
                     this._appendModeTransition(event, false);
                 } else {
                     this._appendDecision(event, 'permission');
                 }
                 break;
-            case 'permission_resolved':
+            case BridgeEventType.PermissionResolved:
                 this._resolvePermission(event);
                 break;
-            case 'question_request':
+            case BridgeEventType.QuestionRequest:
                 this._appendDecision(event, 'question');
                 break;
-            case 'elicitation_request':
+            case BridgeEventType.ElicitationRequest:
                 this._appendElicitation(event);
                 break;
-            case 'permission_cancelled':
-            case 'elicitation_cancelled':
+            case BridgeEventType.PermissionCancelled:
+            case BridgeEventType.ElicitationCancelled:
                 this._cancelDecision(event.requestId || '', event.text || 'Request cancelled.');
                 break;
-            case 'raw_terminal_fallback':
+            case BridgeEventType.RawTerminalFallback:
                 this._appendTool('Raw terminal fallback', event.text || 'Unsupported interaction requires terminal fallback.', 'fallback');
                 break;
-            case 'plan_update':
+            case BridgeEventType.PlanUpdate:
                 this._upsertPlan(event);
                 break;
-            case 'run_failed':
+            case BridgeEventType.RunFailed:
                 this._interruptModeTransition('The request ended before a selection was completed.');
                 this._hideThinking();
                 this._restoreSubmittedDraft();
@@ -373,7 +373,7 @@ class AgentThreadManager {
                     this._appendSystem(event.visionContextHint);
                 }
                 break;
-            case 'resume_failed':
+            case BridgeEventType.ResumeFailed:
                 this._appendRecovery(
                     event.message || event.text || this.assistantName + ' could not resume this session.',
                     event.detail || ''

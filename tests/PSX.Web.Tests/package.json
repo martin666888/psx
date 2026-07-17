@@ -7,10 +7,12 @@
     "test": "node --test \"test/*.test.js\"",
     "test:watch": "node --test --watch \"test/*.test.js\"",
     "pretest:coverage": "node test/buildProductionBundle.js",
-    "test:coverage": "c8 --all --allowExternal --src=../../TestResults/web/runtime --include=**/agent-production.bundle.js --reporter=text --reporter=json-summary --reporter=cobertura --reports-dir=../../TestResults/web/coverage node --test \"test/*.test.js\""
+    "test:coverage": "c8 --all --allowExternal --src=../../TestResults/web/runtime --include=**/agent-production.bundle.js --reporter=text --reporter=json-summary --reporter=cobertura --reports-dir=../../TestResults/web/coverage node --test \"test/*.test.js\"",
+    "typecheck": "tsc --project ../../jsconfig.json"
   },
   "devDependencies": {
     "c8": "12.0.0",
-    "jsdom": "29.1.1"
+    "jsdom": "29.1.1",
+    "typescript": "5.9.3"
   }
 }

@@ -77,6 +77,9 @@ function Invoke-FrontendTests {
     Invoke-Checked "Restore pinned frontend test dependencies" {
         npm.cmd ci --prefix $webProject --cache $npmCache --no-audit --no-fund
     }
+    Invoke-Checked "Type-check frontend bridge contract" {
+        npm.cmd run typecheck --prefix $webProject
+    }
     Invoke-Checked "Run frontend tests with production-code coverage" {
         npm.cmd run test:coverage --prefix $webProject
     }
