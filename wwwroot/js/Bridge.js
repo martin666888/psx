@@ -87,23 +87,27 @@ const Bridge = {
     },
 
     /**
+     * @param {string} workspaceId
      * @param {string} text
      * @param {string[]} [attachments]
      */
-    sendAgentMessage(text, attachments) {
+    sendAgentMessage(workspaceId, text, attachments) {
         this.sendToHost({
             type: BridgeSendType.AgentSubmit,
+            workspaceId: workspaceId,
             text: text,
             attachments: attachments || []
         });
     },
 
     /**
+     * @param {string} workspaceId
      * @param {AgentAttachmentUploadPayload} payload
      */
-    uploadAgentAttachment(payload) {
+    uploadAgentAttachment(workspaceId, payload) {
         this.sendToHost({
             type: BridgeSendType.AgentUploadAttachment,
+            workspaceId: workspaceId,
             clientId: payload.clientId,
             fileName: payload.fileName,
             mimeType: payload.mimeType,
@@ -113,13 +117,15 @@ const Bridge = {
     },
 
     /**
+     * @param {string} workspaceId
      * @param {string} command
      * @param {string} [value]
      * @param {string} [requestId]
      */
-    sendAgentCommand(command, value, requestId) {
+    sendAgentCommand(workspaceId, command, value, requestId) {
         this.sendToHost({
             type: BridgeSendType.AgentCommand,
+            workspaceId: workspaceId,
             command: command,
             value: value || '',
             requestId: requestId || ''
@@ -127,38 +133,64 @@ const Bridge = {
     },
 
     /**
+     * @param {string} workspaceId
      * @param {string} requestId
      * @param {string} value
      */
-    sendAgentPermissionResponse(requestId, value) {
+    sendAgentPermissionResponse(workspaceId, requestId, value) {
         this.sendToHost({
             type: BridgeSendType.AgentPermissionResponse,
+            workspaceId: workspaceId,
             requestId: requestId,
             value: value
         });
     },
 
     /**
+     * @param {string} workspaceId
      * @param {string} requestId
      * @param {string} value
      */
-    sendAgentQuestionResponse(requestId, value) {
+    sendAgentQuestionResponse(workspaceId, requestId, value) {
         this.sendToHost({
             type: BridgeSendType.AgentQuestionResponse,
+            workspaceId: workspaceId,
             requestId: requestId,
             value: value
         });
     },
 
     /**
+     * @param {string} workspaceId
      * @param {string} requestId
      * @param {string} value JSON-stringified elicitation action.
      */
-    sendAgentElicitationResponse(requestId, value) {
+    sendAgentElicitationResponse(workspaceId, requestId, value) {
         this.sendToHost({
             type: BridgeSendType.AgentElicitationResponse,
+            workspaceId: workspaceId,
             requestId: requestId,
             value: value
         });
+    },
+
+    /**
+     * @param {string} workspaceId
+     */
+    createAgentScope(workspaceId) {
+        return {
+            /** @param {string} text @param {string[]} [attachments] */
+            sendAgentMessage: (text, attachments) => this.sendAgentMessage(workspaceId, text, attachments),
+            /** @param {AgentAttachmentUploadPayload} payload */
+            uploadAgentAttachment: (payload) => this.uploadAgentAttachment(workspaceId, payload),
+            /** @param {string} command @param {string} [value] @param {string} [requestId] */
+            sendAgentCommand: (command, value, requestId) => this.sendAgentCommand(workspaceId, command, value, requestId),
+            /** @param {string} requestId @param {string} value */
+            sendAgentPermissionResponse: (requestId, value) => this.sendAgentPermissionResponse(workspaceId, requestId, value),
+            /** @param {string} requestId @param {string} value */
+            sendAgentQuestionResponse: (requestId, value) => this.sendAgentQuestionResponse(workspaceId, requestId, value),
+            /** @param {string} requestId @param {string} value */
+            sendAgentElicitationResponse: (requestId, value) => this.sendAgentElicitationResponse(workspaceId, requestId, value)
+        };
     }
 };

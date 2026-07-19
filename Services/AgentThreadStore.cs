@@ -47,30 +47,6 @@ public sealed class AgentThreadStore : IAgentThreadStore
         _indexPath = Path.Combine(RootDirectory, "agent", "index.json");
     }
 
-    public AgentThread LoadOrCreateInitialThread(string defaultWorkingDirectory)
-    {
-        EnsureDirectories();
-        var config = LoadConfig();
-        var index = PruneMissingThreads();
-
-        if (config.Agent.RestoreLastThread && !string.IsNullOrWhiteSpace(config.Agent.LastThreadId))
-        {
-            var restored = LoadThread(config.Agent.LastThreadId);
-            if (restored != null)
-                return restored;
-
-            config.Agent.LastThreadId = index.Threads.FirstOrDefault()?.ThreadId;
-            SaveConfig(config);
-        }
-
-        var cwd = !string.IsNullOrWhiteSpace(config.Agent.LastWorkingDirectory)
-                  && Directory.Exists(config.Agent.LastWorkingDirectory)
-            ? config.Agent.LastWorkingDirectory
-            : defaultWorkingDirectory;
-
-        return CreateThread(cwd);
-    }
-
     public AgentThread CreateThread(string workingDirectory)
     {
         EnsureDirectories();
@@ -138,6 +114,36 @@ public sealed class AgentThreadStore : IAgentThreadStore
         return visibleThreads;
     }
 
+    public int DeleteEmptyDrafts()
+    {
+        lock (FileIoLock)
+        {
+            EnsureDirectories();
+            var emptyThreadIds = Directory.EnumerateFiles(_threadsDirectory, "*.json")
+                .Select(Path.GetFileNameWithoutExtension)
+                .Where(threadId => !string.IsNullOrWhiteSpace(threadId))
+                .Where(threadId =>
+                {
+                    try
+                    {
+                        var thread = LoadThread(threadId!);
+                        return thread != null && IsEmptyDraft(thread);
+                    }
+                    catch
+                    {
+                        return false;
+                    }
+                })
+                .Cast<string>()
+                .ToArray();
+
+            foreach (var threadId in emptyThreadIds)
+                DeleteThreadCore(threadId);
+
+            return emptyThreadIds.Length;
+        }
+    }
+
     private AgentThread LoadThreadStrict(string threadId)
     {
         var path = GetThreadPath(threadId);
@@ -176,6 +182,12 @@ public sealed class AgentThreadStore : IAgentThreadStore
     }
 
     public void DeleteThread(string threadId)
+    {
+        lock (FileIoLock)
+            DeleteThreadCore(threadId);
+    }
+
+    private void DeleteThreadCore(string threadId)
     {
         EnsureDirectories();
         var path = GetThreadPath(threadId);

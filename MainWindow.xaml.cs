@@ -17,8 +17,9 @@ public partial class MainWindow : Window
     private readonly ITabManagementService? _tabService;
     private readonly ITerminalBridgeService? _bridgeService;
     private readonly IAgentBridgeService? _agentBridgeService;
-    private readonly IAgentSessionService? _agentSessionService;
-    private readonly IAcpAgentRuntime? _agentRuntime;
+    private readonly IAgentWorkspaceCoordinator? _agentWorkspaceCoordinator;
+    private readonly IWorkspaceManager? _workspaceManager;
+    private readonly IAgentRuntimeCoordinator? _agentRuntimeCoordinator;
     private readonly RuntimePreflightService? _preflight;
     private readonly ISettingsService? _settingsService;
     private bool _isShuttingDown;
@@ -34,8 +35,9 @@ public partial class MainWindow : Window
         ITabManagementService tabService,
         ITerminalBridgeService bridgeService,
         IAgentBridgeService agentBridgeService,
-        IAgentSessionService agentSessionService,
-        IAgentProviderRegistry providerRegistry,
+        IAgentWorkspaceCoordinator agentWorkspaceCoordinator,
+        IWorkspaceManager workspaceManager,
+        IAgentRuntimeCoordinator agentRuntimeCoordinator,
         RuntimePreflightService preflight,
         ISettingsService settingsService)
     {
@@ -45,8 +47,9 @@ public partial class MainWindow : Window
         _tabService = tabService;
         _bridgeService = bridgeService;
         _agentBridgeService = agentBridgeService;
-        _agentSessionService = agentSessionService;
-        _agentRuntime = providerRegistry.DefaultProvider.Runtime;
+        _agentWorkspaceCoordinator = agentWorkspaceCoordinator;
+        _workspaceManager = workspaceManager;
+        _agentRuntimeCoordinator = agentRuntimeCoordinator;
         _preflight = preflight;
         _settingsService = settingsService;
 
@@ -78,13 +81,6 @@ public partial class MainWindow : Window
             if (_bridgeService == null || TerminalHostControl.WebView == null)
                 return;
 
-            // Wire the default Agent runtime progress to the status bar. New installations
-            // only begin after the user confirms from Agent mode.
-            if (_agentRuntime != null)
-            {
-                _agentRuntime.StatusChanged += msg => _viewModel?.SetStatus(msg);
-            }
-
             // Run preflight before any WebView2-dependent service starts. The
             // big user-visible case here is Win10 systems without WebView2 —
             // the bootstrapper will install it (~30 seconds) and only then do
@@ -102,9 +98,9 @@ public partial class MainWindow : Window
                 await _agentBridgeService.InitializeAsync(TerminalHostControl.WebView);
             }
 
-            if (_agentSessionService != null)
+            if (_agentWorkspaceCoordinator != null)
             {
-                await _agentSessionService.PublishStateAsync();
+                await _agentWorkspaceCoordinator.PublishStateAsync();
             }
 
             await InitializeAgentRuntimeStatusAsync();
@@ -117,34 +113,28 @@ public partial class MainWindow : Window
 
     private async Task InitializeAgentRuntimeStatusAsync()
     {
-        if (_agentRuntime == null)
+        if (_agentRuntimeCoordinator == null)
             return;
 
         try
         {
-            await _agentRuntime.PrepareForStartupAsync().ConfigureAwait(false);
-            _viewModel?.SetStatus(_agentRuntime.BuildStatusText());
-
-            if (!_agentRuntime.IsReady())
-                return;
+            await _agentRuntimeCoordinator.PrepareForStartupAsync().ConfigureAwait(false);
 
             _ = Task.Run(async () =>
             {
                 try
                 {
-                    await _agentRuntime.RefreshAsync().ConfigureAwait(false);
+                    await _agentRuntimeCoordinator.RefreshReadyAsync().ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
                     System.Diagnostics.Debug.WriteLine("ACP runtime background refresh failed: " + ex);
-                    _viewModel?.SetStatus(_agentRuntime.BuildStatusText("更新失败，当前版本可继续使用，请下次重启尝试"));
                 }
             });
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine("ACP runtime status initialization failed: " + ex);
-            _viewModel?.SetStatus(_agentRuntime.BuildStatusText("更新失败，当前版本可继续使用，请下次重启尝试"));
         }
     }
 
@@ -172,7 +162,7 @@ public partial class MainWindow : Window
         });
     }
 
-    private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
+    private async void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         if (_shutdownCompleted)
             return;
@@ -184,14 +174,29 @@ public partial class MainWindow : Window
         _isShuttingDown = true;
         IsEnabled = false;
 
-        (_viewModel as IDisposable)?.Dispose();
-        (_tabService as IDisposable)?.Dispose();
-        (_bridgeService as IDisposable)?.Dispose();
-        (_agentBridgeService as IDisposable)?.Dispose();
-        (_agentSessionService as IDisposable)?.Dispose();
+        _workspaceManager?.BeginShutdown();
 
-        _shutdownCompleted = true;
-        Dispatcher.BeginInvoke(Close);
+        (_viewModel as IDisposable)?.Dispose();
+        try
+        {
+            if (_agentWorkspaceCoordinator != null)
+                await _agentWorkspaceCoordinator.ShutdownAsync().ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine("Agent Workspace shutdown failed: " + ex);
+        }
+        finally
+        {
+            (_agentWorkspaceCoordinator as IDisposable)?.Dispose();
+            (_workspaceManager as IDisposable)?.Dispose();
+            (_tabService as IDisposable)?.Dispose();
+            (_agentBridgeService as IDisposable)?.Dispose();
+            (_bridgeService as IDisposable)?.Dispose();
+
+            _shutdownCompleted = true;
+            _ = Dispatcher.BeginInvoke(Close);
+        }
     }
 
     private void OnClosed(object? sender, EventArgs e)

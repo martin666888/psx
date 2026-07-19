@@ -1,5 +1,7 @@
 class AgentThreadManager {
-    constructor(panel, thread, input, sendButton, commandMenu, meta) {
+    constructor(workspaceId, panel, thread, input, sendButton, commandMenu, meta) {
+        this.workspaceId = workspaceId;
+        this.bridge = Bridge.createAgentScope(workspaceId);
         this.panel = panel;
         this.thread = thread;
         this.input = input;
@@ -9,6 +11,7 @@ class AgentThreadManager {
         this.isBusy = false;
         this.isRestoring = false;
         this.isTranscriptOnly = false;
+        this.isDraft = true;
         this.currentTurn = null;
         this.currentAssistant = null;
         this.currentToolBody = null;
@@ -57,10 +60,9 @@ class AgentThreadManager {
         this.pendingAttachments = [];
         this.supportsImage = true;
         this.psxCommands = [
-            { source: 'PSX', name: '/new', label: 'Start a new thread', command: 'new' },
             { source: 'PSX', name: '/clear', label: 'Clear visible messages only', command: 'clear' },
             { source: 'PSX', name: '/cwd', label: 'Show current working directory', command: 'cwd' },
-            { source: 'PSX', name: '/cwd <path>', label: 'Switch cwd and start a new thread', fill: '/cwd ' },
+            { source: 'PSX', name: '/cwd <path>', label: 'Change this draft Agent working directory', fill: '/cwd ' },
             { source: 'PSX', name: '/terminal', label: 'Open raw ' + this.assistantName + ' terminal here', command: 'terminal' },
             { source: 'PSX', name: '/stop', label: 'Stop the current ' + this.assistantName + ' run', command: 'stop' },
             { source: 'PSX', name: '/history', label: 'Show saved Agent threads', command: 'history' },
@@ -178,7 +180,7 @@ class AgentThreadManager {
     }
 
     promptForWorkingDirectory() {
-        Bridge.sendAgentCommand('pick_cwd');
+        this.bridge.sendAgentCommand('pick_cwd');
     }
 
     handleEvent(event) {
@@ -200,6 +202,9 @@ class AgentThreadManager {
             case BridgeEventType.AgentHistoryError:
                 this.selectInspectorTab('history', false);
                 this._renderHistoryError(event.text || 'Unable to load Agent thread history.');
+                break;
+            case BridgeEventType.AgentHistoryInvalidated:
+                if (this.activeInspectorTab === 'history') this._refreshHistory();
                 break;
             case BridgeEventType.AgentCommands:
                 this._setAgentCommands(event.commands || [], event.ready === true);

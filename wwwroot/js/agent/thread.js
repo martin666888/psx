@@ -8,6 +8,7 @@ AgentThreadManager.prototype._updateState = function(event) {
         const status = event.status || 'ready';
         this.isRestoring = status === 'restoring';
         this.isTranscriptOnly = status === 'transcript_only';
+        this.isDraft = event.isDraft === true;
         this.isBusy = !!event.busy;
         this.supportsImage = event.supportsImage !== false;
         if ('contextUsedTokens' in event) {
@@ -18,17 +19,23 @@ AgentThreadManager.prototype._updateState = function(event) {
         this.meta.status.dataset.status = status;
         this.meta.cwd.textContent = event.cwd || 'cwd not set';
         this.meta.session.textContent = event.sessionId ? 'session ' + event.sessionId.slice(0, 8) : 'no session';
+        if (this.meta.changeCwd) {
+            this.meta.changeCwd.disabled = !this.isDraft || this.isBusy || this.isRestoring || this.isTranscriptOnly;
+            this.meta.changeCwd.title = this.isDraft
+                ? 'Change draft working directory'
+                : 'Create a new Agent tab to use another working directory';
+        }
         if (this.isRestoring) {
             this.sendButton.textContent = 'Loading';
             this.sendButton.title = 'ACP history is loading';
         } else if (this.isTranscriptOnly) {
-            this.sendButton.textContent = 'Start';
-            this.sendButton.title = 'Start a new ACP Agent thread';
+            this.sendButton.textContent = 'Read only';
+            this.sendButton.title = 'Create a new Agent tab to continue';
         } else {
             this.sendButton.textContent = this.isBusy ? 'Stop' : 'Send';
             this.sendButton.title = this.isBusy ? 'Stop ' + this.assistantName : 'Send message';
         }
-        this.sendButton.disabled = this.isRestoring || !this._runtimeReady();
+        this.sendButton.disabled = this.isRestoring || this.isTranscriptOnly || !this._runtimeReady();
         this.sendButton.classList.toggle('agent-send-stop', this.isBusy);
         if (this.meta.mode) {
             this._syncFallbackModeVisibility();
@@ -246,13 +253,9 @@ AgentThreadManager.prototype._appendRecovery = function(message, detail) {
 
             const actions = document.createElement('div');
             actions.className = 'agent-recovery-actions';
-            actions.appendChild(this._decisionButton('Start new thread', () => {
-                this.selectInspectorTab('plan', false);
-                Bridge.sendAgentCommand('new');
-            }, 'agent-btn-primary'));
             actions.appendChild(this._decisionButton(
                 'Open terminal',
-                () => Bridge.sendAgentCommand('terminal'),
+                () => this.bridge.sendAgentCommand('terminal'),
                 'agent-btn-subtle'
             ));
 

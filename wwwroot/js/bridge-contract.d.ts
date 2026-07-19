@@ -55,6 +55,7 @@ interface TerminalReadyPayload {
 
 interface AgentSubmitPayload {
     type: 'agent_submit';
+    workspaceId: string;
     text: string;
     attachments: string[];
 }
@@ -70,10 +71,12 @@ interface AgentAttachmentUploadPayload {
 
 interface AgentUploadAttachmentPayload extends AgentAttachmentUploadPayload {
     type: 'agent_upload_attachment';
+    workspaceId: string;
 }
 
 interface AgentCommandPayload {
     type: 'agent_command';
+    workspaceId: string;
     command: string;
     value: string;
     requestId: string;
@@ -81,18 +84,21 @@ interface AgentCommandPayload {
 
 interface AgentPermissionResponsePayload {
     type: 'agent_permission_response';
+    workspaceId: string;
     requestId: string;
     value: string;
 }
 
 interface AgentQuestionResponsePayload {
     type: 'agent_question_response';
+    workspaceId: string;
     requestId: string;
     value: string;
 }
 
 interface AgentElicitationResponsePayload {
     type: 'agent_elicitation_response';
+    workspaceId: string;
     requestId: string;
     value: string;
 }
@@ -119,6 +125,10 @@ type BridgeOutboundMessage =
 /** Base shape shared by all host events. */
 interface BridgeInboundMessageBase {
     type: string;
+}
+
+interface AgentWorkspaceEventBase extends BridgeInboundMessageBase {
+    workspaceId: string;
 }
 
 /** Terminal- and settings-scoped events, consumed by main.js / TerminalManager. */
@@ -152,7 +162,7 @@ interface AgentDecisionOptionPayload {
 }
 
 /** permission_request — ordinary permission prompt. */
-interface AgentPermissionRequestEvent extends BridgeInboundMessageBase {
+interface AgentPermissionRequestEvent extends AgentWorkspaceEventBase {
     type: 'permission_request';
     requestId: string;
     title?: string;
@@ -167,7 +177,7 @@ interface AgentPermissionRequestEvent extends BridgeInboundMessageBase {
  * proposal. Mode transition is a presentation variant of permission_request,
  * not a top-level event type.
  */
-interface AgentModeTransitionRequestEvent extends BridgeInboundMessageBase {
+interface AgentModeTransitionRequestEvent extends AgentWorkspaceEventBase {
     type: 'permission_request';
     presentation: 'mode_transition';
     requestId: string;
@@ -182,7 +192,7 @@ interface AgentModeTransitionRequestEvent extends BridgeInboundMessageBase {
  * back to a wide branch without requestId/presentation. (Terminal, settings
  * and paste_response host events are NOT part of the AgentEvent union by
  * design.) */
-interface AgentGenericEvent extends BridgeInboundMessageBase {
+interface AgentGenericEvent extends AgentWorkspaceEventBase {
     type:
         | 'agent_ready'
         | 'agent_state'
@@ -190,6 +200,7 @@ interface AgentGenericEvent extends BridgeInboundMessageBase {
         | 'agent_thread_loaded'
         | 'agent_threads'
         | 'agent_history_error'
+        | 'agent_history_invalidated'
         | 'agent_commands'
         | 'agent_command_rejected'
         | 'agent_modes'
@@ -219,6 +230,23 @@ interface AgentGenericEvent extends BridgeInboundMessageBase {
         | 'resume_failed'
         | 'plan_update'
         | 'raw_terminal_fallback';
+    title?: string;
+    cwd?: string;
+    status?: string;
+    busy?: boolean;
+    isDraft?: boolean;
+}
+
+interface WorkspaceHostEvent extends BridgeInboundMessageBase {
+    type:
+        | 'workspace_activated'
+        | 'agent_workspace_created'
+        | 'agent_workspace_closed'
+        | 'agent_workspace_limit_reached'
+        | 'agent_providers';
+    workspaceId?: string;
+    kind?: 'terminal' | 'agent';
+    text?: string;
 }
 
 /** Every event AgentThreadManager.handleEvent may receive. Narrowing on
@@ -232,4 +260,5 @@ type AgentEvent =
 /** Every event the C# host may post to the frontend. */
 type BridgeInboundMessage =
     | BridgeTerminalEvent
+    | WorkspaceHostEvent
     | AgentEvent;

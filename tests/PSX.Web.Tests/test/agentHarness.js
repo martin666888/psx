@@ -61,6 +61,7 @@ export function installAgentRuntime() {
   return {
     Bridge: globalThis.Bridge,
     AgentThreadManager: globalThis.AgentThreadManager,
+    WorkspaceViewManager: globalThis.WorkspaceViewManager,
     postedMessages,
     emitHostMessage(data) {
       hostListeners.forEach((listener) => listener({ data }));
@@ -69,6 +70,7 @@ export function installAgentRuntime() {
 }
 
 export function createAgentManager(AgentThreadManager) {
+  const workspaceId = '11111111-1111-4111-8111-111111111111';
   document.body.innerHTML = `
     <main id="panel">
       <section id="thread"></section>
@@ -88,6 +90,7 @@ export function createAgentManager(AgentThreadManager) {
 
   const byId = (id) => document.getElementById(id);
   const manager = new AgentThreadManager(
+    workspaceId,
     byId('panel'),
     byId('thread'),
     byId('input'),
@@ -130,6 +133,7 @@ export function createAgentManager(AgentThreadManager) {
 export function modeTransitionEvent(overrides = {}) {
   return {
     type: 'permission_request',
+    workspaceId: '11111111-1111-4111-8111-111111111111',
     presentation: 'mode_transition',
     requestId: 'request-1',
     toolCallId: 'tool-1',

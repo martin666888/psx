@@ -68,7 +68,7 @@ AgentThreadManager.prototype._refreshHistory = function() {
             this.historyScrollTop = this.historyPanel.scrollTop;
         }
         this._showHistoryState('loading', 'Loading history...');
-        Bridge.sendAgentCommand('history');
+        this.bridge.sendAgentCommand('history');
 };
 
 AgentThreadManager.prototype._renderHistory = function(threads) {
@@ -118,7 +118,7 @@ AgentThreadManager.prototype._renderHistory = function(threads) {
             row.appendChild(meta);
             row.addEventListener('click', () => {
                 this.historyScrollTop = this.historyPanel.scrollTop;
-                Bridge.sendAgentCommand('load_thread', thread.threadId || '');
+                this.bridge.sendAgentCommand('load_thread', thread.threadId || '');
             });
             list.appendChild(row);
         });

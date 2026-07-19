@@ -54,7 +54,7 @@ powershell -ExecutionPolicy Bypass -File tools/build-release.ps1
 # missing. Only explicit user confirmation runs npm ci in runtime/acp-current/.
 ```
 
-**No test project exists** — `PSX.slnx` only references the single `PSX.csproj`. There is no `dotnet test` target. Don't suggest adding tests as if infrastructure exists; it doesn't.
+**Automated tests are repository-local** — `tests/PSX.Tests` covers C# unit/integration/desktop behavior, `tests/PSX.Web.Tests` covers production frontend and bridge contracts, and the Fake Agent/npm/Desktop Probe projects cover process boundaries. Use `tools/test.ps1 -Suite Fast` during development and `-Suite Full` before release; tests must never access the user's real `%USERPROFILE%\.psx`.
 
 **SDK pinning** — `global.json` pins `9.0.300` with `rollForward: latestMajor` (allows resolving to the 10.0.x SDK). Target framework is `net10.0-windows`. Theme colors and fonts can be previewed and confirmed at runtime; other manual `psx.ini` changes still require a restart.
 
@@ -85,17 +85,17 @@ Output is batched in `Services/ConPtyService.ReadOutputLoopAsync`: `8ms` flush i
 
 `OutputPipeRead` is a `SafeFileHandle` that needs `DangerousAddRef/DangerousRelease` across the P/Invoke boundary — see `ConPtyService.cs:174, 235-238`. Don't refactor to a plain `IntPtr`.
 
-### 3. Agent uses one shared ACP engine with curated providers
+### 3. Agent uses workspace-scoped ACP engines with curated providers
 
-`AcpAgentSessionService` is the active, provider-agnostic ACP session engine registered as `IAgentSessionService`. It obtains the only active provider from `IAgentProviderRegistry.DefaultProvider`; there is intentionally no hidden switchable-provider state before an Agent selector is designed. Standard ACP session, permissions, elicitation, Plan, terminal and filesystem behavior stays in this shared engine.
+`AgentWorkspaceCoordinator` is the application-level Agent router. Every Agent Tab owns one `AcpAgentSessionService` through `IAgentWorkspaceSession`, together with an immutable Provider, Thread, ACP transport and process tree. Standard ACP session, permissions, elicitation, Plan, terminal and filesystem behavior stays in this provider-agnostic per-workspace engine.
 
-Provider identity and compatibility policy live in `IAcpAgentProvider`. Runtime installation, update and process launch descriptions live in `IAcpAgentRuntime`. `AcpJsonRpcTransport` accepts an `AcpProcessSpec` and knows only how to run a process and exchange JSON-RPC over stdio. The session service tracks `_transportProviderKey` and rebuilds the transport before using a different provider. Do not add provider-name conditionals to the shared engine.
+Provider identity and compatibility policy live in `IAcpAgentProvider`. Runtime installation, update and process launch descriptions live in `IAcpAgentRuntime`; `AgentRuntimeCoordinator` deduplicates shared runtime work while each Agent Workspace starts an independent process. `AcpJsonRpcTransport` accepts an `AcpProcessSpec` and knows only how to run a process and exchange JSON-RPC over stdio. Provider, Thread and an established session's CWD are never swapped inside a live instance. Do not add provider-name conditionals to the shared engine.
 
 `ClaudeAcpAgentProvider` is currently the only registered/default provider. It owns the `acp-claude` identity, the legacy `claude-cli` alias, command filtering, ACP session parameters and the native `claude --resume` Terminal profile. `AcpRuntimeManager` currently implements `IAcpAgentRuntime` for the bundled Node + `@agentclientprotocol/claude-agent-acp` runtime. Unknown thread providers open transcript-only and must never be restored through Claude.
 
 Agent slash commands are allowlisted. `AcpAgentSessionService` is the authoritative gate: it accepts PSX commands plus the current filtered `available_commands_update` catalog, and rejects every other leading `/command` before `session/prompt`. Keep the JS composer validation and the C# gate synchronized; inline `/text` inside a normal prompt is not a command.
 
-The Agent workspace has a resizable right-side Inspector with persistent-in-process `Plan` and `History` tabs. History is a global cross-directory thread navigator backed by `agent_threads`; it never renders into the main transcript. `agent_history_error` is an inline Inspector state, and `agent_thread_loaded.selectPlan` distinguishes new-thread navigation from loading an existing History item. Preserve each tab's DOM/scroll state and keep the active tab across Terminal/Agent view switches.
+Each Agent Workspace has its own resizable right-side Inspector with persistent-in-process `Plan` and `History` tabs. History is a global cross-directory catalog backed by `agent_threads`; opening an already-open Thread activates its existing Workspace. It never renders into the main transcript. Preserve each Workspace's composer, decisions, DOM and scroll state while its Tab is hidden.
 
 Provider identity is sent to the frontend in `agent_state` and `runtime_status`. JavaScript uses `providerKey`, `agentName` and `assistantName`, with Claude fallbacks for bridge compatibility. Keep these payloads and the frontend identity handling synchronized.
 
@@ -125,7 +125,7 @@ When `runtime/acp-current/` is missing, Agent mode publishes `runtime_status: mi
 
 4. **The `XAML brush key` ↔ `psx.ini [theme] field` ↔ `JS CSS variable` are three faces of the same color.** When you add a new color, update `Models/AppSettings.cs`, the active config and every preset, `AppearanceService`, and the matching WebView CSS variable. Eight-digit INI colors use CSS `#RRGGBBAA` semantics and are converted only when written to WPF resources.
 
-5. **The shutdown sequence is load-bearing.** `MainWindow.OnClosing` intercepts `Cancel`, disposes services in order (viewModel → tabService → bridgeService → agentBridgeService → agentSessionService), then re-issues `Close()` via `Dispatcher.BeginInvoke`. If you add a new `IDisposable` service, dispose it here **and** in `Dispose()` of the service itself, and add it to the DI registration as `AddSingleton<IXxxService, XxxService>()` in `App.ConfigureServices`.
+5. **The shutdown sequence is load-bearing.** `MainWindow.OnClosing` first marks Workspace shutdown, then disposes the view model, Agent coordinator, Workspace manager, terminal sessions and both bridges before re-issuing `Close()` via `Dispatcher.BeginInvoke`. Workspace shutdown must not create a replacement Terminal. If you add a new `IDisposable` service, preserve this ownership order and register it consistently in `App.ConfigureServices`.
 
 6. **SettingsViewModel only writes 3 fields back to `psx.ini`.** Don't add "save settings" features assuming the pipeline exists; the rest of `psx.ini` requires a manual edit + restart. `SettingsService.SaveSettings` only persists `FontSize`, `FontFamily`, `DefaultShellProfileId` (see `SettingsViewModel`'s `OnFontSizeChanged` / `OnFontFamilyChanged` / `OnDefaultShellProfileIdChanged` handlers, and `SettingsService.SaveSettings` — which atomically rewrites the whole psx.ini via a `.tmp` + `File.Move`).
 
@@ -163,7 +163,7 @@ Note: `RuntimeLocator.Locate()` resolves all install-relative paths at startup. 
 
 ## Things this codebase does NOT have (don't assume they exist)
 
-- No test project, no mocking framework, no `dotnet test` invocation
+- No real-provider network test in the automated gate; account login, quota and subjective UI checks remain manual
 - No `IConPtyService` or `IAcpJsonRpcTransport` interfaces — those concrete classes are injected directly (`App.xaml.cs:42`)
 - No CI/CD — no `.github/workflows`, no `azure-pipelines.yml`. Builds are manual.
 - Release artifacts are generated under `bin/releases/` and are not committed (`.gitignore` excludes `[Bb]in/`).

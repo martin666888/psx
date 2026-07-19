@@ -4,12 +4,12 @@ AgentThreadManager.prototype._wireRuntimeControls = function() {
 
     this.meta.runtimeInstall?.addEventListener('click', () => {
         if (this.runtimeState === 'installing' || this.runtimeState === 'ready') return;
-        Bridge.sendAgentCommand('install_runtime');
+        this.bridge.sendAgentCommand('install_runtime');
     });
 
     this.meta.runtimeCancel?.addEventListener('click', () => {
         if (this.runtimeState !== 'installing') return;
-        Bridge.sendAgentCommand('cancel_runtime_install');
+        this.bridge.sendAgentCommand('cancel_runtime_install');
     });
 
     this._syncRuntimeControls();
@@ -57,11 +57,13 @@ AgentThreadManager.prototype._runtimeReady = function() {
 
 AgentThreadManager.prototype._syncRuntimeControls = function() {
     const blocked = !this._runtimeReady();
-    this.input.disabled = blocked || this.isRestoring;
-    this.input.placeholder = blocked
+    this.input.disabled = blocked || this.isRestoring || this.isTranscriptOnly;
+    this.input.placeholder = this.isTranscriptOnly
+        ? 'Read-only transcript - create a new Agent tab to continue'
+        : blocked
         ? 'Install the Agent runtime to start messaging'
         : 'Message ' + this.assistantName + ' Agent - / for commands';
-    this.sendButton.disabled = blocked || this.isRestoring;
+    this.sendButton.disabled = blocked || this.isRestoring || this.isTranscriptOnly;
     this._syncAttachmentControls();
     this._syncConfigOptionDisabledState();
 };

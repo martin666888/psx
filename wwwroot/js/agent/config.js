@@ -79,7 +79,7 @@ AgentThreadManager.prototype._renderConfigOptions = function() {
             }
             select.addEventListener('change', () => {
                 if (select.value) {
-                    Bridge.sendAgentCommand('set_config_option', select.value, configOption.id);
+                    this.bridge.sendAgentCommand('set_config_option', select.value, configOption.id);
                 }
             });
 

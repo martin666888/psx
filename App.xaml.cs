@@ -46,6 +46,7 @@ public partial class App : Application
         services.AddSingleton<ITabManagementService, TabManagementService>();
         services.AddSingleton<IAgentBridgeService, AgentBridgeService>();
         services.AddSingleton<IAgentThreadStore, AgentThreadStore>();
+        services.AddSingleton<IAgentHistoryCatalog, AgentHistoryCatalog>();
         services.AddSingleton<IAgentDirectoryPicker, WpfAgentDirectoryPicker>();
 
         // Runtime / ACP install pipeline. RuntimeLocator remains shared by
@@ -57,10 +58,15 @@ public partial class App : Application
                 sp.GetRequiredService<RuntimeLocator>(),
                 Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "agent", "acp-logs")));
         services.AddSingleton<ClaudeAcpAgentProvider>();
+        services.AddSingleton<IAcpAgentProvider>(sp => sp.GetRequiredService<ClaudeAcpAgentProvider>());
+        services.AddSingleton(new AgentProviderOptions { DefaultProviderKey = "acp-claude" });
         services.AddSingleton<IAgentProviderRegistry, AgentProviderRegistry>();
+        services.AddSingleton<IAgentRuntimeCoordinator, AgentRuntimeCoordinator>();
         services.AddSingleton<RuntimePreflightService>();
 
-        services.AddSingleton<IAgentSessionService, AcpAgentSessionService>();
+        services.AddSingleton<IAgentWorkspaceFactory, AgentWorkspaceFactory>();
+        services.AddSingleton<IAgentWorkspaceCoordinator, AgentWorkspaceCoordinator>();
+        services.AddSingleton<IWorkspaceManager, WorkspaceManager>();
 
         // ViewModels
         services.AddTransient<MainViewModel>();

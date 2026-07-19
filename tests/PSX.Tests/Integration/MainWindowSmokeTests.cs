@@ -17,6 +17,7 @@ public sealed class MainWindowSmokeTests
         var window = new PSX.MainWindow();
 
         Assert.IsNotNull(window.FindName("TerminalHostControl"));
+        Assert.IsNotNull(window.FindName("WorkspaceTabBar"));
         Assert.IsNotNull(window.FindName("ThemeButton"));
         Assert.IsNotNull(window.FindName("ThemePopup"));
         Assert.IsNotNull(window.Content);

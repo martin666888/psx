@@ -4,9 +4,9 @@ PSX 的测试体系采用“本地优先、CI 兼容”的分层结构。自动�
 
 ## 分层结构
 
-- `tests/PSX.Tests/Unit/`：INI/Bridge JSON 解析、设置与主题路径隔离、Theme Picker 状态、ACP Permission 策略和 Mode Transition 历史合并等无副作用逻辑。
-- `tests/PSX.Tests/Integration/`：线程存储、Fake ACP JSON-RPC 传输、完整会话、权限选择、取消、历史 replay，以及 ACP runtime 安装与升级编排。
-- `tests/PSX.Web.Tests/`：使用 Node 内置测试运行器、jsdom 和 c8，加载与生产页面相同顺序的真实前端脚本（脚本顺序由 `scriptOrder.test.js` 与 `index.html` 双向核对），覆盖 Markdown、Composer、Permission、Mode Transition、Plan Inspector、桥消息常量表和终端剪贴板桥；`npm run typecheck` 额外对桥契约文件执行 `tsc --checkJs`（当前只约束 JS → C# 发送方向，C# → JS 事件类型为契约文档）。
+- `tests/PSX.Tests/Unit/`：INI/Bridge JSON 解析、设置与主题路径隔离、Theme Picker 状态、ACP Permission 策略、Mode Transition 历史合并，以及 Workspace 上限、Provider 注册冲突、Runtime 去重和关闭隔离等无副作用逻辑。
+- `tests/PSX.Tests/Integration/`：线程存储、Fake ACP JSON-RPC 传输、完整会话、权限选择、取消、历史 replay，以及 ACP runtime 安装与升级编排。多 Agent 场景使用测试内 Fake Provider/Runtime，不登录真实服务。
+- `tests/PSX.Web.Tests/`：使用 Node 内置测试运行器、jsdom 和 c8，加载与生产页面相同顺序的真实前端脚本（脚本顺序由生产 bundle 测试与 `index.html` 双向核对），覆盖 Markdown、Composer、Permission、Mode Transition、Plan Inspector、多 Workspace DOM/路由隔离、桥消息常量表和终端剪贴板桥；`npm run typecheck` 额外对桥契约文件执行 `tsc --checkJs`。
 - `tests/PSX.TestAgent/`：可控的 Fake ACP Agent，支持正常响应、通知、并发请求、超时、协议错误、权限请求、取消和历史 replay。
 - `tests/PSX.TestNpm/`：作为假 `node.exe` 启动的独立进程，模拟 npm 成功、退出码、网络错误、挂起与安装产物，验证 `AcpRuntimeManager` 而不访问 registry。
 - `tests/PSX.DesktopProbe/`：无窗口 WinExe 探针，在与正式应用相同的宿主类型下验证 ConPTY 输出、自然退出、resize 和进程树清理。
@@ -29,6 +29,8 @@ powershell -ExecutionPolicy Bypass -File tools/test.ps1 -Suite Desktop
 ```
 
 `Fast` 排除桌面探针，以降低 CI 对图形会话和 Windows 运行环境差异的敏感度；`Full` 是本机发布门禁。首次运行前端测试会通过锁文件执行 `npm ci`。npm、NuGet、.NET CLI 和临时目录都在脚本执行期间固定到 `TestResults/`，不会把测试依赖或运行数据写入用户配置目录。
+
+Workspace 自动化重点验证 Agent 与 Terminal 上限口径、`workspaceId` 桥路由、Thread 去重打开、关闭 tombstone、Provider/Runtime 扩展边界，以及多个 `AgentThreadManager` 的状态隔离。真实 Claude 登录、多进程并行对话的主观体验、900px 布局和系统进程树观察仍属于桌面人工验收。
 
 ## 结果与诊断
 

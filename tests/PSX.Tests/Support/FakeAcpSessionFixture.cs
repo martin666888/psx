@@ -16,13 +16,19 @@ internal sealed class FakeAcpSessionFixture : IDisposable
         Runtime = new FakeAcpRuntime(Workspace);
         Provider = new FakeAcpProvider(Runtime);
         Registry = new FakeAgentProviderRegistry(Provider);
+        var thread = Store.CreateThread(Workspace.Path);
+        thread.Provider = Provider.Descriptor.Key;
+        Store.SaveThread(thread);
         Service = new AcpAgentSessionService(
+            Guid.NewGuid(),
             Bridge,
             new NullTabManagementService(),
             new NullTerminalBridgeService(),
             Store,
             new NullAgentDirectoryPicker(),
-            Registry);
+            Registry,
+            Provider,
+            thread);
     }
 
     public TestWorkspace Workspace { get; }
@@ -31,7 +37,22 @@ internal sealed class FakeAcpSessionFixture : IDisposable
     public FakeAcpRuntime Runtime { get; }
     public FakeAcpProvider Provider { get; }
     public FakeAgentProviderRegistry Registry { get; }
-    public AcpAgentSessionService Service { get; }
+    public AcpAgentSessionService Service { get; private set; }
+
+    public void BindToThread(AgentThread thread)
+    {
+        Service.Dispose();
+        Service = new AcpAgentSessionService(
+            Guid.NewGuid(),
+            Bridge,
+            new NullTabManagementService(),
+            new NullTerminalBridgeService(),
+            Store,
+            new NullAgentDirectoryPicker(),
+            Registry,
+            Provider,
+            thread);
+    }
 
     public AgentThread LoadOnlyVisibleThread()
     {
@@ -67,10 +88,15 @@ internal sealed class RecordingAgentBridgeService : IAgentBridgeService
         return Task.CompletedTask;
     }
 
-    public void RaiseCommand(string command, string? requestId = null, string? value = null)
+    public void RaiseCommand(
+        string command,
+        string? requestId = null,
+        string? value = null,
+        Guid? workspaceId = null)
     {
         CommandReceived?.Invoke(this, new AgentCommandEventArgs
         {
+            WorkspaceId = workspaceId ?? Guid.Empty,
             Command = command,
             RequestId = requestId,
             Value = value
@@ -100,8 +126,12 @@ internal sealed class RecordingAgentBridgeService : IAgentBridgeService
         }
     }
 
-    public void Submit(string text) =>
-        UserMessageSubmitted?.Invoke(this, new AgentSubmitEventArgs { Text = text });
+    public void Submit(string text, Guid? workspaceId = null) =>
+        UserMessageSubmitted?.Invoke(this, new AgentSubmitEventArgs
+        {
+            WorkspaceId = workspaceId ?? Guid.Empty,
+            Text = text
+        });
 
     public void Upload(AgentAttachmentUploadEventArgs args) =>
         AttachmentUploadReceived?.Invoke(this, args);

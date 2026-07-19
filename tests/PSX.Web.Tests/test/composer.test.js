@@ -17,8 +17,8 @@ describe('Agent composer and slash commands', () => {
     manager.agentCommands = [{ name: '/review', description: 'Review' }];
 
     assert.deepEqual(
-      JSON.parse(JSON.stringify(manager._validateSubmissionCommand('/NEW', []))),
-      { allowed: true, text: '/new', psxCommand: 'new' }
+      JSON.parse(JSON.stringify(manager._validateSubmissionCommand('/CLEAR', []))),
+      { allowed: true, text: '/clear', psxCommand: 'clear' }
     );
     assert.equal(manager._validateSubmissionCommand('/REVIEW src', []).text, '/review src');
   });
@@ -31,7 +31,7 @@ describe('Agent composer and slash commands', () => {
       command: '/unknown',
       reason: 'unsupported'
     });
-    assert.equal(manager._validateSubmissionCommand('/new', [{ id: 'image-1' }]).reason, 'attachments_not_allowed');
+    assert.equal(manager._validateSubmissionCommand('/clear', [{ id: 'image-1' }]).reason, 'attachments_not_allowed');
     assert.equal(manager._validateSubmissionCommand('Explain /unknown here', []).allowed, true);
   });
 
@@ -39,7 +39,7 @@ describe('Agent composer and slash commands', () => {
     manager.input.value = '  hello agent  ';
     manager._submit();
 
-    assert.deepEqual(postedMessages.at(-1), { type: 'agent_submit', text: 'hello agent', attachments: [] });
+    assert.deepEqual(postedMessages.at(-1), { type: 'agent_submit', workspaceId: '11111111-1111-4111-8111-111111111111', text: 'hello agent', attachments: [] });
     assert.equal(manager.input.value, '');
     assert.equal(manager.lastSubmittedDraft.text, 'hello agent');
   });
@@ -49,7 +49,7 @@ describe('Agent composer and slash commands', () => {
     manager.input.value = 'must not send';
     manager._submit();
 
-    assert.deepEqual(postedMessages.at(-1), { type: 'agent_command', command: 'stop', value: '', requestId: '' });
+    assert.deepEqual(postedMessages.at(-1), { type: 'agent_command', workspaceId: '11111111-1111-4111-8111-111111111111', command: 'stop', value: '', requestId: '' });
     assert.equal(manager.input.value, 'must not send');
   });
 });

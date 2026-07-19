@@ -89,7 +89,7 @@ AgentThreadManager.prototype._appendElicitation = function(event) {
                 }
             });
 
-            Bridge.sendAgentElicitationResponse(event.requestId || '', JSON.stringify({
+            this.bridge.sendAgentElicitationResponse(event.requestId || '', JSON.stringify({
                 action: 'accept',
                 content
             }));
@@ -98,13 +98,13 @@ AgentThreadManager.prototype._appendElicitation = function(event) {
 
         actions.appendChild(this._decisionButton('Decline', () => {
             if (card.dataset.decisionState !== 'active') return;
-            Bridge.sendAgentElicitationResponse(event.requestId || '', JSON.stringify({ action: 'decline' }));
+            this.bridge.sendAgentElicitationResponse(event.requestId || '', JSON.stringify({ action: 'decline' }));
             this._disableDecisionCard(card, 'Declined.');
         }, 'agent-btn-subtle'));
 
         actions.appendChild(this._decisionButton('Cancel', () => {
             if (card.dataset.decisionState !== 'active') return;
-            Bridge.sendAgentElicitationResponse(event.requestId || '', JSON.stringify({ action: 'cancel' }));
+            this.bridge.sendAgentElicitationResponse(event.requestId || '', JSON.stringify({ action: 'cancel' }));
             this._disableDecisionCard(card, 'Cancelled.');
         }, 'agent-btn-subtle'));
 

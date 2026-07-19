@@ -169,7 +169,8 @@ public sealed class AcpAgentSessionServiceTests
         });
         fixture.Store.SaveThread(historical);
 
-        await fixture.Service.LoadThreadAsync(historical.ThreadId);
+        fixture.BindToThread(historical);
+        await fixture.Service.RestoreAsync();
         var loaded = await fixture.Bridge.WaitForEventAsync(
             "agent_thread_loaded",
             message => message.GetProperty("threadId").GetString() == historical.ThreadId
@@ -211,7 +212,8 @@ public sealed class AcpAgentSessionServiceTests
         historical.Messages.Add(new AgentMessage { Role = "assistant", Text = "Local transcript" });
         fixture.Store.SaveThread(historical);
 
-        await fixture.Service.LoadThreadAsync(historical.ThreadId);
+        fixture.BindToThread(historical);
+        await fixture.Service.RestoreAsync();
         var state = await fixture.Bridge.WaitForEventAsync(
             "agent_state",
             message => message.GetProperty("threadId").GetString() == historical.ThreadId

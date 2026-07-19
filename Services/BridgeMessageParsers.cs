@@ -29,6 +29,11 @@ internal static class AgentBridgeMessageParser
             using var document = JsonDocument.Parse(json);
             var root = document.RootElement;
             var type = GetString(root, "type");
+            if (!Guid.TryParse(GetString(root, "workspaceId"), out var workspaceId)
+                || workspaceId == Guid.Empty)
+            {
+                return false;
+            }
             switch (type)
             {
                 case "agent_submit":
@@ -38,7 +43,12 @@ internal static class AgentBridgeMessageParser
                         return false;
                     message = new AgentBridgeMessage(
                         AgentBridgeMessageKind.Submit,
-                        Submit: new AgentSubmitEventArgs { Text = text, AttachmentIds = attachments });
+                        Submit: new AgentSubmitEventArgs
+                        {
+                            WorkspaceId = workspaceId,
+                            Text = text,
+                            AttachmentIds = attachments
+                        });
                     return true;
 
                 case "agent_upload_attachment":
@@ -46,6 +56,7 @@ internal static class AgentBridgeMessageParser
                         AgentBridgeMessageKind.AttachmentUpload,
                         AttachmentUpload: new AgentAttachmentUploadEventArgs
                         {
+                            WorkspaceId = workspaceId,
                             ClientId = GetString(root, "clientId"),
                             FileName = GetString(root, "fileName"),
                             MimeType = GetString(root, "mimeType"),
@@ -62,6 +73,7 @@ internal static class AgentBridgeMessageParser
                         AgentBridgeMessageKind.Command,
                         Command: new AgentCommandEventArgs
                         {
+                            WorkspaceId = workspaceId,
                             Command = type == "agent_command" ? GetString(root, "command") : type,
                             RequestId = GetString(root, "requestId"),
                             Value = GetString(root, "value")

@@ -1,3 +1,8 @@
+#agent-workspace-container {
+    position: absolute;
+    inset: 0;
+}
+
 .agent-panel {
     position: absolute;
     inset: 0;
@@ -41,24 +46,24 @@
     font-size: 12px;
 }
 
-#agent-status {
+[data-role="status"] {
     color: var(--agent-text);
     font-weight: 700;
 }
 
-#agent-status[data-status="running"] {
+[data-role="status"][data-status="running"] {
     color: var(--agent-accent);
 }
 
-#agent-status[data-status="error"] {
+[data-role="status"][data-status="error"] {
     color: var(--agent-error);
 }
 
-#agent-status[data-status="fallback"] {
+[data-role="status"][data-status="fallback"] {
     color: var(--agent-warning);
 }
 
-#agent-cwd {
+[data-role="cwd"] {
     max-width: min(58vw, 780px);
     overflow: hidden;
     color: var(--agent-text-muted);
@@ -66,7 +71,7 @@
     white-space: nowrap;
 }
 
-#agent-session {
+[data-role="session"] {
     color: var(--agent-text-muted);
 }
 
@@ -233,7 +238,7 @@
         --agent-content-inline-padding: var(--agent-space-4);
     }
 
-    #agent-cwd {
+    [data-role="cwd"] {
         max-width: 34vw;
     }
 }

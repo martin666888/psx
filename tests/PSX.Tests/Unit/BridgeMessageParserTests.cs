@@ -7,24 +7,27 @@ namespace PSX.Tests.Unit;
 [TestCategory("Unit")]
 public sealed class AgentBridgeMessageParserTests
 {
+    private static readonly Guid WorkspaceId = Guid.Parse("9e894924-c93d-4f51-bccd-68b934d665ab");
+
     [TestMethod]
     public void TryParse_Submit_PreservesTextAndFiltersAttachmentIds()
     {
         var parsed = AgentBridgeMessageParser.TryParse(
-            """{"type":"agent_submit","text":"hello","attachments":["a","",7,"b"]}""",
+            $$"""{"type":"agent_submit","workspaceId":"{{WorkspaceId}}","text":"hello","attachments":["a","",7,"b"]}""",
             out var message);
 
         Assert.IsTrue(parsed);
         Assert.AreEqual(AgentBridgeMessageKind.Submit, message!.Kind);
         Assert.AreEqual("hello", message.Submit!.Text);
         CollectionAssert.AreEqual(new[] { "a", "b" }, message.Submit.AttachmentIds);
+        Assert.AreEqual(WorkspaceId, message.Submit.WorkspaceId);
     }
 
     [TestMethod]
     public void TryParse_SubmitWithOnlyWhitespaceAndNoAttachments_IsRejected()
     {
         Assert.IsFalse(AgentBridgeMessageParser.TryParse(
-            """{"type":"agent_submit","text":"  ","attachments":[]}""",
+            $$"""{"type":"agent_submit","workspaceId":"{{WorkspaceId}}","text":"  ","attachments":[]}""",
             out _));
     }
 
@@ -32,7 +35,7 @@ public sealed class AgentBridgeMessageParserTests
     public void TryParse_AttachmentUpload_UsesSafeDefaultsForWrongFieldTypes()
     {
         Assert.IsTrue(AgentBridgeMessageParser.TryParse(
-            """{"type":"agent_upload_attachment","clientId":"client","fileName":"a.txt","mimeType":3,"size":"bad","dataBase64":"YWJj"}""",
+            $$"""{"type":"agent_upload_attachment","workspaceId":"{{WorkspaceId}}","clientId":"client","fileName":"a.txt","mimeType":3,"size":"bad","dataBase64":"YWJj"}""",
             out var message));
 
         Assert.AreEqual(AgentBridgeMessageKind.AttachmentUpload, message!.Kind);
@@ -48,7 +51,7 @@ public sealed class AgentBridgeMessageParserTests
     public void TryParse_StructuredResponse_MapsTypeToCommand(string type)
     {
         Assert.IsTrue(AgentBridgeMessageParser.TryParse(
-            $$"""{"type":"{{type}}","requestId":"request-1","value":"choice"}""",
+            $$"""{"type":"{{type}}","workspaceId":"{{WorkspaceId}}","requestId":"request-1","value":"choice"}""",
             out var message));
 
         Assert.AreEqual(type, message!.Command!.Command);
@@ -60,10 +63,21 @@ public sealed class AgentBridgeMessageParserTests
     public void TryParse_Command_UsesExplicitCommandName()
     {
         Assert.IsTrue(AgentBridgeMessageParser.TryParse(
-            """{"type":"agent_command","command":"new_thread","value":"x"}""",
+            $$"""{"type":"agent_command","workspaceId":"{{WorkspaceId}}","command":"new_thread","value":"x"}""",
             out var message));
 
         Assert.AreEqual("new_thread", message!.Command!.Command);
+    }
+
+    [TestMethod]
+    [DataRow("")]
+    [DataRow("not-a-guid")]
+    [DataRow("00000000-0000-0000-0000-000000000000")]
+    public void TryParse_AgentMessageWithoutValidWorkspaceId_IsRejected(string workspaceId)
+    {
+        Assert.IsFalse(AgentBridgeMessageParser.TryParse(
+            $$"""{"type":"agent_command","workspaceId":"{{workspaceId}}","command":"state"}""",
+            out _));
     }
 
     [TestMethod]

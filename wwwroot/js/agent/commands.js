@@ -130,17 +130,15 @@ AgentThreadManager.prototype._applyCommand = function(command) {
         this._hideCommandMenu();
         this._resizeInput();
 
-        if (command.command === 'new') {
-            this.selectInspectorTab('plan', false);
-        } else if (command.command === 'history') {
+        if (command.command === 'history') {
             this.selectInspectorTab('history', false);
             this._showHistoryState('loading', 'Loading history...');
         }
 
         if (command.agent) {
-            Bridge.sendAgentCommand('agent_command', command.name);
+            this.bridge.sendAgentCommand('agent_command', command.name);
         } else {
-            Bridge.sendAgentCommand(command.command);
+            this.bridge.sendAgentCommand(command.command);
         }
 };
 

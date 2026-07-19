@@ -85,9 +85,9 @@ AgentThreadManager.prototype._appendDecision = function(event, kind) {
                 details.open = false;
 
                 if (kind === 'permission') {
-                    Bridge.sendAgentPermissionResponse(event.requestId || '', optionId);
+                    this.bridge.sendAgentPermissionResponse(event.requestId || '', optionId);
                 } else {
-                    Bridge.sendAgentQuestionResponse(event.requestId || '', optionId);
+                    this.bridge.sendAgentQuestionResponse(event.requestId || '', optionId);
                 }
 
                 this._disableDecisionCard(details, 'Response sent.');

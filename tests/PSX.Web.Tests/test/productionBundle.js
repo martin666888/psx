@@ -13,6 +13,7 @@ export const scriptPaths = [
   'wwwroot/js/BridgeMessages.js',
   'wwwroot/js/Bridge.js',
   'wwwroot/js/AgentThreadManager.js',
+  'wwwroot/js/WorkspaceViewManager.js',
   'wwwroot/js/agent/composer.js',
   'wwwroot/js/agent/config.js',
   'wwwroot/js/agent/commands.js',
@@ -35,7 +36,7 @@ export function buildProductionBundle() {
   const source = scriptPaths
     .map((relativePath) => fs.readFileSync(path.join(repositoryRoot, relativePath), 'utf8'))
     .join('\n;\n');
-  const bundle = `(function () {\n${source}\n;globalThis.Bridge = Bridge; globalThis.AgentThreadManager = AgentThreadManager; globalThis.BridgeSendType = BridgeSendType; globalThis.BridgeEventType = BridgeEventType;\n})();\n`;
+  const bundle = `(function () {\n${source}\n;globalThis.Bridge = Bridge; globalThis.AgentThreadManager = AgentThreadManager; globalThis.WorkspaceViewManager = WorkspaceViewManager; globalThis.BridgeSendType = BridgeSendType; globalThis.BridgeEventType = BridgeEventType;\n})();\n`;
   fs.mkdirSync(path.dirname(generatedBundlePath), { recursive: true });
   fs.writeFileSync(generatedBundlePath, bundle, 'utf8');
   return generatedBundlePath;

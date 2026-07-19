@@ -194,7 +194,7 @@ AgentThreadManager.prototype._showModeTransitionPrompt = function(event, card, i
             prompt.querySelectorAll('.agent-composer-decision-option').forEach((button) => {
                 button.disabled = true;
             });
-            Bridge.sendAgentCommand('stop');
+            this.bridge.sendAgentCommand('stop');
         });
 
         header.appendChild(heading);
@@ -235,7 +235,7 @@ AgentThreadManager.prototype._showModeTransitionPrompt = function(event, card, i
                     const cardStatus = card.querySelector('.agent-mode-transition-status');
                     if (cardStatus) cardStatus.textContent = 'Sending ' + optionName + '…';
                     status.textContent = 'Sending ' + optionName + '…';
-                    Bridge.sendAgentPermissionResponse(requestId, optionId);
+                    this.bridge.sendAgentPermissionResponse(requestId, optionId);
                 });
 
                 actions.appendChild(button);

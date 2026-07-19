@@ -6,13 +6,13 @@ describe('WebView bridge', () => {
   it('sends permission and command payloads without changing ACP identifiers', () => {
     const { Bridge, postedMessages } = installAgentRuntime();
 
-    Bridge.sendAgentPermissionResponse('request-9', 'bypassPermissions');
-    Bridge.sendAgentCommand('set_config_option', 'plan', 'mode');
+    Bridge.sendAgentPermissionResponse('workspace-1', 'request-9', 'bypassPermissions');
+    Bridge.sendAgentCommand('workspace-1', 'set_config_option', 'plan', 'mode');
     Bridge.sendPasteRequest('session-1', 'paste-1');
 
     assert.deepEqual(postedMessages, [
-      { type: 'agent_permission_response', requestId: 'request-9', value: 'bypassPermissions' },
-      { type: 'agent_command', command: 'set_config_option', value: 'plan', requestId: 'mode' },
+      { type: 'agent_permission_response', workspaceId: 'workspace-1', requestId: 'request-9', value: 'bypassPermissions' },
+      { type: 'agent_command', workspaceId: 'workspace-1', command: 'set_config_option', value: 'plan', requestId: 'mode' },
       { type: 'paste_request', sessionId: 'session-1', requestId: 'paste-1' }
     ]);
   });

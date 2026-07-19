@@ -118,7 +118,7 @@ AgentThreadManager.prototype._uploadAttachmentFile = function(file) {
         reader.onload = () => {
             const dataUrl = String(reader.result || '');
             const comma = dataUrl.indexOf(',');
-            Bridge.uploadAgentAttachment({
+            this.bridge.uploadAgentAttachment({
                 clientId,
                 fileName: item.fileName,
                 mimeType: item.mimeType,
@@ -304,7 +304,7 @@ AgentThreadManager.prototype._hideImagePreview = function() {
 
 AgentThreadManager.prototype._syncAttachmentControls = function() {
         if (!this.meta.attachButton) return;
-        this.meta.attachButton.disabled = !this._runtimeReady() || !this.supportsImage || this.isBusy || this.isRestoring;
+        this.meta.attachButton.disabled = !this._runtimeReady() || !this.supportsImage || this.isBusy || this.isRestoring || this.isTranscriptOnly;
         this.meta.attachButton.title = this.supportsImage
             ? (this._runtimeReady() ? 'Attach images' : 'Install the Agent runtime before attaching images')
             : 'Current ACP Agent does not support image input';

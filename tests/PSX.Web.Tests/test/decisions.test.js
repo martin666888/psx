@@ -27,7 +27,7 @@ describe('Permission and mode transition UI', () => {
     const buttons = [...manager.thread.querySelectorAll('.agent-decision-actions button')];
     assert.deepEqual(buttons.map((button) => button.textContent), ['Allow once', 'Reject']);
     buttons[0].click();
-    assert.deepEqual(postedMessages.at(-1), { type: 'agent_permission_response', requestId: 'permission-1', value: 'once' });
+    assert.deepEqual(postedMessages.at(-1), { type: 'agent_permission_response', workspaceId: '11111111-1111-4111-8111-111111111111', requestId: 'permission-1', value: 'once' });
     assert.equal(buttons.every((button) => button.disabled), true);
   });
 
@@ -51,7 +51,7 @@ describe('Permission and mode transition UI', () => {
 
     buttons[0].click();
 
-    assert.deepEqual(postedMessages.at(-1), { type: 'agent_permission_response', requestId: 'request-1', value: 'approve' });
+    assert.deepEqual(postedMessages.at(-1), { type: 'agent_permission_response', workspaceId: '11111111-1111-4111-8111-111111111111', requestId: 'request-1', value: 'approve' });
     assert.equal(card.dataset.decisionState, 'sending');
     assert.equal(buttons.every((button) => button.disabled), true);
   });

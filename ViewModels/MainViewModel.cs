@@ -8,14 +8,13 @@ namespace PSX.ViewModels;
 
 public partial class MainViewModel : ObservableObject, IDisposable
 {
-    private readonly ITabManagementService _tabManagementService;
-    private readonly ITerminalBridgeService _terminalBridgeService;
-    private bool _isCreatingReplacementTab;
+    private readonly IWorkspaceManager _workspaceManager;
     private bool _disposed;
     private string? _routineStatus;
     private string? _persistentWarning;
 
     public ObservableCollection<TabItemViewModel> Tabs { get; } = new();
+    public ObservableCollection<AgentProviderChoiceViewModel> AgentProviders { get; } = new();
     public ThemePickerViewModel ThemePicker { get; }
 
     [ObservableProperty]
@@ -69,18 +68,17 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private TabItemViewModel? _activeTab;
 
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsTerminalView))]
-    [NotifyPropertyChangedFor(nameof(IsAgentView))]
-    private string _activeViewMode = "terminal";
-
-    public bool IsTerminalView => string.Equals(ActiveViewMode, "terminal", StringComparison.OrdinalIgnoreCase);
-    public bool IsAgentView => string.Equals(ActiveViewMode, "agent", StringComparison.OrdinalIgnoreCase);
-
     [RelayCommand]
     private void NewTab()
     {
-        _ = _tabManagementService.CreateTabAsync();
+        _ = _workspaceManager.CreateTerminalAsync();
+    }
+
+    [RelayCommand]
+    private void NewAgent(string providerKey)
+    {
+        if (!string.IsNullOrWhiteSpace(providerKey))
+            _ = _workspaceManager.CreateAgentAsync(providerKey);
     }
 
     [RelayCommand]
@@ -89,7 +87,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (sessionId == Guid.Empty)
             return;
 
-        _ = _tabManagementService.CloseTabAsync(sessionId);
+        _ = _workspaceManager.CloseAsync(sessionId);
     }
 
     [RelayCommand]
@@ -102,22 +100,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (tab != null)
         {
             ActiveTab = tab;
-            _ = _tabManagementService.SwitchTabAsync(sessionId);
+            _ = _workspaceManager.ActivateAsync(sessionId);
         }
-    }
-
-    [RelayCommand]
-    private void ShowTerminal()
-    {
-        ActiveViewMode = "terminal";
-        _ = _terminalBridgeService.SetViewModeAsync("terminal");
-    }
-
-    [RelayCommand]
-    private void ShowAgent()
-    {
-        ActiveViewMode = "agent";
-        _ = _terminalBridgeService.SetViewModeAsync("agent");
     }
 
     partial void OnActiveTabChanged(TabItemViewModel? oldValue, TabItemViewModel? newValue)
@@ -129,21 +113,26 @@ public partial class MainViewModel : ObservableObject, IDisposable
     }
 
     public MainViewModel(
-        ITabManagementService tabManagementService,
-        ITerminalBridgeService terminalBridgeService,
+        IWorkspaceManager workspaceManager,
         ThemePickerViewModel themePicker)
     {
-        _tabManagementService = tabManagementService;
-        _terminalBridgeService = terminalBridgeService;
+        _workspaceManager = workspaceManager;
         ThemePicker = themePicker;
 
-        _tabManagementService.TabCreated += OnTabCreated;
-        _tabManagementService.TabClosed += OnTabClosed;
-        _tabManagementService.TabTitleChanged += OnTabTitleChanged;
-        _terminalBridgeService.ViewModeChanged += OnViewModeChanged;
+        foreach (var provider in workspaceManager.AgentProviders)
+        {
+            AgentProviders.Add(new AgentProviderChoiceViewModel(
+                provider.Key,
+                provider.DisplayName));
+        }
+
+        _workspaceManager.WorkspaceCreated += OnWorkspaceCreated;
+        _workspaceManager.WorkspaceClosed += OnWorkspaceClosed;
+        _workspaceManager.WorkspaceChanged += OnWorkspaceChanged;
+        _workspaceManager.WorkspaceActivationRequested += OnWorkspaceActivationRequested;
     }
 
-    private void OnTabCreated(object? sender, TabCreatedEventArgs e)
+    private void OnWorkspaceCreated(object? sender, WorkspaceEventArgs e)
     {
         if (_disposed) return;
 
@@ -151,15 +140,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
         {
             if (_disposed) return;
 
-            _isCreatingReplacementTab = false;
-
-            var tab = new TabItemViewModel(e.SessionId, e.Title, CloseTabCommand);
+            var tab = new TabItemViewModel(e.Workspace, CloseTabCommand);
             Tabs.Add(tab);
             ActiveTab = tab;
         });
     }
 
-    private void OnTabClosed(object? sender, TabClosedEventArgs e)
+    private void OnWorkspaceClosed(object? sender, WorkspaceClosedEventArgs e)
     {
         if (_disposed) return;
 
@@ -167,37 +154,18 @@ public partial class MainViewModel : ObservableObject, IDisposable
         {
             if (_disposed) return;
 
-            var tab = Tabs.FirstOrDefault(t => t.SessionId == e.SessionId);
-            var wasActive = ActiveTab?.SessionId == e.SessionId;
-            var removedIndex = tab != null ? Tabs.IndexOf(tab) : -1;
-
+            var tab = Tabs.FirstOrDefault(t => t.SessionId == e.WorkspaceId);
             if (tab != null)
             {
                 Tabs.Remove(tab);
             }
 
-            // If all tabs are closed, create a new default one
-            if (Tabs.Count == 0 && !_isCreatingReplacementTab)
-            {
-                _isCreatingReplacementTab = true;
-                _ = _tabManagementService.CreateTabAsync();
-            }
-            else if (wasActive || ActiveTab == null)
-            {
-                var nextIndex = removedIndex >= 0
-                    ? Math.Min(removedIndex, Tabs.Count - 1)
-                    : Tabs.Count - 1;
-
-                ActiveTab = nextIndex >= 0 ? Tabs[nextIndex] : null;
-                if (ActiveTab != null)
-                {
-                    _ = _tabManagementService.SwitchTabAsync(ActiveTab.SessionId);
-                }
-            }
+            if (ActiveTab?.SessionId == e.WorkspaceId)
+                ActiveTab = null;
         });
     }
 
-    private void OnTabTitleChanged(object? sender, TabTitleChangedEventArgs e)
+    private void OnWorkspaceChanged(object? sender, WorkspaceEventArgs e)
     {
         if (_disposed) return;
 
@@ -205,22 +173,22 @@ public partial class MainViewModel : ObservableObject, IDisposable
         {
             if (_disposed) return;
 
-            var tab = Tabs.FirstOrDefault(t => t.SessionId == e.SessionId);
+            var tab = Tabs.FirstOrDefault(t => t.SessionId == e.Workspace.WorkspaceId);
             if (tab != null)
             {
-                tab.Title = e.Title;
+                tab.Update(e.Workspace);
             }
         });
     }
 
-    private void OnViewModeChanged(object? sender, string mode)
+    private void OnWorkspaceActivationRequested(object? sender, Guid workspaceId)
     {
         if (_disposed) return;
 
         System.Windows.Application.Current.Dispatcher.BeginInvoke(() =>
         {
             if (_disposed) return;
-            ActiveViewMode = mode;
+            ActiveTab = Tabs.FirstOrDefault(tab => tab.SessionId == workspaceId) ?? ActiveTab;
         });
     }
 
@@ -229,9 +197,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (_disposed) return;
         _disposed = true;
 
-        _tabManagementService.TabCreated -= OnTabCreated;
-        _tabManagementService.TabClosed -= OnTabClosed;
-        _tabManagementService.TabTitleChanged -= OnTabTitleChanged;
-        _terminalBridgeService.ViewModeChanged -= OnViewModeChanged;
+        _workspaceManager.WorkspaceCreated -= OnWorkspaceCreated;
+        _workspaceManager.WorkspaceClosed -= OnWorkspaceClosed;
+        _workspaceManager.WorkspaceChanged -= OnWorkspaceChanged;
+        _workspaceManager.WorkspaceActivationRequested -= OnWorkspaceActivationRequested;
     }
 }
+
+public sealed record AgentProviderChoiceViewModel(string Key, string DisplayName);

@@ -10,6 +10,23 @@ namespace PSX.Tests.Integration;
 public sealed class AgentThreadStoreTests
 {
     [TestMethod]
+    public void DeleteEmptyDrafts_RemovesOnlyOrphanDraftFiles()
+    {
+        using var temporaryDirectory = TestWorkspace.Create(nameof(DeleteEmptyDrafts_RemovesOnlyOrphanDraftFiles));
+        var store = new AgentThreadStore(temporaryDirectory.Path);
+        var draft = store.CreateThread(temporaryDirectory.Path);
+        var visible = store.CreateThread(temporaryDirectory.Path);
+        visible.Messages.Add(new AgentMessage { Role = "user", Text = "keep" });
+        store.SaveThread(visible);
+
+        var removed = store.DeleteEmptyDrafts();
+
+        Assert.AreEqual(1, removed);
+        Assert.IsNull(store.LoadThread(draft.ThreadId));
+        Assert.IsNotNull(store.LoadThread(visible.ThreadId));
+    }
+
+    [TestMethod]
     public void ThinkingNormalization_RemainsStableAcrossSaveAndReload()
     {
         using var temporaryDirectory = TestWorkspace.Create(nameof(ThinkingNormalization_RemainsStableAcrossSaveAndReload));

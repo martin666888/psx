@@ -32,9 +32,9 @@ AgentThreadManager.prototype._wireModeControl = function() {
             const value = this.meta.mode.value;
             if (value) {
                 if (this._hasConfigOption('mode')) {
-                    Bridge.sendAgentCommand('set_config_option', value, 'mode');
+                    this.bridge.sendAgentCommand('set_config_option', value, 'mode');
                 } else {
-                    Bridge.sendAgentCommand('set_mode', value);
+                    this.bridge.sendAgentCommand('set_mode', value);
                 }
             }
         });
@@ -50,13 +50,11 @@ AgentThreadManager.prototype._submit = function() {
         }
 
         if (this.isTranscriptOnly) {
-            this.selectInspectorTab('plan', false);
-            Bridge.sendAgentCommand('new');
             return;
         }
 
         if (this.isBusy) {
-            Bridge.sendAgentCommand('stop');
+            this.bridge.sendAgentCommand('stop');
             return;
         }
 
@@ -69,9 +67,7 @@ AgentThreadManager.prototype._submit = function() {
             return;
         }
         text = commandValidation.text;
-        if (commandValidation.psxCommand === 'new') {
-            this.selectInspectorTab('plan', false);
-        } else if (commandValidation.psxCommand === 'history') {
+        if (commandValidation.psxCommand === 'history') {
             this.selectInspectorTab('history', false);
             this._showHistoryState('loading', 'Loading history...');
         }
@@ -87,7 +83,7 @@ AgentThreadManager.prototype._submit = function() {
             text,
             attachments: this.pendingAttachments.slice()
         };
-        Bridge.sendAgentMessage(text, attachmentIds);
+        this.bridge.sendAgentMessage(text, attachmentIds);
         this._clearPendingAttachments();
 };
 
