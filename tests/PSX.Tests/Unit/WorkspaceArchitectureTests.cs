@@ -296,6 +296,91 @@ public sealed class AgentWorkspaceCoordinatorTests
 
         Assert.IsEmpty(coordinator.Workspaces);
     }
+
+    [TestMethod]
+    public async Task RuntimeStatus_OnlyPublishesForActiveWorkspaceAndRestoresCachedMessage()
+    {
+        using var workspace = TestWorkspace.Create(nameof(RuntimeStatus_OnlyPublishesForActiveWorkspaceAndRestoresCachedMessage));
+        var store = new AgentThreadStore(Path.Combine(workspace.Path, "store"));
+        var bridge = new RecordingAgentBridgeService();
+        var firstRuntime = new CountingRuntime(workspace.Path);
+        var secondRuntime = new CountingRuntime(workspace.Path);
+        var firstProvider = new TestProvider("first", "First Agent", firstRuntime, []);
+        var secondProvider = new TestProvider("second", "Second Agent", secondRuntime, []);
+        var registry = new AgentProviderRegistry(
+            [firstProvider, secondProvider],
+            new AgentProviderOptions { DefaultProviderKey = "first" });
+        using var history = new AgentHistoryCatalog();
+        var factory = new AgentWorkspaceFactory(
+            bridge,
+            new NullTabManagementService(),
+            new NullTerminalBridgeService(),
+            store,
+            new NullAgentDirectoryPicker(),
+            registry);
+        using var coordinator = new AgentWorkspaceCoordinator(
+            bridge, store, registry, factory, history);
+        var statuses = new List<ActiveRuntimeStatusChangedEventArgs>();
+        coordinator.ActiveRuntimeStatusChanged += (_, args) => statuses.Add(args);
+
+        var firstWorkspace = (await coordinator.CreateAsync("first", workspace.Path))!.Value;
+        var secondWorkspace = (await coordinator.CreateAsync("second", workspace.Path))!.Value;
+        statuses.Clear();
+
+        await coordinator.ActivateAsync(firstWorkspace);
+        firstRuntime.PublishStatus("ACP 1.0 · checking updates");
+        secondRuntime.PublishStatus("ACP 2.0 · ready");
+
+        Assert.AreEqual(firstWorkspace, statuses.Last().WorkspaceId);
+        Assert.AreEqual("First Agent", statuses.Last().ProviderDisplayName);
+        Assert.AreEqual("ACP 1.0 · checking updates", statuses.Last().Message);
+
+        await coordinator.ActivateAsync(secondWorkspace);
+
+        Assert.AreEqual(secondWorkspace, statuses.Last().WorkspaceId);
+        Assert.AreEqual("Second Agent", statuses.Last().ProviderDisplayName);
+        Assert.AreEqual("ACP 2.0 · ready", statuses.Last().Message);
+
+        var statusCountBeforeInactiveUpdate = statuses.Count;
+        firstRuntime.PublishStatus("ACP 1.1 · updated");
+
+        Assert.HasCount(statusCountBeforeInactiveUpdate, statuses);
+    }
+
+    [TestMethod]
+    public async Task DeactivateRuntimeStatus_ClearsActiveStatusAndSuppressesLaterRuntimeUpdates()
+    {
+        using var workspace = TestWorkspace.Create(nameof(DeactivateRuntimeStatus_ClearsActiveStatusAndSuppressesLaterRuntimeUpdates));
+        var store = new AgentThreadStore(Path.Combine(workspace.Path, "store"));
+        var bridge = new RecordingAgentBridgeService();
+        var runtime = new CountingRuntime(workspace.Path);
+        var provider = new TestProvider("test", "Test Agent", runtime, []);
+        var registry = new AgentProviderRegistry(
+            [provider],
+            new AgentProviderOptions { DefaultProviderKey = "test" });
+        using var history = new AgentHistoryCatalog();
+        var factory = new AgentWorkspaceFactory(
+            bridge,
+            new NullTabManagementService(),
+            new NullTerminalBridgeService(),
+            store,
+            new NullAgentDirectoryPicker(),
+            registry);
+        using var coordinator = new AgentWorkspaceCoordinator(
+            bridge, store, registry, factory, history);
+        var statuses = new List<ActiveRuntimeStatusChangedEventArgs>();
+        coordinator.ActiveRuntimeStatusChanged += (_, args) => statuses.Add(args);
+
+        _ = await coordinator.CreateAsync("test", workspace.Path);
+        runtime.PublishStatus("ACP 1.0 · ready");
+        coordinator.DeactivateRuntimeStatus();
+        var statusCountAfterDeactivation = statuses.Count;
+        runtime.PublishStatus("ACP 1.1 · checking updates");
+
+        Assert.IsNull(statuses.Last().WorkspaceId);
+        Assert.IsNull(statuses.Last().Message);
+        Assert.HasCount(statusCountAfterDeactivation, statuses);
+    }
 }
 
 [TestClass]
@@ -321,6 +406,19 @@ public sealed class WorkspaceManagerTests
 
         Assert.IsEmpty(manager.Workspaces);
         Assert.AreEqual(2, terminals.CreateCount);
+    }
+
+    [TestMethod]
+    public async Task ActivateAsync_TerminalClearsAgentRuntimeStatus()
+    {
+        var terminals = new RecordingTabManagementService();
+        using var agents = new StubAgentWorkspaceCoordinator();
+        var bridge = new RecordingAgentBridgeService();
+        using var manager = new WorkspaceManager(terminals, agents, bridge);
+
+        _ = await manager.CreateTerminalAsync();
+
+        Assert.AreEqual(1, agents.DeactivateRuntimeStatusCount);
     }
 }
 
@@ -361,7 +459,7 @@ internal sealed class TestProvider(
 
 internal sealed class CountingRuntime(string root) : IAcpAgentRuntime
 {
-    public event Action<string>? StatusChanged { add { } remove { } }
+    public event Action<string>? StatusChanged;
     public int PrepareCount { get; private set; }
     public int RefreshCount { get; private set; }
     public int ProcessSpecCount { get; private set; }
@@ -390,6 +488,7 @@ internal sealed class CountingRuntime(string root) : IAcpAgentRuntime
         };
     }
     public void Dispose() { }
+    public void PublishStatus(string status) => StatusChanged?.Invoke(status);
 }
 
 internal sealed class RecordingTabManagementService : ITabManagementService
@@ -420,15 +519,18 @@ internal sealed class RecordingTabManagementService : ITabManagementService
 
 internal sealed class StubAgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
 {
+    public int DeactivateRuntimeStatusCount { get; private set; }
     public IReadOnlyList<WorkspaceDescriptor> Workspaces => Array.Empty<WorkspaceDescriptor>();
     public IReadOnlyList<AgentProviderCatalogItem> ProviderCatalog => Array.Empty<AgentProviderCatalogItem>();
     public event EventHandler<AgentWorkspaceEventArgs>? WorkspaceCreated { add { } remove { } }
     public event EventHandler<AgentWorkspaceEventArgs>? WorkspaceChanged { add { } remove { } }
     public event EventHandler<AgentWorkspaceClosedEventArgs>? WorkspaceClosed { add { } remove { } }
     public event EventHandler<Guid>? WorkspaceActivationRequested { add { } remove { } }
+    public event EventHandler<ActiveRuntimeStatusChangedEventArgs>? ActiveRuntimeStatusChanged { add { } remove { } }
     public Task<Guid?> CreateAsync(string providerKey, string? workingDirectory = null) => Task.FromResult<Guid?>(null);
     public Task<Guid?> OpenThreadAsync(string threadId) => Task.FromResult<Guid?>(null);
     public Task ActivateAsync(Guid workspaceId) => Task.CompletedTask;
+    public void DeactivateRuntimeStatus() => DeactivateRuntimeStatusCount++;
     public Task CloseAsync(Guid workspaceId, WorkspaceCloseReason reason) => Task.CompletedTask;
     public Task ShutdownAsync() => Task.CompletedTask;
     public Guid? FindOpenThread(string threadId) => null;

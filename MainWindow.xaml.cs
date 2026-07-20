@@ -53,6 +53,8 @@ public partial class MainWindow : Window
         _preflight = preflight;
         _settingsService = settingsService;
 
+        _agentWorkspaceCoordinator.ActiveRuntimeStatusChanged += OnActiveRuntimeStatusChanged;
+
         DataContext = _viewModel;
 
         Loaded += OnLoaded;
@@ -138,6 +140,16 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OnActiveRuntimeStatusChanged(object? sender, ActiveRuntimeStatusChangedEventArgs e)
+    {
+        var message = string.IsNullOrWhiteSpace(e.Message)
+            ? null
+            : string.IsNullOrWhiteSpace(e.ProviderDisplayName)
+                ? e.Message
+                : $"{e.ProviderDisplayName} · {e.Message}";
+        _viewModel?.SetStatus(message);
+    }
+
     private async Task RunPreflightAsync(RuntimePreflightService preflight)
     {
         var statuses = preflight.CheckAll();
@@ -176,6 +188,8 @@ public partial class MainWindow : Window
 
         _workspaceManager?.BeginShutdown();
 
+        if (_agentWorkspaceCoordinator != null)
+            _agentWorkspaceCoordinator.ActiveRuntimeStatusChanged -= OnActiveRuntimeStatusChanged;
         (_viewModel as IDisposable)?.Dispose();
         try
         {

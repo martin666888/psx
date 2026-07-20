@@ -35,6 +35,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         System.Windows.Application.Current.Dispatcher.BeginInvoke(() =>
         {
             if (_disposed) return;
+            // Routine status follows the active workspace's runtime. Persistent
+            // startup warnings still take precedence in RefreshStatusMessage.
             _routineStatus = message;
             RefreshStatusMessage();
         });

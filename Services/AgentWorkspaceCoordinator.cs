@@ -15,6 +15,19 @@ public sealed class AgentWorkspaceClosedEventArgs : EventArgs
     public Guid WorkspaceId { get; init; }
 }
 
+/// <summary>
+/// The runtime status that belongs to the currently active Agent Workspace.
+/// A null WorkspaceId and Message clear the native status bar, for example
+/// when the user switches to a Terminal Workspace.
+/// </summary>
+public sealed class ActiveRuntimeStatusChangedEventArgs : EventArgs
+{
+    public Guid? WorkspaceId { get; init; }
+    public string? ProviderKey { get; init; }
+    public string? ProviderDisplayName { get; init; }
+    public string? Message { get; init; }
+}
+
 public interface IAgentWorkspaceCoordinator : IDisposable
 {
     IReadOnlyList<WorkspaceDescriptor> Workspaces { get; }
@@ -22,6 +35,7 @@ public interface IAgentWorkspaceCoordinator : IDisposable
     Task<Guid?> CreateAsync(string providerKey, string? workingDirectory = null);
     Task<Guid?> OpenThreadAsync(string threadId);
     Task ActivateAsync(Guid workspaceId);
+    void DeactivateRuntimeStatus();
     Task CloseAsync(Guid workspaceId, WorkspaceCloseReason reason);
     Task ShutdownAsync();
     Guid? FindOpenThread(string threadId);
@@ -31,6 +45,7 @@ public interface IAgentWorkspaceCoordinator : IDisposable
     event EventHandler<AgentWorkspaceEventArgs>? WorkspaceChanged;
     event EventHandler<AgentWorkspaceClosedEventArgs>? WorkspaceClosed;
     event EventHandler<Guid>? WorkspaceActivationRequested;
+    event EventHandler<ActiveRuntimeStatusChangedEventArgs>? ActiveRuntimeStatusChanged;
 }
 
 public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
@@ -48,6 +63,12 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
         public bool Closing { get; set; }
     }
 
+    private sealed class RuntimeStatusSubscription
+    {
+        public required IAcpAgentRuntime Runtime { get; init; }
+        public required Action<string> Handler { get; init; }
+    }
+
     private readonly IAgentBridgeService _rootBridge;
     private readonly IAgentThreadStore _threadStore;
     private readonly IAgentProviderRegistry _providerRegistry;
@@ -57,6 +78,11 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
     private readonly ConcurrentDictionary<Guid, Entry> _entries = new();
     private readonly ConcurrentDictionary<string, Guid> _openThreads = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _shutdownLock = new();
+    private readonly object _runtimeStatusLock = new();
+    private readonly List<RuntimeStatusSubscription> _runtimeStatusSubscriptions = [];
+    private readonly Dictionary<IAcpAgentRuntime, string?> _runtimeStatusMessages =
+        new(ReferenceEqualityComparer.Instance);
+    private Guid? _activeAgentWorkspaceId;
     private Task? _shutdownTask;
     private bool _disposed;
 
@@ -79,6 +105,7 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
         _rootBridge.CommandReceived += OnCommand;
         _rootBridge.AttachmentUploadReceived += OnUpload;
         _historyCatalog.Invalidated += OnHistoryInvalidated;
+        SubscribeRuntimeStatusEvents();
     }
 
     public IReadOnlyList<WorkspaceDescriptor> Workspaces =>
@@ -95,6 +122,7 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
     public event EventHandler<AgentWorkspaceEventArgs>? WorkspaceChanged;
     public event EventHandler<AgentWorkspaceClosedEventArgs>? WorkspaceClosed;
     public event EventHandler<Guid>? WorkspaceActivationRequested;
+    public event EventHandler<ActiveRuntimeStatusChangedEventArgs>? ActiveRuntimeStatusChanged;
 
     public async Task<Guid?> CreateAsync(string providerKey, string? workingDirectory = null)
     {
@@ -236,6 +264,10 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
         if (!_entries.TryGetValue(workspaceId, out var entry) || entry.Closing)
             return Task.CompletedTask;
 
+        lock (_runtimeStatusLock)
+            _activeAgentWorkspaceId = workspaceId;
+
+        PublishActiveRuntimeStatus(entry);
         WorkspaceActivationRequested?.Invoke(this, workspaceId);
         return _rootBridge.SendEventAsync(new
         {
@@ -245,10 +277,30 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
         });
     }
 
+    public void DeactivateRuntimeStatus()
+    {
+        lock (_runtimeStatusLock)
+            _activeAgentWorkspaceId = null;
+
+        ActiveRuntimeStatusChanged?.Invoke(this, new ActiveRuntimeStatusChangedEventArgs());
+    }
+
     public async Task CloseAsync(Guid workspaceId, WorkspaceCloseReason reason)
     {
         if (!_entries.TryGetValue(workspaceId, out var entry) || entry.Closing)
             return;
+
+        var wasActive = false;
+        lock (_runtimeStatusLock)
+        {
+            if (_activeAgentWorkspaceId == workspaceId)
+            {
+                _activeAgentWorkspaceId = null;
+                wasActive = true;
+            }
+        }
+        if (wasActive)
+            ActiveRuntimeStatusChanged?.Invoke(this, new ActiveRuntimeStatusChangedEventArgs());
 
         entry.Closing = true;
         _entries.TryRemove(workspaceId, out _);
@@ -450,6 +502,88 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
             _ = entry.EventSink.SendEventAsync(new { type = "agent_history_invalidated" });
     }
 
+    private void SubscribeRuntimeStatusEvents()
+    {
+        var subscribedRuntimes = new HashSet<IAcpAgentRuntime>(ReferenceEqualityComparer.Instance);
+        foreach (var provider in _providerRegistry.Providers)
+        {
+            var runtime = provider.Runtime;
+            if (!subscribedRuntimes.Add(runtime))
+                continue;
+
+            Action<string> handler = message => OnRuntimeStatusChanged(runtime, message);
+            runtime.StatusChanged += handler;
+            _runtimeStatusSubscriptions.Add(new RuntimeStatusSubscription
+            {
+                Runtime = runtime,
+                Handler = handler
+            });
+        }
+    }
+
+    private void OnRuntimeStatusChanged(IAcpAgentRuntime runtime, string message)
+    {
+        Entry? activeEntry = null;
+        lock (_runtimeStatusLock)
+        {
+            _runtimeStatusMessages[runtime] = message;
+            if (_activeAgentWorkspaceId is { } activeWorkspaceId
+                && _entries.TryGetValue(activeWorkspaceId, out var entry)
+                && !entry.Closing
+                && UsesRuntime(entry, runtime))
+            {
+                activeEntry = entry;
+            }
+        }
+
+        if (activeEntry != null)
+            PublishActiveRuntimeStatus(activeEntry);
+    }
+
+    private void PublishActiveRuntimeStatus(Entry entry)
+    {
+        var provider = _providerRegistry.Find(entry.Descriptor.ProviderKey);
+        if (provider == null)
+        {
+            ActiveRuntimeStatusChanged?.Invoke(this, new ActiveRuntimeStatusChangedEventArgs());
+            return;
+        }
+
+        string? message;
+        lock (_runtimeStatusLock)
+        {
+            if (!_runtimeStatusMessages.TryGetValue(provider.Runtime, out message))
+                message = TryBuildRuntimeStatusText(provider.Runtime);
+        }
+
+        ActiveRuntimeStatusChanged?.Invoke(this, new ActiveRuntimeStatusChangedEventArgs
+        {
+            WorkspaceId = entry.Descriptor.WorkspaceId,
+            ProviderKey = entry.Descriptor.ProviderKey,
+            ProviderDisplayName = entry.Descriptor.ProviderName ?? provider.Descriptor.DisplayName,
+            Message = message
+        });
+    }
+
+    private bool UsesRuntime(Entry entry, IAcpAgentRuntime runtime)
+    {
+        var provider = _providerRegistry.Find(entry.Descriptor.ProviderKey);
+        return provider != null && ReferenceEquals(provider.Runtime, runtime);
+    }
+
+    private static string? TryBuildRuntimeStatusText(IAcpAgentRuntime runtime)
+    {
+        try
+        {
+            return runtime.BuildStatusText();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine("Unable to read Agent runtime status: " + ex);
+            return null;
+        }
+    }
+
     public Task ShutdownAsync()
     {
         lock (_shutdownLock)
@@ -462,6 +596,10 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
             _rootBridge.CommandReceived -= OnCommand;
             _rootBridge.AttachmentUploadReceived -= OnUpload;
             _historyCatalog.Invalidated -= OnHistoryInvalidated;
+            foreach (var subscription in _runtimeStatusSubscriptions)
+                subscription.Runtime.StatusChanged -= subscription.Handler;
+            _runtimeStatusSubscriptions.Clear();
+            DeactivateRuntimeStatus();
             _shutdownTask = ShutdownCoreAsync();
             return _shutdownTask;
         }
