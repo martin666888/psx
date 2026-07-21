@@ -4,6 +4,16 @@
 * text=auto
 
 ###############################################################################
+# Deterministic LF for the Agent TS sources and their compiled ESM output.
+#
+# The verify:agent gate compares the committed wwwroot/js/agent-app output
+# byte-for-byte against a fresh tsc run (newLine: lf). Pinning LF here prevents
+# Windows CRLF checkouts from producing spurious diffs.
+###############################################################################
+wwwroot/js/agent-app/** text eol=lf
+frontend/agent/src/**/*.ts text eol=lf
+
+###############################################################################
 # Set default behavior for command prompt diff.
 #
 # This is need for earlier builds of msysgit that does not have it on by

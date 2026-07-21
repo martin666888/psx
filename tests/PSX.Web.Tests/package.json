@@ -3,11 +3,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "pretest": "node test/buildProductionBundle.js",
+    "build:agent": "node test/buildAgent.js",
+    "verify:agent": "node test/verifyAgent.js",
+    "pretest": "node test/verifyAgent.js",
     "test": "node --test \"test/*.test.js\"",
     "test:watch": "node --test --watch \"test/*.test.js\"",
-    "pretest:coverage": "node test/buildProductionBundle.js",
-    "test:coverage": "c8 --all --allowExternal --src=../../TestResults/web/runtime --include=**/agent-production.bundle.js --reporter=text --reporter=json-summary --reporter=cobertura --reports-dir=../../TestResults/web/coverage node --test \"test/*.test.js\"",
+    "pretest:coverage": "node test/verifyAgent.js",
+    "test:coverage": "c8 --all --allowExternal --src=../../wwwroot/js/agent-app --include=**/agent-app/** --reporter=text --reporter=json-summary --reporter=cobertura --reports-dir=../../TestResults/web/coverage node --test \"test/*.test.js\"",
     "typecheck": "tsc --project ../../jsconfig.json"
   },
   "devDependencies": {

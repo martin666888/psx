@@ -4,7 +4,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { beforeEach, describe, it } from 'node:test';
 import { JSDOM } from 'jsdom';
-import { repositoryRoot } from './productionBundle.js';
+import { repositoryRoot } from './agentHarness.js';
 
 describe('Terminal clipboard bridge', () => {
   let manager;

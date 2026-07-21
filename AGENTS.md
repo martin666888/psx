@@ -29,7 +29,7 @@ The slash-command menu is PSX's complete public command surface. A leading comma
 
 ## Agent Inspector Contract
 
-Every Agent Workspace owns one live `AgentThreadManager` and one resizable Inspector with peer `Plan` and `History` tabs. Keep thread messages in the main conversation only: history lists, loading states, and history errors belong in the History tab and must never be appended as chat cards. Plan, composer, decisions and scroll state are workspace-local and survive Tab hide/show; History is a shared catalog that opens a Thread in at most one Workspace. New drafts select Plan; opening an existing thread from History keeps History selected. When changing the `agent_threads`, `agent_history_error`, `agent_thread_loaded`, Workspace lifecycle or History invalidation payloads, update the coordinator, scoped bridge, frontend dispatcher and multi-workspace tests together.
+Every Agent Workspace owns one live `AgentWorkspaceController` and one resizable Inspector with peer `Plan` and `History` tabs. Keep thread messages in the main conversation only: history lists, loading states, and history errors belong in the History tab and must never be appended as chat cards. Plan, composer, decisions and scroll state are workspace-local and survive Tab hide/show; History is a shared catalog that opens a Thread in at most one Workspace. New drafts select Plan; opening an existing thread from History keeps History selected. When changing the `agent_threads`, `agent_history_error`, `agent_thread_loaded`, Workspace lifecycle or History invalidation payloads, update the coordinator, scoped bridge, frontend dispatcher and multi-workspace tests together.
 
 ## Workspace and Bridge Contract
 

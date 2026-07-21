@@ -1,56 +1,74 @@
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { beforeEach, describe, it } from 'node:test';
-import { createAgentManager, installAgentRuntime } from './agentHarness.js';
+import { mountAgentApp, createAgentWorkspace } from './agentHarness.js';
 
-describe('Plan and History inspector', () => {
-  let manager;
-  let postedMessages;
+const WS = '11111111-1111-4111-8111-111111111111';
 
-  beforeEach(() => {
-    const runtime = installAgentRuntime();
-    postedMessages = runtime.postedMessages;
-    manager = createAgentManager(runtime.AgentThreadManager);
+function role(panel, name) {
+  return panel.querySelector('[data-role="' + name + '"]');
+}
+
+// Create a ready workspace and expose the inspector-owned nodes plus the
+// captured Bridge messages, then drive the peer Plan/History tabs the way a user
+// does (tab clicks) and read the live panel.
+async function mount() {
+  const { app, panelFor, runtime } = await mountAgentApp();
+  createAgentWorkspace(app, WS);
+  const panel = panelFor(WS);
+  return { app, panel, posted: runtime.postedMessages };
+}
+
+test('keeps Plan and History as peer tabs and refreshes history only when requested', async () => {
+  const { panel, posted } = await mount();
+
+  role(panel, 'history-tab').click();
+  assert.equal(role(panel, 'plan-panel').hidden, true);
+  assert.equal(role(panel, 'history-panel').hidden, false);
+  assert.equal(posted.at(-1).command, 'history');
+
+  role(panel, 'plan-tab').click();
+  assert.equal(role(panel, 'plan-panel').hidden, false);
+  assert.equal(role(panel, 'history-panel').hidden, true);
+});
+
+test('renders normalized plan states and marks updates unread outside the Plan tab', async () => {
+  const { app, panel } = await mount();
+  role(panel, 'history-tab').click();
+  app.handle({
+    type: 'plan_update',
+    workspaceId: WS,
+    runId: 'run-1',
+    entries: [
+      { content: 'Inspect', status: 'completed' },
+      { content: 'Implement', status: 'in_progress' },
+      { content: 'Verify', status: 'pending' }
+    ]
   });
 
-  it('keeps Plan and History as peer tabs and refreshes history only when requested', () => {
-    manager.selectInspectorTab('history', true);
-    assert.equal(manager.planPanel.hidden, true);
-    assert.equal(manager.historyPanel.hidden, false);
-    assert.equal(postedMessages.at(-1).command, 'history');
+  const planPanel = role(panel, 'plan-panel');
+  assert.deepEqual(
+    [...planPanel.querySelectorAll('.agent-plan-content')].map((node) => node.textContent),
+    ['Inspect', 'Implement', 'Verify']
+  );
+  assert.notEqual(planPanel.querySelector('.agent-plan-item-completed'), null);
+  assert.notEqual(planPanel.querySelector('.agent-plan-item-in-progress'), null);
+  assert.equal(role(panel, 'plan-unread').hidden, false);
+});
 
-    manager.selectInspectorTab('plan', false);
-    assert.equal(manager.planPanel.hidden, false);
-    assert.equal(manager.historyPanel.hidden, true);
-  });
-
-  it('renders normalized plan states and marks updates unread outside the Plan tab', () => {
-    manager.selectInspectorTab('history', false);
-    manager.handleEvent({
-      type: 'plan_update',
-      runId: 'run-1',
-      entries: [
-        { content: 'Inspect', status: 'completed' },
-        { content: 'Implement', status: 'in_progress' },
-        { content: 'Verify', status: 'pending' }
-      ]
-    });
-
-    assert.deepEqual([...manager.planPanel.querySelectorAll('.agent-plan-content')].map((node) => node.textContent),
-      ['Inspect', 'Implement', 'Verify']);
-    assert.notEqual(manager.planPanel.querySelector('.agent-plan-item-completed'), null);
-    assert.notEqual(manager.planPanel.querySelector('.agent-plan-item-in-progress'), null);
-    assert.equal(manager.planUnread.hidden, false);
-  });
-
-  it('restores History scroll position after rendering a refreshed list', () => {
-    manager.historyPanel.scrollTop = 144;
-    manager.selectInspectorTab('history', true);
-    manager._renderHistory([
+test('restores History scroll position after rendering a refreshed list', async () => {
+  const { app, panel } = await mount();
+  const historyPanel = role(panel, 'history-panel');
+  historyPanel.scrollTop = 144;
+  role(panel, 'history-tab').click();
+  app.handle({
+    type: 'agent_threads',
+    workspaceId: WS,
+    threads: [
       { threadId: 'one', title: 'One', cwd: 'D:/one' },
       { threadId: 'two', title: 'Two', cwd: 'D:/two' }
-    ]);
-
-    assert.equal(manager.historyPanel.scrollTop, 144);
-    assert.equal(manager.historyPanel.querySelectorAll('.agent-history-item').length, 2);
+    ]
   });
+
+  assert.equal(historyPanel.scrollTop, 144);
+  assert.equal(historyPanel.querySelectorAll('.agent-history-item').length, 2);
 });

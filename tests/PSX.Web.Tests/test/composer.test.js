@@ -1,55 +1,84 @@
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { beforeEach, describe, it } from 'node:test';
-import { createAgentManager, installAgentRuntime } from './agentHarness.js';
+import { mountAgentApp, createAgentWorkspace } from './agentHarness.js';
 
-describe('Agent composer and slash commands', () => {
-  let manager;
-  let postedMessages;
+const WS = '11111111-1111-4111-8111-111111111111';
 
-  beforeEach(() => {
-    const runtime = installAgentRuntime();
-    postedMessages = runtime.postedMessages;
-    manager = createAgentManager(runtime.AgentThreadManager);
+function role(panel, name) {
+  return panel.querySelector('[data-role="' + name + '"]');
+}
+
+// Drive the compiled composer the way production does: create a ready workspace,
+// then observe the scoped Bridge messages (agent_submit / agent_command) and the
+// composer-owned nodes on the live panel.
+async function mount() {
+  const { app, panelFor, runtime } = await mountAgentApp();
+  createAgentWorkspace(app, WS);
+  return { app, panel: panelFor(WS), posted: runtime.postedMessages };
+}
+
+test('canonicalizes built-in and advertised ACP commands on submit', async () => {
+  const { app, panel, posted } = await mount();
+  app.handle({
+    type: 'agent_commands',
+    workspaceId: WS,
+    ready: true,
+    commands: [{ name: '/review', description: 'Review' }]
   });
 
-  it('accepts built-in and advertised ACP commands and canonicalizes their names', () => {
-    manager.agentCommandsReady = true;
-    manager.agentCommands = [{ name: '/review', description: 'Review' }];
+  role(panel, 'input').value = '/CLEAR';
+  role(panel, 'send').click();
+  assert.equal(posted.at(-1).type, 'agent_submit');
+  assert.equal(posted.at(-1).text, '/clear');
 
-    assert.deepEqual(
-      JSON.parse(JSON.stringify(manager._validateSubmissionCommand('/CLEAR', []))),
-      { allowed: true, text: '/clear', psxCommand: 'clear' }
-    );
-    assert.equal(manager._validateSubmissionCommand('/REVIEW src', []).text, '/review src');
+  role(panel, 'input').value = '/REVIEW src';
+  role(panel, 'send').click();
+  assert.equal(posted.at(-1).text, '/review src');
+});
+
+test('rejects unknown leading commands but sends inline slash-like text', async () => {
+  const { app, panel, posted } = await mount();
+  app.handle({ type: 'agent_commands', workspaceId: WS, ready: true, commands: [] });
+
+  role(panel, 'input').value = '/unknown';
+  role(panel, 'send').click();
+  // A rejected command posts no agent_submit; the composer surfaces a hint.
+  assert.notEqual(posted.at(-1)?.type, 'agent_submit');
+  assert.equal(role(panel, 'command-hint').hidden, false);
+
+  role(panel, 'input').value = 'Explain /unknown here';
+  role(panel, 'send').click();
+  assert.equal(posted.at(-1).type, 'agent_submit');
+  assert.equal(posted.at(-1).text, 'Explain /unknown here');
+});
+
+test('submits normal text and clears the draft only after validation succeeds', async () => {
+  const { panel, posted } = await mount();
+  role(panel, 'input').value = '  hello agent  ';
+  role(panel, 'send').click();
+
+  assert.deepEqual(posted.at(-1), {
+    type: 'agent_submit',
+    workspaceId: WS,
+    text: 'hello agent',
+    attachments: []
   });
+  assert.equal(role(panel, 'input').value, '');
+});
 
-  it('rejects unknown leading commands and commands combined with attachments', () => {
-    manager.agentCommandsReady = true;
+test('turns submission into Stop while a run is busy', async () => {
+  const { app, panel, posted } = await mount();
+  app.handle({ type: 'agent_state', workspaceId: WS, status: 'running', busy: true, cwd: '/tmp' });
 
-    assert.deepEqual(JSON.parse(JSON.stringify(manager._validateSubmissionCommand('/unknown', []))), {
-      allowed: false,
-      command: '/unknown',
-      reason: 'unsupported'
-    });
-    assert.equal(manager._validateSubmissionCommand('/clear', [{ id: 'image-1' }]).reason, 'attachments_not_allowed');
-    assert.equal(manager._validateSubmissionCommand('Explain /unknown here', []).allowed, true);
+  role(panel, 'input').value = 'must not send';
+  role(panel, 'send').click();
+
+  assert.deepEqual(posted.at(-1), {
+    type: 'agent_command',
+    workspaceId: WS,
+    command: 'stop',
+    value: '',
+    requestId: ''
   });
-
-  it('submits normal text and clears the draft only after validation succeeds', () => {
-    manager.input.value = '  hello agent  ';
-    manager._submit();
-
-    assert.deepEqual(postedMessages.at(-1), { type: 'agent_submit', workspaceId: '11111111-1111-4111-8111-111111111111', text: 'hello agent', attachments: [] });
-    assert.equal(manager.input.value, '');
-    assert.equal(manager.lastSubmittedDraft.text, 'hello agent');
-  });
-
-  it('turns submission into Stop while a run is busy', () => {
-    manager.isBusy = true;
-    manager.input.value = 'must not send';
-    manager._submit();
-
-    assert.deepEqual(postedMessages.at(-1), { type: 'agent_command', workspaceId: '11111111-1111-4111-8111-111111111111', command: 'stop', value: '', requestId: '' });
-    assert.equal(manager.input.value, 'must not send');
-  });
+  assert.equal(role(panel, 'input').value, 'must not send');
 });

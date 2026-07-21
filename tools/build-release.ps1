@@ -51,6 +51,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
 Set-StrictMode -Version Latest
 
 # ---- pin everything for reproducible builds ----
@@ -61,15 +62,17 @@ $PortableNodeExpectedSha = "7df0bc9375723f4a86b3aa1b7cc73342423d9677a8df4538aca3
 
 # ---- locate repo root ----
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$RepoRoot = Resolve-Path (Join-Path $ScriptDir "..")
+$RepoRoot = (Resolve-Path (Join-Path $ScriptDir "..")).Path
 $ProjectPath = Join-Path $RepoRoot "PSX.csproj"
-$PublishOutput = Join-Path $RepoRoot ".\bin\publish\win-x64-self-contained"
-$StagingDir = Join-Path $RepoRoot ".\bin\release-staging"
-$BuildCacheDir = Join-Path $RepoRoot ".\bin\build-cache"
+$PublishOutput = [IO.Path]::GetFullPath((Join-Path $RepoRoot "bin\publish\win-x64-self-contained"))
+$StagingDir = [IO.Path]::GetFullPath((Join-Path $RepoRoot "bin\release-staging"))
+$BuildCacheDir = [IO.Path]::GetFullPath((Join-Path $RepoRoot "bin\build-cache"))
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
-    $OutputDirectory = Join-Path $RepoRoot ".\bin\releases"
+    $OutputDirectory = [IO.Path]::GetFullPath((Join-Path $RepoRoot "bin\releases"))
 } elseif (-not [IO.Path]::IsPathRooted($OutputDirectory)) {
-    $OutputDirectory = Join-Path $RepoRoot $OutputDirectory
+    $OutputDirectory = [IO.Path]::GetFullPath((Join-Path $RepoRoot $OutputDirectory))
+} else {
+    $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
 }
 
 function Resolve-WebView2FixedRuntimeDirectory {
@@ -208,6 +211,7 @@ $requiredFiles = @(
     "licenses\microsoft.extensions\LICENSE.TXT",
     "licenses\webview2\LICENSE.txt",
     "wwwroot\index.html",
+    "wwwroot\js\agent-app\entry.js",
     "wwwroot\vendor\xterm\LICENSE",
     "tools\node\node.exe",
     "tools\node\LICENSE",
@@ -231,8 +235,15 @@ if (Test-Path -LiteralPath $forbiddenAcpRuntime) {
 
 $forbiddenFiles = @(Get-ChildItem -LiteralPath $StagingDir -Recurse -File | Where-Object {
     $relative = $_.FullName.Substring($StagingDir.Length).TrimStart('\').Replace('\', '/')
+    $strayNodeModules = ($relative -match '(^|/)node_modules/') -and (-not $relative.StartsWith('tools/node/node_modules/', [StringComparison]::OrdinalIgnoreCase))
+    # Source maps and TypeScript are forbidden only for the generated Agent
+    # frontend. Portable Node/npm and vendor assets legitimately contain maps.
+    $agentSourceArtifact = $relative.StartsWith('wwwroot/js/agent-app/', [StringComparison]::OrdinalIgnoreCase) -and $_.Extension -in @('.ts', '.map')
     $_.Name -ieq "claude.exe" `
         -or $_.Extension -in @(".log", ".tmp", ".binlog") `
+        -or $agentSourceArtifact `
+        -or $relative.StartsWith('frontend/', [StringComparison]::OrdinalIgnoreCase) `
+        -or $strayNodeModules `
         -or $relative.StartsWith('tests/', [StringComparison]::OrdinalIgnoreCase) `
         -or $relative.StartsWith('TestResults/', [StringComparison]::OrdinalIgnoreCase) `
         -or $_.Name -like 'PSX.Tests.*' `
@@ -287,9 +298,16 @@ try {
         $normalized = $_.Replace('\', '/')
         $leaf = [IO.Path]::GetFileName($normalized)
         $extension = [IO.Path]::GetExtension($normalized)
+        $strayNodeModules = ($normalized -match '(^|/)node_modules/') -and (-not $normalized.StartsWith('tools/node/node_modules/', [StringComparison]::OrdinalIgnoreCase))
+        # Keep this scoped to Agent output for parity with the staging check;
+        # Node/npm and vendor files can legitimately ship source maps.
+        $agentSourceArtifact = $normalized.StartsWith('wwwroot/js/agent-app/', [StringComparison]::OrdinalIgnoreCase) -and $extension -in @('.ts', '.map')
         $normalized.StartsWith('runtime/acp-current/', [StringComparison]::OrdinalIgnoreCase) `
             -or $normalized.StartsWith('tests/', [StringComparison]::OrdinalIgnoreCase) `
             -or $normalized.StartsWith('TestResults/', [StringComparison]::OrdinalIgnoreCase) `
+            -or $normalized.StartsWith('frontend/', [StringComparison]::OrdinalIgnoreCase) `
+            -or $agentSourceArtifact `
+            -or $strayNodeModules `
             -or $leaf -ieq 'claude.exe' `
             -or $leaf -like 'PSX.Tests.*' `
             -or $leaf -like 'PSX.TestAgent.*' `

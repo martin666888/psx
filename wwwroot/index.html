@@ -33,7 +33,7 @@
             <div class="agent-runtime-indicator" aria-hidden="true"></div>
             <div class="agent-runtime-copy">
                 <h2 data-role="runtime-title">Agent runtime required</h2>
-                <p data-role="runtime-message">Install the Agent runtime before starting a Claude session.</p>
+                <p data-role="runtime-message">Install the Agent runtime before starting a session.</p>
                 <p class="agent-runtime-note">Downloads pinned components from the official npm registry into this PSX folder and reuses them on later launches.</p>
             </div>
             <div class="agent-runtime-actions">
@@ -94,7 +94,7 @@
                               aria-haspopup="listbox"
                               aria-expanded="false"
                               aria-label="Message Agent"
-                              placeholder="Message Claude Agent - / for commands"></textarea>
+                              placeholder="Message Agent - / for commands"></textarea>
                     <button data-role="send" class="agent-send" type="button" title="Send message">Send</button>
                 </div>
                 <div data-role="command-hint" class="agent-command-hint" role="status" aria-live="polite" hidden></div>
@@ -104,7 +104,7 @@
                         <span>/ commands</span>
                         <span data-role="context-used">Context used --k</span>
                     </div>
-                    <label class="agent-mode-control" title="Claude Agent mode">
+                    <label class="agent-mode-control" title="Agent mode">
                         <span>mode</span>
                         <select data-role="mode" disabled>
                             <option value="">default</option>
@@ -140,24 +140,6 @@
     <script src="js/BridgeMessages.js"></script>
     <script src="js/Bridge.js"></script>
     <script src="js/TerminalManager.js"></script>
-    <script src="js/AgentThreadManager.js"></script>
-    <script src="js/WorkspaceViewManager.js"></script>
-    <script src="js/agent/composer.js"></script>
-    <script src="js/agent/config.js"></script>
-    <script src="js/agent/commands.js"></script>
-    <script src="js/agent/attachments.js"></script>
-    <script src="js/agent/runtime.js"></script>
-    <script src="js/agent/thread.js"></script>
-    <script src="js/agent/messages.js"></script>
-    <script src="js/agent/inspector.js"></script>
-    <script src="js/agent/plan.js"></script>
-    <script src="js/agent/thinking.js"></script>
-    <script src="js/agent/tools.js"></script>
-    <script src="js/agent/permissions.js"></script>
-    <script src="js/agent/modeTransition.js"></script>
-    <script src="js/agent/elicitation.js"></script>
-    <script src="js/agent/markdown.js"></script>
-    <script src="js/agent/scroll.js"></script>
     <script src="js/main.js"></script>
 </body>
 </html>

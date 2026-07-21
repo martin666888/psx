@@ -30,7 +30,7 @@ powershell -ExecutionPolicy Bypass -File tools/test.ps1 -Suite Desktop
 
 `Fast` 排除桌面探针，以降低 CI 对图形会话和 Windows 运行环境差异的敏感度；`Full` 是本机发布门禁。首次运行前端测试会通过锁文件执行 `npm ci`。npm、NuGet、.NET CLI 和临时目录都在脚本执行期间固定到 `TestResults/`，不会把测试依赖或运行数据写入用户配置目录。
 
-Workspace 自动化重点验证 Agent 与 Terminal 上限口径、`workspaceId` 桥路由、Thread 去重打开、关闭 tombstone、Provider/Runtime 扩展边界，以及多个 `AgentThreadManager` 的状态隔离。真实 Claude 登录、多进程并行对话的主观体验、900px 布局和系统进程树观察仍属于桌面人工验收。
+Workspace 自动化重点验证 Agent 与 Terminal 上限口径、`workspaceId` 桥路由、Thread 去重打开、关闭 tombstone、Provider/Runtime 扩展边界，以及多个 `AgentWorkspaceController` 的状态隔离。真实 Claude 登录、多进程并行对话的主观体验、900px 布局和系统进程树观察仍属于桌面人工验收。
 
 ## 结果与诊断
 

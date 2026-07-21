@@ -3,6 +3,41 @@
     inset: 0;
 }
 
+.agent-load-error {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: var(--agent-space-6);
+    background: var(--agent-bg);
+    color: var(--agent-text);
+    font-family: var(--agent-font-ui);
+}
+
+.agent-load-error[hidden] {
+    display: none;
+}
+
+.agent-load-error-card {
+    width: min(520px, 100%);
+    border: 1px solid var(--agent-error);
+    border-radius: var(--agent-radius-md);
+    background: var(--agent-error-bg);
+    padding: var(--agent-space-5);
+}
+
+.agent-load-error-card h2 {
+    margin: 0 0 var(--agent-space-2);
+    color: var(--agent-error);
+    font-size: 16px;
+}
+
+.agent-load-error-card p {
+    margin: 0;
+    color: var(--agent-text-muted);
+    line-height: 1.5;
+}
+
 .agent-panel {
     position: absolute;
     inset: 0;

@@ -2,7 +2,8 @@
   "include": [
     "wwwroot/js/BridgeMessages.js",
     "wwwroot/js/Bridge.js",
-    "wwwroot/js/**/*.d.ts"
+    "wwwroot/js/**/*.d.ts",
+    "frontend/agent/src/contracts/bridge-contract.d.ts"
   ],
   "compilerOptions": {
     "checkJs": true,

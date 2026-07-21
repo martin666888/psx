@@ -1,0 +1,18 @@
+// feature-controller.ts — lifecycle contract for a workspace feature domain.
+//
+// Phase 2 has a single FeatureController implementation (LegacyAgentAdapter).
+// Phase 4 introduces one per domain (Session/Inspector/Composer/Decision/
+// Timeline). Every controller owns a State slice, a DOM region, its user-input
+// listeners, and its own disposables — mount/update/dispose bound that scope.
+
+import type { AgentWorkspaceEvent } from './host-events.js';
+import type { AgentWorkspaceState } from './workspace-state.js';
+
+export interface FeatureController {
+  /** Wire up DOM listeners and initial render for the owned region. */
+  mount(): void;
+  /** Apply a decoded workspace event and the current state snapshot. */
+  update(event: AgentWorkspaceEvent, state: AgentWorkspaceState): void;
+  /** Remove listeners, timers, RAFs, object URLs, and body classes. */
+  dispose(): void;
+}

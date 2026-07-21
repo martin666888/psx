@@ -1,18 +1,42 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import vm from 'node:vm';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
-import { buildProductionBundle, generatedBundlePath } from './productionBundle.js';
 
-let productionBundle;
+const testDirectory = path.dirname(fileURLToPath(import.meta.url));
+export const repositoryRoot = path.resolve(testDirectory, '..', '..', '..');
 
-function readProductionBundle() {
-  if (!productionBundle) {
-    if (!fs.existsSync(generatedBundlePath)) buildProductionBundle();
-    productionBundle = fs.readFileSync(generatedBundlePath, 'utf8');
-  }
-  return productionBundle;
+// The Agent app ships as compiled ES modules under wwwroot/js/agent-app. The
+// repository path contains '#', so import through an encoded file URL.
+export function appModule(relative) {
+  const abs = path.join(repositoryRoot, 'wwwroot/js/agent-app', relative);
+  return import(pathToFileURL(abs).href);
 }
 
+// The surviving classic scripts (BridgeMessages.js + Bridge.js) are not ES
+// modules; they declare `const Bridge/BridgeSendType/BridgeEventType` at the top
+// level. Concatenate them inside an IIFE and publish the three symbols onto
+// globalThis so the compiled agent-app modules (which reference the ambient
+// global Bridge, exactly like the shipped app) resolve them.
+let bridgeSource;
+function readBridgeSource() {
+  if (!bridgeSource) {
+    const files = ['wwwroot/js/BridgeMessages.js', 'wwwroot/js/Bridge.js'];
+    const body = files
+      .map((relativePath) => fs.readFileSync(path.join(repositoryRoot, relativePath), 'utf8'))
+      .join('\n;\n');
+    bridgeSource =
+      '(function () {\n' +
+      body +
+      '\n;globalThis.Bridge = Bridge; globalThis.BridgeSendType = BridgeSendType;' +
+      ' globalThis.BridgeEventType = BridgeEventType;\n})();\n';
+  }
+  return bridgeSource;
+}
+
+// Install a fresh jsdom document plus the browser globals the Agent modules
+// touch, and the Bridge classic globals. Returns the message-capture handles.
 export function installAgentRuntime() {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {
     url: 'https://psx.local/',
@@ -44,6 +68,22 @@ export function installAgentRuntime() {
   });
   dom.window.document.execCommand = () => true;
 
+  globalThis.FileReader = dom.window.FileReader;
+  globalThis.File = dom.window.File;
+  globalThis.Blob = dom.window.Blob;
+  globalThis.FileList = dom.window.FileList;
+  const createdObjectUrls = [];
+  const revokedObjectUrls = [];
+  dom.window.URL.createObjectURL = () => {
+    const url = 'blob:psx/' + (createdObjectUrls.length + 1);
+    createdObjectUrls.push(url);
+    return url;
+  };
+  dom.window.URL.revokeObjectURL = (url) => {
+    revokedObjectUrls.push(url);
+  };
+  globalThis.URL = dom.window.URL;
+
   const postedMessages = [];
   const hostListeners = [];
   window.chrome = {
@@ -56,78 +96,80 @@ export function installAgentRuntime() {
       }
     }
   };
-  vm.runInThisContext(readProductionBundle(), { filename: generatedBundlePath });
+  vm.runInThisContext(readBridgeSource(), { filename: 'bridge-bundle.js' });
 
   return {
     Bridge: globalThis.Bridge,
-    AgentThreadManager: globalThis.AgentThreadManager,
-    WorkspaceViewManager: globalThis.WorkspaceViewManager,
+    BridgeSendType: globalThis.BridgeSendType,
+    BridgeEventType: globalThis.BridgeEventType,
     postedMessages,
+    createdObjectUrls,
+    revokedObjectUrls,
     emitHostMessage(data) {
       hostListeners.forEach((listener) => listener({ data }));
     }
   };
 }
 
-export function createAgentManager(AgentThreadManager) {
-  const workspaceId = '11111111-1111-4111-8111-111111111111';
-  document.body.innerHTML = `
-    <main id="panel">
-      <section id="thread"></section>
-      <div id="input-row"><textarea id="input"></textarea><button id="send"></button></div>
-      <section id="mode-transition-prompt" hidden></section>
-      <div id="command-menu" hidden></div>
-      <div id="command-hint" hidden></div>
-      <button id="attach"></button><input id="attachment-input" type="file">
-      <div id="attachments-strip"></div>
-      <dialog id="image-preview"><img id="image-preview-img"><button id="image-preview-close"></button></dialog>
-      <aside id="inspector"><button id="plan-tab"></button><span id="plan-unread" hidden></span><section id="plan-panel"></section><button id="history-tab"></button><section id="history-panel"></section></aside>
-      <div id="inspector-resizer"></div>
-      <select id="mode"></select><div id="config-options"></div>
-      <span id="status"></span><span id="cwd"></span><span id="session"></span><span id="context-used"></span>
-      <section id="runtime-card"><span id="runtime-title"></span><span id="runtime-message"></span><button id="runtime-install"></button><button id="runtime-cancel"></button></section>
-    </main>`;
+let cachedTemplateMarkup;
 
-  const byId = (id) => document.getElementById(id);
-  const manager = new AgentThreadManager(
-    workspaceId,
-    byId('panel'),
-    byId('thread'),
-    byId('input'),
-    byId('send'),
-    byId('command-menu'),
-    {
-      status: byId('status'),
-      cwd: byId('cwd'),
-      session: byId('session'),
-      mode: byId('mode'),
-      configOptions: byId('config-options'),
-      contextUsed: byId('context-used'),
-      commandHint: byId('command-hint'),
-      inputRow: byId('input-row'),
-      modeTransitionPrompt: byId('mode-transition-prompt'),
-      attachButton: byId('attach'),
-      attachmentInput: byId('attachment-input'),
-      attachmentStrip: byId('attachments-strip'),
-      imagePreview: byId('image-preview'),
-      imagePreviewImg: byId('image-preview-img'),
-      imagePreviewClose: byId('image-preview-close'),
-      inspector: byId('inspector'),
-      inspectorResizer: byId('inspector-resizer'),
-      planTab: byId('plan-tab'),
-      planUnread: byId('plan-unread'),
-      planPanel: byId('plan-panel'),
-      historyTab: byId('history-tab'),
-      historyPanel: byId('history-panel'),
-      runtimeCard: byId('runtime-card'),
-      runtimeTitle: byId('runtime-title'),
-      runtimeMessage: byId('runtime-message'),
-      runtimeInstall: byId('runtime-install'),
-      runtimeCancel: byId('runtime-cancel')
+// Unified DOM fixture extracted from the real wwwroot/index.html
+// #agent-workspace-template, so tests exercise the same node structure
+// (data-role attributes, ARIA, CSS classes) the shipped app uses.
+export function agentTemplateMarkup() {
+  if (!cachedTemplateMarkup) {
+    const index = fs.readFileSync(path.join(repositoryRoot, 'wwwroot/index.html'), 'utf8');
+    const match = index.match(/<template id="agent-workspace-template">[\s\S]*?<\/template>/);
+    if (!match) throw new Error('agent-workspace-template not found in index.html');
+    cachedTemplateMarkup = match[0];
+  }
+  return cachedTemplateMarkup;
+}
+
+// Mount the compiled Agent app the way production main.js does: a fresh jsdom +
+// Bridge globals, the real workspace template, and createAgentApp wired to a
+// stub terminal. Returns the runtime capture handles, the app sink, the stub
+// terminal, and a panelFor(workspaceId) helper reading the live panel shell.
+export async function mountAgentApp({ terminal } = {}) {
+  const runtime = installAgentRuntime();
+  document.body.innerHTML = `<div id="agents"></div>${agentTemplateMarkup()}`;
+  const { createAgentApp } = await appModule('entry.js');
+  const terminalStub = terminal || {
+    visible: true,
+    setViewVisible(value) {
+      this.visible = value;
     }
-  );
-  manager._updateRuntimeStatus({ state: 'ready', message: 'Ready', canInstall: false, canCancel: false });
-  return manager;
+  };
+  const app = createAgentApp({
+    terminalManager: terminalStub,
+    container: document.getElementById('agents'),
+    template: document.getElementById('agent-workspace-template')
+  });
+  return {
+    runtime,
+    app,
+    terminal: terminalStub,
+    panelFor: (workspaceId) =>
+      document.querySelector(`.agent-panel[data-workspace-id="${workspaceId}"]`)
+  };
+}
+
+// Create an Agent workspace through the app and mark its runtime ready (default)
+// so composer/attachment paths run the same way the shipped app does after
+// install. Returns the workspace's live panel element.
+export function createAgentWorkspace(app, workspaceId, { ready = true } = {}) {
+  app.handle({ type: 'agent_workspace_created', workspaceId });
+  if (ready) {
+    app.handle({
+      type: 'runtime_status',
+      workspaceId,
+      state: 'ready',
+      message: 'Ready',
+      canInstall: false,
+      canCancel: false
+    });
+  }
+  return document.querySelector(`.agent-panel[data-workspace-id="${workspaceId}"]`);
 }
 
 export function modeTransitionEvent(overrides = {}) {

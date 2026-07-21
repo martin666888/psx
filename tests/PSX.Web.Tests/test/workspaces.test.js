@@ -1,98 +1,106 @@
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
-import { describe, it } from 'node:test';
-import { installAgentRuntime } from './agentHarness.js';
-import { repositoryRoot } from './productionBundle.js';
+import { mountAgentApp, createAgentWorkspace } from './agentHarness.js';
 
-describe('Agent workspace views', () => {
-  it('keeps independent DOM and routes events only to the matching workspace', () => {
-    const runtime = installAgentRuntime();
-    const index = fs.readFileSync(path.join(repositoryRoot, 'wwwroot/index.html'), 'utf8');
-    const templateMarkup = index.match(/<template id="agent-workspace-template">[\s\S]*?<\/template>/)?.[0];
-    assert.ok(templateMarkup);
-    document.body.innerHTML = `<div id="agents"></div>${templateMarkup}`;
+const FIRST = '11111111-1111-4111-8111-111111111111';
+const SECOND = '22222222-2222-4222-8222-222222222222';
 
-    const terminal = {
-      visible: true,
-      setViewVisible(value) { this.visible = value; }
-    };
-    const views = new runtime.WorkspaceViewManager(
-      terminal,
-      document.getElementById('agents'),
-      document.getElementById('agent-workspace-template')
-    );
-    const firstId = '11111111-1111-4111-8111-111111111111';
-    const secondId = '22222222-2222-4222-8222-222222222222';
+function role(panel, name) {
+  return panel.querySelector('[data-role="' + name + '"]');
+}
 
-    views.createAgent({ workspaceId: firstId });
-    views.createAgent({ workspaceId: secondId });
-    views.agents.get(firstId).manager.input.value = 'first draft';
-    views.agents.get(secondId).manager.input.value = 'second draft';
+test('keeps independent DOM and routes events only to the matching workspace', async () => {
+  const { app, panelFor, terminal } = await mountAgentApp();
+  createAgentWorkspace(app, FIRST, { ready: false });
+  createAgentWorkspace(app, SECOND, { ready: false });
 
-    views.handleAgentEvent({
-      type: 'agent_state',
-      workspaceId: firstId,
-      status: 'running',
-      busy: true,
-      cwd: 'D:/first',
-      title: 'First'
-    });
-    views.activate({ workspaceId: secondId, kind: 'agent' });
+  const firstPanel = panelFor(FIRST);
+  const secondPanel = panelFor(SECOND);
+  assert.ok(firstPanel);
+  assert.ok(secondPanel);
+  assert.notEqual(firstPanel, secondPanel);
 
-    assert.equal(views.agents.get(firstId).manager.meta.cwd.textContent, 'D:/first');
-    assert.notEqual(views.agents.get(secondId).manager.meta.cwd.textContent, 'D:/first');
-    assert.equal(views.agents.get(firstId).manager.input.value, 'first draft');
-    assert.equal(views.agents.get(secondId).manager.input.value, 'second draft');
-    assert.equal(views.agents.get(firstId).panel.hidden, true);
-    assert.equal(views.agents.get(secondId).panel.hidden, false);
-    assert.equal(terminal.visible, false);
+  // Workspace-local draft text survives on each panel independently.
+  role(firstPanel, 'input').value = 'first draft';
+  role(secondPanel, 'input').value = 'second draft';
+
+  // A state event addressed to the first workspace only touches its panel.
+  app.handle({
+    type: 'agent_state',
+    workspaceId: FIRST,
+    status: 'running',
+    busy: true,
+    cwd: 'D:/first',
+    title: 'First'
+  });
+  // Activating the second workspace hides the first and the terminal view.
+  app.handle({ type: 'workspace_activated', workspaceId: SECOND, kind: 'agent' });
+
+  assert.equal(role(firstPanel, 'cwd').textContent, 'D:/first');
+  assert.notEqual(role(secondPanel, 'cwd').textContent, 'D:/first');
+  assert.equal(role(firstPanel, 'input').value, 'first draft');
+  assert.equal(role(secondPanel, 'input').value, 'second draft');
+  assert.equal(firstPanel.hidden, true);
+  assert.equal(secondPanel.hidden, false);
+  assert.equal(terminal.visible, false);
+});
+
+test('removes a closed workspace and ignores its later events', async () => {
+  const { app, panelFor } = await mountAgentApp();
+  const workspaceId = '33333333-3333-4333-8333-333333333333';
+
+  createAgentWorkspace(app, workspaceId, { ready: false });
+  assert.ok(panelFor(workspaceId));
+
+  app.handle({ type: 'agent_workspace_closed', workspaceId });
+  // A late event for the closed workspace must be a no-op (no re-created panel).
+  app.handle({ type: 'assistant_delta', workspaceId, text: 'late' });
+
+  assert.equal(panelFor(workspaceId), null);
+  assert.equal(document.querySelector(`[data-workspace-id="${workspaceId}"]`), null);
+});
+
+test('keeps transcript-only workspaces read-only even when their runtime is ready', async () => {
+  const { app, panelFor } = await mountAgentApp();
+  const workspaceId = '44444444-4444-4444-8444-444444444444';
+
+  createAgentWorkspace(app, workspaceId, { ready: true });
+  app.handle({
+    type: 'agent_state',
+    workspaceId,
+    status: 'transcript_only',
+    cwd: 'C:/saved'
   });
 
-  it('removes a closed workspace and ignores its later events', () => {
-    const runtime = installAgentRuntime();
-    const index = fs.readFileSync(path.join(repositoryRoot, 'wwwroot/index.html'), 'utf8');
-    const templateMarkup = index.match(/<template id="agent-workspace-template">[\s\S]*?<\/template>/)?.[0];
-    document.body.innerHTML = `<div id="agents"></div>${templateMarkup}`;
-    const views = new runtime.WorkspaceViewManager(
-      { setViewVisible() {} },
-      document.getElementById('agents'),
-      document.getElementById('agent-workspace-template')
-    );
-    const workspaceId = '33333333-3333-4333-8333-333333333333';
+  const panel = panelFor(workspaceId);
+  const input = role(panel, 'input');
+  const send = role(panel, 'send');
+  assert.equal(input.disabled, true);
+  assert.equal(send.disabled, true);
+  assert.equal(send.textContent, 'Read only');
+});
 
-    views.createAgent({ workspaceId });
-    views.closeAgent(workspaceId);
-    views.handleAgentEvent({ type: 'assistant_delta', workspaceId, text: 'late' });
+test('renders each provider identity independently and stays brand-neutral for unknown providers', async () => {
+  const THIRD = '33333333-3333-4333-8333-333333333333';
+  const { app, panelFor } = await mountAgentApp();
+  createAgentWorkspace(app, FIRST);
+  createAgentWorkspace(app, SECOND);
+  createAgentWorkspace(app, THIRD);
 
-    assert.equal(views.agents.has(workspaceId), false);
-    assert.equal(document.querySelector(`[data-workspace-id="${workspaceId}"]`), null);
-  });
+  // Two arbitrary provider keys carry distinct identities; the third keeps the
+  // neutral default so an unknown provider never inherits a sibling's brand.
+  app.handle({ type: 'agent_state', workspaceId: FIRST, status: 'ready', providerKey: 'alpha', assistantName: 'Alpha' });
+  app.handle({ type: 'agent_state', workspaceId: SECOND, status: 'ready', providerKey: 'beta', assistantName: 'Beta' });
 
-  it('keeps transcript-only workspaces read-only even when their runtime is ready', () => {
-    const runtime = installAgentRuntime();
-    const index = fs.readFileSync(path.join(repositoryRoot, 'wwwroot/index.html'), 'utf8');
-    const templateMarkup = index.match(/<template id="agent-workspace-template">[\s\S]*?<\/template>/)?.[0];
-    document.body.innerHTML = `<div id="agents"></div>${templateMarkup}`;
-    const views = new runtime.WorkspaceViewManager(
-      { setViewVisible() {} },
-      document.getElementById('agents'),
-      document.getElementById('agent-workspace-template')
-    );
-    const workspaceId = '44444444-4444-4444-8444-444444444444';
+  const first = role(panelFor(FIRST), 'input').placeholder;
+  const second = role(panelFor(SECOND), 'input').placeholder;
+  const third = role(panelFor(THIRD), 'input').placeholder;
 
-    views.createAgent({ workspaceId });
-    views.handleAgentEvent({ type: 'runtime_status', workspaceId, state: 'ready' });
-    views.handleAgentEvent({
-      type: 'agent_state',
-      workspaceId,
-      status: 'transcript_only',
-      cwd: 'C:/saved'
-    });
-
-    const manager = views.agents.get(workspaceId).manager;
-    assert.equal(manager.input.disabled, true);
-    assert.equal(manager.sendButton.disabled, true);
-    assert.equal(manager.sendButton.textContent, 'Read only');
-  });
+  assert.match(first, /Alpha/);
+  assert.doesNotMatch(first, /Beta/);
+  assert.match(second, /Beta/);
+  assert.doesNotMatch(second, /Alpha/);
+  // Unknown provider falls back to the neutral 'Agent', not a hardcoded brand.
+  assert.match(third, /Message Agent Agent/);
+  for (const text of [first, second, third]) assert.doesNotMatch(text, /Claude/);
 });

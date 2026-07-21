@@ -31,7 +31,7 @@ const BridgeSendType = Object.freeze({
 
 /**
  * C# -> JS event types, dispatched in main.js and
- * AgentThreadManager.handleEvent.
+ * the Agent app registry (AgentWorkspaceRegistry.handle).
  * @readonly
  * @enum {string}
  */
