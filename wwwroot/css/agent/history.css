@@ -327,18 +327,10 @@
     font-weight: 600;
 }
 
-/* --- Compact drawer -------------------------------------------------------- */
-
-/* Compact mode (<1080px): the dock becomes a drawer floating over the canvas
- * (the canvas keeps its place; the wide-mode offset rule is scoped away). */
-.agent-shell-compact .agent-history-dock {
-    top: var(--agent-space-4);
-    bottom: var(--agent-space-4);
-    left: var(--agent-space-2);
-    z-index: 8;
-    border: 1px solid var(--agent-border);
-    border-radius: var(--agent-radius-context-card);
-    box-shadow: var(--agent-shadow-context-card);
+/* Narrow mode preserves the dock form. It only uses a fixed effective width
+ * and hides the unavailable resize affordance. */
+.agent-shell-narrow .agent-history-dock-resizer {
+    display: none;
 }
 
 /* Open transitions: opacity + a small slide only (reduced-motion zeroes them

@@ -45,6 +45,24 @@ test('keeps independent DOM and routes events only to the matching workspace', a
   assert.equal(terminal.visible, false);
 });
 
+test('only lets the absolute Agent layer receive pointer events for an active Agent workspace', async () => {
+  const { app, terminal } = await mountAgentApp();
+  createAgentWorkspace(app, FIRST, { ready: false });
+  const container = document.getElementById('agents');
+
+  assert.equal(container.classList.contains('agent-workspace-active'), false,
+    'the terminal-safe default does not cover terminal clicks');
+
+  app.handle({ type: 'workspace_activated', workspaceId: FIRST, kind: 'agent' });
+  assert.equal(container.classList.contains('agent-workspace-active'), true);
+  assert.equal(terminal.visible, false);
+
+  app.handle({ type: 'workspace_activated', workspaceId: 'terminal-1', kind: 'terminal' });
+  assert.equal(container.classList.contains('agent-workspace-active'), false,
+    'the transparent Agent root yields pointer hit-testing back to xterm');
+  assert.equal(terminal.visible, true);
+});
+
 test('removes a closed workspace and ignores its later events', async () => {
   const { app, panelFor } = await mountAgentApp();
   const workspaceId = '33333333-3333-4333-8333-333333333333';
@@ -77,7 +95,7 @@ test('keeps transcript-only workspaces read-only even when their runtime is read
   const send = role(panel, 'send');
   assert.equal(input.disabled, true);
   assert.equal(send.disabled, true);
-  assert.equal(send.textContent, 'Read only');
+  assert.equal(role(panel, 'send-label').textContent, 'Read only');
 });
 
 test('renders each provider identity independently and stays brand-neutral for unknown providers', async () => {

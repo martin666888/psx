@@ -15,6 +15,7 @@ internal sealed class FakeAcpAgent
     private readonly object _outputLock = new();
     private readonly ConcurrentDictionary<string, TaskCompletionSource<JsonElement>> _clientResponses = new();
     private readonly ConcurrentDictionary<string, JsonElement> _pendingPrompts = new();
+    private bool _clientSupportsBooleanConfigOptions;
     private int _nextClientRequestId = 7000;
 
     public async Task RunAsync()
@@ -95,6 +96,7 @@ internal sealed class FakeAcpAgent
                 Environment.Exit(23);
                 break;
             case "initialize":
+                _clientSupportsBooleanConfigOptions = HasBooleanConfigCapability(parameters);
                 WriteResult(id, new
                 {
                     protocolVersion = 1,
@@ -117,7 +119,10 @@ internal sealed class FakeAcpAgent
                 WriteResult(id, new { currentModeId = GetString(parameters, "modeId") });
                 break;
             case "session/set_config_option":
-                WriteResult(id, SessionResult("fake-session-new"));
+                var isBoolean = GetString(parameters, "type") == "boolean";
+                WriteResult(id, SessionResult(
+                    "fake-session-new",
+                    isBoolean && GetBoolean(parameters, "value")));
                 break;
             default:
                 WriteResult(id, new { });
@@ -268,7 +273,13 @@ internal sealed class FakeAcpAgent
             WriteAssistantChunk("Fake response completed.");
         }
 
-        WriteSessionUpdate(new { sessionUpdate = "usage_update", used = 4321 });
+        WriteSessionUpdate(new
+        {
+            sessionUpdate = "usage_update",
+            used = 4321,
+            size = 100_000,
+            cost = new { amount = 0.23m, currency = "USD" }
+        });
         CompletePrompt(id, new { stopReason = "end_turn" });
     }
 
@@ -386,7 +397,7 @@ internal sealed class FakeAcpAgent
         }
     }
 
-    private static object SessionResult(string sessionId) => new
+    private object SessionResult(string sessionId, bool fastMode = false) => new
     {
         sessionId,
         modes = new
@@ -398,23 +409,50 @@ internal sealed class FakeAcpAgent
                 new { id = "code", name = "Code", description = "Apply changes" }
             }
         },
-        configOptions = new[]
-        {
-            new
+        configOptions = _clientSupportsBooleanConfigOptions
+            ? new object[]
             {
-                id = "mode",
-                name = "Mode",
-                description = "Agent mode",
-                category = "general",
-                type = "select",
-                currentValue = "plan",
-                options = new[]
+                new
                 {
-                    new { value = "plan", name = "Plan", description = "Plan changes" },
-                    new { value = "code", name = "Code", description = "Apply changes" }
+                    id = "mode",
+                    name = "Mode",
+                    description = "Agent mode",
+                    category = "general",
+                    type = "select",
+                    currentValue = "plan",
+                    options = new[]
+                    {
+                        new { value = "plan", name = "Plan", description = "Plan changes" },
+                        new { value = "code", name = "Code", description = "Apply changes" }
+                    }
+                },
+                new
+                {
+                    id = "fast_mode",
+                    name = "Fast mode",
+                    description = "Use fast mode",
+                    category = "general",
+                    type = "boolean",
+                    currentValue = fastMode
                 }
             }
-        }
+            : new object[]
+            {
+                new
+                {
+                    id = "mode",
+                    name = "Mode",
+                    description = "Agent mode",
+                    category = "general",
+                    type = "select",
+                    currentValue = "plan",
+                    options = new[]
+                    {
+                        new { value = "plan", name = "Plan", description = "Plan changes" },
+                        new { value = "code", name = "Code", description = "Apply changes" }
+                    }
+                }
+            }
     };
 
     private static string ReadPromptText(JsonElement parameters)
@@ -452,6 +490,23 @@ internal sealed class FakeAcpAgent
                && value.ValueKind == JsonValueKind.String
             ? value.GetString() ?? fallback
             : fallback;
+    }
+
+    private static bool GetBoolean(JsonElement element, string name)
+    {
+        return element.ValueKind == JsonValueKind.Object
+               && element.TryGetProperty(name, out var value)
+               && value.ValueKind == JsonValueKind.True;
+    }
+
+    private static bool HasBooleanConfigCapability(JsonElement parameters)
+    {
+        return parameters.ValueKind == JsonValueKind.Object
+               && parameters.TryGetProperty("clientCapabilities", out var capabilities)
+               && capabilities.TryGetProperty("session", out var session)
+               && session.TryGetProperty("configOptions", out var configOptions)
+               && configOptions.TryGetProperty("boolean", out var boolean)
+               && boolean.ValueKind == JsonValueKind.Object;
     }
 
     private static string IdKey(JsonElement id)

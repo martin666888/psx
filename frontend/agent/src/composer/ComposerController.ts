@@ -67,7 +67,7 @@ interface SubmittedDraft {
 }
 
 const MAX_INPUT_HEIGHT = 180;
-const DEFAULT_CONTROL_HEIGHT = 46;
+const DEFAULT_INPUT_MIN_HEIGHT = 52;
 
 function role(panel: HTMLElement, name: string): HTMLElement | null {
   return panel.querySelector<HTMLElement>('[data-role="' + name + '"]');
@@ -94,6 +94,7 @@ export class ComposerController implements FeatureController {
   private panel: HTMLElement | null = null;
   private input: HTMLTextAreaElement | null = null;
   private sendButton: HTMLButtonElement | null = null;
+  private sendLabel: HTMLElement | null = null;
   private inputRow: HTMLElement | null = null;
   private commandMenu: HTMLElement | null = null;
   private commandHint: HTMLElement | null = null;
@@ -129,6 +130,7 @@ export class ComposerController implements FeatureController {
     this.panel = panel;
     this.input = role(panel, 'input') as HTMLTextAreaElement | null;
     this.sendButton = role(panel, 'send') as HTMLButtonElement | null;
+    this.sendLabel = role(panel, 'send-label');
     this.inputRow = role(panel, 'input-row');
     this.commandMenu = role(panel, 'command-menu');
     this.commandHint = role(panel, 'command-hint');
@@ -387,19 +389,19 @@ export class ComposerController implements FeatureController {
 
   private resizeInput(): void {
     if (!this.input) return;
-    const minHeight = this.composerControlHeight();
+    const minHeight = this.composerInputMinimumHeight();
     this.input.style.height = 'auto';
     const nextHeight = Math.min(Math.max(this.input.scrollHeight, minHeight), MAX_INPUT_HEIGHT);
     this.input.style.height = nextHeight + 'px';
     this.input.style.overflowY = this.input.scrollHeight > MAX_INPUT_HEIGHT ? 'auto' : 'hidden';
   }
 
-  private composerControlHeight(): number {
+  private composerInputMinimumHeight(): number {
     const raw = getComputedStyle(document.documentElement)
-      .getPropertyValue('--agent-composer-control-height')
+      .getPropertyValue('--agent-composer-input-min-height')
       .trim();
     const parsed = Number.parseFloat(raw);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CONTROL_HEIGHT;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_INPUT_MIN_HEIGHT;
   }
 
   // --- Send/input/mode/config disabled sync --------------------------------
@@ -407,16 +409,19 @@ export class ComposerController implements FeatureController {
   /** Faithful port of the composer-owned part of thread.js/_updateState. */
   private renderComposerControls(): void {
     if (this.sendButton) {
+      let label = 'Send';
       if (this.isRestoring) {
-        this.sendButton.textContent = 'Loading';
+        label = 'Loading';
         this.sendButton.title = 'ACP history is loading';
       } else if (this.isTranscriptOnly) {
-        this.sendButton.textContent = 'Read only';
+        label = 'Read only';
         this.sendButton.title = 'Create a new Agent tab to continue';
       } else {
-        this.sendButton.textContent = this.isBusy ? 'Stop' : 'Send';
+        label = this.isBusy ? 'Stop' : 'Send';
         this.sendButton.title = this.isBusy ? 'Stop ' + this.assistantName : 'Send message';
       }
+      if (this.sendLabel) this.sendLabel.textContent = label;
+      this.sendButton.setAttribute('aria-label', label);
       this.sendButton.disabled = this.isRestoring || this.isTranscriptOnly || !this.runtimeReady();
       this.sendButton.classList.toggle('agent-send-stop', this.isBusy);
     }
@@ -690,6 +695,31 @@ export class ComposerController implements FeatureController {
       name.textContent = configOption.name || configOption.id;
       label.appendChild(name);
 
+      const toggleValues = this.toggleValues(configOption);
+      if (configOption.type === 'boolean' || toggleValues) {
+        const switchButton = document.createElement('button');
+        const checked = configOption.type === 'boolean'
+          ? configOption.currentValue === true
+          : configOption.currentValue === toggleValues?.enabled;
+        switchButton.type = 'button';
+        switchButton.className = 'agent-config-switch';
+        switchButton.dataset.configId = configOption.id;
+        switchButton.setAttribute('role', 'switch');
+        switchButton.setAttribute('aria-checked', String(checked));
+        switchButton.setAttribute('aria-label', configOption.name || configOption.id);
+        switchButton.addEventListener('click', () => {
+          const next = switchButton.getAttribute('aria-checked') !== 'true';
+          switchButton.setAttribute('aria-checked', String(next));
+          const value = configOption.type === 'boolean'
+            ? next
+            : next ? toggleValues!.enabled : toggleValues!.disabled;
+          this.bridge()?.sendAgentCommand('set_config_option', value, configOption.id);
+        });
+        label.appendChild(switchButton);
+        host.appendChild(label);
+        return;
+      }
+
       const select = document.createElement('select');
       select.dataset.configId = configOption.id;
       configOption.options.forEach((item) => {
@@ -699,7 +729,9 @@ export class ComposerController implements FeatureController {
         option.title = item.description || '';
         select.appendChild(option);
       });
-      if (configOption.currentValue) select.value = configOption.currentValue;
+      if (typeof configOption.currentValue === 'string' && configOption.currentValue) {
+        select.value = configOption.currentValue;
+      }
       select.addEventListener('change', () => {
         if (select.value) {
           this.bridge()?.sendAgentCommand('set_config_option', select.value, configOption.id);
@@ -713,9 +745,18 @@ export class ComposerController implements FeatureController {
 
   private syncConfigOptionDisabledState(): void {
     const disabled = this.configControlsDisabled();
-    this.configOptionsHost?.querySelectorAll<HTMLSelectElement>('select').forEach((select) => {
-      select.disabled = disabled;
+    this.configOptionsHost?.querySelectorAll<HTMLSelectElement | HTMLButtonElement>('select, button').forEach((control) => {
+      control.disabled = disabled;
     });
+  }
+
+  private toggleValues(configOption: ComposerConfigOption): { enabled: string; disabled: string } | null {
+    if (configOption.type !== 'select' || configOption.options.length !== 2) return null;
+    const lookup = new Map(configOption.options.map((item) => [item.value.trim().toLowerCase(), item.value]));
+    if (lookup.size !== 2) return null;
+    if (lookup.has('on') && lookup.has('off')) return { enabled: lookup.get('on')!, disabled: lookup.get('off')! };
+    if (lookup.has('true') && lookup.has('false')) return { enabled: lookup.get('true')!, disabled: lookup.get('false')! };
+    return null;
   }
 
   private syncFallbackModeVisibility(): void {

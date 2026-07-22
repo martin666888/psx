@@ -70,6 +70,19 @@ public sealed class AgentBridgeMessageParserTests
     }
 
     [TestMethod]
+    public void TryParse_Command_PreservesBooleanConfigValue()
+    {
+        Assert.IsTrue(AgentBridgeMessageParser.TryParse(
+            $$"""{"type":"agent_command","workspaceId":"{{WorkspaceId}}","command":"set_config_option","requestId":"fast_mode","value":true}""",
+            out var message));
+
+        Assert.AreEqual("set_config_option", message!.Command!.Command);
+        Assert.IsNotNull(message.Command.BooleanValue);
+        Assert.IsTrue(message.Command.BooleanValue.Value);
+        Assert.AreEqual("", message.Command.Value);
+    }
+
+    [TestMethod]
     [DataRow("")]
     [DataRow("not-a-guid")]
     [DataRow("00000000-0000-0000-0000-000000000000")]

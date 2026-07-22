@@ -15,7 +15,10 @@ function stateEvent(workspaceId) {
     busy: true,
     isDraft: false,
     supportsImage: false,
-    contextUsedTokens: 4200
+    contextUsedTokens: 4200,
+    contextWindowTokens: 100000,
+    contextCostAmount: 0.23,
+    contextCostCurrency: 'USD'
   };
 }
 
@@ -42,7 +45,15 @@ function sessionRuntimeSnapshot(panel) {
     status: { text: status.textContent, state: status.dataset.status },
     cwd: role('cwd').textContent,
     session: role('session').textContent,
-    contextUsed: role('context-used').textContent,
+    contextUsed: {
+      state: role('context-used').dataset.contextState,
+      ariaLabel: role('context-used').getAttribute('aria-label'),
+      progress: role('context-ring-progress').getAttribute('stroke-dashoffset'),
+      summary: role('context-tooltip-summary').textContent,
+      detail: role('context-tooltip-detail').textContent,
+      cost: role('context-tooltip-cost').textContent,
+      costHidden: role('context-tooltip-cost').hidden
+    },
     changeCwd: { disabled: changeCwd.disabled, title: changeCwd.title },
     runtimeCard: {
       hidden: card.hidden,
@@ -78,4 +89,35 @@ test('SessionRuntimeController renders the session line and the installing runti
   assert.equal(controlled.runtimeCard.ariaBusy, 'true');
   assert.equal(controlled.runtimeCancel.hidden, false);
   assert.equal(controlled.runtimeInstall.hidden, true);
+  assert.equal(controlled.contextUsed.state, 'accent');
+  assert.match(controlled.contextUsed.summary, /4\.2K \/ 100K/);
+  assert.equal(controlled.contextUsed.detail, '95.8K remaining');
+  assert.equal(controlled.contextUsed.cost, 'Cost · 0.23 USD');
+  assert.equal(controlled.contextUsed.costHidden, false);
+});
+
+test('SessionRuntimeController renders a neutral Context dot when the Agent omits its limit', async () => {
+  const event = stateEvent(WS);
+  delete event.contextWindowTokens;
+  delete event.contextCostAmount;
+  delete event.contextCostCurrency;
+  const panel = await drive([event]);
+  const context = sessionRuntimeSnapshot(panel).contextUsed;
+
+  assert.equal(context.state, 'unknown');
+  assert.match(context.summary, /4\.2K used/);
+  assert.match(context.detail, /did not report a context limit/);
+  assert.equal(context.costHidden, true);
+});
+
+test('SessionRuntimeController changes Context ring color at warning and error thresholds', async () => {
+  const panel = await drive([
+    { type: 'agent_usage_update', workspaceId: WS, contextUsedTokens: 85, contextWindowTokens: 100 },
+    { type: 'agent_usage_update', workspaceId: WS, contextUsedTokens: 95, contextWindowTokens: 100 }
+  ]);
+
+  const context = sessionRuntimeSnapshot(panel).contextUsed;
+  assert.equal(context.state, 'error');
+  assert.match(context.summary, /^95%/);
+  assert.equal(context.progress, '5');
 });

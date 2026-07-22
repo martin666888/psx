@@ -40,8 +40,13 @@ export class AgentWorkspaceRegistry {
   private historyDock: HistoryDockController | null = null;
   private readonly controllers = new Map<string, AgentWorkspaceController>();
   // Plan controller refs by workspace: the shell layout coordinator needs the
-  // ACTIVE workspace's card for the compact one-drawer-at-a-time rule.
+  // ACTIVE workspace's card for the narrow one-at-a-time rule.
   private readonly planControllers = new Map<string, PlanController>();
+  // Shell owns responsive layout. Registry retains the narrow result so a Plan
+  // created while narrow immediately starts collapsed, and separately tracks
+  // whether History must yield to preserve the reading column.
+  private narrow = false;
+  private historyReadingConstrained = false;
   private planVisibilityListener: ((expanded: boolean) => void) | null = null;
   // Routes an active-workspace notice (agent_workspace_limit_reached) to that
   // workspace's timeline, keeping the thread's single-writer invariant.
@@ -82,6 +87,7 @@ export class AgentWorkspaceRegistry {
    * created), so composer `/history` and open-state updates reach it. */
   attachHistoryDock(dock: HistoryDockController): void {
     this.historyDock = dock;
+    dock.applyResponsiveCollapse(this.narrow || this.historyReadingConstrained);
   }
 
   /** The seam entry.ts hands to the AgentShellLayoutController: flat accessors
@@ -90,13 +96,13 @@ export class AgentWorkspaceRegistry {
     const activePlan = (): PlanController | undefined =>
       this.planControllers.get(this.activeAgentWorkspace());
     return {
+      setResponsiveLayout: (narrow, collapseHistoryForReading) =>
+        this.setResponsiveLayout(narrow, collapseHistoryForReading),
       isHistoryOpen: () => dock.isOpen(),
-      setHistoryOpen: (open) => {
-        if (open) dock.openHistory('');
-        else dock.setOpen(false);
-      },
+      closeHistory: () => dock.requestClose(),
       onHistoryOpenChanged: (listener) => dock.onOpenChanged(listener),
-      focusHistorySearch: () => dock.focusSearch(),
+      historyWidth: () => dock.getWidth(),
+      onHistoryWidthChanged: (listener) => dock.onWidthChanged(listener),
       focusHistoryToggle: () => dock.focusToggle(),
       isActivePlanVisible: () => activePlan()?.isVisible() ?? false,
       closeActivePlan: () => activePlan()?.closeCard(),
@@ -107,8 +113,8 @@ export class AgentWorkspaceRegistry {
     };
   }
 
-  /** Plan expansion reports arrive per workspace; only the active one drives
-   * the compact one-drawer-at-a-time rule. */
+  /** Plan visibility reports arrive per workspace; only the active one drives
+   * the narrow one-at-a-time rule. */
   private notifyPlanVisibility(workspaceId: string): void {
     if (workspaceId !== this.activeAgentWorkspace()) return;
     this.planVisibilityListener?.(this.planControllers.get(workspaceId)?.isVisible() ?? false);
@@ -128,7 +134,7 @@ export class AgentWorkspaceRegistry {
           this.host.activate(event.workspaceId, event.kind === 'agent' ? 'agent' : 'terminal');
           if (event.kind === 'agent') {
             this.historyBroker.activateWorkspace(event.workspaceId);
-            // The active workspace changed: re-evaluate the drawer rule.
+            // The active workspace changed: re-evaluate the narrow rule.
             this.notifyPlanVisibility(event.workspaceId);
           }
           this.historyDock?.updateOpenState();
@@ -191,6 +197,23 @@ export class AgentWorkspaceRegistry {
     this.noticeSinks.get(this.host.activeWorkspace())?.(text || 'Unable to create Agent workspace.');
   }
 
+  private setResponsiveLayout(narrow: boolean, collapseHistoryForReading: boolean): void {
+    const narrowChanged = this.narrow !== narrow;
+    const historyChanged = this.historyReadingConstrained !== collapseHistoryForReading;
+    if (!narrowChanged && !historyChanged) return;
+    const wasCollapsed = this.narrow || this.historyReadingConstrained;
+    const willCollapse = narrow || collapseHistoryForReading;
+    this.narrow = narrow;
+    this.historyReadingConstrained = collapseHistoryForReading;
+    // A user's temporary open survives repeated resizes inside the same mode,
+    // but crossing between the reading-constrained and narrow modes returns to
+    // the mode's deliberate collapsed default.
+    this.historyDock?.applyResponsiveCollapse(willCollapse, wasCollapsed && willCollapse);
+    if (narrowChanged) {
+      for (const plan of this.planControllers.values()) plan.applyNarrow(narrow);
+    }
+  }
+
   private createController(workspaceId: string, createdRaw?: RawHostMessage): void {
     if (this.controllers.has(workspaceId)) return;
     this.host.createWorkspace(workspaceId);
@@ -199,6 +222,7 @@ export class AgentWorkspaceRegistry {
       onVisibilityChanged: () => this.notifyPlanVisibility(workspaceId)
     });
     this.planControllers.set(workspaceId, plan);
+    plan.applyNarrow(this.narrow);
     // The composer renders its own system messages (upload validation, "still
     // uploading", read errors) through the timeline seam so the thread keeps a
     // single writer, and opens the global History dock through the dock seam.

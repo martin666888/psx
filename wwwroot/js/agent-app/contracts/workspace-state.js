@@ -30,7 +30,10 @@ export function createInitialWorkspaceState(workspaceId) {
             isRestoring: false,
             isTranscriptOnly: false,
             readySessionId: '',
-            contextUsedTokens: null
+            contextUsedTokens: null,
+            contextWindowTokens: null,
+            contextCostAmount: null,
+            contextCostCurrency: ''
         },
         runtime: {
             state: 'missing',

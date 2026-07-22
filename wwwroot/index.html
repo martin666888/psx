@@ -62,40 +62,65 @@
         </aside>
         <footer class="agent-composer">
             <div class="agent-composer-main">
-                <div data-role="attachments-strip" class="agent-attachments-strip" hidden></div>
-                <section data-role="mode-transition-prompt"
-                         class="agent-composer-mode-transition"
-                         aria-label="Agent decision"
-                         hidden></section>
-                <div data-role="input-row" class="agent-input-row">
-                    <button data-role="attach" class="agent-attach" type="button" title="Attach images" aria-label="Attach images">+</button>
-                    <input data-role="attachment-input" type="file" accept="image/*" multiple hidden>
-                    <textarea data-role="input"
-                              rows="1"
-                              spellcheck="false"
-                              role="combobox"
-                              aria-autocomplete="list"
-                              aria-haspopup="listbox"
-                              aria-expanded="false"
-                              aria-label="Message Agent"
-                              placeholder="Message Agent - / for commands"></textarea>
-                    <button data-role="send" class="agent-send" type="button" title="Send message">Send</button>
-                </div>
-                <div data-role="command-hint" class="agent-command-hint" role="status" aria-live="polite" hidden></div>
-                <div data-role="command-menu" class="agent-command-menu" role="listbox" aria-label="Available commands" hidden></div>
-                <div class="agent-composer-footer">
-                    <div class="agent-hints">
-                        <span>/ commands</span>
-                        <span data-role="context-used">Context used --k</span>
+                <div class="agent-composer-card">
+                    <div data-role="attachments-strip" class="agent-attachments-strip" hidden></div>
+                    <section data-role="mode-transition-prompt"
+                             class="agent-composer-mode-transition"
+                             aria-label="Agent decision"
+                             hidden></section>
+                    <div data-role="input-row" class="agent-input-row">
+                        <textarea data-role="input"
+                                  rows="1"
+                                  spellcheck="false"
+                                  role="combobox"
+                                  aria-autocomplete="list"
+                                  aria-haspopup="listbox"
+                                  aria-expanded="false"
+                                  aria-label="Message Agent"
+                                  placeholder="Message Agent - / for commands"></textarea>
                     </div>
-                    <label class="agent-mode-control" title="Agent mode">
-                        <span>mode</span>
-                        <select data-role="mode" disabled>
-                            <option value="">default</option>
-                        </select>
-                    </label>
-                    <div data-role="config-options" class="agent-config-options"></div>
+                    <div data-role="command-hint" class="agent-command-hint" role="status" aria-live="polite" hidden></div>
+                    <div class="agent-composer-footer">
+                        <div class="agent-composer-actions">
+                            <button data-role="attach" class="agent-attach" type="button" title="Attach images" aria-label="Attach images">+</button>
+                            <input data-role="attachment-input" type="file" accept="image/*" multiple hidden>
+                        </div>
+                        <div class="agent-hints">
+                            <div data-role="context-used" class="agent-context-usage" role="img" tabindex="0"
+                                 aria-label="Context usage is not available">
+                                <svg class="agent-context-ring" viewBox="0 0 20 20" aria-hidden="true">
+                                    <circle class="agent-context-ring-track" cx="10" cy="10" r="7.5" pathLength="100"></circle>
+                                    <circle data-role="context-ring-progress" class="agent-context-ring-progress"
+                                            cx="10" cy="10" r="7.5" pathLength="100"></circle>
+                                </svg>
+                                <span class="agent-context-tooltip" role="tooltip">
+                                    <strong data-role="context-tooltip-summary">Context unavailable</strong>
+                                    <span data-role="context-tooltip-detail"></span>
+                                    <span data-role="context-tooltip-cost" hidden></span>
+                                </span>
+                            </div>
+                        </div>
+                        <div class="agent-composer-controls">
+                            <label class="agent-mode-control" title="Agent mode">
+                                <span>mode</span>
+                                <select data-role="mode" disabled>
+                                    <option value="">default</option>
+                                </select>
+                            </label>
+                            <div data-role="config-options" class="agent-config-options"></div>
+                        </div>
+                        <button data-role="send" class="agent-send" type="button" title="Send message" aria-label="Send message">
+                            <svg class="agent-send-icon agent-send-icon-submit" viewBox="0 0 16 16" aria-hidden="true">
+                                <path d="M4.5 2.75 12 8l-7.5 5.25z"></path>
+                            </svg>
+                            <svg class="agent-send-icon agent-send-icon-stop" viewBox="0 0 16 16" aria-hidden="true">
+                                <rect x="3" y="3" width="10" height="10" rx="1"></rect>
+                            </svg>
+                            <span data-role="send-label" class="agent-visually-hidden">Send</span>
+                        </button>
+                    </div>
                 </div>
+                <div data-role="command-menu" class="agent-command-menu" role="listbox" aria-label="Available commands" hidden></div>
             </div>
         </footer>
         <dialog data-role="image-preview" class="agent-image-preview" aria-label="Image preview">

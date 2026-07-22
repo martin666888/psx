@@ -20,14 +20,6 @@
     pointer-events: auto;
 }
 
-/* Compact mode (<1080px): the card becomes a full-height right drawer. */
-.agent-shell-compact .agent-context-cards {
-    top: var(--agent-space-4);
-    right: var(--agent-space-2);
-    bottom: var(--agent-space-4);
-    z-index: 8;
-}
-
 .agent-plan-card {
     display: flex;
     flex: 0 1 auto;
@@ -38,11 +30,6 @@
     border-radius: var(--agent-radius-context-card);
     background: var(--agent-surface-raised);
     box-shadow: var(--agent-shadow-context-card);
-}
-
-.agent-shell-compact .agent-plan-card {
-    flex: 1 1 auto;
-    max-height: none;
 }
 
 .agent-plan-card[hidden] {

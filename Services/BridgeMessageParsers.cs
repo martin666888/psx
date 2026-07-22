@@ -76,7 +76,8 @@ internal static class AgentBridgeMessageParser
                             WorkspaceId = workspaceId,
                             Command = type == "agent_command" ? GetString(root, "command") : type,
                             RequestId = GetString(root, "requestId"),
-                            Value = GetString(root, "value")
+                            Value = GetString(root, "value"),
+                            BooleanValue = GetBoolean(root, "value")
                         });
                     return true;
             }
@@ -101,6 +102,12 @@ internal static class AgentBridgeMessageParser
         && value.TryGetInt64(out var number)
             ? number
             : 0;
+
+    private static bool? GetBoolean(JsonElement element, string propertyName) =>
+        element.TryGetProperty(propertyName, out var value)
+        && (value.ValueKind == JsonValueKind.True || value.ValueKind == JsonValueKind.False)
+            ? value.GetBoolean()
+            : null;
 
     private static List<string> GetStringArray(JsonElement element, string propertyName)
     {

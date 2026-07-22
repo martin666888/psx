@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { mountAgentApp, createAgentWorkspace } from './agentHarness.js';
 
 // PlanController: the workspace-local Plan card in the context-card column.
-// Two-state visibility (visible/hidden) as per-workspace runtime state. Wide
-// mode shows the card by default (empty state included); compact mode starts
-// hidden. The toolbar toggle switches visibility and carries the unread dot
+// Two-state visibility (visible/hidden) as per-workspace runtime state. The
+// preferred state defaults to visible; narrow mode temporarily starts hidden.
+// The toolbar toggle switches visibility and carries the unread dot
 // while the card is hidden. The width is a fixed CSS token — no resizer.
 
 const WS = '22222222-2222-4222-8222-222222222222';
@@ -19,20 +19,8 @@ function planEvent(workspaceId, entries = [{ content: 'Build feature', status: '
   return { type: 'plan_update', workspaceId, runId: 'run-1', entries };
 }
 
-function stubWide() {
-  window.matchMedia = () => ({
-    matches: true,
-    media: '(min-width: 1080px)',
-    addEventListener() {},
-    removeEventListener() {}
-  });
-}
-
-// Wide mount: matchMedia is re-stubbed AFTER the app exists but BEFORE the
-// workspace mounts, because PlanController reads the breakpoint at mount.
 async function mountWide() {
-  const { app, panelFor, runtime } = await mountAgentApp();
-  stubWide();
+  const { app, panelFor, runtime } = await mountAgentApp({ wide: true });
   createAgentWorkspace(app, WS);
   return { app, panel: panelFor(WS), panelFor, posted: runtime.postedMessages };
 }
@@ -100,8 +88,8 @@ test('PlanController: the toggle aria-label reflects the unread state', async ()
     'label resets once the card is visible');
 });
 
-test('PlanController: compact mode starts hidden so the drawer never covers the conversation unprompted', async () => {
-  // The harness matchMedia stub reports compact (matches: false).
+test('PlanController: narrow mode starts hidden so the card never appears unprompted', async () => {
+  // The harness matchMedia stub reports narrow (matches: false).
   const { app, panelFor } = await mountAgentApp();
   createAgentWorkspace(app, WS);
   const panel = panelFor(WS);
@@ -118,6 +106,29 @@ test('PlanController: visibility is independent across workspaces', async () => 
 
   assert.equal(role(panel, 'plan-card').hidden, true, 'WS stays hidden');
   assert.equal(role(other, 'plan-card').hidden, false, 'OTHER keeps its own default');
+});
+
+test('PlanController: a workspace created while narrow starts hidden', async () => {
+  const { app, panelFor } = await mountAgentApp();
+  createAgentWorkspace(app, WS);
+  role(panelFor(WS), 'plan-toggle').click();
+  assert.equal(role(panelFor(WS), 'plan-card').hidden, false, 'first workspace has a temporary open');
+
+  createAgentWorkspace(app, OTHER);
+  assert.equal(role(panelFor(OTHER), 'plan-card').hidden, true,
+    'new workspace receives the existing narrow mode immediately');
+});
+
+test('PlanController: a hidden narrow card raises unread and restores without persisting state', async () => {
+  const { app, panelFor, breakpoint } = await mountAgentApp();
+  createAgentWorkspace(app, WS);
+  const panel = panelFor(WS);
+
+  app.handle(planEvent(WS, [{ content: 'Narrow update', status: 'pending' }]));
+  assert.deepEqual(cardState(panel), { card: false, toggleExpanded: 'false', unread: true });
+
+  breakpoint.setWide(true);
+  assert.deepEqual(cardState(panel), { card: true, toggleExpanded: 'true', unread: false });
 });
 
 test('PlanController: the workspace template carries no inspector, history or resizer residue', async () => {

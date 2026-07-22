@@ -39,6 +39,43 @@ function normalizeContextUsed(value) {
     const numeric = Number(value);
     return Number.isFinite(numeric) && numeric >= 0 ? numeric : null;
 }
+/** A non-positive or unavailable context window must never be guessed. */
+function normalizeContextWindow(value) {
+    if (value === null || value === undefined || value === '')
+        return null;
+    const numeric = Number(value);
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+}
+function normalizeContextCostAmount(value) {
+    if (value === null || value === undefined || value === '')
+        return null;
+    const numeric = Number(value);
+    return Number.isFinite(numeric) && numeric >= 0 ? numeric : null;
+}
+function normalizeContextCostCurrency(value) {
+    return nonEmptyTrimmed(value) ?? '';
+}
+function mergeContextUsage(state, raw) {
+    const contextUsedTokens = 'contextUsedTokens' in raw
+        ? normalizeContextUsed(raw.contextUsedTokens)
+        : state.contextUsedTokens;
+    const contextWindowTokens = 'contextWindowTokens' in raw
+        ? normalizeContextWindow(raw.contextWindowTokens)
+        : state.contextWindowTokens;
+    const rawCostAmount = 'contextCostAmount' in raw
+        ? normalizeContextCostAmount(raw.contextCostAmount)
+        : state.contextCostAmount;
+    const rawCostCurrency = 'contextCostCurrency' in raw
+        ? normalizeContextCostCurrency(raw.contextCostCurrency)
+        : state.contextCostCurrency;
+    const hasCost = rawCostAmount !== null && !!rawCostCurrency;
+    return {
+        contextUsedTokens,
+        contextWindowTokens,
+        contextCostAmount: hasCost ? rawCostAmount : null,
+        contextCostCurrency: hasCost ? rawCostCurrency : ''
+    };
+}
 /**
  * Applies the legacy _updateAgentIdentity merge: only non-empty trimmed fields
  * override the current identity. Used both for the creation seed and for
@@ -135,21 +172,29 @@ function normalizeConfigOptions(value) {
     const list = Array.isArray(value) ? value : [];
     return list
         .map((option) => (option ?? {}))
-        .filter((option) => typeof option.id === 'string' &&
-        option.id &&
-        option.type === 'select' &&
-        Array.isArray(option.options) &&
-        option.options.length > 0)
-        .map((option) => ({
-        id: option.id,
-        name: asString(option.name),
-        description: asString(option.description),
-        currentValue: asString(option.currentValue),
-        options: option.options.map((item) => {
-            const it = (item ?? {});
-            return { value: asString(it.value), name: asString(it.name), description: asString(it.description) };
-        })
-    }))
+        .filter((option) => {
+        if (typeof option.id !== 'string' || !option.id)
+            return false;
+        if (option.type === 'boolean')
+            return typeof option.currentValue === 'boolean';
+        return option.type === 'select' && Array.isArray(option.options) && option.options.length > 0;
+    })
+        .map((option) => {
+        const type = option.type === 'boolean' ? 'boolean' : 'select';
+        return {
+            id: option.id,
+            name: asString(option.name),
+            description: asString(option.description),
+            type,
+            currentValue: type === 'boolean' ? option.currentValue : asString(option.currentValue),
+            options: Array.isArray(option.options)
+                ? option.options.map((item) => {
+                    const it = (item ?? {});
+                    return { value: asString(it.value), name: asString(it.name), description: asString(it.description) };
+                })
+                : []
+        };
+    })
         .sort((a, b) => configOptionRank(a.id) - configOptionRank(b.id));
 }
 /** Folds one validated workspace event into a new state (pure, no DOM). */
@@ -162,9 +207,7 @@ export function reduceWorkspaceState(state, event) {
                 ...mergeIdentity(state.identity, raw),
                 supportsImage: raw.supportsImage !== false
             };
-            const contextUsedTokens = 'contextUsedTokens' in raw
-                ? normalizeContextUsed(raw.contextUsedTokens)
-                : state.session.contextUsedTokens;
+            const contextUsage = mergeContextUsage(state.session, raw);
             return {
                 ...state,
                 identity,
@@ -178,7 +221,7 @@ export function reduceWorkspaceState(state, event) {
                     isDraft: raw.isDraft === true,
                     isRestoring: status === 'restoring',
                     isTranscriptOnly: status === 'transcript_only',
-                    contextUsedTokens
+                    ...contextUsage
                 }
             };
         }
@@ -205,13 +248,11 @@ export function reduceWorkspaceState(state, event) {
         case 'agent_usage_update': {
             return {
                 ...state,
-                session: { ...state.session, contextUsedTokens: normalizeContextUsed(raw.contextUsedTokens) }
+                session: { ...state.session, ...mergeContextUsage(state.session, raw) }
             };
         }
         case 'agent_thread_loaded': {
-            const contextUsedTokens = 'contextUsedTokens' in raw
-                ? normalizeContextUsed(raw.contextUsedTokens)
-                : state.session.contextUsedTokens;
+            const contextUsage = mergeContextUsage(state.session, raw);
             // Inspector plan slice: legacy _loadThread resets the plan when clearing,
             // then upserts every plan-role message in order (the last one wins).
             let plan = raw.clear ? EMPTY_PLAN : state.inspector.plan;
@@ -229,7 +270,7 @@ export function reduceWorkspaceState(state, event) {
                     currentThreadId: asString(raw.threadId),
                     cwd: asString(raw.cwd) || state.session.cwd,
                     sessionId: asString(raw.sessionId) || state.session.sessionId,
-                    contextUsedTokens
+                    ...contextUsage
                 },
                 inspector: plan === state.inspector.plan ? state.inspector : { ...state.inspector, plan }
             };
@@ -263,7 +304,9 @@ export function reduceWorkspaceState(state, event) {
         case 'agent_config_options': {
             const configOptions = normalizeConfigOptions(raw.options);
             const modeOption = configOptions.find((option) => option.id === 'mode');
-            const currentModeId = modeOption?.currentValue || state.composer.currentModeId;
+            const currentModeId = typeof modeOption?.currentValue === 'string'
+                ? modeOption.currentValue
+                : state.composer.currentModeId;
             return { ...state, composer: { ...state.composer, configOptions, currentModeId } };
         }
         case 'agent_mode_current': {

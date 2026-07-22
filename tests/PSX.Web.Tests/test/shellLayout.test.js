@@ -57,21 +57,24 @@ test('shell: structural tokens and the centerline mechanism exist in shell.css',
   const shell = readCss('shell.css');
   for (const token of [
     '--agent-history-width: 280px',
-    '--agent-reading-max-width: 880px',
+    '--agent-history-narrow-width: 220px',
+    '--agent-reading-max-width: 920px',
     '--agent-dock-gap: 16px',
     '--agent-radius-context-card: 12px',
     '--agent-radius-workspace-canvas: 16px',
     '--agent-shadow-canvas',
     '--agent-shadow-context-card',
     '--agent-reading-column-max',
-    '--agent-reading-column-start',
-    '--agent-canvas-offset'
+    '--agent-reading-column-start'
   ]) {
     assert.ok(shell.includes(token), `shell.css missing ${token}`);
   }
-  // dock-open: canvas offset + symmetric clearance are what keep the center fixed.
-  assert.match(shell, /#agent-workspace-container\.agent-history-dock-open:not\(\.agent-shell-compact\) \.agent-panel/);
-  assert.match(shell, /--agent-side-clearance: calc\(var\(--agent-history-width-effective\) \+ var\(--agent-dock-gap\)\)/);
+  // Dock-open preserves the reading width and only moves its start enough to
+  // clear History. There is no mirrored dock-width clearance on the right.
+  assert.match(shell, /#agent-workspace-container\.agent-history-dock-open \.agent-panel/);
+  assert.match(shell, /--agent-reading-column-start: max\(\s*var\(--agent-dock-gap\),/);
+  assert.ok(!shell.includes('--agent-canvas-offset'));
+  assert.ok(!shell.includes('--agent-side-clearance'));
   // Shadows derive from the theme-driven --agent-shadow, never hardcoded colors.
   assert.match(shell, /--agent-shadow-canvas:.*color-mix\(in srgb, var\(--agent-shadow\)/);
   // Animations die under reduced motion.
@@ -85,10 +88,11 @@ test('shell: structural tokens and the centerline mechanism exist in shell.css',
 
 test('shell: the Plan card and the runtime card follow the new canvas rules', () => {
   const plan = readCss('plan.css');
-  // Content-height card anchored below the toolbar; only compact mode fills height.
+  // Content-height card anchored below the toolbar at every viewport width.
   assert.match(plan, /top: calc\(var\(--agent-toolbar-height\) \+ var\(--agent-space-2\)\)/);
   assert.match(plan, /max-height: min\(60vh, 560px\)/);
-  assert.match(plan, /\.agent-shell-compact \.agent-plan-card/);
+  assert.ok(!plan.includes('agent-shell-compact'));
+  assert.ok(!plan.includes('max-height: none'));
   assert.ok(!plan.includes('agent-plan-resizer'), 'resizer styles retired');
   assert.ok(!plan.includes('agent-plan-entry'), 'entry styles retired');
 
@@ -117,25 +121,24 @@ test('shell: composer and conversation share the same reading-column rules', () 
   const composer = readCss('composer.css');
   assert.match(composer, /width: var\(--agent-reading-column-max\)/);
   assert.match(composer, /margin-left: max\(0px, var\(--agent-reading-column-start\)\)/);
-  // The three-column composer grid and its plan-column separator are gone.
+  // The old three-column composer grid is gone. The compact boolean switch
+  // intentionally uses ::after for its thumb, so a global pseudo-element ban
+  // would reject the current accessible control.
   assert.ok(!composer.includes('grid-template-columns'), 'composer grid retired');
-  assert.ok(!composer.includes('::after'), 'plan-column separator retired');
+  assert.ok(!composer.includes('agent-plan-column'), 'plan-column separator retired');
+  assert.match(composer, /\.agent-composer-footer[\s\S]*?border-radius: 0 0 var\(--agent-radius-context-card\)/);
 });
 
-test('shell: the effective dock width is capped only in wide mode', () => {
+test('shell: dock width stays persisted in wide mode and becomes fixed only while narrow', () => {
   const shell = readCss('shell.css');
-  // Base (compact drawer) is uncapped: effective width follows the dock width.
-  assert.match(shell, /--agent-history-width-effective: var\(--agent-history-width\)/);
-  // Wide mode caps at the largest width that keeps a min-width column centered.
-  assert.match(
-    shell,
-    /#agent-workspace-container:not\(\.agent-shell-compact\) \{\s*--agent-history-width-effective: min\(\s*var\(--agent-history-width\),\s*calc\(\(100vw - var\(--agent-reading-min-width\)\) \/ 2 - var\(--agent-dock-gap\)\)\s*\);?\s*\}/
-  );
-  // Canvas and reading rules consume the effective width, never the raw one.
+  assert.match(shell, /--agent-history-width-effective: var\(--agent-history-width\);/);
+  assert.match(shell, /#agent-workspace-container\.agent-shell-narrow \{\s*--agent-history-width-effective: var\(--agent-history-narrow-width\);?\s*\}/);
+  // Canvas and the collision-aware reading rules consume the effective width,
+  // never the raw one.
   assert.match(shell, /left: var\(--agent-history-width-effective\)/);
-  assert.match(shell, /--agent-canvas-offset: var\(--agent-history-width-effective\)/);
-  assert.match(shell, /--agent-side-clearance: calc\(var\(--agent-history-width-effective\) \+ var\(--agent-dock-gap\)\)/);
-  // 1080px cap = (1080-320)/2-16 = 364px; 1440px cap = 544 > 420 (uncapped).
+  assert.match(shell, /calc\(100vw - var\(--agent-history-width-effective\) - var\(--agent-dock-gap\) - var\(--agent-viewport-padding\)\)/);
+  assert.match(shell, /calc\(\(100vw - var\(--agent-reading-column-max\)\) \/ 2 - var\(--agent-history-width-effective\)\)/);
   const history = readCss('history.css');
   assert.match(history, /width: var\(--agent-history-width-effective, 280px\)/);
+  assert.match(history, /\.agent-shell-narrow \.agent-history-dock-resizer/);
 });

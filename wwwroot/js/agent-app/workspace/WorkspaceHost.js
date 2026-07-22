@@ -60,6 +60,11 @@ export class WorkspaceHost {
     activate(workspaceId, kind) {
         const id = String(workspaceId || '');
         this.activeWorkspaceId = id;
+        // The Agent root is an absolute layer above the terminal. It must only
+        // receive pointer events while an Agent workspace is actually visible;
+        // otherwise its transparent surface prevents blank-area terminal clicks
+        // from reaching xterm's wrapper focus handler.
+        this.container.classList.toggle('agent-workspace-active', kind === 'agent');
         this.historyDockView?.setAgentViewActive(kind === 'agent');
         if (kind === 'terminal') {
             for (const entry of this.workspaces.values())

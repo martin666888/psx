@@ -25,6 +25,7 @@ public sealed class AgentCommandEventArgs : EventArgs
     public string Command { get; set; } = "";
     public string? RequestId { get; set; }
     public string? Value { get; set; }
+    public bool? BooleanValue { get; set; }
 }
 
 public sealed class AgentAttachmentUploadEventArgs : EventArgs

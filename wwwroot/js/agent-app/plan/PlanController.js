@@ -8,18 +8,14 @@
 // panel DOM survives Tab hide/show untouched.
 //
 // Visibility is two-state (visible / hidden), workspace-local runtime state
-// that is never persisted. Wide mode (>=1080px) shows the card by default — a
-// small, content-height card below the toolbar, empty state included — while
-// compact mode starts with the drawer closed so an empty card never covers
-// the conversation unprompted. The user hides/shows it through the toolbar
+// that is never persisted. The preference defaults to visible; Shell applies a
+// temporary narrow override so an empty card never covers the conversation
+// unprompted. The user hides/shows it through the toolbar
 // toggle. While hidden, an arriving active plan raises the unread dot on the
 // toggle instead of interrupting; showing the card clears it. The width is a
 // fixed CSS token; there is no resizer.
 import { planStatusClass, planStatusLabel, planStatusMarker } from '../core/plan.js';
 const EMPTY_PLAN = { active: false, runId: '', entries: [], fallbackText: '' };
-// Same breakpoint as AgentShellLayoutController: wide shows the card by
-// default, compact keeps the drawer closed until the user asks for it.
-const WIDE_QUERY = '(min-width: 1080px)';
 function role(panel, name) {
     return panel.querySelector('[data-role="' + name + '"]');
 }
@@ -32,7 +28,10 @@ export class PlanController {
     planPanel = null;
     planToggle = null;
     planToggleUnread = null;
-    visible = true;
+    // preferredVisible is workspace-local user intent. narrowOverride is a
+    // temporary responsive value: null means wide mode, boolean means narrow.
+    preferredVisible = true;
+    narrowOverride = null;
     unread = false;
     lastPlanRef = EMPTY_PLAN;
     cleanup = [];
@@ -50,8 +49,7 @@ export class PlanController {
         this.planPanel = role(panel, 'plan-panel');
         this.planToggle = role(panel, 'plan-toggle');
         this.planToggleUnread = role(panel, 'plan-toggle-unread');
-        this.visible = this.readDefaultVisible();
-        this.on(this.planToggle, 'click', () => this.setVisible(!this.visible));
+        this.on(this.planToggle, 'click', () => this.requestVisible(!this.effectiveVisible()));
         this.renderPlan(EMPTY_PLAN);
         this.applyVisibility();
     }
@@ -74,40 +72,46 @@ export class PlanController {
         this.panel = null;
     }
     // --- Visibility (visible / hidden) -------------------------------------------
-    readDefaultVisible() {
-        try {
-            return window.matchMedia(WIDE_QUERY).matches;
-        }
-        catch {
-            // matchMedia can be unavailable in constrained WebView profiles.
-            return true;
-        }
-    }
-    /** Shell layout seam for the compact one-drawer rule and Esc close. */
+    /** Shell layout seam for the narrow mutual-exclusion rule and Esc close. */
     isVisible() {
-        return this.visible;
+        return this.effectiveVisible();
     }
-    setVisible(visible) {
-        if (this.visible === visible)
-            return;
-        this.visible = visible;
-        this.applyVisibility();
-        this.callbacks.onVisibilityChanged?.();
+    /** User or Shell request: wide changes the workspace preference, narrow
+     * changes only the temporary responsive override. */
+    requestVisible(visible) {
+        if (this.narrowOverride === null)
+            this.setPreferredVisible(visible);
+        else
+            this.setNarrowOverride(visible);
     }
     closeCard() {
-        this.setVisible(false);
+        this.requestVisible(false);
+    }
+    /** Registry fans Shell's one responsive mode out to every workspace. */
+    applyNarrow(narrow) {
+        if (narrow) {
+            // A repeated broadcast must preserve a user's temporary choice.
+            if (this.narrowOverride !== null)
+                return;
+            this.setNarrowOverride(false);
+            return;
+        }
+        if (this.narrowOverride === null)
+            return;
+        this.setNarrowOverride(null);
     }
     focusToggle() {
         this.planToggle?.focus();
     }
     applyVisibility() {
         // Becoming visible is the "user saw it" signal that clears the unread dot.
-        if (this.visible)
+        const visible = this.effectiveVisible();
+        if (visible)
             this.unread = false;
         if (this.planCard)
-            this.planCard.hidden = !this.visible;
+            this.planCard.hidden = !visible;
         if (this.planToggle) {
-            this.planToggle.setAttribute('aria-expanded', String(this.visible));
+            this.planToggle.setAttribute('aria-expanded', String(visible));
             // The explicit aria-label overrides any inner span's label, so the
             // unread state must be part of the button's own accessible name.
             this.planToggle.setAttribute('aria-label', this.unread ? 'Toggle Plan card, plan updated' : 'Toggle Plan card');
@@ -123,10 +127,32 @@ export class PlanController {
         if (plan === this.lastPlanRef)
             return;
         this.lastPlanRef = plan;
-        if (!this.visible && plan.active)
+        if (!this.effectiveVisible() && plan.active)
             this.unread = true;
         this.renderPlan(plan);
         this.applyVisibility();
+    }
+    effectiveVisible() {
+        return this.narrowOverride ?? this.preferredVisible;
+    }
+    setPreferredVisible(visible) {
+        if (this.preferredVisible === visible)
+            return;
+        const previous = this.effectiveVisible();
+        this.preferredVisible = visible;
+        this.syncEffectiveVisibility(previous);
+    }
+    setNarrowOverride(visible) {
+        if (this.narrowOverride === visible)
+            return;
+        const previous = this.effectiveVisible();
+        this.narrowOverride = visible;
+        this.syncEffectiveVisibility(previous);
+    }
+    syncEffectiveVisibility(previous) {
+        this.applyVisibility();
+        if (this.effectiveVisible() !== previous)
+            this.callbacks.onVisibilityChanged?.();
     }
     renderPlan(plan) {
         if (!this.planPanel)

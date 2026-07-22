@@ -10,8 +10,9 @@
 // picker without entering the request state machine. Open state and width
 // persist in localStorage.
 //
-// Layered layout (canvas/overlay), theming and the responsive drawer are
-// later steps; this step is a plain block-level dock.
+// Layered layout keeps History as a left dock at every width. Responsive
+// layouts can temporarily collapse it before it would squeeze the reading
+// column, but never turn it into a floating drawer.
 
 import type {
   AgentHistoryListener,
@@ -43,7 +44,6 @@ const MAX_WIDTH = 420;
 const DEFAULT_WIDTH = 280;
 const OPEN_STORAGE_KEY = 'psx.agent.historyDockOpen';
 const WIDTH_STORAGE_KEY = 'psx.agent.historyDockWidth';
-const FIRST_RUN_MIN_WIDTH = 1080;
 
 export class HistoryDockController {
   private readonly host: HistoryDockHost;
@@ -54,7 +54,11 @@ export class HistoryDockController {
   private searchInput: HTMLInputElement | null = null;
   private providerSelect: HTMLSelectElement | null = null;
 
-  private open = false;
+  // preferredOpen is the persisted user choice. responsiveOverride is a
+  // temporary responsive value: null means normal layout, boolean means the
+  // responsive layout is currently in control.
+  private preferredOpen = true;
+  private responsiveOverride: boolean | null = null;
   private agentViewActive = true;
   private width = DEFAULT_WIDTH;
   private isResizing = false;
@@ -67,6 +71,7 @@ export class HistoryDockController {
   /** Groups the user expanded past the 5-item preview limit. */
   private readonly expandedGroups = new Set<string>();
   private readonly openListeners = new Set<(open: boolean) => void>();
+  private readonly widthListeners = new Set<(width: number) => void>();
 
   private readonly cleanup: Array<() => void> = [];
 
@@ -138,7 +143,7 @@ export class HistoryDockController {
 
     this.width = this.readWidth();
     this.applyWidth(this.width);
-    this.open = this.readOpen();
+    this.preferredOpen = this.readOpen();
     this.unsubscribeStore = this.host.subscribe(() => this.render());
     this.wire(search, providerSelect, refresh, resizer);
     // The open/close control is the history-toggle button in every workspace
@@ -147,7 +152,7 @@ export class HistoryDockController {
     this.on(parent, 'click', (event) => {
       const target = event.target as HTMLElement | null;
       if (!target || !target.closest('[data-role="history-toggle"]')) return;
-      if (this.open) this.setOpen(false);
+      if (this.effectiveOpen()) this.requestClose();
       else this.openHistory('');
     });
     this.syncVisibility();
@@ -159,21 +164,29 @@ export class HistoryDockController {
    * explicit refresh is only sent once data exists, so opening never queues
    * a redundant second wave. */
   openHistory(sourceWorkspaceId: string): void {
-    this.setOpen(true);
-    if (this.host.getState().loaded) this.host.requestRefresh(sourceWorkspaceId);
+    this.requestOpen(sourceWorkspaceId);
   }
 
   isOpen(): boolean {
-    return this.open;
+    return this.effectiveOpen();
   }
 
-  /** Shell layout seam: fires after every open-state change (drawer
-   * exclusivity + toggle aria-expanded sync live there). */
+  /** Shell layout seam: fires after every effective visibility change. */
   onOpenChanged(listener: (open: boolean) => void): void {
     this.openListeners.add(listener);
   }
 
-  /** Focus entry points for the drawer accessibility flow. */
+  /** Current persisted dock width, used by Shell to avoid squeezing reading. */
+  getWidth(): number {
+    return this.width;
+  }
+
+  /** Fires when a completed pointer resize or keyboard resize changes width. */
+  onWidthChanged(listener: (width: number) => void): void {
+    this.widthListeners.add(listener);
+  }
+
+  /** Focus entry point for user-initiated History open requests. */
   focusSearch(): void {
     this.searchInput?.focus();
   }
@@ -223,19 +236,62 @@ export class HistoryDockController {
 
   // --- Visibility + persistence ---------------------------------------------
 
-  setOpen(open: boolean): void {
-    if (this.open === open) {
-      this.syncVisibility();
+  /** Applies Shell's temporary responsive collapse without persistence. */
+  applyResponsiveCollapse(collapsed: boolean, resetTemporaryOpen = false): void {
+    if (collapsed) {
+      // A repeated broadcast must not undo a user's temporary open.
+      if (!resetTemporaryOpen && this.responsiveOverride !== null) return;
+      this.setResponsiveOverride(false);
       return;
     }
-    this.open = open;
+    if (this.responsiveOverride === null) return;
+    this.setResponsiveOverride(null);
+  }
+
+  /** User request: updates the persistent preference in normal layout and
+   * only the temporary override while responsive collapse is active. */
+  requestOpen(sourceWorkspaceId = ''): void {
+    if (this.responsiveOverride === null) this.setPreferredOpen(true);
+    else this.setResponsiveOverride(true);
+    // Deliberate History navigation moves focus; responsive restoration does not.
+    this.focusSearch();
+    if (this.host.getState().loaded) this.host.requestRefresh(sourceWorkspaceId);
+  }
+
+  /** User or Shell close request; responsive closes stay temporary. */
+  requestClose(): void {
+    if (this.responsiveOverride === null) this.setPreferredOpen(false);
+    else this.setResponsiveOverride(false);
+  }
+
+  private effectiveOpen(): boolean {
+    return this.responsiveOverride ?? this.preferredOpen;
+  }
+
+  private setPreferredOpen(open: boolean): void {
+    if (this.preferredOpen === open) return;
+    const previous = this.effectiveOpen();
+    this.preferredOpen = open;
     try {
       window.localStorage?.setItem(OPEN_STORAGE_KEY, open ? '1' : '0');
     } catch {
       // Persistence is optional; the dock still works for the session.
     }
+    this.syncEffectiveOpen(previous);
+  }
+
+  private setResponsiveOverride(open: boolean | null): void {
+    if (this.responsiveOverride === open) return;
+    const previous = this.effectiveOpen();
+    this.responsiveOverride = open;
+    this.syncEffectiveOpen(previous);
+  }
+
+  private syncEffectiveOpen(previous: boolean): void {
     this.syncVisibility();
-    for (const listener of this.openListeners) listener(open);
+    const current = this.effectiveOpen();
+    if (current === previous) return;
+    for (const listener of this.openListeners) listener(current);
   }
 
   private readOpen(): boolean {
@@ -246,20 +302,21 @@ export class HistoryDockController {
     } catch {
       // Fall through to the first-run default.
     }
-    // First run: expanded on desktop widths, collapsed on compact widths
-    // (the full responsive behaviour is a later step).
-    return window.matchMedia('(min-width: ' + FIRST_RUN_MIN_WIDTH + 'px)').matches;
+    // First-run preference is desktop-like. Shell applies a temporary
+    // responsive override whenever the current layout cannot host the dock.
+    return true;
   }
 
   private syncVisibility(): void {
     if (!this.dock) return;
-    const visible = this.open && this.agentViewActive;
+    const open = this.effectiveOpen();
+    const visible = open && this.agentViewActive;
     this.dock.hidden = !visible;
     this.dock.parentElement?.classList.toggle('agent-history-dock-open', visible);
     // Every workspace toolbar carries a history-toggle; keep them all in sync.
     this.dock.parentElement
       ?.querySelectorAll('[data-role="history-toggle"]')
-      .forEach((toggle) => toggle.setAttribute('aria-expanded', String(this.open)));
+      .forEach((toggle) => toggle.setAttribute('aria-expanded', String(open)));
     if (visible) this.maybeAutoLoad();
   }
 
@@ -294,6 +351,7 @@ export class HistoryDockController {
     } catch {
       // Width persistence is optional; resizing remains available.
     }
+    for (const listener of this.widthListeners) listener(this.width);
   }
 
   private clampWidth(width: number): number {

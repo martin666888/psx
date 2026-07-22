@@ -86,6 +86,9 @@ internal sealed class TranscriptOnlyAgentWorkspaceSession : IAgentWorkspaceSessi
             assistantName = "Agent",
             supportsImage = false,
             contextUsedTokens = _thread.ContextUsedTokens,
+            contextWindowTokens = _thread.ContextWindowTokens,
+            contextCostAmount = _thread.ContextCostAmount,
+            contextCostCurrency = _thread.ContextCostCurrency,
             store = _threadStore.RootDirectory
         });
     }

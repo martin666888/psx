@@ -26,11 +26,40 @@ public sealed class AcpAgentSessionServiceTests
         Assert.AreEqual("thinking", thread.Messages[1].Role);
         Assert.AreEqual(thread.Messages[0].RunId, thread.Messages[1].RunId);
         Assert.AreEqual(4321, thread.ContextUsedTokens);
+        Assert.AreEqual(100_000, thread.ContextWindowTokens);
+        Assert.AreEqual(0.23m, thread.ContextCostAmount);
+        Assert.AreEqual("USD", thread.ContextCostCurrency);
         Assert.AreEqual("fake-session-new", thread.AcpSessionId);
         Assert.AreEqual("1.0-test", thread.AdapterVersion);
 
         var commandEvent = fixture.Bridge.Events.Last(message => EventType(message) == "agent_commands");
         Assert.AreEqual(1, commandEvent.GetProperty("commands").GetArrayLength(), "Duplicate ACP commands must be collapsed.");
+    }
+
+    [TestMethod]
+    public async Task BooleanConfigOption_AdvertisesCapabilityAndSendsTypedBooleanValue()
+    {
+        using var fixture = new FakeAcpSessionFixture(nameof(BooleanConfigOption_AdvertisesCapabilityAndSendsTypedBooleanValue));
+
+        await fixture.Service.SubmitMessageAsync("exercise boolean config");
+        await fixture.Bridge.WaitForEventAsync("run_finished");
+        var initialOptions = await fixture.Bridge.WaitForEventAsync(
+            "agent_config_options",
+            message => message.GetProperty("options").EnumerateArray()
+                .Any(option => option.GetProperty("id").GetString() == "fast_mode"));
+        Assert.IsTrue(initialOptions.GetProperty("options").EnumerateArray()
+            .Any(option => option.GetProperty("id").GetString() == "fast_mode"));
+
+        fixture.Bridge.RaiseCommand("set_config_option", "fast_mode", booleanValue: true);
+        var updatedOptions = await fixture.Bridge.WaitForEventAsync(
+            "agent_config_options",
+            message => message.GetProperty("options").EnumerateArray()
+                .Any(option => option.GetProperty("id").GetString() == "fast_mode"
+                    && option.GetProperty("currentValue").ValueKind == JsonValueKind.True));
+
+        Assert.IsTrue(updatedOptions.GetProperty("options").EnumerateArray()
+            .Any(option => option.GetProperty("id").GetString() == "fast_mode"
+                && option.GetProperty("currentValue").GetBoolean()));
     }
 
     [TestMethod]

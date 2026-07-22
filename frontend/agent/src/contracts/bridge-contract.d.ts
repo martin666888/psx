@@ -78,7 +78,7 @@ interface AgentCommandPayload {
     type: 'agent_command';
     workspaceId: string;
     command: string;
-    value: string;
+    value: string | boolean;
     requestId: string;
 }
 

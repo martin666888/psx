@@ -25,6 +25,9 @@ export interface WorkspaceSessionState {
   isTranscriptOnly: boolean;
   readySessionId: string;
   contextUsedTokens: number | null;
+  contextWindowTokens: number | null;
+  contextCostAmount: number | null;
+  contextCostCurrency: string;
 }
 
 export interface WorkspaceRuntimeState {
@@ -82,12 +85,13 @@ export interface ComposerConfigOptionItem {
   description: string;
 }
 
-/** A provider-driven config <select> rendered next to the composer. */
+/** A provider-driven config control rendered next to the composer. */
 export interface ComposerConfigOption {
   id: string;
   name: string;
   description: string;
-  currentValue: string;
+  type: 'select' | 'boolean';
+  currentValue: string | boolean;
   options: ComposerConfigOptionItem[];
 }
 
@@ -138,7 +142,10 @@ export function createInitialWorkspaceState(workspaceId: string): AgentWorkspace
       isRestoring: false,
       isTranscriptOnly: false,
       readySessionId: '',
-      contextUsedTokens: null
+      contextUsedTokens: null,
+      contextWindowTokens: null,
+      contextCostAmount: null,
+      contextCostCurrency: ''
     },
     runtime: {
       state: 'missing',

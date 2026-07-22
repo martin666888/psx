@@ -119,7 +119,7 @@ const Bridge = {
     /**
      * @param {string} workspaceId
      * @param {string} command
-     * @param {string} [value]
+     * @param {string|boolean} [value]
      * @param {string} [requestId]
      */
     sendAgentCommand(workspaceId, command, value, requestId) {
@@ -127,7 +127,7 @@ const Bridge = {
             type: BridgeSendType.AgentCommand,
             workspaceId: workspaceId,
             command: command,
-            value: value || '',
+            value: value ?? '',
             requestId: requestId || ''
         });
     },
@@ -183,7 +183,7 @@ const Bridge = {
             sendAgentMessage: (text, attachments) => this.sendAgentMessage(workspaceId, text, attachments),
             /** @param {AgentAttachmentUploadPayload} payload */
             uploadAgentAttachment: (payload) => this.uploadAgentAttachment(workspaceId, payload),
-            /** @param {string} command @param {string} [value] @param {string} [requestId] */
+            /** @param {string} command @param {string|boolean} [value] @param {string} [requestId] */
             sendAgentCommand: (command, value, requestId) => this.sendAgentCommand(workspaceId, command, value, requestId),
             /** @param {string} requestId @param {string} value */
             sendAgentPermissionResponse: (requestId, value) => this.sendAgentPermissionResponse(workspaceId, requestId, value),

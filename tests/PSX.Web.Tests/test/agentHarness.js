@@ -111,6 +111,48 @@ export function installAgentRuntime() {
   };
 }
 
+// Shell owns responsive layout. Tests install this controller before
+// createAgentApp() so both the 1000px narrow breakpoint and ordinary resize
+// events exercise the same lifecycle as WebView.
+export function installBreakpoint(wide = false) {
+  let viewportWidth = wide ? 1440 : 900;
+  let matches = viewportWidth >= 1000;
+  const listeners = new Set();
+  const media = '(min-width: 1000px)';
+  const mql = {
+    get matches() {
+      return matches;
+    },
+    media,
+    addEventListener(type, listener) {
+      if (type === 'change') listeners.add(listener);
+    },
+    removeEventListener(type, listener) {
+      if (type === 'change') listeners.delete(listener);
+    }
+  };
+  window.matchMedia = () => mql;
+  const setViewportWidth = (value) => {
+    const nextWidth = Math.max(1, Math.round(Number(value) || 0));
+    if (viewportWidth === nextWidth) return;
+    viewportWidth = nextWidth;
+    const previousMatches = matches;
+    matches = viewportWidth >= 1000;
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: viewportWidth });
+    window.dispatchEvent(new Event('resize'));
+    if (previousMatches !== matches) {
+      for (const listener of listeners) listener({ matches, media });
+    }
+  };
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: viewportWidth });
+  return {
+    setWide(value) {
+      setViewportWidth(value ? 1440 : 900);
+    },
+    setViewportWidth
+  };
+}
+
 let cachedTemplateMarkup;
 
 // Unified DOM fixture extracted from the real wwwroot/index.html
@@ -130,8 +172,9 @@ export function agentTemplateMarkup() {
 // Bridge globals, the real workspace template, and createAgentApp wired to a
 // stub terminal. Returns the runtime capture handles, the app sink, the stub
 // terminal, and a panelFor(workspaceId) helper reading the live panel shell.
-export async function mountAgentApp({ terminal } = {}) {
+export async function mountAgentApp({ terminal, wide = false } = {}) {
   const runtime = installAgentRuntime();
+  const breakpoint = installBreakpoint(wide);
   document.body.innerHTML = `<div id="agents"></div>${agentTemplateMarkup()}`;
   const { createAgentApp } = await appModule('entry.js');
   const terminalStub = terminal || {
@@ -147,6 +190,7 @@ export async function mountAgentApp({ terminal } = {}) {
   });
   return {
     runtime,
+    breakpoint,
     app,
     terminal: terminalStub,
     panelFor: (workspaceId) =>

@@ -100,7 +100,10 @@ test('reducer: agent_state folds the full session slice', () => {
     busy: true,
     isDraft: false,
     supportsImage: false,
-    contextUsedTokens: 4200
+    contextUsedTokens: 4200,
+    contextWindowTokens: 100000,
+    contextCostAmount: 0.23,
+    contextCostCurrency: 'USD'
   }));
   assert.equal(state.session.status, 'restoring');
   assert.equal(state.session.cwd, '/tmp/project');
@@ -112,6 +115,9 @@ test('reducer: agent_state folds the full session slice', () => {
   assert.equal(state.session.isTranscriptOnly, false);
   assert.equal(state.identity.supportsImage, false);
   assert.equal(state.session.contextUsedTokens, 4200);
+  assert.equal(state.session.contextWindowTokens, 100000);
+  assert.equal(state.session.contextCostAmount, 0.23);
+  assert.equal(state.session.contextCostCurrency, 'USD');
 });
 
 test('reducer: transcript_only status sets the transcript flag', () => {
@@ -135,14 +141,25 @@ test('reducer: empty threadId keeps the previous currentThreadId', () => {
   assert.equal(state.session.currentThreadId, 'keep-me');
 });
 
-test('reducer: agent_usage_update normalizes context tokens (invalid -> null)', () => {
+test('reducer: agent_usage_update normalizes Context usage, limit, and optional cost', () => {
   let state = createInitialWorkspaceState(WS);
-  state = reduceWorkspaceState(state, workspaceEvent({ type: 'agent_usage_update', contextUsedTokens: 1000 }));
+  state = reduceWorkspaceState(state, workspaceEvent({
+    type: 'agent_usage_update', contextUsedTokens: 1000, contextWindowTokens: 2000,
+    contextCostAmount: 0.1, contextCostCurrency: 'USD'
+  }));
   assert.equal(state.session.contextUsedTokens, 1000);
+  assert.equal(state.session.contextWindowTokens, 2000);
+  assert.equal(state.session.contextCostAmount, 0.1);
   state = reduceWorkspaceState(state, workspaceEvent({ type: 'agent_usage_update', contextUsedTokens: 'nope' }));
   assert.equal(state.session.contextUsedTokens, null);
   state = reduceWorkspaceState(state, workspaceEvent({ type: 'agent_usage_update', contextUsedTokens: -5 }));
   assert.equal(state.session.contextUsedTokens, null);
+  state = reduceWorkspaceState(state, workspaceEvent({
+    type: 'agent_usage_update', contextUsedTokens: 12, contextWindowTokens: 0,
+    contextCostAmount: 0.2, contextCostCurrency: ''
+  }));
+  assert.equal(state.session.contextWindowTokens, null);
+  assert.equal(state.session.contextCostAmount, null);
 });
 
 // --- reducer: runtime slice ------------------------------------------------

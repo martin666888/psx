@@ -92,14 +92,16 @@ internal sealed class RecordingAgentBridgeService : IAgentBridgeService
         string command,
         string? requestId = null,
         string? value = null,
-        Guid? workspaceId = null)
+        Guid? workspaceId = null,
+        bool? booleanValue = null)
     {
         CommandReceived?.Invoke(this, new AgentCommandEventArgs
         {
             WorkspaceId = workspaceId ?? Guid.Empty,
             Command = command,
             RequestId = requestId,
-            Value = value
+            Value = value,
+            BooleanValue = booleanValue
         });
     }
 

@@ -1,7 +1,7 @@
 // SessionRuntimeController.ts — the first Phase 4 domain owner.
 //
 // Owns the Session + Runtime DOM regions of one Agent workspace: the toolbar
-// status/cwd/session line, the change-cwd control, the context-used hint, and
+// status/cwd/session line, the change-cwd control, the Context usage ring, and
 // the runtime install card. It renders purely from the reduced
 // AgentWorkspaceState (the reducer is the single source of truth) and owns its
 // own DOM listeners, so the legacy engine suppresses those same nodes.
@@ -9,8 +9,7 @@
 // Faithful port of the legacy DOM writes:
 //   _updateState toolbar block + _setContextUsed (wwwroot/js/agent/thread.js)
 //   _updateRuntimeStatus + _wireRuntimeControls (wwwroot/js/agent/runtime.js)
-// Rendering is triggered on the same events legacy reacted to, so the produced
-// DOM is byte-identical to the pre-refactor engine.
+// Rendering is triggered on the same events legacy reacted to.
 const RUNTIME_TITLES = {
     missing: 'Agent runtime required',
     installing: 'Installing Agent runtime',
@@ -28,9 +27,17 @@ function formatStatus(status) {
         .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
         .join(' ');
 }
-/** Mirrors legacy _formatContextUsed. */
-function formatContextUsed(value) {
-    return value === null ? 'Context used --k' : 'Context used ' + (value / 1000).toFixed(2) + 'k';
+function formatTokens(value) {
+    return new Intl.NumberFormat('en-US', {
+        notation: 'compact',
+        maximumFractionDigits: value >= 100_000 ? 0 : 1
+    }).format(value);
+}
+function formatPercent(value) {
+    return (value < 10 ? value.toFixed(1) : Math.round(value).toString()) + '%';
+}
+function formatCost(amount, currency) {
+    return amount.toFixed(2).replace(/\.00$/, '') + ' ' + currency;
 }
 export class SessionRuntimeController {
     workspaceId;
@@ -41,6 +48,10 @@ export class SessionRuntimeController {
     session = null;
     changeCwd = null;
     contextUsed = null;
+    contextProgress = null;
+    contextTooltipSummary = null;
+    contextTooltipDetail = null;
+    contextTooltipCost = null;
     runtimeCard = null;
     runtimeTitle = null;
     runtimeMessage = null;
@@ -63,6 +74,10 @@ export class SessionRuntimeController {
         this.session = role(panel, 'session');
         this.changeCwd = role(panel, 'change-cwd');
         this.contextUsed = role(panel, 'context-used');
+        this.contextProgress = role(panel, 'context-ring-progress');
+        this.contextTooltipSummary = role(panel, 'context-tooltip-summary');
+        this.contextTooltipDetail = role(panel, 'context-tooltip-detail');
+        this.contextTooltipCost = role(panel, 'context-tooltip-cost');
         this.runtimeCard = role(panel, 'runtime-card');
         this.runtimeTitle = role(panel, 'runtime-title');
         this.runtimeMessage = role(panel, 'runtime-message');
@@ -122,8 +137,40 @@ export class SessionRuntimeController {
                 ? 'Change draft working directory'
                 : 'Create a new Agent tab to use another working directory';
         }
-        if (this.contextUsed)
-            this.contextUsed.textContent = formatContextUsed(s.contextUsedTokens);
+        this.renderContextUsage(s.contextUsedTokens, s.contextWindowTokens, s.contextCostAmount, s.contextCostCurrency);
+    }
+    renderContextUsage(used, size, costAmount, costCurrency) {
+        if (!this.contextUsed)
+            return;
+        const hasLimit = used !== null && size !== null;
+        const percent = hasLimit ? Math.min(100, Math.max(0, (used / size) * 100)) : 0;
+        const state = !hasLimit ? 'unknown' : percent >= 90 ? 'error' : percent >= 75 ? 'warning' : 'accent';
+        this.contextUsed.dataset.contextState = state;
+        this.contextProgress?.setAttribute('stroke-dashoffset', String(100 - percent));
+        let summary = 'Agent has not reported context usage';
+        let detail = 'Context usage will appear when the Agent reports it.';
+        if (hasLimit) {
+            summary = formatPercent(percent) + ' · ' + formatTokens(used) + ' / ' + formatTokens(size);
+            detail = formatTokens(Math.max(0, size - used)) + ' remaining';
+        }
+        else if (used !== null) {
+            summary = formatTokens(used) + ' used';
+            detail = 'Agent did not report a context limit.';
+        }
+        else if (size === null) {
+            detail = 'Agent did not report a context limit.';
+        }
+        if (this.contextTooltipSummary)
+            this.contextTooltipSummary.textContent = summary;
+        if (this.contextTooltipDetail)
+            this.contextTooltipDetail.textContent = detail;
+        const description = 'Context: ' + summary + '. ' + detail;
+        this.contextUsed.setAttribute('aria-label', description);
+        if (this.contextTooltipCost) {
+            const hasCost = costAmount !== null && !!costCurrency;
+            this.contextTooltipCost.hidden = !hasCost;
+            this.contextTooltipCost.textContent = hasCost ? 'Cost · ' + formatCost(costAmount, costCurrency) : '';
+        }
     }
     renderRuntime(state) {
         const r = state.runtime;

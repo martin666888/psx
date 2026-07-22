@@ -49,6 +49,23 @@ function configEvent(workspaceId) {
           { value: 'low', name: 'Low', description: 'Terse' },
           { value: 'high', name: 'High', description: 'Detailed' }
         ]
+      },
+      {
+        id: 'fast_mode',
+        type: 'boolean',
+        name: 'Fast mode',
+        description: 'Use fast mode',
+        currentValue: false
+      },
+      {
+        id: 'legacy_fast',
+        type: 'select',
+        name: 'Legacy fast',
+        currentValue: 'off',
+        options: [
+          { value: 'on', name: 'On' },
+          { value: 'off', name: 'Off' }
+        ]
       }
     ]
   };
@@ -69,8 +86,9 @@ function composerSnapshot(panel) {
   const menu = role('command-menu');
   return {
     send: {
-      text: send.textContent,
+      text: role('send-label').textContent,
       title: send.title,
+      ariaLabel: send.getAttribute('aria-label'),
       disabled: send.disabled,
       stop: send.classList.contains('agent-send-stop')
     },
@@ -112,6 +130,27 @@ test('ComposerController renders composer controls from modes and config options
   );
   assert.equal(controlled.mode.value, 'plan');
   assert.match(controlled.configOptionsHtml, /Verbosity/);
+  assert.equal(panel.querySelectorAll('.agent-config-switch').length, 2);
+});
+
+test('ComposerController submits native booleans and legacy binary selects without changing their values', async () => {
+  const { app, panelFor, runtime } = await mountAgentApp();
+  createAgentWorkspace(app, WS);
+  app.handle(stateEvent(WS, false));
+  app.handle(configEvent(WS));
+  const panel = panelFor(WS);
+
+  const nativeBoolean = panel.querySelector('button[data-config-id="fast_mode"]');
+  nativeBoolean.click();
+  assert.deepEqual(runtime.postedMessages.at(-1), {
+    type: 'agent_command', workspaceId: WS, command: 'set_config_option', value: true, requestId: 'fast_mode'
+  });
+
+  const legacySelect = panel.querySelector('button[data-config-id="legacy_fast"]');
+  legacySelect.click();
+  assert.deepEqual(runtime.postedMessages.at(-1), {
+    type: 'agent_command', workspaceId: WS, command: 'set_config_option', value: 'on', requestId: 'legacy_fast'
+  });
 });
 
 test('ComposerController flips Send into Stop while a run is busy', async () => {
@@ -119,7 +158,25 @@ test('ComposerController flips Send into Stop while a run is busy', async () => 
   const controlled = composerSnapshot(panel);
 
   assert.equal(controlled.send.text, 'Stop');
+  assert.equal(controlled.send.ariaLabel, 'Stop');
   assert.equal(controlled.send.stop, true);
+});
+
+test('Composer template keeps input, controls, and actions in one reading-column card', async () => {
+  const panel = await drive([stateEvent(WS, false)]);
+  const card = panel.querySelector('.agent-composer-card');
+  const input = panel.querySelector('[data-role="input"]');
+  const attach = panel.querySelector('[data-role="attach"]');
+  const send = panel.querySelector('[data-role="send"]');
+  const controls = panel.querySelector('.agent-composer-controls');
+
+  assert.ok(card);
+  assert.equal(input.closest('.agent-composer-card'), card);
+  assert.equal(attach.closest('.agent-composer-footer'), send.closest('.agent-composer-footer'));
+  assert.equal(controls.contains(panel.querySelector('[data-role="mode"]')), true);
+  assert.equal(input.style.height, '52px');
+  assert.ok(send.querySelector('.agent-send-icon-submit'));
+  assert.ok(send.querySelector('.agent-send-icon-stop'));
 });
 
 test('ComposerController renders the command-rejected hint', async () => {

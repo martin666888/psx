@@ -1,24 +1,17 @@
-﻿.agent-composer {
+.agent-composer {
     grid-area: composer;
     position: relative;
-    border-top: 1px solid var(--agent-border);
-    background: var(--agent-bg);
-    padding: 0;
+    padding: 0 0 var(--agent-space-4);
+    background: transparent;
 }
 
+/* The card follows exactly the same window-centred reading column as the
+ * conversation. It deliberately lives inside the canvas instead of creating
+ * another full-width application bar. */
 .agent-composer-main {
     position: relative;
     z-index: 1;
     min-width: 0;
-    padding: var(--agent-space-2) 0;
-}
-
-/* Same window-centered reading column as the conversation (see shell.css). */
-.agent-composer-main > .agent-attachments-strip,
-.agent-composer-main > .agent-composer-mode-transition,
-.agent-input-row,
-.agent-command-hint,
-.agent-composer-footer {
     width: var(--agent-reading-column-max);
     max-width: 100%;
     box-sizing: border-box;
@@ -26,41 +19,54 @@
     margin-right: auto;
 }
 
+.agent-composer-card {
+    /* The Context tooltip intentionally extends above the compact card. */
+    overflow: visible;
+    border: 1px solid var(--agent-border-strong);
+    border-radius: var(--agent-radius-context-card);
+    background: var(--agent-surface);
+    box-shadow: var(--agent-shadow-context-card);
+    transition: border-color var(--agent-duration-fast) var(--agent-ease-standard),
+        box-shadow var(--agent-duration-fast) var(--agent-ease-standard);
+}
+
+.agent-composer-card:focus-within {
+    border-color: var(--agent-accent);
+    box-shadow: var(--agent-shadow-context-card), 0 0 0 2px var(--agent-focus-ring);
+}
+
 .agent-input-row {
-    display: flex;
-    align-items: flex-start;
-    gap: var(--agent-space-2);
+    min-width: 0;
+    padding: var(--agent-space-2) var(--agent-space-3) var(--agent-space-1);
 }
 
 .agent-composer textarea {
     width: 100%;
-    min-height: var(--agent-composer-control-height);
+    min-height: var(--agent-composer-input-min-height);
     max-height: 180px;
     resize: none;
     box-sizing: border-box;
-    border: 1px solid var(--agent-border-strong);
-    border-radius: var(--agent-radius-md);
-    padding: 9px var(--agent-space-3);
-    outline: 2px solid transparent;
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+    outline: 0;
     overflow-y: hidden;
-    background: var(--agent-surface);
+    background: transparent;
     color: var(--agent-text);
-    font-family: var(--agent-font-ui);
-    font-size: var(--agent-font-size);
+    font-family: var(--agent-font-mono);
+    font-size: 14px;
     line-height: 1.45;
     scrollbar-color: var(--agent-scrollbar) var(--agent-surface);
     scrollbar-width: thin;
 }
 
-.agent-composer textarea:focus-visible {
-    border-color: var(--agent-accent);
-    outline: 2px solid var(--agent-focus-ring);
-    outline-offset: 1px;
+.agent-composer textarea::placeholder {
+    color: var(--agent-text-muted);
+    opacity: 1;
 }
 
 .agent-command-hint {
-    margin-top: 7px;
-    padding-left: calc(var(--agent-composer-control-height) + var(--agent-space-2));
+    padding: 0 var(--agent-space-3) var(--agent-space-2);
     color: var(--agent-text-muted);
     font-size: 12px;
     line-height: 1.45;
@@ -73,11 +79,17 @@
 
 .agent-composer-footer {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    justify-content: space-between;
+    min-width: 0;
     gap: var(--agent-space-2);
-    margin-top: var(--agent-space-2);
+    min-height: 36px;
+    box-sizing: border-box;
+    padding: var(--agent-space-1) var(--agent-space-3);
+    border-top: 1px solid var(--agent-border);
+    /* The card permits the Context tooltip to escape. Clip this painted child
+     * itself so its raised surface still follows the card's lower corners. */
+    border-radius: 0 0 var(--agent-radius-context-card) var(--agent-radius-context-card);
+    background: color-mix(in srgb, var(--agent-surface-raised) 45%, var(--agent-surface));
 }
 
 .agent-input-row[hidden],
@@ -85,21 +97,140 @@
     display: none;
 }
 
+.agent-composer-actions {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+}
+
 .agent-hints {
     display: flex;
     flex: 0 0 auto;
     gap: var(--agent-space-2);
     color: var(--agent-text-muted);
-    font-size: 12px;
+    font-size: 11px;
     white-space: nowrap;
+}
+
+.agent-context-usage {
+    position: relative;
+    display: grid;
+    width: 20px;
+    height: 20px;
+    place-items: center;
+    color: var(--agent-accent);
+    cursor: help;
+    outline: 0;
+}
+
+.agent-context-usage:focus-visible {
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px var(--agent-focus-ring);
+}
+
+.agent-context-ring {
+    display: block;
+    width: 20px;
+    height: 20px;
+    transform: rotate(-90deg);
+}
+
+.agent-context-ring-track,
+.agent-context-ring-progress {
+    fill: none;
+    stroke-width: 2.5;
+}
+
+.agent-context-ring-track {
+    stroke: var(--agent-border-strong);
+}
+
+.agent-context-ring-progress {
+    stroke: currentColor;
+    stroke-dasharray: 100;
+    stroke-dashoffset: 100;
+    stroke-linecap: round;
+    transition: stroke-dashoffset var(--agent-duration-state) var(--agent-ease-standard);
+}
+
+.agent-context-usage[data-context-state="warning"] {
+    color: var(--agent-warning);
+}
+
+.agent-context-usage[data-context-state="error"] {
+    color: var(--agent-error);
+}
+
+.agent-context-usage[data-context-state="unknown"]::before {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--agent-text-dim);
+    content: "";
+}
+
+.agent-context-usage[data-context-state="unknown"] .agent-context-ring {
+    display: none;
+}
+
+.agent-context-tooltip {
+    position: absolute;
+    z-index: var(--agent-layer-menu);
+    bottom: calc(100% + var(--agent-space-2));
+    left: 0;
+    display: grid;
+    width: max-content;
+    max-width: 240px;
+    gap: 2px;
+    box-sizing: border-box;
+    border: 1px solid var(--agent-border-strong);
+    border-radius: var(--agent-radius-md);
+    padding: var(--agent-space-2) var(--agent-space-3);
+    background: var(--agent-surface-raised);
+    box-shadow: var(--agent-shadow-context-card);
+    color: var(--agent-text);
+    font-size: 12px;
+    line-height: 1.35;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(2px);
+    transition: opacity var(--agent-duration-fast) var(--agent-ease-standard),
+        transform var(--agent-duration-fast) var(--agent-ease-standard);
+}
+
+.agent-context-tooltip strong {
+    font-weight: 600;
+}
+
+.agent-context-tooltip span {
+    color: var(--agent-text-muted);
+}
+
+.agent-context-tooltip [hidden] {
+    display: none;
+}
+
+.agent-context-usage:hover .agent-context-tooltip,
+.agent-context-usage:focus-visible .agent-context-tooltip {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.agent-composer-controls {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--agent-space-2);
 }
 
 .agent-config-options {
     display: flex;
-    flex: 1 1 auto;
-    flex-wrap: wrap;
+    flex: 0 1 auto;
+    flex-wrap: nowrap;
     align-items: center;
-    justify-content: flex-end;
+    justify-content: flex-start;
     gap: var(--agent-space-2);
     min-width: 0;
 }
@@ -109,9 +240,9 @@
     display: flex;
     min-width: 0;
     align-items: center;
-    gap: 6px;
+    gap: var(--agent-space-1);
     color: var(--agent-text-muted);
-    font-size: 12px;
+    font-size: 11px;
     white-space: nowrap;
 }
 
@@ -122,18 +253,70 @@
 
 .agent-mode-control select,
 .agent-config-control select {
-    max-width: 180px;
-    border: 1px solid var(--agent-border);
+    max-width: 164px;
+    min-width: 0;
+    border: 1px solid transparent;
     border-radius: var(--agent-radius-sm);
-    background: var(--agent-surface);
-    color: var(--agent-text-muted);
-    padding: 3px 6px;
+    background: transparent;
+    color: var(--agent-text);
+    padding: 2px 3px;
     font: inherit;
     text-overflow: ellipsis;
 }
 
+.agent-config-switch {
+    position: relative;
+    width: 28px;
+    min-width: 28px;
+    height: 16px;
+    box-sizing: border-box;
+    border: 1px solid var(--agent-border-strong);
+    border-radius: 8px;
+    padding: 0;
+    background: var(--agent-surface-muted);
+    color: transparent;
+    cursor: pointer;
+}
+
+.agent-config-switch::after {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--agent-text-muted);
+    content: "";
+    transition: transform var(--agent-duration-fast) var(--agent-ease-standard),
+        background-color var(--agent-duration-fast) var(--agent-ease-standard);
+}
+
+.agent-config-switch[aria-checked="true"] {
+    border-color: var(--agent-accent);
+    background: color-mix(in srgb, var(--agent-accent) 38%, var(--agent-surface-muted));
+}
+
+.agent-config-switch[aria-checked="true"]::after {
+    transform: translateX(12px);
+    background: var(--agent-send-btn-text);
+}
+
+.agent-config-switch:hover:not(:disabled) {
+    border-color: var(--agent-accent-hover);
+}
+
+.agent-config-switch:focus-visible {
+    outline: 2px solid var(--agent-focus-ring);
+    outline-offset: 2px;
+}
+
+.agent-config-switch:disabled {
+    cursor: default;
+    opacity: 0.56;
+}
+
 .agent-config-control select[data-config-id="model"] {
-    max-width: 230px;
+    max-width: 188px;
 }
 
 .agent-mode-control select:hover,
@@ -155,37 +338,103 @@
 }
 
 .agent-send {
-    flex: 0 0 96px;
-    min-width: 96px;
-    height: var(--agent-composer-control-height);
+    flex: 0 0 28px;
+    width: 28px;
+    min-width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
     box-sizing: border-box;
-    background: var(--agent-send-btn);
-    border-color: var(--agent-send-btn);
-    color: var(--agent-send-btn-text);
-    font-weight: 600;
+    padding: 0;
+    border-color: var(--agent-border);
+    background: var(--agent-surface-muted);
+    color: var(--agent-text-muted);
+    font-size: 0;
 }
 
-.agent-send:hover {
+.agent-send-icon {
+    display: block;
+    width: 14px;
+    height: 14px;
+    fill: currentColor;
+}
+
+.agent-send-icon-stop {
+    display: none;
+}
+
+.agent-send:hover:not(:disabled) {
     background: var(--agent-send-btn-hover);
     border-color: var(--agent-send-btn-hover);
+    color: var(--agent-send-btn-text);
 }
 
-.agent-send:disabled:hover {
-    border-color: var(--agent-send-btn);
-    background: var(--agent-send-btn);
+.agent-send:disabled {
+    cursor: default;
+    opacity: 0.52;
 }
 
 .agent-send-stop {
     background: var(--agent-stop-btn);
     border-color: var(--agent-stop-btn);
+    color: var(--agent-send-btn-text);
 }
 
-.agent-send-stop:hover {
+.agent-send-stop .agent-send-icon-submit {
+    display: none;
+}
+
+.agent-send-stop .agent-send-icon-stop {
+    display: block;
+}
+
+.agent-send-stop:hover:not(:disabled) {
     background: var(--agent-stop-btn-hover);
     border-color: var(--agent-stop-btn-hover);
 }
 
-.agent-send-stop:disabled:hover {
-    background: var(--agent-stop-btn);
-    border-color: var(--agent-stop-btn);
+.agent-attachments-strip,
+.agent-composer-mode-transition {
+    margin: var(--agent-space-3) var(--agent-space-3) 0;
+}
+
+.agent-visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+    .agent-composer {
+        padding-bottom: var(--agent-space-2);
+    }
+
+    .agent-composer-main {
+        width: calc(100% - (var(--agent-space-3) * 2));
+        margin-left: var(--agent-space-3);
+    }
+
+    .agent-composer-footer {
+        flex-wrap: wrap;
+    }
+
+    .agent-composer-controls {
+        flex: 1 0 100%;
+        justify-content: flex-start;
+        order: 5;
+    }
+
+    .agent-config-options {
+        flex-wrap: wrap;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .agent-composer-card {
+        transition: none;
+    }
 }

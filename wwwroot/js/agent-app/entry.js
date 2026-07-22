@@ -22,7 +22,7 @@ export function createAgentApp(options) {
     registry.attachHistoryDock(historyDock);
     host.setHistoryDockView(historyDock);
     historyDock.mount(options.container);
-    // Shell layout: responsive dock↔drawer mode + the compact one-drawer rule.
+    // Shell layout: responsive narrow collapse + one-visible-panel rule.
     const shellLayout = new AgentShellLayoutController(options.container, registry.createShellLayoutHost(historyDock));
     shellLayout.mount();
     return {

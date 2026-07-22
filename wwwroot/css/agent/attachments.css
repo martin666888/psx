@@ -71,18 +71,18 @@
 }
 
 .agent-attach {
-    flex: 0 0 var(--agent-composer-control-height);
-    width: var(--agent-composer-control-height);
-    height: var(--agent-composer-control-height);
+    flex: 0 0 28px;
+    width: 28px;
+    height: 28px;
     display: grid;
     place-items: center;
     position: relative;
     box-sizing: border-box;
-    border: 1px solid var(--agent-border-strong);
+    border: 1px solid transparent;
     border-radius: var(--agent-radius-md);
     padding: 0;
-    background: var(--agent-surface);
-    color: var(--agent-text);
+    background: transparent;
+    color: var(--agent-text-muted);
     cursor: pointer;
     font: inherit;
     font-size: 0;
@@ -101,18 +101,19 @@
 }
 
 .agent-attach::before {
-    width: 14px;
+    width: 12px;
     height: 2px;
 }
 
 .agent-attach::after {
     width: 2px;
-    height: 14px;
+    height: 12px;
 }
 
 .agent-attach:hover {
     border-color: var(--agent-border-strong);
     background: var(--agent-hover);
+    color: var(--agent-text);
 }
 
 .agent-attach:disabled {

@@ -7,7 +7,7 @@
 export interface AgentBridgePort {
   sendAgentMessage(text: string, attachments?: string[]): void;
   uploadAgentAttachment(payload: AgentAttachmentUploadPayload): void;
-  sendAgentCommand(command: string, value?: string, requestId?: string): void;
+  sendAgentCommand(command: string, value?: string | boolean, requestId?: string): void;
   sendAgentPermissionResponse(requestId: string, value: string): void;
   sendAgentQuestionResponse(requestId: string, value: string): void;
   sendAgentElicitationResponse(requestId: string, value: string): void;

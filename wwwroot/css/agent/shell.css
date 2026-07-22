@@ -1,9 +1,10 @@
 /* AgentShell structural tokens (base values; theme tuning is a later step). */
 :root {
     --agent-history-width: 280px;
+    --agent-history-narrow-width: 220px;
     --agent-plan-width: 320px;
     --agent-reading-min-width: 320px;
-    --agent-reading-max-width: 880px;
+    --agent-reading-max-width: 920px;
     --agent-dock-gap: 16px;
     --agent-toolbar-height: 44px;
     /* Canvas surface: one step above the dock (--agent-bg), one below the
@@ -20,14 +21,19 @@
 #agent-workspace-container {
     position: absolute;
     inset: 0;
+    /* This absolute Agent layer follows #terminal-container in the DOM. Keep
+     * it transparent to pointer hit-testing until an Agent workspace is the
+     * active view, so a blank terminal click still focuses xterm. */
+    pointer-events: none;
     --agent-history-width-effective: var(--agent-history-width);
 }
 
-#agent-workspace-container:not(.agent-shell-compact) {
-    --agent-history-width-effective: min(
-        var(--agent-history-width),
-        calc((100vw - var(--agent-reading-min-width)) / 2 - var(--agent-dock-gap))
-    );
+#agent-workspace-container.agent-workspace-active {
+    pointer-events: auto;
+}
+
+#agent-workspace-container.agent-shell-narrow {
+    --agent-history-width-effective: var(--agent-history-narrow-width);
 }
 
 .agent-load-error {
@@ -75,14 +81,16 @@
         "workspace"
         "composer";
     grid-template-rows: auto auto minmax(0, 1fr) auto;
-    /* Centerline: the reading column is pinned to the window center via an
-     * explicit vw-based start offset, immune to scrollbar gutters and to the
-     * dock/plan toggles. dock-open overrides offset + clearance below. */
-    --agent-canvas-offset: 0px;
+    /* Reading stays centered at its comfortable maximum width until the
+     * viewport itself reaches its side padding. A dock-open override moves
+     * the column only when it would collide with History; it never creates a
+     * mirrored History-width blank strip on the right. */
     --agent-viewport-padding: var(--agent-space-6);
-    --agent-side-clearance: var(--agent-viewport-padding);
-    --agent-reading-column-max: max(var(--agent-reading-min-width), min(var(--agent-reading-max-width), calc(100vw - 2 * var(--agent-side-clearance))));
-    --agent-reading-column-start: calc((100vw - var(--agent-reading-column-max)) / 2 - var(--agent-canvas-offset));
+    --agent-reading-column-max: min(
+        var(--agent-reading-max-width),
+        calc(100vw - 2 * var(--agent-viewport-padding))
+    );
+    --agent-reading-column-start: calc((100vw - var(--agent-reading-column-max)) / 2);
     background: var(--agent-canvas-surface);
     color: var(--agent-text);
     font-family: var(--agent-font-ui);
@@ -92,13 +100,21 @@
     display: none;
 }
 
-/* Dock open: the canvas yields its left edge to the dock but keeps the top,
- * right and bottom window edges; the reading column narrows SYMMETRICALLY so
- * its center stays at viewportWidth / 2. */
-#agent-workspace-container.agent-history-dock-open:not(.agent-shell-compact) .agent-panel {
+/* Dock open: the canvas yields its left edge to History while keeping the
+ * reading column at its normal maximum width. It remains window-centered when
+ * possible, otherwise moves right just enough to clear the dock. If the
+ * normal width would no longer fit, Shell temporarily collapses History; a
+ * manually reopened dock uses the remaining width rather than overflowing. */
+#agent-workspace-container.agent-history-dock-open .agent-panel {
     left: var(--agent-history-width-effective);
-    --agent-canvas-offset: var(--agent-history-width-effective);
-    --agent-side-clearance: calc(var(--agent-history-width-effective) + var(--agent-dock-gap));
+    --agent-reading-column-max: min(
+        var(--agent-reading-max-width),
+        calc(100vw - var(--agent-history-width-effective) - var(--agent-dock-gap) - var(--agent-viewport-padding))
+    );
+    --agent-reading-column-start: max(
+        var(--agent-dock-gap),
+        calc((100vw - var(--agent-reading-column-max)) / 2 - var(--agent-history-width-effective))
+    );
     border-top-left-radius: var(--agent-radius-workspace-canvas);
     border-left: 1px solid var(--agent-border);
     box-shadow: var(--agent-shadow-canvas);

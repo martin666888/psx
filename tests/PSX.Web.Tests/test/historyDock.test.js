@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   installAgentRuntime,
+  installBreakpoint,
   agentTemplateMarkup,
   createAgentWorkspace,
   appModule
@@ -45,8 +46,9 @@ function dockRole(name) {
 // Mount the compiled Agent app like production main.js, but set the persisted
 // dock state BEFORE createAgentApp reads it (each mount installs a fresh jsdom,
 // so localStorage starts clean).
-async function mountApp({ dockOpen = false, dockWidth = '' } = {}) {
+async function mountApp({ dockOpen = false, dockWidth = '', wide = false } = {}) {
   const runtime = installAgentRuntime();
+  const breakpoint = installBreakpoint(wide);
   document.body.innerHTML = `<div id="agents"></div>${agentTemplateMarkup()}`;
   if (dockOpen) window.localStorage.setItem('psx.agent.historyDockOpen', '1');
   if (dockWidth) window.localStorage.setItem('psx.agent.historyDockWidth', dockWidth);
@@ -66,6 +68,7 @@ async function mountApp({ dockOpen = false, dockWidth = '' } = {}) {
     app,
     runtime,
     terminal,
+    breakpoint,
     posted: runtime.postedMessages,
     panelFor: (workspaceId) => document.querySelector(`.agent-panel[data-workspace-id="${workspaceId}"]`)
   };
@@ -74,7 +77,7 @@ async function mountApp({ dockOpen = false, dockWidth = '' } = {}) {
 // Mount with the dock open and one workspace; the dock's auto-load kicks the
 // first broker request as soon as the workspace exists.
 async function mountLoaded() {
-  const mounted = await mountApp({ dockOpen: true });
+  const mounted = await mountApp({ dockOpen: true, wide: true });
   createAgentWorkspace(mounted.app, WS);
   return { ...mounted, panel: mounted.panelFor(WS) };
 }
@@ -193,7 +196,7 @@ test('history model: filter options come from the catalog plus unknown keys seen
 // --- dock shell ------------------------------------------------------------------
 
 test('dock: a newly created workspace toolbar toggle inherits the dock open state', async () => {
-  const { app, panelFor } = await mountApp({ dockOpen: true });
+  const { app, panelFor } = await mountApp({ dockOpen: true, wide: true });
   createAgentWorkspace(app, WS);
   assert.equal(historyToggle(panelFor(WS)).getAttribute('aria-expanded'), 'true');
 
@@ -205,7 +208,7 @@ test('dock: a newly created workspace toolbar toggle inherits the dock open stat
 });
 
 test('dock: exactly one dock exists across workspaces and hides for terminal workspaces', async () => {
-  const { app, panelFor } = await mountApp({ dockOpen: true });
+  const { app, panelFor } = await mountApp({ dockOpen: true, wide: true });
   createAgentWorkspace(app, WS);
   createAgentWorkspace(app, OTHER);
   assert.equal(document.querySelectorAll('[data-role="history-dock"]').length, 1);
@@ -219,21 +222,25 @@ test('dock: exactly one dock exists across workspaces and hides for terminal wor
   assert.ok(panelFor(WS));
 });
 
-test('dock: collapsed by default at compact widths and persists open/collapse', async () => {
-  const { app, panelFor } = await mountApp();
+test('dock: narrow open/collapse is temporary and restores the desktop preference', async () => {
+  const { app, panelFor, breakpoint } = await mountApp();
   createAgentWorkspace(app, WS);
-  assert.equal(dock().hidden, true, 'first run follows the compact-width default');
+  assert.equal(dock().hidden, true, 'first run is temporarily collapsed in narrow mode');
 
-  // /history opens and persists; the collapse button hides and persists.
+  // /history opens only the narrow override; it does not overwrite the
+  // desktop preference stored in localStorage.
   const panel = panelFor(WS);
   role(panel, 'input').value = '/history';
   role(panel, 'input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
   assert.equal(dock().hidden, false);
-  assert.equal(window.localStorage.getItem('psx.agent.historyDockOpen'), '1');
+  assert.equal(window.localStorage.getItem('psx.agent.historyDockOpen'), null);
 
   historyToggle(panel).click();
   assert.equal(dock().hidden, true);
-  assert.equal(window.localStorage.getItem('psx.agent.historyDockOpen'), '0');
+  assert.equal(window.localStorage.getItem('psx.agent.historyDockOpen'), null);
+
+  breakpoint.setWide(true);
+  assert.equal(dock().hidden, false, 'wide mode restores the first-run preference');
 });
 
 test('dock: defaults to 280px and restores the persisted width', async () => {
@@ -249,7 +256,7 @@ test('dock: defaults to 280px and restores the persisted width', async () => {
 });
 
 test('dock: without an Agent workspace it asks for one and sends no request', async () => {
-  const { posted } = await mountApp({ dockOpen: true });
+  const { posted } = await mountApp({ dockOpen: true, wide: true });
   assert.match(dockRole('history-content').textContent, /Open an Agent workspace to load history/);
   assert.equal(posted.filter((entry) => entry.command === 'history').length, 0);
 });

@@ -34,6 +34,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         public string Category { get; init; } = "";
         public string Type { get; init; } = "";
         public string CurrentValue { get; init; } = "";
+        public bool? BooleanValue { get; init; }
         public IReadOnlyList<AcpConfigOptionValue> Options { get; init; } = Array.Empty<AcpConfigOptionValue>();
     }
 
@@ -547,6 +548,9 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             assistantName = threadProvider?.Descriptor.AssistantName ?? "Agent",
             supportsImage = _supportsImage,
             contextUsedTokens = _currentThread.ContextUsedTokens,
+            contextWindowTokens = _currentThread.ContextWindowTokens,
+            contextCostAmount = _currentThread.ContextCostAmount,
+            contextCostCurrency = _currentThread.ContextCostCurrency,
             store = _threadStore.RootDirectory
         }).ConfigureAwait(false);
         if (IsBoundProviderThread(_currentThread))
@@ -622,8 +626,14 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                     await SetModeAsync(e.Value).ConfigureAwait(false);
                 break;
             case "set_config_option":
-                if (!string.IsNullOrWhiteSpace(e.RequestId) && !string.IsNullOrWhiteSpace(e.Value))
-                    await SetConfigOptionAsync(e.RequestId, e.Value).ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(e.RequestId)
+                    && (e.BooleanValue.HasValue || !string.IsNullOrWhiteSpace(e.Value)))
+                {
+                    await SetConfigOptionAsync(
+                        e.RequestId,
+                        e.BooleanValue.HasValue ? e.BooleanValue.Value : e.Value!,
+                        e.BooleanValue.HasValue).ConfigureAwait(false);
+                }
                 break;
             case "agent_permission_response":
                 if (!string.IsNullOrWhiteSpace(e.RequestId)
@@ -1353,6 +1363,13 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                     {
                         ["fs"] = new { readTextFile = true, writeTextFile = true },
                         ["terminal"] = true,
+                        ["session"] = new
+                        {
+                            configOptions = new
+                            {
+                                boolean = new { }
+                            }
+                        },
                         ["elicitation"] = new
                         {
                             form = new { },
@@ -2344,10 +2361,24 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             return Task.CompletedTask;
 
         _currentThread.ContextUsedTokens = used.Value;
+        var size = TryGetLong(update, "size");
+        _currentThread.ContextWindowTokens = size is > 0 ? size : null;
+        if (update.TryGetProperty("cost", out var cost))
+        {
+            var amount = TryGetDecimal(cost, "amount");
+            var currency = GetString(cost, "currency");
+            _currentThread.ContextCostAmount = amount is >= 0 && !string.IsNullOrWhiteSpace(currency) ? amount : null;
+            _currentThread.ContextCostCurrency = _currentThread.ContextCostAmount.HasValue ? currency : null;
+        }
+
+        SaveCurrentThread();
         return _bridgeService.SendEventAsync(new
         {
             type = "agent_usage_update",
-            contextUsedTokens = _currentThread.ContextUsedTokens
+            contextUsedTokens = _currentThread.ContextUsedTokens,
+            contextWindowTokens = _currentThread.ContextWindowTokens,
+            contextCostAmount = _currentThread.ContextCostAmount,
+            contextCostCurrency = _currentThread.ContextCostCurrency
         });
     }
 
@@ -2369,22 +2400,32 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         await SendModesAsync().ConfigureAwait(false);
     }
 
-    private async Task SetConfigOptionAsync(string configId, string value)
+    private async Task SetConfigOptionAsync(string configId, object value, bool isBoolean)
     {
         await EnsureAcpSessionAsync(createIfMissing: true).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(_acpSessionId))
             return;
 
-        var result = await _transport!.SendRequestAsync("session/set_config_option", new
-        {
-            sessionId = _acpSessionId,
-            configId,
-            value
-        }, TimeSpan.FromSeconds(15), _serviceLifetimeCts.Token).ConfigureAwait(false);
+        var parameters = isBoolean
+            ? new Dictionary<string, object?>
+            {
+                ["sessionId"] = _acpSessionId,
+                ["configId"] = configId,
+                ["type"] = "boolean",
+                ["value"] = value
+            }
+            : new Dictionary<string, object?>
+            {
+                ["sessionId"] = _acpSessionId,
+                ["configId"] = configId,
+                ["value"] = value
+            };
+        var result = await _transport!.SendRequestAsync("session/set_config_option", parameters,
+            TimeSpan.FromSeconds(15), _serviceLifetimeCts.Token).ConfigureAwait(false);
 
         CaptureConfigOptions(result);
-        if (configId == "mode")
-            _currentModeId = value;
+        if (configId == "mode" && value is string modeId)
+            _currentModeId = modeId;
         _currentThread.ModeId = _currentModeId;
         SaveCurrentThread();
         await Task.WhenAll(SendConfigOptionsAsync(), SendModesAsync()).ConfigureAwait(false);
@@ -2435,11 +2476,12 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 Category = GetString(option, "category"),
                 Type = GetString(option, "type"),
                 CurrentValue = GetString(option, "currentValue"),
+                BooleanValue = TryGetBoolean(option, "currentValue"),
                 Options = ReadConfigOptionValues(option)
             })
             .Where(option => !string.IsNullOrWhiteSpace(option.Id)
-                             && option.Type == "select"
-                             && option.Options.Count > 0)
+                             && ((option.Type == "select" && option.Options.Count > 0)
+                                 || (option.Type == "boolean" && option.BooleanValue.HasValue)))
             .ToArray();
 
         var modeOption = _configOptions.FirstOrDefault(option => option.Id == "mode");
@@ -2486,7 +2528,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 description = option.Description,
                 category = option.Category,
                 type = option.Type,
-                currentValue = option.CurrentValue,
+                currentValue = option.Type == "boolean" ? (object?)option.BooleanValue : option.CurrentValue,
                 options = option.Options.Select(value => new
                 {
                     value = value.Value,
@@ -3167,6 +3209,25 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             && value.TryGetInt64(out var number)
             ? number
             : null;
+    }
+
+    private static decimal? TryGetDecimal(JsonElement element, string propertyName)
+    {
+        return element.ValueKind == JsonValueKind.Object
+            && element.TryGetProperty(propertyName, out var value)
+            && value.ValueKind == JsonValueKind.Number
+            && value.TryGetDecimal(out var number)
+                ? number
+                : null;
+    }
+
+    private static bool? TryGetBoolean(JsonElement element, string propertyName)
+    {
+        return element.ValueKind == JsonValueKind.Object
+            && element.TryGetProperty(propertyName, out var value)
+            && (value.ValueKind == JsonValueKind.True || value.ValueKind == JsonValueKind.False)
+                ? value.GetBoolean()
+                : null;
     }
 
     private static string ReadNestedString(JsonElement element, params string[] path)

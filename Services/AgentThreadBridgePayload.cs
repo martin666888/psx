@@ -16,6 +16,9 @@ internal static class AgentThreadBridgePayload
             cwd = thread.Cwd,
             sessionId = thread.AcpSessionId ?? thread.ClaudeSessionId ?? "",
             contextUsedTokens = thread.ContextUsedTokens,
+            contextWindowTokens = thread.ContextWindowTokens,
+            contextCostAmount = thread.ContextCostAmount,
+            contextCostCurrency = thread.ContextCostCurrency,
             messages = thread.Messages.Select(message => new
             {
                 role = message.Role,

@@ -84,7 +84,7 @@ test('reducer: agent_modes without currentModeId keeps the existing mode', () =>
 
 // --- agent_config_options --------------------------------------------------
 
-test('reducer: agent_config_options filters non-select/empty and sorts by rank', () => {
+test('reducer: agent_config_options preserves boolean controls and filters invalid values', () => {
   let state = createInitialWorkspaceState(WS);
   state = reduceWorkspaceState(state, workspaceEvent({
     type: 'agent_config_options',
@@ -92,16 +92,20 @@ test('reducer: agent_config_options filters non-select/empty and sorts by rank',
       { id: 'effort', type: 'select', options: [{ value: 'high' }] },
       { id: 'text', type: 'text', options: [{ value: 'x' }] },
       { id: 'empty', type: 'select', options: [] },
+      { id: 'fast_mode', type: 'boolean', currentValue: true },
+      { id: 'bad_bool', type: 'boolean', currentValue: 'true' },
       { id: 'model', type: 'select', options: [{ value: 'sonnet', name: 'Sonnet' }] },
       { id: 'mode', type: 'select', currentValue: 'plan', options: [{ value: 'plan' }] }
     ]
   }));
 
-  assert.deepEqual(state.composer.configOptions.map((o) => o.id), ['mode', 'model', 'effort']);
+  assert.deepEqual(state.composer.configOptions.map((o) => o.id), ['mode', 'model', 'effort', 'fast_mode']);
   assert.equal(state.composer.currentModeId, 'plan');
   assert.deepEqual(state.composer.configOptions[1].options, [
     { value: 'sonnet', name: 'Sonnet', description: '' }
   ]);
+  assert.equal(state.composer.configOptions[3].type, 'boolean');
+  assert.equal(state.composer.configOptions[3].currentValue, true);
 });
 
 // --- agent_mode_current ----------------------------------------------------
