@@ -3,14 +3,16 @@
 // One dock for the whole process, living outside every workspace panel (a
 // left column inside #agent-workspace-container). It renders the global
 // AgentHistoryStore: grouped/searchable/filterable thread list, loading /
-// error / unavailable states, open-thread markers and a collapse/refresh
-// top bar. All `history` loads go through the AgentHistoryRequestBroker;
-// `load_thread` clicks use the broker's channel picker without entering the
-// request state machine. Open state and width persist in localStorage.
+// error / unavailable states, open-thread markers and a search/filter/refresh
+// top bar. Open/close lives on the per-workspace toolbar toggle (event
+// delegation from the container); all `history` loads go through the
+// AgentHistoryRequestBroker and `load_thread` clicks use the broker's channel
+// picker without entering the request state machine. Open state and width
+// persist in localStorage.
 //
 // Layered layout (canvas/overlay), theming and the responsive drawer are
 // later steps; this step is a plain block-level dock.
-import { buildHistoryGroups, filterHistoryGroups, providerFilterOptions } from './historyModel.js';
+import { buildHistoryGroups, filterHistoryGroups, formatHistoryTime, providerFilterOptions } from './historyModel.js';
 const MIN_WIDTH = 220;
 const MAX_WIDTH = 420;
 const DEFAULT_WIDTH = 280;
@@ -20,7 +22,6 @@ const FIRST_RUN_MIN_WIDTH = 1080;
 export class HistoryDockController {
     host;
     dock = null;
-    trigger = null;
     container = null;
     content = null;
     searchInput = null;
@@ -32,6 +33,11 @@ export class HistoryDockController {
     providerFilterValue = '';
     providerOptionsSignature = '';
     unsubscribeStore = null;
+    /** Folded groups by cwd key (user clicked the header to collapse). Runtime
+     * state, never persisted; shared across workspaces (a project is global). */
+    foldedGroups = new Set();
+    /** Groups the user expanded past the 5-item preview limit. */
+    expandedGroups = new Set();
     openListeners = new Set();
     cleanup = [];
     constructor(host) {
@@ -62,17 +68,14 @@ export class HistoryDockController {
         refresh.className = 'agent-history-refresh';
         refresh.dataset.role = 'history-refresh';
         refresh.title = 'Refresh history';
-        refresh.textContent = 'Refresh';
-        const collapse = document.createElement('button');
-        collapse.type = 'button';
-        collapse.className = 'agent-history-collapse';
-        collapse.dataset.role = 'history-collapse';
-        collapse.title = 'Collapse history panel';
-        collapse.textContent = 'Collapse';
+        refresh.setAttribute('aria-label', 'Refresh history');
+        refresh.innerHTML =
+            '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" focusable="false">' +
+                '<path d="M13.5 8a5.5 5.5 0 1 1-1.61-3.89 M13.5 2.5v2.6h-2.6" fill="none" ' +
+                'stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
         bar.appendChild(search);
         bar.appendChild(providerSelect);
         bar.appendChild(refresh);
-        bar.appendChild(collapse);
         const content = document.createElement('div');
         content.className = 'agent-history-dock-content';
         content.dataset.role = 'history-content';
@@ -87,19 +90,7 @@ export class HistoryDockController {
         dock.appendChild(content);
         dock.appendChild(resizer);
         parent.appendChild(dock);
-        // The trigger is the only always-available History entry (the composer
-        // `/history` command is the other); the shell layout controller reads its
-        // aria-expanded state and returns focus to it when a drawer closes.
-        const trigger = document.createElement('button');
-        trigger.type = 'button';
-        trigger.className = 'agent-history-trigger';
-        trigger.dataset.role = 'history-trigger';
-        trigger.textContent = 'History';
-        trigger.setAttribute('aria-expanded', 'false');
-        trigger.setAttribute('aria-label', 'Open Agent history');
-        parent.appendChild(trigger);
         this.dock = dock;
-        this.trigger = trigger;
         this.container = parent;
         this.content = content;
         this.searchInput = search;
@@ -108,12 +99,23 @@ export class HistoryDockController {
         this.applyWidth(this.width);
         this.open = this.readOpen();
         this.unsubscribeStore = this.host.subscribe(() => this.render());
-        this.wire(search, providerSelect, refresh, collapse, resizer);
-        this.on(trigger, 'click', () => this.openHistory(''));
+        this.wire(search, providerSelect, refresh, resizer);
+        // The open/close control is the history-toggle button in every workspace
+        // toolbar (there is no dock-owned strip trigger anymore); one delegated
+        // listener on the container also covers panels created later.
+        this.on(parent, 'click', (event) => {
+            const target = event.target;
+            if (!target || !target.closest('[data-role="history-toggle"]'))
+                return;
+            if (this.open)
+                this.setOpen(false);
+            else
+                this.openHistory('');
+        });
         this.syncVisibility();
         this.render();
     }
-    /** Composer `/history` + trigger seam: open the dock and load through the
+    /** Composer `/history` + toolbar-toggle seam: open the dock and load through the
      * broker. The first open loads via syncVisibility → maybeAutoLoad; an
      * explicit refresh is only sent once data exists, so opening never queues
      * a redundant second wave. */
@@ -126,7 +128,7 @@ export class HistoryDockController {
         return this.open;
     }
     /** Shell layout seam: fires after every open-state change (drawer
-     * exclusivity + trigger aria-expanded sync live there). */
+     * exclusivity + toggle aria-expanded sync live there). */
     onOpenChanged(listener) {
         this.openListeners.add(listener);
     }
@@ -134,8 +136,10 @@ export class HistoryDockController {
     focusSearch() {
         this.searchInput?.focus();
     }
-    focusTrigger() {
-        this.trigger?.focus();
+    /** Focus the history toggle of the currently visible workspace panel. */
+    focusToggle() {
+        const panel = this.dock?.parentElement?.querySelector('.agent-panel:not([hidden])');
+        panel?.querySelector('[data-role="history-toggle"]')?.focus();
     }
     /** WorkspaceHost view toggle: the whole agent area (dock included) hides
      * while a terminal workspace is active. */
@@ -146,8 +150,11 @@ export class HistoryDockController {
         this.syncVisibility();
     }
     /** Registry hook after workspace events/lifecycle: refresh open-thread
-     * markers and kick the first load once a workspace exists. */
+     * markers and kick the first load once a workspace exists. Also syncs
+     * visibility + every toolbar toggle so a newly created panel's
+     * history-toggle button starts in the correct aria-expanded state. */
     updateOpenState() {
+        this.syncVisibility();
         this.maybeAutoLoad();
         this.render();
     }
@@ -163,10 +170,8 @@ export class HistoryDockController {
         for (const off of this.cleanup.splice(0))
             off();
         this.dock?.remove();
-        this.trigger?.remove();
         this.container?.style.removeProperty('--agent-history-width');
         this.dock = null;
-        this.trigger = null;
         this.container = null;
         this.content = null;
         this.searchInput = null;
@@ -210,10 +215,10 @@ export class HistoryDockController {
         const visible = this.open && this.agentViewActive;
         this.dock.hidden = !visible;
         this.dock.parentElement?.classList.toggle('agent-history-dock-open', visible);
-        if (this.trigger) {
-            this.trigger.hidden = this.open || !this.agentViewActive;
-            this.trigger.setAttribute('aria-expanded', String(this.open));
-        }
+        // Every workspace toolbar carries a history-toggle; keep them all in sync.
+        this.dock.parentElement
+            ?.querySelectorAll('[data-role="history-toggle"]')
+            .forEach((toggle) => toggle.setAttribute('aria-expanded', String(this.open)));
         if (visible)
             this.maybeAutoLoad();
     }
@@ -259,14 +264,13 @@ export class HistoryDockController {
         return Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, Math.round(numeric)));
     }
     // --- Wiring -------------------------------------------------------------------
-    wire(search, providerSelect, refresh, collapse, resizer) {
+    wire(search, providerSelect, refresh, resizer) {
         this.on(search, 'input', () => this.render({ resetScroll: true }));
         this.on(providerSelect, 'change', () => {
             this.providerFilterValue = providerSelect.value;
             this.render({ resetScroll: true });
         });
         this.on(refresh, 'click', () => this.host.requestRefresh(''));
-        this.on(collapse, 'click', () => this.setOpen(false));
         this.on(resizer, 'pointerdown', (event) => {
             if (event.button !== 0)
                 return;
@@ -370,24 +374,83 @@ export class HistoryDockController {
         }
         const list = document.createElement('div');
         list.className = 'agent-history-list';
+        const isSearching = !!query || !!this.providerFilterValue;
         for (const group of groups) {
-            const heading = document.createElement('div');
-            heading.className = 'agent-history-group-heading';
-            const name = document.createElement('strong');
-            name.textContent = group.name;
-            heading.appendChild(name);
-            if (group.path) {
-                const path = document.createElement('small');
-                path.textContent = group.path;
-                path.title = group.path;
-                heading.appendChild(path);
-            }
-            list.appendChild(heading);
-            for (const thread of group.threads) {
-                list.appendChild(this.renderThread(thread, activeThreadId, openedElsewhere));
-            }
+            list.appendChild(this.renderGroup(group, activeThreadId, openedElsewhere, isSearching));
         }
         this.content.appendChild(list);
+    }
+    renderGroup(group, activeThreadId, openedElsewhere, isSearching) {
+        const PREVIEW_LIMIT = 5;
+        const allThreads = group.threads;
+        const showAll = isSearching || this.expandedGroups.has(group.key);
+        const visibleThreads = showAll ? allThreads : allThreads.slice(0, PREVIEW_LIMIT);
+        const hiddenCount = allThreads.length - visibleThreads.length;
+        // Searching forces every group open so results stay visible.
+        const folded = !isSearching && this.foldedGroups.has(group.key);
+        const hasActive = allThreads.some((thread) => thread.threadId === activeThreadId);
+        const groupEl = document.createElement('div');
+        groupEl.className = 'agent-history-group';
+        groupEl.dataset.folded = String(folded);
+        // Header (click toggles fold)
+        const header = document.createElement('button');
+        header.type = 'button';
+        header.className = 'agent-history-group-header';
+        header.setAttribute('aria-expanded', String(!folded));
+        const chevron = document.createElement('span');
+        chevron.className = 'agent-history-group-chevron';
+        chevron.setAttribute('aria-hidden', 'true');
+        header.appendChild(chevron);
+        const label = document.createElement('span');
+        label.className = 'agent-history-group-label';
+        const name = document.createElement('strong');
+        name.textContent = group.name;
+        label.appendChild(name);
+        if (group.path) {
+            const path = document.createElement('small');
+            path.textContent = group.path;
+            path.title = group.path;
+            label.appendChild(path);
+        }
+        header.appendChild(label);
+        const count = document.createElement('span');
+        count.className = 'agent-history-group-count';
+        count.textContent = String(allThreads.length);
+        header.appendChild(count);
+        if (hasActive) {
+            const dot = document.createElement('span');
+            dot.className = 'agent-history-group-active';
+            dot.setAttribute('aria-label', 'Contains the active session');
+            header.appendChild(dot);
+        }
+        header.addEventListener('click', () => {
+            if (this.foldedGroups.has(group.key))
+                this.foldedGroups.delete(group.key);
+            else
+                this.foldedGroups.add(group.key);
+            this.render();
+        });
+        groupEl.appendChild(header);
+        // Threads container (hidden when folded)
+        const threadsEl = document.createElement('div');
+        threadsEl.className = 'agent-history-group-threads';
+        threadsEl.hidden = folded;
+        for (const thread of visibleThreads) {
+            threadsEl.appendChild(this.renderThread(thread, activeThreadId, openedElsewhere));
+        }
+        if (hiddenCount > 0) {
+            const more = document.createElement('button');
+            more.type = 'button';
+            more.className = 'agent-history-show-more';
+            more.textContent = 'Show all ' + allThreads.length + ' threads';
+            more.addEventListener('click', () => {
+                this.expandedGroups.add(group.key);
+                this.render();
+            });
+            threadsEl.appendChild(more);
+        }
+        groupEl.appendChild(threadsEl);
+        return groupEl;
     }
     renderThread(thread, activeThreadId, openedElsewhere) {
         const row = document.createElement('button');
@@ -416,8 +479,9 @@ export class HistoryDockController {
         const parts = [];
         if (thread.providerDisplay)
             parts.push(thread.providerDisplay);
-        if (thread.updatedAt)
-            parts.push(thread.updatedAt);
+        const timeLabel = formatHistoryTime(thread.updatedAt);
+        if (timeLabel)
+            parts.push(timeLabel);
         meta.textContent = parts.join(' | ');
         row.appendChild(heading);
         row.appendChild(meta);

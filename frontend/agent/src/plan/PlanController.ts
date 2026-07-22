@@ -7,16 +7,14 @@
 // reducer folds plan_update / agent_thread_loaded / agent_cleared), and the
 // panel DOM survives Tab hide/show untouched.
 //
-// Card mode is workspace-local runtime state (never persisted; every mount
-// starts at 'auto'):
-//   auto   — expands while a plan is active, collapses to the entry button
-//            otherwise.
-//   pinned — always expanded, including the empty state.
-//   closed — stays collapsed; arriving plan updates only raise the unread
-//            badge on the entry button and never interrupt.
-// The width is a GLOBAL preference (psx.agent.planWidth, shared by all
-// workspaces like the legacy inspector width); psx.agent.inspectorWidth is
-// read once as a migration source and psx.agent.planPanelWidth is retired.
+// Visibility is two-state (visible / hidden), workspace-local runtime state
+// that is never persisted. Wide mode (>=1080px) shows the card by default — a
+// small, content-height card below the toolbar, empty state included — while
+// compact mode starts with the drawer closed so an empty card never covers
+// the conversation unprompted. The user hides/shows it through the toolbar
+// toggle. While hidden, an arriving active plan raises the unread dot on the
+// toggle instead of interrupting; showing the card clears it. The width is a
+// fixed CSS token; there is no resizer.
 
 import type { FeatureController } from '../contracts/feature-controller.js';
 import type { AgentWorkspaceEvent } from '../contracts/host-events.js';
@@ -31,22 +29,17 @@ export interface PlanHost {
   getPanel(workspaceId: string): HTMLElement | null;
 }
 
-export type PlanCardMode = 'auto' | 'pinned' | 'closed';
-
-/** Shell layout seam: the card reports expansion changes so the compact
+/** Shell layout seam: the card reports visibility changes so the compact
  * one-drawer-at-a-time rule can close the History drawer (and vice versa). */
 export interface PlanControllerCallbacks {
-  onExpansionChanged?: () => void;
+  onVisibilityChanged?: () => void;
 }
 
-const MIN_WIDTH = 280;
-const MAX_WIDTH = 400;
-const DEFAULT_WIDTH = 320;
-const STORAGE_KEY = 'psx.agent.planWidth';
-// One-time migration source; never read again once the new key exists.
-const LEGACY_STORAGE_KEY = 'psx.agent.inspectorWidth';
-
 const EMPTY_PLAN: WorkspacePlanState = { active: false, runId: '', entries: [], fallbackText: '' };
+
+// Same breakpoint as AgentShellLayoutController: wide shows the card by
+// default, compact keeps the drawer closed until the user asks for it.
+const WIDE_QUERY = '(min-width: 1080px)';
 
 function role(panel: HTMLElement, name: string): HTMLElement | null {
   return panel.querySelector<HTMLElement>('[data-role="' + name + '"]');
@@ -58,20 +51,13 @@ export class PlanController implements FeatureController {
   private readonly callbacks: PlanControllerCallbacks;
 
   private panel: HTMLElement | null = null;
-  private contextCards: HTMLElement | null = null;
   private planCard: HTMLElement | null = null;
   private planPanel: HTMLElement | null = null;
-  private planEntry: HTMLElement | null = null;
-  private planPin: HTMLElement | null = null;
-  private planClose: HTMLElement | null = null;
-  private planUnread: HTMLElement | null = null;
-  private resizer: HTMLElement | null = null;
+  private planToggle: HTMLElement | null = null;
+  private planToggleUnread: HTMLElement | null = null;
 
-  private mode: PlanCardMode = 'auto';
+  private visible = true;
   private unread = false;
-  private expanded = false;
-  private planWidth = DEFAULT_WIDTH;
-  private isResizing = false;
   private lastPlanRef: WorkspacePlanState = EMPTY_PLAN;
 
   private readonly cleanup: Array<() => void> = [];
@@ -86,21 +72,15 @@ export class PlanController implements FeatureController {
     const panel = this.host.getPanel(this.workspaceId);
     if (!panel) return;
     this.panel = panel;
-    this.contextCards = role(panel, 'context-cards');
     this.planCard = role(panel, 'plan-card');
     this.planPanel = role(panel, 'plan-panel');
-    this.planEntry = role(panel, 'plan-entry');
-    this.planPin = role(panel, 'plan-pin');
-    this.planClose = role(panel, 'plan-close');
-    this.planUnread = role(panel, 'plan-unread');
-    this.resizer = role(panel, 'plan-resizer');
+    this.planToggle = role(panel, 'plan-toggle');
+    this.planToggleUnread = role(panel, 'plan-toggle-unread');
 
-    this.planWidth = this.readPlanWidth();
-    this.applyPlanWidth(this.planWidth);
-    this.wireCardControls();
-    this.wireResizer();
+    this.visible = this.readDefaultVisible();
+    this.on(this.planToggle, 'click', () => this.setVisible(!this.visible));
     this.renderPlan(EMPTY_PLAN);
-    this.applyMode();
+    this.applyVisibility();
   }
 
   update(event: AgentWorkspaceEvent, state: AgentWorkspaceState): void {
@@ -117,80 +97,66 @@ export class PlanController implements FeatureController {
   }
 
   dispose(): void {
-    if (this.isResizing) {
-      this.isResizing = false;
-      document.body.classList.remove('agent-plan-resizing');
-    }
     for (const off of this.cleanup.splice(0)) off();
     this.panel = null;
   }
 
-  // --- Card mode (auto / pinned / closed) --------------------------------------
+  // --- Visibility (visible / hidden) -------------------------------------------
 
-  private wireCardControls(): void {
-    this.on(this.planEntry, 'click', () => this.openFromEntry());
-    this.on(this.planPin, 'click', () => {
-      this.mode = this.mode === 'pinned' ? 'auto' : 'pinned';
-      this.applyMode();
-    });
-    this.on(this.planClose, 'click', () => {
-      this.mode = 'closed';
-      this.applyMode();
-    });
+  private readDefaultVisible(): boolean {
+    try {
+      return window.matchMedia(WIDE_QUERY).matches;
+    } catch {
+      // matchMedia can be unavailable in constrained WebView profiles.
+      return true;
+    }
   }
 
-  /** Entry button: closed wakes back to auto (an active plan expands); an
-   * idle auto entry pins the card open so the empty state stays reachable. */
-  private openFromEntry(): void {
-    if (this.mode === 'closed') this.mode = 'auto';
-    else if (this.mode === 'auto') this.mode = 'pinned';
-    this.applyMode();
-    // User-initiated open: move focus to the first card control (drawer a11y).
-    if (this.expanded) this.planPin?.focus();
+  /** Shell layout seam for the compact one-drawer rule and Esc close. */
+  isVisible(): boolean {
+    return this.visible;
   }
 
-  /** Shell layout seam for the one-drawer rule and Esc close. */
-  isExpanded(): boolean {
-    return this.expanded;
+  setVisible(visible: boolean): void {
+    if (this.visible === visible) return;
+    this.visible = visible;
+    this.applyVisibility();
+    this.callbacks.onVisibilityChanged?.();
   }
 
   closeCard(): void {
-    if (!this.expanded) return;
-    this.mode = 'closed';
-    this.applyMode();
+    this.setVisible(false);
   }
 
-  focusEntry(): void {
-    this.planEntry?.focus();
+  focusToggle(): void {
+    this.planToggle?.focus();
   }
 
-  private applyMode(): void {
-    const expanded = this.mode === 'pinned' || (this.mode === 'auto' && this.lastPlanRef.active);
-    // Expanding is the "user saw it" signal that clears the unread badge.
-    if (expanded) this.unread = false;
-    const changed = expanded !== this.expanded;
-    this.expanded = expanded;
-    if (this.planCard) this.planCard.hidden = !expanded;
-    if (this.planEntry) {
-      this.planEntry.hidden = expanded;
-      this.planEntry.setAttribute('aria-expanded', String(expanded));
+  private applyVisibility(): void {
+    // Becoming visible is the "user saw it" signal that clears the unread dot.
+    if (this.visible) this.unread = false;
+    if (this.planCard) this.planCard.hidden = !this.visible;
+    if (this.planToggle) {
+      this.planToggle.setAttribute('aria-expanded', String(this.visible));
+      // The explicit aria-label overrides any inner span's label, so the
+      // unread state must be part of the button's own accessible name.
+      this.planToggle.setAttribute('aria-label',
+        this.unread ? 'Toggle Plan card, plan updated' : 'Toggle Plan card');
     }
-    if (this.planUnread) this.planUnread.hidden = !this.unread;
-    if (this.planPin) this.planPin.setAttribute('aria-pressed', String(this.mode === 'pinned'));
-    if (changed) this.callbacks.onExpansionChanged?.();
+    if (this.planToggleUnread) this.planToggleUnread.hidden = !this.unread;
   }
 
   // --- Plan rendering ---------------------------------------------------------
 
-  /** Renders the reduced plan when it actually changed; in closed mode an
-   * active-plan update raises the unread badge instead of expanding. */
+  /** Renders the reduced plan when it actually changed; while hidden an
+   * active-plan update raises the unread dot on the toolbar toggle. */
   private applyPlan(state: AgentWorkspaceState): void {
     const plan = state.inspector.plan;
     if (plan === this.lastPlanRef) return;
     this.lastPlanRef = plan;
-    if (this.mode === 'closed' && plan.active) this.unread = true;
+    if (!this.visible && plan.active) this.unread = true;
     this.renderPlan(plan);
-    this.applyMode();
+    this.applyVisibility();
   }
 
   private renderPlan(plan: WorkspacePlanState): void {
@@ -234,106 +200,6 @@ export class PlanController implements FeatureController {
       list.appendChild(item);
     });
     this.planPanel.appendChild(list);
-  }
-
-  // --- Resize + width -----------------------------------------------------------
-
-  private wireResizer(): void {
-    const resizer = this.resizer;
-    if (!resizer || !this.panel) return;
-
-    this.on(resizer, 'pointerdown', (event) => {
-      if (event.button !== 0) return;
-      this.isResizing = true;
-      resizer.setPointerCapture(event.pointerId);
-      document.body.classList.add('agent-plan-resizing');
-      event.preventDefault();
-    });
-
-    this.on(resizer, 'pointermove', (event) => {
-      if (!this.isResizing || !this.panel) return;
-      // Measure against the overlay column itself: the card floats with a
-      // right inset, so the panel edge is no longer the width baseline.
-      const rect = (this.contextCards ?? this.panel).getBoundingClientRect();
-      this.setPlanWidth(rect.right - event.clientX, true);
-    });
-
-    const endResize = (event: PointerEvent): void => {
-      if (!this.isResizing) return;
-      this.isResizing = false;
-      document.body.classList.remove('agent-plan-resizing');
-      try {
-        resizer.releasePointerCapture(event.pointerId);
-      } catch {
-        // Pointer capture may already be gone if the window lost focus.
-      }
-      this.savePlanWidth();
-    };
-
-    this.on(resizer, 'pointerup', endResize);
-    this.on(resizer, 'pointercancel', endResize);
-    this.on(resizer, 'keydown', (event) => {
-      const step = event.shiftKey ? 40 : 16;
-      if (event.key === 'ArrowLeft') this.setPlanWidth(this.planWidth + step, false);
-      else if (event.key === 'ArrowRight') this.setPlanWidth(this.planWidth - step, false);
-      else if (event.key === 'Home') this.setPlanWidth(MAX_WIDTH, false);
-      else if (event.key === 'End') this.setPlanWidth(MIN_WIDTH, false);
-      else return;
-      event.preventDefault();
-    });
-  }
-
-  /** Global width preference with a one-time legacy migration: the new key
-   * wins; only when it is absent does the legacy inspector width get read,
-   * clamped into the new range and written through. */
-  private readPlanWidth(): number {
-    try {
-      const stored = window.localStorage?.getItem(STORAGE_KEY);
-      if (stored != null) return this.clampStoredWidth(stored);
-      const legacy = window.localStorage?.getItem(LEGACY_STORAGE_KEY);
-      if (legacy != null) {
-        const migrated = this.clampStoredWidth(legacy);
-        window.localStorage?.setItem(STORAGE_KEY, String(migrated));
-        return migrated;
-      }
-    } catch {
-      // localStorage can be unavailable in constrained WebView profiles.
-    }
-    return DEFAULT_WIDTH;
-  }
-
-  private clampStoredWidth(raw: string): number {
-    const width = Number(raw);
-    if (!Number.isFinite(width) || width <= 0) return DEFAULT_WIDTH;
-    return this.clampWidth(width);
-  }
-
-  private setPlanWidth(width: number, deferSave: boolean): void {
-    this.planWidth = this.clampWidth(width);
-    this.applyPlanWidth(this.planWidth);
-    if (!deferSave) this.savePlanWidth();
-  }
-
-  private applyPlanWidth(width: number): void {
-    // Width is a global preference: write the shared workspace container so
-    // every mounted overlay inherits it (panels no longer declare their own;
-    // the default lives in the shell.css :root block).
-    const container = this.panel?.parentElement ?? null;
-    container?.style.setProperty('--agent-plan-width', this.clampWidth(width) + 'px');
-  }
-
-  private savePlanWidth(): void {
-    try {
-      window.localStorage?.setItem(STORAGE_KEY, String(this.planWidth));
-    } catch {
-      // Width persistence is optional; resizing remains available.
-    }
-  }
-
-  private clampWidth(width: number): number {
-    const numeric = Number(width);
-    if (!Number.isFinite(numeric)) return DEFAULT_WIDTH;
-    return Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, Math.round(numeric)));
   }
 
   private on<K extends keyof HTMLElementEventMap>(

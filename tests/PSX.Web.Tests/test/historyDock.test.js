@@ -16,6 +16,7 @@ const {
   historyGroupName,
   buildHistoryGroups,
   filterHistoryGroups,
+  formatHistoryTime,
   providerFilterOptions
 } = await appModule('history/historyModel.js');
 
@@ -26,6 +27,11 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
 
 function role(panel, name) {
   return panel.querySelector('[data-role="' + name + '"]');
+}
+
+// The dock's open/close control lives in every workspace toolbar.
+function historyToggle(panel) {
+  return role(panel, 'history-toggle');
 }
 
 function dock() {
@@ -97,6 +103,27 @@ function thread(overrides) {
 
 // --- pure grouping model -------------------------------------------------------
 
+test('history model: timestamps format as same-day time, same-year date, or full date', () => {
+  const now = new Date(2026, 6, 22, 12, 0, 0); // local 2026-07-22 12:00
+  assert.equal(formatHistoryTime('', now), '');
+  assert.equal(formatHistoryTime('not-a-date', now), 'not-a-date', 'unparseable stays raw');
+  // Same local day -> HH:mm. The "u" string is UTC; compute the expected local
+  // rendering instead of hardcoding a timezone-dependent wall clock.
+  const sameDay = new Date(2026, 6, 22, 8, 5, 0);
+  const sameDayUtc = sameDay.getFullYear() + '-' + String(sameDay.getMonth() + 1).padStart(2, '0') +
+    '-' + String(sameDay.getDate()).padStart(2, '0') + ' ' +
+    String(sameDay.getUTCHours()).padStart(2, '0') + ':' +
+    String(sameDay.getUTCMinutes()).padStart(2, '0') + ':00Z';
+  const expected = String(sameDay.getHours()).padStart(2, '0') + ':' + String(sameDay.getMinutes()).padStart(2, '0');
+  assert.equal(formatHistoryTime(sameDayUtc, now), expected);
+  // Same year, another day -> MM-dd.
+  const march = new Date(2026, 2, 9, 8, 5, 0);
+  const marchUtc = '2026-03-09 ' + String(march.getUTCHours()).padStart(2, '0') + ':05:00Z';
+  assert.equal(formatHistoryTime(marchUtc, now), '03-09');
+  // Another year -> yyyy-MM-dd (date may shift by one across timezones).
+  assert.match(formatHistoryTime('2019-01-02 03:04:05Z', now), /^2019-01-0[12]$/);
+});
+
 test('history model: Windows cwd variants group together and roots survive normalization', () => {
   const key = normalizeCwdKey('C:\\Foo');
   assert.equal(normalizeCwdKey('c:\\foo\\'), key);
@@ -165,6 +192,18 @@ test('history model: filter options come from the catalog plus unknown keys seen
 
 // --- dock shell ------------------------------------------------------------------
 
+test('dock: a newly created workspace toolbar toggle inherits the dock open state', async () => {
+  const { app, panelFor } = await mountApp({ dockOpen: true });
+  createAgentWorkspace(app, WS);
+  assert.equal(historyToggle(panelFor(WS)).getAttribute('aria-expanded'), 'true');
+
+  // Create another workspace while the dock is still open: its toolbar toggle
+  // must also start expanded, not with the template's default "false".
+  createAgentWorkspace(app, OTHER);
+  assert.equal(historyToggle(panelFor(OTHER)).getAttribute('aria-expanded'), 'true',
+    'new tab toggle syncs with the already-open dock');
+});
+
 test('dock: exactly one dock exists across workspaces and hides for terminal workspaces', async () => {
   const { app, panelFor } = await mountApp({ dockOpen: true });
   createAgentWorkspace(app, WS);
@@ -192,7 +231,7 @@ test('dock: collapsed by default at compact widths and persists open/collapse', 
   assert.equal(dock().hidden, false);
   assert.equal(window.localStorage.getItem('psx.agent.historyDockOpen'), '1');
 
-  dockRole('history-collapse').click();
+  historyToggle(panel).click();
   assert.equal(dock().hidden, true);
   assert.equal(window.localStorage.getItem('psx.agent.historyDockOpen'), '0');
 });
@@ -229,7 +268,7 @@ test('dock: loads through the broker when a workspace exists and renders groups'
     thread({ threadId: 't3', title: 'Gamma', cwd: '', updatedAt: '2026-07-19 10:00:00Z', provider: 'mystery' })
   ]);
 
-  const headings = [...dock().querySelectorAll('.agent-history-group-heading strong')].map((node) => node.textContent);
+  const headings = [...dock().querySelectorAll('.agent-history-group-label strong')].map((node) => node.textContent);
   assert.deepEqual(headings, ['Foo', 'Unknown workspace']);
   assert.equal(dock().querySelectorAll('.agent-history-item').length, 3);
 });
@@ -371,14 +410,14 @@ test('composer: /history with arguments takes the same navigation seam, even whi
   assert.ok(sent.some((entry) => entry.command === 'history'), 'the broker sends the history command');
 });
 
-test('dock: trigger button opens the dock and refreshes through the broker', async () => {
-  const { app, posted } = await mountApp();
+test('dock: the toolbar toggle opens the dock and refreshes through the broker', async () => {
+  const { app, panelFor, posted } = await mountApp();
   createAgentWorkspace(app, WS);
   assert.equal(dock().hidden, true);
 
-  document.querySelector('[data-role="history-trigger"]').click();
+  historyToggle(panelFor(WS)).click();
   assert.equal(dock().hidden, false);
-  assert.ok(posted.some((entry) => entry.command === 'history'), 'trigger goes through the broker refresh');
+  assert.ok(posted.some((entry) => entry.command === 'history'), 'toggle goes through the broker refresh');
 });
 
 test('dock: store-driven renders keep the scroll position, search and filter reset it', async () => {
@@ -404,11 +443,12 @@ test('dock: store-driven renders keep the scroll position, search and filter res
 });
 
 test('dock: first open sends exactly one history request, later opens refresh once', async () => {
-  const { app, posted } = await mountApp();
+  const { app, panelFor, posted } = await mountApp();
   createAgentWorkspace(app, WS);
   const historyCommands = () => posted.filter((entry) => entry.command === 'history').length;
+  const toggle = historyToggle(panelFor(WS));
 
-  document.querySelector('[data-role="history-trigger"]').click();
+  toggle.click();
   assert.equal(historyCommands(), 1, 'first open does not double-request');
 
   drainInitialLoad(app, [thread({ threadId: 't1' })]);
@@ -416,8 +456,8 @@ test('dock: first open sends exactly one history request, later opens refresh on
   assert.equal(historyCommands(), 1, 'no queued second wave after the landing');
 
   // Already loaded: opening again is an explicit single refresh.
-  document.querySelector('[data-role="history-collapse"]').click();
-  document.querySelector('[data-role="history-trigger"]').click();
+  toggle.click();
+  toggle.click();
   assert.equal(historyCommands(), 2);
 
   drainInitialLoad(app);
@@ -427,4 +467,80 @@ test('dock: first open sends exactly one history request, later opens refresh on
   // The refresh button keeps its explicit single-refresh semantics.
   dockRole('history-refresh').click();
   assert.equal(historyCommands(), 3);
+});
+
+// --- folding, preview limit and active-session indicator -----------------------
+
+function makeThreads(count, cwd) {
+  return Array.from({ length: count }, (_, i) =>
+    thread({ threadId: 't' + i, title: 'Task ' + i, cwd, updatedAt: '2026-07-2' + (i % 10) + ' 10:00:00Z' })
+  );
+}
+
+test('dock: a group shows at most 5 threads with a Show-all link until expanded', async () => {
+  const { app } = await mountLoaded();
+  drainInitialLoad(app, makeThreads(7, 'C:\\Project'));
+  let group = dock().querySelector('.agent-history-group');
+  assert.equal(group.querySelectorAll('.agent-history-item').length, 5, 'preview limit');
+  assert.ok(group.querySelector('.agent-history-show-more'));
+
+  group.querySelector('.agent-history-show-more').click();
+  group = dock().querySelector('.agent-history-group');
+  assert.equal(group.querySelectorAll('.agent-history-item').length, 7, 'expanded shows all');
+  assert.equal(group.querySelector('.agent-history-show-more'), null, 'link is gone');
+});
+
+test('dock: clicking the group header folds and unfolds the thread list', async () => {
+  const { app } = await mountLoaded();
+  drainInitialLoad(app, makeThreads(3, 'C:\\Project'));
+  let group = dock().querySelector('.agent-history-group');
+  let header = group.querySelector('.agent-history-group-header');
+  assert.equal(group.dataset.folded, 'false');
+  assert.equal(group.querySelector('.agent-history-group-threads').hidden, false);
+
+  header.click();
+  group = dock().querySelector('.agent-history-group');
+  header = group.querySelector('.agent-history-group-header');
+  assert.equal(group.dataset.folded, 'true', 'folded after click');
+  assert.equal(group.querySelector('.agent-history-group-threads').hidden, true);
+  assert.equal(header.getAttribute('aria-expanded'), 'false');
+
+  header.click();
+  group = dock().querySelector('.agent-history-group');
+  assert.equal(group.dataset.folded, 'false', 'unfolded after second click');
+  assert.equal(group.querySelector('.agent-history-group-threads').hidden, false);
+});
+
+test('dock: the group with the active session shows a marker dot even when folded', async () => {
+  const { app, panelFor } = await mountLoaded();
+  createAgentWorkspace(app, OTHER);
+  app.handle({ type: 'workspace_activated', workspaceId: OTHER, kind: 'agent' });
+  app.handle({ type: 'agent_state', workspaceId: OTHER, threadId: 't1', status: 'ready' });
+  drainInitialLoad(app, makeThreads(3, 'C:\\Project'));
+
+  let group = dock().querySelector('.agent-history-group');
+  assert.ok(group.querySelector('.agent-history-group-active'), 'active dot present');
+
+  group.querySelector('.agent-history-group-header').click();
+  group = dock().querySelector('.agent-history-group');
+  assert.equal(group.dataset.folded, 'true');
+  assert.ok(group.querySelector('.agent-history-group-active'), 'dot survives folding');
+});
+
+test('dock: searching forces every group open past the fold and the preview limit', async () => {
+  const { app } = await mountLoaded();
+  drainInitialLoad(app, makeThreads(7, 'C:\\Project'));
+  // Fold it first
+  dock().querySelector('.agent-history-group-header').click();
+  let group = dock().querySelector('.agent-history-group');
+  assert.equal(group.dataset.folded, 'true');
+
+  // A search must unfold and remove the preview cap.
+  const search = dockRole('history-search');
+  search.value = 'Task';
+  search.dispatchEvent(new Event('input'));
+  group = dock().querySelector('.agent-history-group');
+  assert.equal(group.dataset.folded, 'false', 'search unfolds');
+  assert.equal(group.querySelectorAll('.agent-history-item').length, 7, 'search bypasses preview limit');
+  assert.equal(group.querySelector('.agent-history-show-more'), null, 'no link while searching');
 });

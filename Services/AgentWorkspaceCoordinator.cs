@@ -250,6 +250,11 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
             threadId = descriptor.ThreadId
         }).ConfigureAwait(false);
 
+        // Re-publish the provider catalog with every workspace: the startup
+        // broadcast can land before the WebView page subscribes, and the
+        // global History dock needs the catalog whenever a workspace exists.
+        await PublishProvidersAsync().ConfigureAwait(false);
+
         if (restore)
             await entry.Session.RestoreAsync().ConfigureAwait(false);
         else
@@ -334,7 +339,15 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
 
     public async Task PublishStateAsync()
     {
-        await _rootBridge.SendEventAsync(new
+        await PublishProvidersAsync().ConfigureAwait(false);
+
+        foreach (var entry in _entries.Values)
+            await entry.Session.PublishStateAsync().ConfigureAwait(false);
+    }
+
+    private Task PublishProvidersAsync()
+    {
+        return _rootBridge.SendEventAsync(new
         {
             type = "agent_providers",
             providers = ProviderCatalog.Select(provider => new
@@ -344,10 +357,7 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
                 assistantName = provider.AssistantName,
                 isDefault = provider.IsDefault
             }).ToArray()
-        }).ConfigureAwait(false);
-
-        foreach (var entry in _entries.Values)
-            await entry.Session.PublishStateAsync().ConfigureAwait(false);
+        });
     }
 
     private bool BeforeWorkspaceEvent(Guid workspaceId, JsonObject message)

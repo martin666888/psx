@@ -24,8 +24,9 @@ function dock() {
   return document.querySelector('[data-role="history-dock"]');
 }
 
-function trigger() {
-  return document.querySelector('[data-role="history-trigger"]');
+// The dock's open/close control lives in every workspace toolbar.
+function trigger(panel) {
+  return panel.querySelector('[data-role="history-toggle"]');
 }
 
 // Install a controllable matchMedia BEFORE createAgentApp reads it.
@@ -67,10 +68,6 @@ async function mountApp({ wide = false } = {}) {
   };
 }
 
-function planEvent(workspaceId) {
-  return { type: 'plan_update', workspaceId, runId: 'run-1', entries: [{ content: 'Build', status: 'in_progress' }] };
-}
-
 function escape() {
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 }
@@ -89,25 +86,25 @@ test('drawer: opening History closes the active Plan card in compact mode', asyn
   const { app, panelFor } = await mountApp({ wide: false });
   createAgentWorkspace(app, WS);
   app.handle({ type: 'workspace_activated', workspaceId: WS, kind: 'agent' });
-  app.handle(planEvent(WS));
   const panel = panelFor(WS);
-  assert.equal(role(panel, 'plan-card').hidden, false, 'auto mode expanded on the new plan');
+  // Compact starts hidden; the user opens the Plan drawer through the toggle.
+  role(panel, 'plan-toggle').click();
+  assert.equal(role(panel, 'plan-card').hidden, false);
 
-  trigger().click();
+  trigger(panel).click();
   assert.equal(dock().hidden, false);
   assert.equal(role(panel, 'plan-card').hidden, true, 'one drawer at a time');
-  assert.equal(role(panel, 'plan-entry').hidden, false);
+  assert.equal(role(panel, 'plan-toggle').getAttribute('aria-expanded'), 'false');
 });
 
-test('drawer: expanding the Plan card closes the History drawer in compact mode', async () => {
+test('drawer: showing the Plan card closes the History drawer in compact mode', async () => {
   const { app, panelFor } = await mountApp({ wide: false });
   createAgentWorkspace(app, WS);
   app.handle({ type: 'workspace_activated', workspaceId: WS, kind: 'agent' });
-  app.handle(planEvent(WS));
-  trigger().click();
+  trigger(panelFor(WS)).click();
   assert.equal(dock().hidden, false);
 
-  role(panelFor(WS), 'plan-entry').click();
+  role(panelFor(WS), 'plan-toggle').click();
   assert.equal(role(panelFor(WS), 'plan-card').hidden, false);
   assert.equal(dock().hidden, true, 'Plan wins the drawer slot');
 });
@@ -116,8 +113,9 @@ test('drawer: wide mode lets the dock and the Plan card coexist', async () => {
   const { app, panelFor } = await mountApp({ wide: true });
   createAgentWorkspace(app, WS);
   app.handle({ type: 'workspace_activated', workspaceId: WS, kind: 'agent' });
-  app.handle(planEvent(WS));
-  trigger().click();
+  // Wide mode shows the Plan card by default; the dock is no drawer here.
+  assert.equal(role(panelFor(WS), 'plan-card').hidden, false);
+  trigger(panelFor(WS)).click();
 
   assert.equal(dock().hidden, false);
   assert.equal(role(panelFor(WS), 'plan-card').hidden, false, 'no exclusivity above the breakpoint');
@@ -127,9 +125,8 @@ test('drawer: crossing into compact enforces exclusivity, crossing back keeps st
   const { app, breakpoint, panelFor } = await mountApp({ wide: true });
   createAgentWorkspace(app, WS);
   app.handle({ type: 'workspace_activated', workspaceId: WS, kind: 'agent' });
-  app.handle(planEvent(WS));
-  trigger().click();
-  assert.equal(role(panelFor(WS), 'plan-card').hidden, false);
+  trigger(panelFor(WS)).click();
+  assert.equal(role(panelFor(WS), 'plan-card').hidden, false, 'wide default: plan visible');
 
   breakpoint.setWide(false);
   assert.equal(dock().hidden, false, 'dock open maps to drawer open');
@@ -137,7 +134,7 @@ test('drawer: crossing into compact enforces exclusivity, crossing back keeps st
 
   breakpoint.setWide(true);
   assert.equal(dock().hidden, false, 'open state survives the round trip');
-  assert.equal(role(panelFor(WS), 'plan-card').hidden, true, 'closed plan stays closed (runtime state)');
+  assert.equal(role(panelFor(WS), 'plan-card').hidden, true, 'hidden plan stays hidden (runtime state)');
 });
 
 test('drawer: aria-expanded tracks both triggers', async () => {
@@ -145,46 +142,49 @@ test('drawer: aria-expanded tracks both triggers', async () => {
   createAgentWorkspace(app, WS);
   app.handle({ type: 'workspace_activated', workspaceId: WS, kind: 'agent' });
 
-  assert.equal(trigger().getAttribute('aria-expanded'), 'false');
-  trigger().click();
-  assert.equal(trigger().getAttribute('aria-expanded'), 'true');
+  const historyToggle = trigger(panelFor(WS));
+  assert.equal(historyToggle.getAttribute('aria-expanded'), 'false');
+  historyToggle.click();
+  assert.equal(historyToggle.getAttribute('aria-expanded'), 'true');
   assert.equal(document.activeElement, document.querySelector('[data-role="history-search"]'),
     'focus moves into the drawer on open');
 
-  app.handle(planEvent(WS));
-  assert.equal(role(panelFor(WS), 'plan-entry').getAttribute('aria-expanded'), 'true');
+  const toggle = role(panelFor(WS), 'plan-toggle');
+  assert.equal(toggle.getAttribute('aria-expanded'), 'false', 'compact starts hidden');
+  toggle.click();
+  assert.equal(toggle.getAttribute('aria-expanded'), 'true');
 });
 
-test('drawer: Escape closes the History drawer and returns focus to the trigger', async () => {
-  const { app } = await mountApp({ wide: false });
+test('drawer: Escape closes the History drawer and returns focus to the toolbar toggle', async () => {
+  const { app, panelFor } = await mountApp({ wide: false });
   createAgentWorkspace(app, WS);
   app.handle({ type: 'workspace_activated', workspaceId: WS, kind: 'agent' });
-  trigger().click();
+  trigger(panelFor(WS)).click();
   assert.equal(dock().hidden, false);
 
   escape();
   assert.equal(dock().hidden, true);
-  assert.equal(document.activeElement, trigger(), 'focus is not lost to the body');
+  assert.equal(document.activeElement, trigger(panelFor(WS)), 'focus is not lost to the body');
 });
 
-test('drawer: Escape closes the Plan drawer and returns focus to its entry', async () => {
+test('drawer: Escape closes the Plan drawer and returns focus to its toggle', async () => {
   const { app, panelFor } = await mountApp({ wide: false });
   createAgentWorkspace(app, WS);
   app.handle({ type: 'workspace_activated', workspaceId: WS, kind: 'agent' });
-  app.handle(planEvent(WS));
   const panel = panelFor(WS);
+  role(panel, 'plan-toggle').click();
   assert.equal(role(panel, 'plan-card').hidden, false);
 
   escape();
   assert.equal(role(panel, 'plan-card').hidden, true);
-  assert.equal(document.activeElement, role(panel, 'plan-entry'));
+  assert.equal(document.activeElement, role(panel, 'plan-toggle'));
 });
 
 test('drawer: Escape is inert in wide mode', async () => {
-  const { app } = await mountApp({ wide: true });
+  const { app, panelFor } = await mountApp({ wide: true });
   createAgentWorkspace(app, WS);
   app.handle({ type: 'workspace_activated', workspaceId: WS, kind: 'agent' });
-  trigger().click();
+  trigger(panelFor(WS)).click();
   escape();
   assert.equal(dock().hidden, false, 'wide dock is not a drawer');
 });
@@ -201,10 +201,10 @@ test('drawer: compact drawer styles and motion rules exist in CSS', () => {
 });
 
 test('drawer: Escape respects an already-handled (defaultPrevented) event', async () => {
-  const { app } = await mountApp({ wide: false });
+  const { app, panelFor } = await mountApp({ wide: false });
   createAgentWorkspace(app, WS);
   app.handle({ type: 'workspace_activated', workspaceId: WS, kind: 'agent' });
-  trigger().click();
+  trigger(panelFor(WS)).click();
   assert.equal(dock().hidden, false);
 
   const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });

@@ -16,6 +16,9 @@
     <template id="agent-workspace-template">
     <section class="agent-panel" hidden>
         <header class="agent-toolbar">
+            <button data-role="history-toggle" class="agent-icon-toggle agent-history-toggle" type="button" title="Agent history" aria-label="Toggle Agent history" aria-expanded="false">
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M2.5 3h11v10h-11z M6 3v10" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
+            </button>
             <div class="agent-meta">
                 <span data-role="status">Ready</span>
                 <span data-role="cwd">Working directory not loaded</span>
@@ -23,6 +26,10 @@
                 <span data-role="session"></span>
             </div>
             <div class="agent-toolbar-actions">
+                <button data-role="plan-toggle" class="agent-icon-toggle agent-plan-toggle" type="button" title="Toggle Plan card" aria-label="Toggle Plan card" aria-expanded="true">
+                    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M6.5 4h7M6.5 8h7M6.5 12h7" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="3" cy="4" r="1.1" fill="currentColor"/><circle cx="3" cy="8" r="1.1" fill="currentColor"/><circle cx="3" cy="12" r="1.1" fill="currentColor"/></svg>
+                    <span data-role="plan-toggle-unread" class="agent-plan-toggle-unread" aria-label="Plan updated" hidden></span>
+                </button>
                 <button data-role="clear" title="Clear thread">Clear</button>
             </div>
         </header>
@@ -45,36 +52,13 @@
             <main data-role="thread" class="agent-thread" role="log" aria-label="Agent conversation" aria-live="polite" aria-relevant="additions"></main>
         </div>
 
-        <aside data-role="context-cards" class="agent-context-cards" aria-label="Agent context cards">
-            <div data-role="plan-resizer"
-                 class="agent-plan-resizer"
-                 role="separator"
-                 aria-label="Resize Agent plan"
-                 aria-orientation="vertical"
-                 tabindex="0"></div>
+                <aside data-role="context-cards" class="agent-context-cards" aria-label="Agent context cards">
             <section data-role="plan-card" class="agent-plan-card" aria-label="Agent plan">
                 <header class="agent-plan-card-header">
                     <strong class="agent-plan-card-title">Plan</strong>
-                    <button data-role="plan-pin"
-                            class="agent-plan-pin"
-                            type="button"
-                            title="Pin the Plan card"
-                            aria-pressed="false">Pin</button>
-                    <button data-role="plan-close"
-                            class="agent-plan-close"
-                            type="button"
-                            title="Close the Plan card"
-                            aria-label="Close the Plan card">&times;</button>
                 </header>
                 <div data-role="plan-panel" class="agent-plan-panel"></div>
             </section>
-            <button data-role="plan-entry"
-                    class="agent-plan-entry"
-                    type="button"
-                    hidden>
-                <span>Plan</span>
-                <span data-role="plan-unread" class="agent-plan-unread" aria-label="Plan updated" hidden></span>
-            </button>
         </aside>
         <footer class="agent-composer">
             <div class="agent-composer-main">

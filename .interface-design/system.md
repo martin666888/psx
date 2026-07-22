@@ -178,13 +178,13 @@ Theme 弹层是全局选择器的参考实现：
 
 ### Agent 壳层布局
 
-- Agent 界面是分层壳层：History 是页面唯一的底层 dock（左侧），Conversation canvas 位于上层并连接窗口顶/右/底边缘，Plan 是浮在 canvas 右侧的 overlay 卡片；层级观感 canvas 在上、dock 在下、Plan 最高。
-- 结构 token：`--agent-history-width`（默认 280px）、`--agent-plan-width`（默认 320px，可调 280–400）、`--agent-reading-max-width`（880px）、`--agent-radius-context-card`（12px）、`--agent-radius-workspace-canvas`（16px）、`--agent-shadow-canvas`、`--agent-shadow-context-card`；阴影从 `--agent-shadow` 用 color-mix 推导，不硬编码颜色，表面层级沿用 background < surface < surfaceRaised 色差。
+- Agent 界面是分层壳层：History 是页面唯一的底层 dock（左侧），Conversation canvas 位于上层并连接窗口顶/右/底边缘，Plan 是浮在 canvas 右上角（工具栏下方）的内容高度小卡片；层级观感 canvas 在上、dock 在下、Plan 最高，靠 background < canvas-surface < surface-raised 的明度阶梯加左缘圆角/细边/阴影表达。
+- 结构 token：`--agent-history-width`（默认 280px，可拖拽并按视口封顶）、`--agent-plan-width`（固定 320px，不可调）、`--agent-reading-max-width`（880px）、`--agent-reading-min-width`（320px）、`--agent-toolbar-height`（44px）、`--agent-radius-context-card`（12px）、`--agent-radius-workspace-canvas`（16px）、`--agent-shadow-canvas`、`--agent-shadow-context-card`、`--agent-canvas-surface`（由 surface/surface-raised color-mix 推导）；阴影从 `--agent-shadow` 推导，不硬编码颜色。
 - 固定整窗中心线：对话内容与 Composer 的中心恒等于 viewportWidth / 2。dock 打开时阅读列左右对称缩窄（clearance = dock 宽 + 16px），Plan overlay 不参与布局计算；消息条目不卡片化。
 - 响应式：≥1080px 时 History 是参与布局的 dock、Plan 是 overlay；<1080px 时两者变为覆盖在 canvas 上的 drawer，一次只开一个，Esc 关闭并把焦点还给触发控件。
-- Plan 卡片三态：auto（有计划自动展开、无计划收为入口）、pinned（恒展开）、closed（保持收起只显示未读点）；模式是 workspace 运行时状态，不持久化。
+- Plan 卡片两态：visible/hidden，workspace 运行时状态不持久化；宽模式默认显示（无计划显示空态），紧凑模式默认收起；工具栏图标切换，隐藏期间新计划在图标上显示未读点。runtime 安装卡等内容卡片使用与对话、Composer 相同的阅读列宽度和整窗中心线。
 - History 只负责全局 Thread 导航：列表、加载状态和错误只在 dock 内展示，不得写入主对话流；行高亮使用 6–8px 圆角背景。
-- 持久化键：`psx.agent.historyDockOpen`、`psx.agent.historyDockWidth`、`psx.agent.planWidth`；`psx.agent.inspectorWidth` 只在迁移时读取一次后废弃，`psx.agent.planPanelWidth` 已退役。
+- 持久化键：`psx.agent.historyDockOpen`、`psx.agent.historyDockWidth`；`psx.agent.planWidth`、`psx.agent.inspectorWidth`、`psx.agent.planPanelWidth` 均已退役（不再读取）。
 - 动画限制在 120–160ms，只用 opacity 和小距离 translate，并尊重 prefers-reduced-motion。
 
 ## 6. WPF 与 WebView2 一致性

@@ -4,7 +4,12 @@
     grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
     gap: 14px;
-    margin: 12px 16px 0;
+    /* Same reading column as the conversation and the composer: the card is
+     * canvas content, not chrome, so it shares the window-center track. */
+    width: var(--agent-reading-column-max);
+    max-width: 100%;
+    box-sizing: border-box;
+    margin: 12px auto 0 max(0px, var(--agent-reading-column-start));
     padding: 14px 16px;
     border: 1px solid var(--agent-permission-border);
     border-radius: 8px;

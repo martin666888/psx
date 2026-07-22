@@ -112,3 +112,24 @@ export function providerFilterOptions(threads, providers) {
     }
     return options;
 }
+/** Formats a C# "u"-format UTC timestamp ("2026-07-21 14:28:28Z") for the
+ * history row meta: local HH:mm for same-day, MM-dd within the same year,
+ * yyyy-MM-dd otherwise. Unparseable input comes back as-is ('' stays ''). */
+export function formatHistoryTime(updatedAt, now = new Date()) {
+    const raw = String(updatedAt || '').trim();
+    if (!raw)
+        return '';
+    const parsed = new Date(raw.replace(' ', 'T'));
+    if (Number.isNaN(parsed.getTime()))
+        return raw;
+    const pad = (value) => String(value).padStart(2, '0');
+    const sameDay = parsed.getFullYear() === now.getFullYear() &&
+        parsed.getMonth() === now.getMonth() &&
+        parsed.getDate() === now.getDate();
+    if (sameDay)
+        return pad(parsed.getHours()) + ':' + pad(parsed.getMinutes());
+    if (parsed.getFullYear() === now.getFullYear()) {
+        return pad(parsed.getMonth() + 1) + '-' + pad(parsed.getDate());
+    }
+    return parsed.getFullYear() + '-' + pad(parsed.getMonth() + 1) + '-' + pad(parsed.getDate());
+}

@@ -34,8 +34,8 @@ test('shell: the context-cards overlay sits outside the single-column workspace 
   assert.equal(workspace.children.length, 1, 'workspace grid is back to a single column');
   assert.equal(workspace.children[0].dataset.role, 'thread');
 
-  assert.equal(cards.querySelector('[data-role="plan-resizer"]'), cards.querySelector('.agent-plan-resizer'));
-  assert.ok(cards.querySelector('[data-role="plan-resizer"]'), 'resizer rides the overlay left edge');
+  assert.equal(cards.querySelector('[data-role="plan-resizer"]'), null, 'fixed-width card: no resizer');
+  assert.ok(panel.querySelector('.agent-toolbar [data-role="plan-toggle"]'), 'visibility toggle lives in the toolbar');
 });
 
 test('shell: dock open toggles the canvas dock-open state class', async () => {
@@ -49,7 +49,7 @@ test('shell: dock open toggles the canvas dock-open state class', async () => {
   role(panel, 'input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
   assert.equal(container.classList.contains('agent-history-dock-open'), true);
 
-  document.querySelector('[data-role="history-collapse"]').click();
+  role(panel, 'history-toggle').click();
   assert.equal(container.classList.contains('agent-history-dock-open'), false);
 });
 
@@ -76,6 +76,30 @@ test('shell: structural tokens and the centerline mechanism exist in shell.css',
   assert.match(shell, /--agent-shadow-canvas:.*color-mix\(in srgb, var\(--agent-shadow\)/);
   // Animations die under reduced motion.
   assert.match(shell, /@media \(prefers-reduced-motion: reduce\)/);
+  // The luminance ladder: canvas surface derives from theme variables and the
+  // dock-open canvas edge gets a border + radius + shadow (no hardcoded colors).
+  assert.match(shell, /--agent-canvas-surface: color-mix\(in srgb, var\(--agent-surface\)/);
+  assert.match(shell, /border-left: 1px solid var\(--agent-border\)/);
+  assert.match(shell, /--agent-toolbar-height: 44px/);
+});
+
+test('shell: the Plan card and the runtime card follow the new canvas rules', () => {
+  const plan = readCss('plan.css');
+  // Content-height card anchored below the toolbar; only compact mode fills height.
+  assert.match(plan, /top: calc\(var\(--agent-toolbar-height\) \+ var\(--agent-space-2\)\)/);
+  assert.match(plan, /max-height: min\(60vh, 560px\)/);
+  assert.match(plan, /\.agent-shell-compact \.agent-plan-card/);
+  assert.ok(!plan.includes('agent-plan-resizer'), 'resizer styles retired');
+  assert.ok(!plan.includes('agent-plan-entry'), 'entry styles retired');
+
+  const runtime = readCss('runtime.css');
+  // The install card rides the same reading column as the conversation.
+  assert.match(runtime, /width: var\(--agent-reading-column-max\)/);
+  assert.match(runtime, /margin: 12px auto 0 max\(0px, var\(--agent-reading-column-start\)\)/);
+  // Border-box keeps the outer width identical to the composer row despite
+  // the card's own padding and 1px border (content-box would make it ~34px
+  // wider than the input row above).
+  assert.match(runtime, /box-sizing: border-box/);
 });
 
 test('shell: retired layout tokens are gone from every agent stylesheet', () => {

@@ -5,6 +5,11 @@
     --agent-reading-min-width: 320px;
     --agent-reading-max-width: 880px;
     --agent-dock-gap: 16px;
+    --agent-toolbar-height: 44px;
+    /* Canvas surface: one step above the dock (--agent-bg), one below the
+     * context cards (--agent-surface-raised) — the luminance ladder that makes
+     * the layered shell read without hard borders. Derived, never hardcoded. */
+    --agent-canvas-surface: color-mix(in srgb, var(--agent-surface) 50%, var(--agent-surface-raised));
     --agent-radius-context-card: 12px;
     --agent-radius-workspace-canvas: 16px;
     --agent-shadow-canvas: -12px 0 28px color-mix(in srgb, var(--agent-shadow) 28%, transparent);
@@ -78,7 +83,7 @@
     --agent-side-clearance: var(--agent-viewport-padding);
     --agent-reading-column-max: max(var(--agent-reading-min-width), min(var(--agent-reading-max-width), calc(100vw - 2 * var(--agent-side-clearance))));
     --agent-reading-column-start: calc((100vw - var(--agent-reading-column-max)) / 2 - var(--agent-canvas-offset));
-    background: var(--agent-surface);
+    background: var(--agent-canvas-surface);
     color: var(--agent-text);
     font-family: var(--agent-font-ui);
 }
@@ -95,19 +100,46 @@
     --agent-canvas-offset: var(--agent-history-width-effective);
     --agent-side-clearance: calc(var(--agent-history-width-effective) + var(--agent-dock-gap));
     border-top-left-radius: var(--agent-radius-workspace-canvas);
+    border-left: 1px solid var(--agent-border);
     box-shadow: var(--agent-shadow-canvas);
 }
 
 .agent-toolbar {
     grid-area: toolbar;
-    min-height: 44px;
+    min-height: var(--agent-toolbar-height);
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: var(--agent-space-4);
     padding: 0 var(--agent-space-4);
     border-bottom: 1px solid var(--agent-border);
     background: var(--agent-bg);
+}
+
+/* Shared quiet icon button for toolbar toggles (History, Plan). */
+.agent-icon-toggle {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 5px;
+    border: 1px solid var(--agent-border-strong);
+    border-radius: var(--agent-radius-sm);
+    background: var(--agent-surface-raised);
+    color: var(--agent-text);
+    cursor: pointer;
+    font: inherit;
+}
+
+.agent-icon-toggle svg {
+    display: block;
+}
+
+.agent-icon-toggle:hover {
+    background: var(--agent-hover);
+}
+
+.agent-icon-toggle[aria-expanded="false"] {
+    color: var(--agent-text-muted);
 }
 
 .agent-meta {
@@ -169,7 +201,12 @@
     border-radius: var(--agent-radius-sm);
 }
 
+/* Right group floats to the toolbar edge; everything else (history toggle +
+ * status/path) stays left-anchored. Replaces the previous space-between rule,
+ * which would push the middle child (status) to the centre once the toolbar
+ * carried more than two children. */
 .agent-toolbar-actions {
+    margin-left: auto;
     display: flex;
     flex: 0 0 auto;
     gap: var(--agent-space-2);

@@ -42,7 +42,7 @@ export class AgentWorkspaceRegistry {
   // Plan controller refs by workspace: the shell layout coordinator needs the
   // ACTIVE workspace's card for the compact one-drawer-at-a-time rule.
   private readonly planControllers = new Map<string, PlanController>();
-  private planExpansionListener: ((expanded: boolean) => void) | null = null;
+  private planVisibilityListener: ((expanded: boolean) => void) | null = null;
   // Routes an active-workspace notice (agent_workspace_limit_reached) to that
   // workspace's timeline, keeping the thread's single-writer invariant.
   private readonly noticeSinks = new Map<string, (text: string) => void>();
@@ -97,21 +97,21 @@ export class AgentWorkspaceRegistry {
       },
       onHistoryOpenChanged: (listener) => dock.onOpenChanged(listener),
       focusHistorySearch: () => dock.focusSearch(),
-      focusHistoryTrigger: () => dock.focusTrigger(),
-      isActivePlanExpanded: () => activePlan()?.isExpanded() ?? false,
+      focusHistoryToggle: () => dock.focusToggle(),
+      isActivePlanVisible: () => activePlan()?.isVisible() ?? false,
       closeActivePlan: () => activePlan()?.closeCard(),
-      focusActivePlanEntry: () => activePlan()?.focusEntry(),
-      onActivePlanExpandedChanged: (listener) => {
-        this.planExpansionListener = listener;
+      focusActivePlanToggle: () => activePlan()?.focusToggle(),
+      onActivePlanVisibilityChanged: (listener) => {
+        this.planVisibilityListener = listener;
       }
     };
   }
 
   /** Plan expansion reports arrive per workspace; only the active one drives
    * the compact one-drawer-at-a-time rule. */
-  private notifyPlanExpansion(workspaceId: string): void {
+  private notifyPlanVisibility(workspaceId: string): void {
     if (workspaceId !== this.activeAgentWorkspace()) return;
-    this.planExpansionListener?.(this.planControllers.get(workspaceId)?.isExpanded() ?? false);
+    this.planVisibilityListener?.(this.planControllers.get(workspaceId)?.isVisible() ?? false);
   }
 
   handle(message: RawHostMessage): void {
@@ -129,7 +129,7 @@ export class AgentWorkspaceRegistry {
           if (event.kind === 'agent') {
             this.historyBroker.activateWorkspace(event.workspaceId);
             // The active workspace changed: re-evaluate the drawer rule.
-            this.notifyPlanExpansion(event.workspaceId);
+            this.notifyPlanVisibility(event.workspaceId);
           }
           this.historyDock?.updateOpenState();
         } else if (event.type === 'agent_workspace_created') {
@@ -196,7 +196,7 @@ export class AgentWorkspaceRegistry {
     this.host.createWorkspace(workspaceId);
     const state = this.store.create(workspaceId, createdRaw);
     const plan = new PlanController(workspaceId, this.host, {
-      onExpansionChanged: () => this.notifyPlanExpansion(workspaceId)
+      onVisibilityChanged: () => this.notifyPlanVisibility(workspaceId)
     });
     this.planControllers.set(workspaceId, plan);
     // The composer renders its own system messages (upload validation, "still
