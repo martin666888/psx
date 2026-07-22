@@ -47,8 +47,7 @@ export function createInitialWorkspaceState(workspaceId) {
             configOptions: []
         },
         inspector: {
-            plan: { active: false, runId: '', entries: [], fallbackText: '' },
-            history: { threads: [], errorText: '' }
+            plan: { active: false, runId: '', entries: [], fallbackText: '' }
         },
         decisions: []
     };

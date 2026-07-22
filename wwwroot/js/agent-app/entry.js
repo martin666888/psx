@@ -7,6 +7,8 @@
 // through this sink and forwards every later Agent host event to it.
 import { WorkspaceHost } from './workspace/WorkspaceHost.js';
 import { AgentWorkspaceRegistry } from './workspace/AgentWorkspaceRegistry.js';
+import { HistoryDockController } from './history/HistoryDockController.js';
+import { AgentShellLayoutController } from './shell/AgentShellLayoutController.js';
 export function createAgentApp(options) {
     const host = new WorkspaceHost(options.terminalManager, options.container, options.template);
     const registry = new AgentWorkspaceRegistry(host, {
@@ -14,6 +16,15 @@ export function createAgentApp(options) {
             console.debug('[agent] ignored host event:', reason);
         }
     });
+    // The global History dock is a singleton living outside every workspace
+    // panel; the registry owns its data seam, the host its view visibility.
+    const historyDock = new HistoryDockController(registry.createHistoryDockHost());
+    registry.attachHistoryDock(historyDock);
+    host.setHistoryDockView(historyDock);
+    historyDock.mount(options.container);
+    // Shell layout: responsive dock↔drawer mode + the compact one-drawer rule.
+    const shellLayout = new AgentShellLayoutController(options.container, registry.createShellLayoutHost(historyDock));
+    shellLayout.mount();
     return {
         handle(message) {
             registry.handle(message);

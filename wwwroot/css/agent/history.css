@@ -20,10 +20,12 @@
 
 .agent-history-item:hover {
     border-color: var(--agent-border-strong);
+    border-radius: var(--agent-radius-lg);
     background: var(--agent-hover);
 }
 
 .agent-history-item[aria-current="true"] {
+    border-radius: var(--agent-radius-lg);
     background: var(--agent-surface-muted);
 }
 
@@ -85,4 +87,232 @@
 
 .agent-history-retry:hover {
     background: var(--agent-hover);
+}
+
+/* --- Global History dock (singleton, left column) -------------------------- */
+
+.agent-history-dock {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    width: var(--agent-history-width-effective, 280px);
+    min-width: 0;
+    border-right: 1px solid var(--agent-border);
+    background: var(--agent-bg);
+    color: var(--agent-text);
+    font-family: var(--agent-font-ui);
+}
+
+.agent-history-dock[hidden] {
+    display: none;
+}
+
+.agent-history-dock-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--agent-space-2);
+    padding: var(--agent-space-2);
+    border-bottom: 1px solid var(--agent-border);
+}
+
+.agent-history-search {
+    flex: 1 1 120px;
+    min-width: 0;
+    padding: 5px 8px;
+    border: 1px solid var(--agent-border);
+    border-radius: var(--agent-radius-sm);
+    background: var(--agent-surface-raised);
+    color: var(--agent-text);
+    font: inherit;
+    font-size: 12px;
+}
+
+.agent-history-provider-filter {
+    flex: 0 1 auto;
+    max-width: 100%;
+    padding: 5px 6px;
+    border: 1px solid var(--agent-border);
+    border-radius: var(--agent-radius-sm);
+    background: var(--agent-surface-raised);
+    color: var(--agent-text);
+    font: inherit;
+    font-size: 12px;
+}
+
+.agent-history-refresh,
+.agent-history-collapse {
+    padding: 5px 9px;
+    border: 1px solid var(--agent-border-strong);
+    border-radius: var(--agent-radius-sm);
+    background: var(--agent-surface-raised);
+    color: var(--agent-text);
+    cursor: pointer;
+    font: inherit;
+    font-size: 12px;
+}
+
+.agent-history-refresh:hover,
+.agent-history-collapse:hover {
+    background: var(--agent-hover);
+}
+
+.agent-history-dock-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: var(--agent-space-2);
+    scrollbar-color: var(--agent-scrollbar) var(--agent-bg);
+    scrollbar-width: thin;
+}
+
+.agent-history-dock-resizer {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: -4px;
+    width: 7px;
+    cursor: col-resize;
+}
+
+.agent-history-dock-resizer::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 3px;
+    width: 1px;
+    background: var(--agent-border);
+}
+
+.agent-history-dock-resizer:hover::before,
+.agent-history-dock-resizer:focus-visible::before,
+.agent-history-dock-resizing .agent-history-dock-resizer::before {
+    background: var(--agent-border-strong);
+}
+
+.agent-history-dock-resizer:focus-visible {
+    outline: 2px solid var(--agent-focus-ring);
+    outline-offset: -2px;
+}
+
+.agent-history-dock-resizing {
+    cursor: col-resize;
+    user-select: none;
+}
+
+.agent-history-group-heading {
+    display: grid;
+    gap: 1px;
+    margin-top: var(--agent-space-3);
+    padding: var(--agent-space-2) var(--agent-space-2) var(--agent-space-1);
+}
+
+.agent-history-group-heading:first-child {
+    margin-top: 0;
+}
+
+.agent-history-group-heading strong {
+    overflow: hidden;
+    font-size: 12px;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.agent-history-group-heading small {
+    overflow: hidden;
+    color: var(--agent-text-muted);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.agent-history-open {
+    flex: 0 0 auto;
+    color: var(--agent-text-muted);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+/* --- History trigger + compact drawer (step 6) ------------------------------ */
+
+.agent-history-trigger {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    z-index: 4;
+    transform: translateY(-50%);
+    padding: 8px 6px;
+    border: 1px solid var(--agent-border);
+    border-left: 0;
+    border-radius: 0 var(--agent-radius-md) var(--agent-radius-md) 0;
+    background: var(--agent-surface-raised);
+    color: var(--agent-text-muted);
+    cursor: pointer;
+    font: inherit;
+    font-size: 12px;
+    writing-mode: vertical-rl;
+}
+
+.agent-history-trigger:hover {
+    background: var(--agent-hover);
+    color: var(--agent-text);
+}
+
+.agent-history-trigger:focus-visible {
+    outline: 2px solid var(--agent-focus-ring);
+    outline-offset: -2px;
+}
+
+.agent-history-trigger[hidden],
+#agent-workspace-container.agent-history-dock-open .agent-history-trigger {
+    display: none;
+}
+
+/* Compact mode (<1080px): the dock becomes a drawer floating over the canvas
+ * (the canvas keeps its place; the wide-mode offset rule is scoped away). */
+.agent-shell-compact .agent-history-dock {
+    top: var(--agent-space-4);
+    bottom: var(--agent-space-4);
+    left: var(--agent-space-2);
+    z-index: 8;
+    border: 1px solid var(--agent-border);
+    border-radius: var(--agent-radius-context-card);
+    box-shadow: var(--agent-shadow-context-card);
+}
+
+/* Open transitions: opacity + a small slide only (reduced-motion zeroes them
+ * via the shell.css media block). */
+.agent-history-dock:not([hidden]) {
+    animation: agent-history-in var(--agent-duration-state) var(--agent-ease-standard);
+}
+
+.agent-history-trigger:not([hidden]) {
+    animation: agent-fade-in var(--agent-duration-fast) var(--agent-ease-standard);
+}
+
+@keyframes agent-history-in {
+    from {
+        opacity: 0;
+        transform: translateX(-8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes agent-fade-in {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
 }

@@ -2,16 +2,21 @@
 //
 // Every raw host message flows through the HostEventDecoder first. Lifecycle
 // events create/activate/destroy controllers; global events update the shared
-// catalog/notice; workspace content events are routed to the matching
-// controller (the decoder already guaranteed one exists). Closing removes the
-// controller from the map BEFORE disposing so late-arriving events for that
-// workspace are ignored, then tears down the panel shell.
+// History store/broker, provider catalog and notice; workspace content events
+// are routed to the matching controller (the decoder already guaranteed one
+// exists). Closing removes the controller from the map BEFORE disposing so
+// late-arriving events for that workspace are ignored, then tears down the
+// panel shell.
+//
+// The registry also assembles the global History dock seam: entry.ts attaches
+// the singleton HistoryDockController, and the registry feeds it workspace
+// open-thread state after every event that can change it.
 
 import type { RawHostMessage } from '../contracts/host-events.js';
 import type { DecoderDiagnostics } from '../core/HostEventDecoder.js';
 import { HostEventDecoder } from '../core/HostEventDecoder.js';
 import { WorkspaceHost } from './WorkspaceHost.js';
-import { InspectorController } from '../inspector/InspectorController.js';
+import { PlanController } from '../plan/PlanController.js';
 import { ComposerController } from '../composer/ComposerController.js';
 import type { ComposerHost } from '../composer/ComposerController.js';
 import { DecisionController } from '../decisions/DecisionController.js';
@@ -21,12 +26,23 @@ import type { TimelineHost } from '../timeline/TimelineController.js';
 import { AgentWorkspaceController } from './AgentWorkspaceController.js';
 import { AgentWorkspaceStore } from './AgentWorkspaceStore.js';
 import { SessionRuntimeController } from './SessionRuntimeController.js';
+import { AgentHistoryStore, normalizeProviderCatalog } from '../history/AgentHistoryStore.js';
+import { AgentHistoryRequestBroker } from '../history/AgentHistoryRequestBroker.js';
+import type { HistoryDockController, HistoryDockHost } from '../history/HistoryDockController.js';
+import type { AgentShellLayoutHost } from '../shell/AgentShellLayoutController.js';
 
 export class AgentWorkspaceRegistry {
   private readonly host: WorkspaceHost;
   private readonly store: AgentWorkspaceStore;
   private readonly decoder: HostEventDecoder;
+  private readonly historyStore: AgentHistoryStore;
+  private readonly historyBroker: AgentHistoryRequestBroker;
+  private historyDock: HistoryDockController | null = null;
   private readonly controllers = new Map<string, AgentWorkspaceController>();
+  // Plan controller refs by workspace: the shell layout coordinator needs the
+  // ACTIVE workspace's card for the compact one-drawer-at-a-time rule.
+  private readonly planControllers = new Map<string, PlanController>();
+  private planExpansionListener: ((expanded: boolean) => void) | null = null;
   // Routes an active-workspace notice (agent_workspace_limit_reached) to that
   // workspace's timeline, keeping the thread's single-writer invariant.
   private readonly noticeSinks = new Map<string, (text: string) => void>();
@@ -35,6 +51,67 @@ export class AgentWorkspaceRegistry {
     this.host = host;
     this.store = new AgentWorkspaceStore();
     this.decoder = new HostEventDecoder((id) => this.controllers.has(id), diagnostics);
+    // Global History: one store + one broker for the whole process. The broker
+    // sees the same live-workspace set as the controllers map and sends every
+    // `history` command through the best available workspace channel.
+    this.historyStore = new AgentHistoryStore();
+    this.historyBroker = new AgentHistoryRequestBroker(
+      {
+        isAlive: (id) => this.controllers.has(id),
+        activeAgentWorkspace: () => this.activeAgentWorkspace(),
+        bridgeFor: (id) => this.host.bridgeFor(id)
+      },
+      this.historyStore
+    );
+  }
+
+  /** The seam entry.ts hands to the singleton HistoryDockController. */
+  createHistoryDockHost(): HistoryDockHost {
+    return {
+      getState: () => this.historyStore.getState(),
+      subscribe: (listener) => this.historyStore.subscribe(listener),
+      requestRefresh: (originWorkspaceId) => this.historyBroker.requestRefresh(originWorkspaceId),
+      sendCommandOnChannel: (command, value) => this.historyBroker.sendCommandOnChannel(command, value),
+      hasAgentWorkspaces: () => this.controllers.size > 0,
+      activeWorkspaceId: () => this.activeAgentWorkspace(),
+      openWorkspaceThreadIds: () => this.openWorkspaceThreadIds()
+    };
+  }
+
+  /** Called by entry.ts once the global dock exists (before any workspace is
+   * created), so composer `/history` and open-state updates reach it. */
+  attachHistoryDock(dock: HistoryDockController): void {
+    this.historyDock = dock;
+  }
+
+  /** The seam entry.ts hands to the AgentShellLayoutController: flat accessors
+   * over the global dock plus the ACTIVE workspace's Plan card. */
+  createShellLayoutHost(dock: HistoryDockController): AgentShellLayoutHost {
+    const activePlan = (): PlanController | undefined =>
+      this.planControllers.get(this.activeAgentWorkspace());
+    return {
+      isHistoryOpen: () => dock.isOpen(),
+      setHistoryOpen: (open) => {
+        if (open) dock.openHistory('');
+        else dock.setOpen(false);
+      },
+      onHistoryOpenChanged: (listener) => dock.onOpenChanged(listener),
+      focusHistorySearch: () => dock.focusSearch(),
+      focusHistoryTrigger: () => dock.focusTrigger(),
+      isActivePlanExpanded: () => activePlan()?.isExpanded() ?? false,
+      closeActivePlan: () => activePlan()?.closeCard(),
+      focusActivePlanEntry: () => activePlan()?.focusEntry(),
+      onActivePlanExpandedChanged: (listener) => {
+        this.planExpansionListener = listener;
+      }
+    };
+  }
+
+  /** Plan expansion reports arrive per workspace; only the active one drives
+   * the compact one-drawer-at-a-time rule. */
+  private notifyPlanExpansion(workspaceId: string): void {
+    if (workspaceId !== this.activeAgentWorkspace()) return;
+    this.planExpansionListener?.(this.planControllers.get(workspaceId)?.isExpanded() ?? false);
   }
 
   handle(message: RawHostMessage): void {
@@ -49,6 +126,12 @@ export class AgentWorkspaceRegistry {
       case 'lifecycle':
         if (event.type === 'workspace_activated') {
           this.host.activate(event.workspaceId, event.kind === 'agent' ? 'agent' : 'terminal');
+          if (event.kind === 'agent') {
+            this.historyBroker.activateWorkspace(event.workspaceId);
+            // The active workspace changed: re-evaluate the drawer rule.
+            this.notifyPlanExpansion(event.workspaceId);
+          }
+          this.historyDock?.updateOpenState();
         } else if (event.type === 'agent_workspace_created') {
           this.createController(event.workspaceId, event.raw);
         } else if (event.type === 'agent_workspace_closed') {
@@ -57,8 +140,16 @@ export class AgentWorkspaceRegistry {
         return;
 
       case 'agent-global':
+        // History events keep their sender workspaceId but are global data:
+        // the broker folds them into the single AgentHistoryStore.
         if (event.type === 'agent_providers') {
-          this.host.setProviders(event.providers ?? []);
+          this.historyStore.applyProviders(normalizeProviderCatalog(event.providers ?? []));
+        } else if (event.type === 'agent_threads') {
+          this.historyBroker.handleThreads(event.workspaceId ?? '', event.raw);
+        } else if (event.type === 'agent_history_error') {
+          this.historyBroker.handleHistoryError(event.workspaceId ?? '', event.raw);
+        } else if (event.type === 'agent_history_invalidated') {
+          this.historyBroker.handleInvalidated(event.workspaceId ?? '');
         } else if (event.type === 'agent_workspace_limit_reached') {
           this.showNotice(event.text ?? '');
         }
@@ -67,6 +158,10 @@ export class AgentWorkspaceRegistry {
       case 'agent-workspace': {
         const state = this.store.reduce(event.workspaceId, event);
         this.controllers.get(event.workspaceId)?.update(event, state);
+        // Thread binding changes the dock's Current/Open markers.
+        if (event.type === 'agent_state' || event.type === 'agent_thread_loaded') {
+          this.historyDock?.updateOpenState();
+        }
         return;
       }
     }
@@ -74,6 +169,20 @@ export class AgentWorkspaceRegistry {
 
   hasController(workspaceId: string): boolean {
     return this.controllers.has(workspaceId);
+  }
+
+  private activeAgentWorkspace(): string {
+    const id = this.host.activeWorkspace();
+    return this.controllers.has(id) ? id : '';
+  }
+
+  private openWorkspaceThreadIds(): ReadonlyMap<string, string> {
+    const map = new Map<string, string>();
+    for (const workspaceId of this.controllers.keys()) {
+      const threadId = this.store.get(workspaceId)?.session.currentThreadId ?? '';
+      if (threadId) map.set(workspaceId, threadId);
+    }
+    return map;
   }
 
   private showNotice(text: string): void {
@@ -86,16 +195,18 @@ export class AgentWorkspaceRegistry {
     if (this.controllers.has(workspaceId)) return;
     this.host.createWorkspace(workspaceId);
     const state = this.store.create(workspaceId, createdRaw);
-    const inspector = new InspectorController(workspaceId, this.host);
+    const plan = new PlanController(workspaceId, this.host, {
+      onExpansionChanged: () => this.notifyPlanExpansion(workspaceId)
+    });
+    this.planControllers.set(workspaceId, plan);
     // The composer renders its own system messages (upload validation, "still
     // uploading", read errors) through the timeline seam so the thread keeps a
-    // single writer, and drives the optimistic `/history` load through the
-    // inspector instance that owns the History tab.
+    // single writer, and opens the global History dock through the dock seam.
     const composerHost: ComposerHost = {
       getPanel: (id) => this.host.getPanel(id),
       bridgeFor: (id) => this.host.bridgeFor(id),
       appendSystemMessage: (_id, text) => timeline.appendSystemMessage(text),
-      beginHistoryLoading: () => inspector.beginHistoryLoading()
+      openHistory: (id) => this.historyDock?.openHistory(id)
     };
     const composer = new ComposerController(workspaceId, composerHost);
     // The Decision controller places its cards into the timeline and reads
@@ -133,23 +244,28 @@ export class AgentWorkspaceRegistry {
     const timeline = new TimelineController(workspaceId, timelineHost);
     const controller = new AgentWorkspaceController(workspaceId, state, [
       new SessionRuntimeController(workspaceId, this.host),
-      inspector,
+      plan,
       composer,
       decisionController,
       timeline
     ]);
     this.controllers.set(workspaceId, controller);
     this.noticeSinks.set(workspaceId, (text) => timeline.appendSystemMessage(text));
+    this.historyBroker.registerWorkspace(workspaceId);
     controller.mount();
+    this.historyDock?.updateOpenState();
   }
 
   private closeController(workspaceId: string): void {
     const controller = this.controllers.get(workspaceId);
     if (!controller) return;
     this.controllers.delete(workspaceId);
+    this.planControllers.delete(workspaceId);
     this.noticeSinks.delete(workspaceId);
     this.store.delete(workspaceId);
+    this.historyBroker.unregisterWorkspace(workspaceId);
     controller.dispose();
     this.host.closeWorkspace(workspaceId);
+    this.historyDock?.updateOpenState();
   }
 }

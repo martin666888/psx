@@ -22,7 +22,6 @@ import type {
   ComposerCommand,
   ComposerConfigOption,
   ComposerMode,
-  WorkspaceHistoryThread,
   WorkspacePlanState,
   WorkspaceIdentity
 } from '../contracts/workspace-state.js';
@@ -103,21 +102,6 @@ function upsertPlan(plan: WorkspacePlanState, runId: unknown, rawEntries: unknow
     entries,
     fallbackText: asString(text)
   };
-}
-
-/** Normalizes the agent_threads payload into the History rows the panel renders. */
-function normalizeHistoryThreads(value: unknown): WorkspaceHistoryThread[] {
-  const list = Array.isArray(value) ? value : [];
-  return list.map((raw) => {
-    const t = (raw ?? {}) as Record<string, unknown>;
-    return {
-      threadId: asString(t.threadId),
-      title: asString(t.title),
-      cwd: asString(t.cwd),
-      updatedAt: asString(t.updatedAt),
-      sessionId: asString(t.sessionId)
-    };
-  });
 }
 
 /** Mirrors legacy _configOptionRank: mode < model < effort < everything else. */
@@ -285,29 +269,6 @@ export function reduceWorkspaceState(
       const plan = upsertPlan(state.inspector.plan, raw.runId, raw.entries, raw.text);
       if (plan === state.inspector.plan) return state;
       return { ...state, inspector: { ...state.inspector, plan } };
-    }
-
-    case 'agent_threads': {
-      return {
-        ...state,
-        inspector: {
-          ...state.inspector,
-          history: { threads: normalizeHistoryThreads(raw.threads), errorText: '' }
-        }
-      };
-    }
-
-    case 'agent_history_error': {
-      return {
-        ...state,
-        inspector: {
-          ...state.inspector,
-          history: {
-            ...state.inspector.history,
-            errorText: asString(raw.text) || 'Unable to load Agent thread history.'
-          }
-        }
-      };
     }
 
     case 'agent_cleared': {

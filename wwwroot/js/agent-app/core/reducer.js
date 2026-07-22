@@ -88,20 +88,6 @@ function upsertPlan(plan, runId, rawEntries, text) {
         fallbackText: asString(text)
     };
 }
-/** Normalizes the agent_threads payload into the History rows the panel renders. */
-function normalizeHistoryThreads(value) {
-    const list = Array.isArray(value) ? value : [];
-    return list.map((raw) => {
-        const t = (raw ?? {});
-        return {
-            threadId: asString(t.threadId),
-            title: asString(t.title),
-            cwd: asString(t.cwd),
-            updatedAt: asString(t.updatedAt),
-            sessionId: asString(t.sessionId)
-        };
-    });
-}
 /** Mirrors legacy _configOptionRank: mode < model < effort < everything else. */
 function configOptionRank(id) {
     const order = ['mode', 'model', 'effort'];
@@ -253,27 +239,6 @@ export function reduceWorkspaceState(state, event) {
             if (plan === state.inspector.plan)
                 return state;
             return { ...state, inspector: { ...state.inspector, plan } };
-        }
-        case 'agent_threads': {
-            return {
-                ...state,
-                inspector: {
-                    ...state.inspector,
-                    history: { threads: normalizeHistoryThreads(raw.threads), errorText: '' }
-                }
-            };
-        }
-        case 'agent_history_error': {
-            return {
-                ...state,
-                inspector: {
-                    ...state.inspector,
-                    history: {
-                        ...state.inspector.history,
-                        errorText: asString(raw.text) || 'Unable to load Agent thread history.'
-                    }
-                }
-            };
         }
         case 'agent_cleared': {
             if (!state.inspector.plan.active)

@@ -69,6 +69,5 @@
     --agent-duration-state: 160ms;
     --agent-ease-standard: cubic-bezier(0.2, 0, 0, 1);
     --agent-ease-emphasized: cubic-bezier(0.2, 0, 0, 1.2);
-    --agent-conversation-max-width: 1120px;
     --agent-composer-control-height: 44px;
 }

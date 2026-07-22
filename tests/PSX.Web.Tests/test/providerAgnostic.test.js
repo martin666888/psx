@@ -5,7 +5,7 @@ import path from 'node:path';
 import { repositoryRoot } from './agentHarness.js';
 
 // Provider-agnostic guardrail. The shared Agent frontend (core/ workspace/
-// timeline/ composer/ inspector/ decisions/) must never name a concrete
+// timeline/ composer/ plan/ history/ shell/ decisions/) must never name a
 // provider or branch on a provider key: identity is data-driven through
 // state.identity.assistantName and routing goes through the registry. Only the
 // data-driven provider registry and the C# provider adapters may know brands.
@@ -13,7 +13,7 @@ import { repositoryRoot } from './agentHarness.js';
 // its own provider module registered through the registry, not by editing
 // shared code. This scan is mechanical so the rule cannot silently rot.
 
-const SHARED_DIRS = ['core', 'workspace', 'timeline', 'composer', 'inspector', 'decisions'];
+const SHARED_DIRS = ['core', 'workspace', 'timeline', 'composer', 'plan', 'history', 'shell', 'decisions'];
 const SRC_ROOT = path.join(repositoryRoot, 'frontend', 'agent', 'src');
 
 // Concrete provider/brand keys that must not be hardcoded in shared code.

@@ -14,6 +14,9 @@ const LIFECYCLE_EVENT_TYPES = new Set([
 ]);
 const AGENT_GLOBAL_EVENT_TYPES = new Set([
     'agent_providers',
+    'agent_threads',
+    'agent_history_error',
+    'agent_history_invalidated',
     'agent_workspace_limit_reached'
 ]);
 const AGENT_WORKSPACE_EVENT_TYPES = new Set([
@@ -21,9 +24,6 @@ const AGENT_WORKSPACE_EVENT_TYPES = new Set([
     'agent_state',
     'runtime_status',
     'agent_thread_loaded',
-    'agent_threads',
-    'agent_history_error',
-    'agent_history_invalidated',
     'agent_commands',
     'agent_command_rejected',
     'agent_modes',

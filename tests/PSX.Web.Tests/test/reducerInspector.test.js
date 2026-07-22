@@ -4,10 +4,12 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { repositoryRoot } from './agentHarness.js';
 
-// Phase 4 checkpoint 2: the inspector slice (plan + history) is folded by the
-// pure reducer so InspectorController can render straight from state. These
-// tests pin that folding independently of the DOM. The repo path contains '#',
-// so import through an encoded file URL rather than a raw specifier.
+// Phase 4 checkpoint 2: the inspector plan slice is folded by the pure reducer
+// so PlanController can render straight from state. These tests pin that
+// folding independently of the DOM. History rows no longer live in workspace
+// state — they are global (AgentHistoryStore); see agentHistoryBroker.test.js.
+// The repo path contains '#', so import through an encoded file URL rather
+// than a raw specifier.
 function appModule(relative) {
   const abs = path.join(repositoryRoot, 'wwwroot/js/agent-app', relative);
   return import(pathToFileURL(abs).href);
@@ -73,31 +75,6 @@ test('reducer: plan_update with plain text falls back to a text-only active plan
   assert.equal(state.inspector.plan.active, true);
   assert.deepEqual(state.inspector.plan.entries, []);
   assert.equal(state.inspector.plan.fallbackText, 'Freeform plan text');
-});
-
-test('reducer: agent_threads normalizes history rows and clears the error text', () => {
-  let state = createInitialWorkspaceState(WS);
-  state = reduceWorkspaceState(state, workspaceEvent({ type: 'agent_history_error', text: 'boom' }));
-  assert.equal(state.inspector.history.errorText, 'boom');
-
-  state = reduceWorkspaceState(state, workspaceEvent({
-    type: 'agent_threads',
-    threads: [
-      { threadId: 't1', title: 'Chat', cwd: '/a', updatedAt: 'yesterday', sessionId: 'sess-1' },
-      { threadId: 't2' }
-    ]
-  }));
-  assert.equal(state.inspector.history.errorText, '');
-  assert.deepEqual(state.inspector.history.threads, [
-    { threadId: 't1', title: 'Chat', cwd: '/a', updatedAt: 'yesterday', sessionId: 'sess-1' },
-    { threadId: 't2', title: '', cwd: '', updatedAt: '', sessionId: '' }
-  ]);
-});
-
-test('reducer: agent_history_error uses the default message when none supplied', () => {
-  let state = createInitialWorkspaceState(WS);
-  state = reduceWorkspaceState(state, workspaceEvent({ type: 'agent_history_error' }));
-  assert.equal(state.inspector.history.errorText, 'Unable to load Agent thread history.');
 });
 
 test('reducer: agent_cleared resets an active plan and is a no-op when already empty', () => {

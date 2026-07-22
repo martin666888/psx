@@ -1,11 +1,9 @@
 ﻿.agent-command-menu {
     position: absolute;
-    left: calc(var(--agent-content-inline-padding) + var(--agent-composer-control-height) + var(--agent-space-2));
-    right: calc(var(--agent-content-inline-padding) + 96px + var(--agent-space-2));
+    left: max(0px, calc(var(--agent-reading-column-start) + var(--agent-composer-control-height) + var(--agent-space-2)));
     bottom: calc(100% - var(--agent-space-2));
-    max-width: calc(var(--agent-conversation-max-width) - var(--agent-composer-control-height) - 96px - (var(--agent-space-2) * 2));
-    margin-left: auto;
-    margin-right: auto;
+    width: calc(var(--agent-reading-column-max) - var(--agent-composer-control-height) - 96px - (var(--agent-space-2) * 2));
+    max-width: 100%;
     max-height: 260px;
     overflow: auto;
     border: 1px solid var(--agent-border-strong);

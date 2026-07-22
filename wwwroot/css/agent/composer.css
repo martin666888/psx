@@ -1,39 +1,28 @@
 ﻿.agent-composer {
     grid-area: composer;
     position: relative;
-    display: grid;
-    grid-template-columns: minmax(360px, 1fr) 7px var(--agent-inspector-width);
     border-top: 1px solid var(--agent-border);
     background: var(--agent-bg);
     padding: 0;
 }
 
-.agent-composer::after {
-    content: "";
-    grid-column: 3;
-    grid-row: 1;
-    border-left: 1px solid var(--agent-border);
-    pointer-events: none;
-}
-
 .agent-composer-main {
     position: relative;
     z-index: 1;
-    grid-column: 1;
-    grid-row: 1;
     min-width: 0;
-    padding: var(--agent-space-2) var(--agent-content-inline-padding);
+    padding: var(--agent-space-2) 0;
 }
 
+/* Same window-centered reading column as the conversation (see shell.css). */
 .agent-composer-main > .agent-attachments-strip,
 .agent-composer-main > .agent-composer-mode-transition,
 .agent-input-row,
 .agent-command-hint,
 .agent-composer-footer {
-    width: 100%;
-    max-width: var(--agent-conversation-max-width);
+    width: var(--agent-reading-column-max);
+    max-width: 100%;
     box-sizing: border-box;
-    margin-left: auto;
+    margin-left: max(0px, var(--agent-reading-column-start));
     margin-right: auto;
 }
 

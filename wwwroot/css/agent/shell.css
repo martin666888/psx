@@ -1,6 +1,28 @@
+/* AgentShell structural tokens (base values; theme tuning is a later step). */
+:root {
+    --agent-history-width: 280px;
+    --agent-plan-width: 320px;
+    --agent-reading-min-width: 320px;
+    --agent-reading-max-width: 880px;
+    --agent-dock-gap: 16px;
+    --agent-radius-context-card: 12px;
+    --agent-radius-workspace-canvas: 16px;
+    --agent-shadow-canvas: -12px 0 28px color-mix(in srgb, var(--agent-shadow) 28%, transparent);
+    --agent-shadow-context-card: 0 6px 20px color-mix(in srgb, var(--agent-shadow) 36%, transparent),
+        0 2px 6px color-mix(in srgb, var(--agent-shadow) 28%, transparent);
+}
+
 #agent-workspace-container {
     position: absolute;
     inset: 0;
+    --agent-history-width-effective: var(--agent-history-width);
+}
+
+#agent-workspace-container:not(.agent-shell-compact) {
+    --agent-history-width-effective: min(
+        var(--agent-history-width),
+        calc((100vw - var(--agent-reading-min-width)) / 2 - var(--agent-dock-gap))
+    );
 }
 
 .agent-load-error {
@@ -48,15 +70,32 @@
         "workspace"
         "composer";
     grid-template-rows: auto auto minmax(0, 1fr) auto;
-    --agent-inspector-width: 300px;
-    --agent-content-inline-padding: var(--agent-space-6);
-    background: var(--agent-bg);
+    /* Centerline: the reading column is pinned to the window center via an
+     * explicit vw-based start offset, immune to scrollbar gutters and to the
+     * dock/plan toggles. dock-open overrides offset + clearance below. */
+    --agent-canvas-offset: 0px;
+    --agent-viewport-padding: var(--agent-space-6);
+    --agent-side-clearance: var(--agent-viewport-padding);
+    --agent-reading-column-max: max(var(--agent-reading-min-width), min(var(--agent-reading-max-width), calc(100vw - 2 * var(--agent-side-clearance))));
+    --agent-reading-column-start: calc((100vw - var(--agent-reading-column-max)) / 2 - var(--agent-canvas-offset));
+    background: var(--agent-surface);
     color: var(--agent-text);
     font-family: var(--agent-font-ui);
 }
 
 .agent-panel[hidden] {
     display: none;
+}
+
+/* Dock open: the canvas yields its left edge to the dock but keeps the top,
+ * right and bottom window edges; the reading column narrows SYMMETRICALLY so
+ * its center stays at viewportWidth / 2. */
+#agent-workspace-container.agent-history-dock-open:not(.agent-shell-compact) .agent-panel {
+    left: var(--agent-history-width-effective);
+    --agent-canvas-offset: var(--agent-history-width-effective);
+    --agent-side-clearance: calc(var(--agent-history-width-effective) + var(--agent-dock-gap));
+    border-top-left-radius: var(--agent-radius-workspace-canvas);
+    box-shadow: var(--agent-shadow-canvas);
 }
 
 .agent-toolbar {
@@ -208,7 +247,7 @@
 .agent-workspace {
     grid-area: workspace;
     display: grid;
-    grid-template-columns: minmax(360px, 1fr) 7px var(--agent-inspector-width);
+    grid-template-columns: minmax(0, 1fr);
     min-height: 0;
     overflow: hidden;
 }
@@ -216,7 +255,7 @@
 .agent-thread {
     overflow-x: hidden;
     overflow-y: auto;
-    padding: var(--agent-space-5) var(--agent-content-inline-padding) var(--agent-space-8);
+    padding: var(--agent-space-5) 0 var(--agent-space-8);
     scrollbar-color: var(--agent-scrollbar) var(--agent-bg);
     scrollbar-width: thin;
     min-height: 0;
@@ -228,49 +267,15 @@
 .agent-thread > .agent-run-group,
 .agent-thread > .agent-tool,
 .agent-thread > .agent-decision {
-    width: 100%;
-    max-width: var(--agent-conversation-max-width);
-    margin-left: auto;
+    width: var(--agent-reading-column-max);
+    max-width: 100%;
+    margin-left: max(0px, var(--agent-reading-column-start));
     margin-right: auto;
-}
-
-.agent-inspector-resizer {
-    position: relative;
-    min-width: 7px;
-    cursor: col-resize;
-    background: var(--agent-bg);
-}
-
-.agent-inspector-resizer::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 3px;
-    width: 1px;
-    background: var(--agent-border);
-}
-
-.agent-inspector-resizer:hover::before,
-.agent-inspector-resizer:focus-visible::before,
-.agent-inspector-resizing .agent-inspector-resizer::before {
-    background: var(--agent-border-strong);
-}
-
-.agent-inspector-resizer:focus-visible {
-    outline: 2px solid var(--agent-focus-ring);
-    outline-offset: -2px;
-}
-
-.agent-inspector-resizing {
-    cursor: col-resize;
-    user-select: none;
 }
 
 @media (max-width: 980px) {
     .agent-panel {
-        --agent-inspector-width: 260px;
-        --agent-content-inline-padding: var(--agent-space-4);
+        --agent-viewport-padding: var(--agent-space-4);
     }
 
     [data-role="cwd"] {
@@ -281,7 +286,12 @@
 @media (prefers-reduced-motion: reduce) {
     .agent-panel *,
     .agent-panel *::before,
-    .agent-panel *::after {
+    .agent-panel *::after,
+    .agent-history-dock,
+    .agent-history-dock *,
+    .agent-history-trigger,
+    .agent-context-cards,
+    .agent-context-cards * {
         scroll-behavior: auto !important;
         transition-duration: 0.01ms !important;
         animation-duration: 0.01ms !important;

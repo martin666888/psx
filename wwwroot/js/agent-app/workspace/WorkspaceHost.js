@@ -15,6 +15,7 @@ export class WorkspaceHost {
     workspaces = new Map();
     activeWorkspaceId = '';
     settings = null;
+    historyDockView = null;
     constructor(terminalManager, container, template) {
         this.terminalManager = terminalManager;
         this.container = container;
@@ -52,9 +53,14 @@ export class WorkspaceHost {
         if (this.activeWorkspaceId === id)
             this.activeWorkspaceId = '';
     }
+    /** entry.ts attaches the global History dock after construction. */
+    setHistoryDockView(view) {
+        this.historyDockView = view;
+    }
     activate(workspaceId, kind) {
         const id = String(workspaceId || '');
         this.activeWorkspaceId = id;
+        this.historyDockView?.setAgentViewActive(kind === 'agent');
         if (kind === 'terminal') {
             for (const entry of this.workspaces.values())
                 this.setPanelVisible(entry.panel, false);
@@ -71,11 +77,6 @@ export class WorkspaceHost {
             this.settings = settings;
             this.applyGlobalAppearance(this.settings);
         }
-    }
-    setProviders(_providers) {
-        // The provider catalog has no DOM consumer in the panel shell; the registry
-        // still routes the event here for parity, but the host intentionally ignores
-        // it (kept as an explicit no-op rather than a stored-but-unread field).
     }
     getPanel(workspaceId) {
         return this.workspaces.get(String(workspaceId || ''))?.panel ?? null;

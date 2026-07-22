@@ -30,8 +30,8 @@
 // but does not own reach their domains through the TimelineHost seam:
 //   * historical mode-transition cards during replay  -> DecisionController
 //   * message attachment tiles                         -> ComposerController
-// Plan replay (role === 'plan') is inspector-owned; InspectorController runs its
-// own replay pass over the same messages, so the timeline skips that role while
+// Plan replay (role === 'plan') is PlanController-owned; the reducer folds its
+// own pass over the same messages, so the timeline skips that role while
 // preserving the run-group bookkeeping the transition triggers.
 
 import type { AgentBridgePort } from '../contracts/bridge-port.js';

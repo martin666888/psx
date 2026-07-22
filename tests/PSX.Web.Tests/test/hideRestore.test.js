@@ -10,8 +10,8 @@ function role(panel, name) {
 }
 
 // Hide/restore is a Tab switch: activating another workspace hides this panel,
-// activating it again restores it. Workspace-local composer draft, inspector
-// tab, and width live in the persistent panel DOM and must survive the cycle.
+// activating it again restores it. Workspace-local composer draft and the shared
+// plan width live in the persistent panel DOM and must survive the cycle.
 async function mountPair() {
   const { app, panelFor } = await mountAgentApp();
   createAgentWorkspace(app, FIRST);
@@ -37,43 +37,33 @@ describe('Hide and restore preservation', () => {
     assert.equal(role(first, 'input').value, 'draft in progress');
   });
 
-  it('keeps the active inspector tab across a hide/restore cycle', async () => {
+  it('keeps the plan width across a hide/restore cycle and persists it', async () => {
     const { app, first } = await mountPair();
-    role(first, 'history-tab').click();
-    assert.equal(role(first, 'history-tab').getAttribute('aria-selected'), 'true');
-
-    hideThenRestore(app);
-
-    assert.equal(role(first, 'history-tab').getAttribute('aria-selected'), 'true');
-    assert.equal(role(first, 'history-panel').hidden, false);
-  });
-
-  it('keeps the inspector width across a hide/restore cycle and persists it', async () => {
-    const { app, first } = await mountPair();
-    const resizer = role(first, 'inspector-resizer');
+    const resizer = role(first, 'plan-resizer');
     resizer.focus?.();
     resizer.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }));
 
-    assert.equal(first.style.getPropertyValue('--agent-inspector-width'), '276px');
-    assert.equal(window.localStorage.getItem('psx.agent.inspectorWidth'), '276');
+    const container = document.getElementById('agents');
+    assert.equal(container.style.getPropertyValue('--agent-plan-width'), '336px');
+    assert.equal(window.localStorage.getItem('psx.agent.planWidth'), '336');
 
     hideThenRestore(app);
-    assert.equal(first.style.getPropertyValue('--agent-inspector-width'), '276px');
+    assert.equal(container.style.getPropertyValue('--agent-plan-width'), '336px');
   });
 
-  it('restores the persisted inspector width when a workspace is recreated', async () => {
+  it('restores the persisted plan width when a workspace is recreated', async () => {
     const { app, panelFor } = await mountAgentApp();
-    window.localStorage.setItem('psx.agent.inspectorWidth', '352');
+    window.localStorage.setItem('psx.agent.planWidth', '352');
     createAgentWorkspace(app, SECOND);
-    assert.equal(panelFor(SECOND).style.getPropertyValue('--agent-inspector-width'), '352px');
+    assert.equal(document.getElementById('agents').style.getPropertyValue('--agent-plan-width'), '352px');
   });
 });
 
-describe('Inspector resize lifecycle', () => {
+describe('Plan resize lifecycle', () => {
   async function mountResizer() {
     const { app, panelFor } = await mountAgentApp();
     createAgentWorkspace(app, FIRST);
-    const resizer = role(panelFor(FIRST), 'inspector-resizer');
+    const resizer = role(panelFor(FIRST), 'plan-resizer');
     resizer.setPointerCapture = () => {};
     resizer.releasePointerCapture = () => {};
     return resizer;
@@ -89,18 +79,18 @@ describe('Inspector resize lifecycle', () => {
   it('toggles the resizing body class between pointerdown and pointerup', async () => {
     const resizer = await mountResizer();
     resizer.dispatchEvent(pointer('pointerdown'));
-    assert.equal(document.body.classList.contains('agent-inspector-resizing'), true);
+    assert.equal(document.body.classList.contains('agent-plan-resizing'), true);
 
     resizer.dispatchEvent(pointer('pointerup'));
-    assert.equal(document.body.classList.contains('agent-inspector-resizing'), false);
+    assert.equal(document.body.classList.contains('agent-plan-resizing'), false);
   });
 
   it('clears the resizing body class when the gesture is cancelled', async () => {
     const resizer = await mountResizer();
     resizer.dispatchEvent(pointer('pointerdown'));
-    assert.equal(document.body.classList.contains('agent-inspector-resizing'), true);
+    assert.equal(document.body.classList.contains('agent-plan-resizing'), true);
 
     resizer.dispatchEvent(pointer('pointercancel'));
-    assert.equal(document.body.classList.contains('agent-inspector-resizing'), false);
+    assert.equal(document.body.classList.contains('agent-plan-resizing'), false);
   });
 });

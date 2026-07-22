@@ -1,70 +1,195 @@
-.agent-inspector {
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
+/* Plan card + the generic context-card column: an overlay floating on the
+ * right edge of the canvas (open/closed never changes the canvas layout).
+ * History lives in the global dock; the old Inspector tab strip is gone. */
+
+.agent-context-cards {
+    position: absolute;
+    top: var(--agent-space-6);
+    bottom: var(--agent-space-6);
+    right: var(--agent-space-4);
+    z-index: 6;
+    display: flex;
+    flex-direction: column;
+    width: var(--agent-plan-width);
     min-width: 0;
     min-height: 0;
-    border-left: 1px solid var(--agent-border);
-    background: var(--agent-bg);
+    /* The collapsed entry must not block the conversation underneath. */
+    pointer-events: none;
 }
 
-.agent-inspector-tabs {
+.agent-context-cards > * {
+    pointer-events: auto;
+}
+
+/* Compact mode (<1080px): the overlay becomes a tighter right drawer. */
+.agent-shell-compact .agent-context-cards {
+    top: var(--agent-space-4);
+    right: var(--agent-space-2);
+    bottom: var(--agent-space-4);
+    z-index: 8;
+}
+
+.agent-plan-card {
     display: flex;
-    align-items: stretch;
-    min-height: 44px;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid var(--agent-border);
+    border-radius: var(--agent-radius-context-card);
+    background: var(--agent-surface-raised);
+    box-shadow: var(--agent-shadow-context-card);
+}
+
+.agent-plan-card[hidden] {
+    display: none;
+}
+
+/* Open transitions: opacity + a small slide only (reduced-motion zeroes them
+ * via the shell.css media block). */
+.agent-plan-card:not([hidden]) {
+    animation: agent-plan-card-in var(--agent-duration-state) var(--agent-ease-standard);
+}
+
+.agent-plan-entry:not([hidden]) {
+    animation: agent-fade-in var(--agent-duration-fast) var(--agent-ease-standard);
+}
+
+@keyframes agent-plan-card-in {
+    from {
+        opacity: 0;
+        transform: translateX(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes agent-fade-in {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+.agent-plan-resizer {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -4px;
+    width: 7px;
+    cursor: col-resize;
+}
+
+.agent-plan-resizer::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 3px;
+    width: 1px;
+    background: var(--agent-border);
+}
+
+.agent-plan-resizer:hover::before,
+.agent-plan-resizer:focus-visible::before,
+.agent-plan-resizing .agent-plan-resizer::before {
+    background: var(--agent-border-strong);
+}
+
+.agent-plan-resizer:focus-visible {
+    outline: 2px solid var(--agent-focus-ring);
+    outline-offset: -2px;
+}
+
+.agent-plan-resizing {
+    cursor: col-resize;
+    user-select: none;
+}
+
+.agent-plan-card-header {
+    display: flex;
+    align-items: center;
+    gap: var(--agent-space-2);
+    min-height: 36px;
+    padding: 0 var(--agent-space-2) 0 var(--agent-space-3);
     border-bottom: 1px solid var(--agent-border);
 }
 
-.agent-inspector-tab {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    min-width: 76px;
-    padding: 0 14px;
-    border: 0;
-    border-bottom: 2px solid transparent;
-    background: transparent;
-    color: var(--agent-text-muted);
+.agent-plan-card-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    font-size: 13px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.agent-plan-pin,
+.agent-plan-close {
+    padding: 3px 8px;
+    border: 1px solid var(--agent-border-strong);
+    border-radius: var(--agent-radius-sm);
+    background: var(--agent-surface-raised);
+    color: var(--agent-text);
     cursor: pointer;
     font: inherit;
-    font-size: 13px;
+    font-size: 12px;
+}
+
+.agent-plan-pin:hover,
+.agent-plan-close:hover {
+    background: var(--agent-hover);
+}
+
+.agent-plan-pin[aria-pressed="true"] {
+    border-color: var(--agent-accent);
+    color: var(--agent-accent);
+}
+
+.agent-plan-entry {
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-end;
+    gap: 6px;
+    margin: var(--agent-space-2);
+    padding: 5px 10px;
+    border: 1px solid var(--agent-border-strong);
+    border-radius: var(--agent-radius-sm);
+    background: var(--agent-surface-raised);
+    color: var(--agent-text);
+    cursor: pointer;
+    font: inherit;
+    font-size: 12px;
     font-weight: 600;
 }
 
-.agent-inspector-tab:hover {
+.agent-plan-entry:hover {
     background: var(--agent-hover);
-    color: var(--agent-text);
 }
 
-.agent-inspector-tab[aria-selected="true"] {
-    border-bottom-color: var(--agent-accent);
-    color: var(--agent-text);
+.agent-plan-entry[hidden] {
+    display: none;
 }
 
-.agent-inspector-tab:focus-visible {
-    outline: 2px solid var(--agent-focus-ring);
-    outline-offset: -3px;
-}
-
-.agent-inspector-unread {
+.agent-plan-unread {
     width: 6px;
     height: 6px;
     border-radius: 50%;
     background: var(--agent-accent);
 }
 
-.agent-inspector-panel {
+.agent-plan-panel {
+    flex: 1 1 auto;
     min-height: 0;
     overflow-x: hidden;
     overflow-y: auto;
     padding: 12px 14px 18px;
     scrollbar-color: var(--agent-scrollbar) var(--agent-bg);
     scrollbar-width: thin;
-}
-
-.agent-inspector-panel[hidden] {
-    display: none;
 }
 
 .agent-plan-list {

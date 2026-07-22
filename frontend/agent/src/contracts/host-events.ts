@@ -41,9 +41,16 @@ export interface WorkspaceLifecycleEvent {
 
 // ---------------------------------------------------------------------------
 // Scope 3 — global Agent events (no workspaceId required).
+//
+// agent_threads / agent_history_error / agent_history_invalidated still carry
+// the sender's workspaceId, but they feed the global AgentHistoryStore through
+// the AgentHistoryRequestBroker, never a per-workspace state slice.
 // ---------------------------------------------------------------------------
 export type AgentGlobalEventType =
   | 'agent_providers'
+  | 'agent_threads'
+  | 'agent_history_error'
+  | 'agent_history_invalidated'
   | 'agent_workspace_limit_reached';
 
 export interface AgentGlobalEvent {
@@ -63,9 +70,6 @@ export type AgentWorkspaceEventType =
   | 'agent_state'
   | 'runtime_status'
   | 'agent_thread_loaded'
-  | 'agent_threads'
-  | 'agent_history_error'
-  | 'agent_history_invalidated'
   | 'agent_commands'
   | 'agent_command_rejected'
   | 'agent_modes'
@@ -124,6 +128,9 @@ const LIFECYCLE_EVENT_TYPES: ReadonlySet<string> = new Set<WorkspaceLifecycleEve
 
 const AGENT_GLOBAL_EVENT_TYPES: ReadonlySet<string> = new Set<AgentGlobalEventType>([
   'agent_providers',
+  'agent_threads',
+  'agent_history_error',
+  'agent_history_invalidated',
   'agent_workspace_limit_reached'
 ]);
 
@@ -132,9 +139,6 @@ const AGENT_WORKSPACE_EVENT_TYPES: ReadonlySet<string> = new Set<AgentWorkspaceE
   'agent_state',
   'runtime_status',
   'agent_thread_loaded',
-  'agent_threads',
-  'agent_history_error',
-  'agent_history_invalidated',
   'agent_commands',
   'agent_command_rejected',
   'agent_modes',

@@ -50,25 +50,14 @@ export interface WorkspacePlanState {
   fallbackText: string;
 }
 
-/** A saved thread row rendered in the History tab. */
-export interface WorkspaceHistoryThread {
-  threadId: string;
-  title: string;
-  cwd: string;
-  updatedAt: string;
-  sessionId: string;
-}
+/** A saved thread row rendered in the History list lives in the global
+ * AgentHistoryState (contracts/agent-history.ts), not per workspace. */
 
-/** History data folded from agent_threads / agent_history_error. The transient
- * loading/empty-initial display states are controller-local UI, not host state. */
-export interface WorkspaceHistoryState {
-  threads: WorkspaceHistoryThread[];
-  errorText: string;
-}
-
+/** Plan data folded from plan_update / agent_thread_loaded / agent_cleared.
+ * The transient loading/empty-initial display states are controller-local UI,
+ * not host state. */
 export interface WorkspaceInspectorState {
   plan: WorkspacePlanState;
-  history: WorkspaceHistoryState;
 }
 
 /** A normalized slash-command row shown in the composer command menu. */
@@ -166,8 +155,7 @@ export function createInitialWorkspaceState(workspaceId: string): AgentWorkspace
       configOptions: []
     },
     inspector: {
-      plan: { active: false, runId: '', entries: [], fallbackText: '' },
-      history: { threads: [], errorText: '' }
+      plan: { active: false, runId: '', entries: [], fallbackText: '' }
     },
     decisions: []
   };

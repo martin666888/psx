@@ -43,39 +43,39 @@
         </section>
         <div class="agent-workspace">
             <main data-role="thread" class="agent-thread" role="log" aria-label="Agent conversation" aria-live="polite" aria-relevant="additions"></main>
-            <div data-role="inspector-resizer"
-                 class="agent-inspector-resizer"
+        </div>
+
+        <aside data-role="context-cards" class="agent-context-cards" aria-label="Agent context cards">
+            <div data-role="plan-resizer"
+                 class="agent-plan-resizer"
                  role="separator"
-                 aria-label="Resize Agent inspector"
+                 aria-label="Resize Agent plan"
                  aria-orientation="vertical"
                  tabindex="0"></div>
-            <aside data-role="inspector" class="agent-inspector" aria-label="Agent inspector">
-                <div class="agent-inspector-tabs" role="tablist" aria-label="Agent inspector views">
-                    <button data-role="plan-tab"
-                            class="agent-inspector-tab"
+            <section data-role="plan-card" class="agent-plan-card" aria-label="Agent plan">
+                <header class="agent-plan-card-header">
+                    <strong class="agent-plan-card-title">Plan</strong>
+                    <button data-role="plan-pin"
+                            class="agent-plan-pin"
                             type="button"
-                            role="tab"
-                            aria-selected="true"
-                            tabindex="0">
-                        <span>Plan</span>
-                        <span data-role="plan-unread" class="agent-inspector-unread" aria-label="Plan updated" hidden></span>
-                    </button>
-                    <button data-role="history-tab"
-                            class="agent-inspector-tab"
+                            title="Pin the Plan card"
+                            aria-pressed="false">Pin</button>
+                    <button data-role="plan-close"
+                            class="agent-plan-close"
                             type="button"
-                            role="tab"
-                            aria-selected="false"
-                            tabindex="-1">History</button>
-                </div>
-                <section data-role="plan-panel"
-                         class="agent-inspector-panel agent-plan-panel"
-                         role="tabpanel"></section>
-                <section data-role="history-panel"
-                         class="agent-inspector-panel agent-history-panel"
-                         role="tabpanel"
-                         hidden></section>
-            </aside>
-        </div>
+                            title="Close the Plan card"
+                            aria-label="Close the Plan card">&times;</button>
+                </header>
+                <div data-role="plan-panel" class="agent-plan-panel"></div>
+            </section>
+            <button data-role="plan-entry"
+                    class="agent-plan-entry"
+                    type="button"
+                    hidden>
+                <span>Plan</span>
+                <span data-role="plan-unread" class="agent-plan-unread" aria-label="Plan updated" hidden></span>
+            </button>
+        </aside>
         <footer class="agent-composer">
             <div class="agent-composer-main">
                 <div data-role="attachments-strip" class="agent-attachments-strip" hidden></div>

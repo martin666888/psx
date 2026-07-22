@@ -34,8 +34,8 @@ export interface ComposerHost {
   bridgeFor(workspaceId: string): AgentBridgePort | null;
   /** Render a composer-initiated system message via the timeline engine. */
   appendSystemMessage(workspaceId: string, text: string): void;
-  /** Ask the Inspector to switch to History and show its loading state. */
-  beginHistoryLoading(workspaceId: string): void;
+  /** Open the global History dock and refresh it through the broker. */
+  openHistory(sourceWorkspaceId: string): void;
 }
 
 /** Unified command row for the menu, matching the legacy shape. */
@@ -307,7 +307,8 @@ export class ComposerController implements FeatureController {
       if (this.commandMenu && !this.commandMenu.hidden && this.handleCommandKey(keyboard)) return;
       if (keyboard.key === 'Enter' && !keyboard.shiftKey) {
         keyboard.preventDefault();
-        if (!this.isBusy) this.submit();
+        // `/history` is global UI navigation and stays available while busy.
+        if (!this.isBusy || this.isHistoryNavigation(this.input?.value ?? '')) this.submit();
       }
     });
     this.on(this.input, 'input', () => {
@@ -337,6 +338,20 @@ export class ComposerController implements FeatureController {
   }
 
   private submit(): void {
+    if (!this.input) return;
+
+    let text = this.input.value.trim();
+    // `/history` is global UI navigation, handled before every session guard:
+    // it never enters busy state, never writes thread history and never
+    // reaches the conversation as a prompt or a loading card.
+    if (this.isHistoryNavigation(text)) {
+      this.clearCommandHint();
+      this.input.value = '';
+      this.resizeInput();
+      this.hideCommandMenu();
+      this.host.openHistory(this.workspaceId);
+      return;
+    }
     if (!this.runtimeReady()) return;
     if (this.isRestoring) return;
     if (this.isTranscriptOnly) return;
@@ -344,9 +359,7 @@ export class ComposerController implements FeatureController {
       this.bridge()?.sendAgentCommand('stop');
       return;
     }
-    if (!this.input) return;
 
-    let text = this.input.value.trim();
     const attachmentIds = this.pendingAttachmentIds();
     if (!text && attachmentIds.length === 0) return;
 
@@ -356,9 +369,6 @@ export class ComposerController implements FeatureController {
       return;
     }
     text = commandValidation.text ?? text;
-    if (commandValidation.psxCommand === 'history') {
-      this.host.beginHistoryLoading(this.workspaceId);
-    }
     if (!this.attachmentsReady()) {
       this.host.appendSystemMessage(
         this.workspaceId,
@@ -539,8 +549,10 @@ export class ComposerController implements FeatureController {
     this.hideCommandMenu();
     this.resizeInput();
 
+    // The broker owns every `history` load; the menu entry only opens the dock.
     if (command.command === 'history') {
-      this.host.beginHistoryLoading(this.workspaceId);
+      this.host.openHistory(this.workspaceId);
+      return;
     }
 
     if (command.agent) {
@@ -568,9 +580,17 @@ export class ComposerController implements FeatureController {
     return { name: trimmed.slice(0, separator), arguments: trimmed.slice(separator).trimStart() };
   }
 
+  /** `/history` is global UI navigation, not a prompt. Arguments are ignored
+   * (the C# gate matches the command name too), so `/history anything` takes
+   * the same navigation seam instead of dying as a dropped broker response. */
+  private isHistoryNavigation(text: string): boolean {
+    const parsed = this.parseLeadingSlashCommand(text);
+    return !!parsed && parsed.name.toLowerCase() === '/history';
+  }
+
   private validateSubmissionCommand(
     text: string
-  ): { allowed: boolean; text?: string; command?: string; reason?: string; psxCommand?: string } {
+  ): { allowed: boolean; text?: string; command?: string; reason?: string } {
     const parsed = this.parseLeadingSlashCommand(text);
     if (!parsed) return { allowed: true, text };
 
@@ -598,8 +618,7 @@ export class ComposerController implements FeatureController {
     const canonicalName = matched.name.trim().split(/\s/, 1)[0];
     return {
       allowed: true,
-      text: parsed.arguments ? canonicalName + ' ' + parsed.arguments : canonicalName,
-      psxCommand: psxCommand?.command || ''
+      text: parsed.arguments ? canonicalName + ' ' + parsed.arguments : canonicalName
     };
   }
 

@@ -37,7 +37,7 @@ PSX 的标志模式是“即时反馈、确认持久化”：例如 Theme 条目
 
 ### 深度策略：边框与表面色差
 
-PSX 使用 borders-only 与轻微表面色差建立层级，不混入明显投影。
+PSX 使用 borders-only 与轻微表面色差建立层级，不混入明显投影；唯一例外是 Agent 分层壳层的 canvas 与 context 卡片，允许使用 token 化的克制柔和阴影表达上下层关系（见 Agent 壳层布局）。
 
 表面顺序：
 
@@ -69,6 +69,7 @@ PSX 使用 borders-only 与轻微表面色差建立层级，不混入明显投�
 - 小型按钮和提示：3–4px。
 - 弹层和卡片：6px。
 - 不在小控件上使用大圆角，也不混用胶囊形和锐利矩形。
+- Agent Shell 是显式例外：context 卡片（如 Plan）用 `--agent-radius-context-card`（12px），workspace canvas 左缘用 `--agent-radius-workspace-canvas`（16px）；消息条目与常规控件仍遵守上述规则。
 
 ### 字体
 
@@ -175,15 +176,16 @@ Theme 弹层是全局选择器的参考实现：
 - 未在目录中的命令必须在 Composer 就地提示，不得发送 ACP、写入历史或进入 busy。
 - 不维护 Claude Code 命令黑名单；需要原生交互界面的命令统一引导用户通过 `/terminal` 使用。
 
-### Agent Inspector
+### Agent 壳层布局
 
-- Agent 右侧区域是可调整宽度的 Inspector，不是 Plan 专用侧栏；固定使用同级的 `Plan / History` 标签。
-- Plan 只展示当前任务计划，History 只负责全局 Thread 导航。历史列表、加载状态和错误不得写入主对话流。
-- 两个标签保留各自的 DOM 与滚动位置；隐藏标签仍可接收状态更新，但不能抢焦点或强制切换。
-- History 每次打开或再次点击当前标签时从磁盘刷新，并明确展示 Loading、Empty、Error 与 Current 状态。
-- 新建 Thread 回到 Plan；从 History 加载 Thread 时保持 History 打开。隐藏期间的新 Plan 使用轻量状态点提示，打开 Plan 后清除。
-- Inspector 宽度限制为 260–380px，并兼容旧的 `psx.agent.planPanelWidth` 本地设置；新设置使用 `psx.agent.inspectorWidth`。
-- 标签必须使用 `tablist`、`tab`、`tabpanel` 语义，支持左右方向键、Home 和 End 切换。
+- Agent 界面是分层壳层：History 是页面唯一的底层 dock（左侧），Conversation canvas 位于上层并连接窗口顶/右/底边缘，Plan 是浮在 canvas 右侧的 overlay 卡片；层级观感 canvas 在上、dock 在下、Plan 最高。
+- 结构 token：`--agent-history-width`（默认 280px）、`--agent-plan-width`（默认 320px，可调 280–400）、`--agent-reading-max-width`（880px）、`--agent-radius-context-card`（12px）、`--agent-radius-workspace-canvas`（16px）、`--agent-shadow-canvas`、`--agent-shadow-context-card`；阴影从 `--agent-shadow` 用 color-mix 推导，不硬编码颜色，表面层级沿用 background < surface < surfaceRaised 色差。
+- 固定整窗中心线：对话内容与 Composer 的中心恒等于 viewportWidth / 2。dock 打开时阅读列左右对称缩窄（clearance = dock 宽 + 16px），Plan overlay 不参与布局计算；消息条目不卡片化。
+- 响应式：≥1080px 时 History 是参与布局的 dock、Plan 是 overlay；<1080px 时两者变为覆盖在 canvas 上的 drawer，一次只开一个，Esc 关闭并把焦点还给触发控件。
+- Plan 卡片三态：auto（有计划自动展开、无计划收为入口）、pinned（恒展开）、closed（保持收起只显示未读点）；模式是 workspace 运行时状态，不持久化。
+- History 只负责全局 Thread 导航：列表、加载状态和错误只在 dock 内展示，不得写入主对话流；行高亮使用 6–8px 圆角背景。
+- 持久化键：`psx.agent.historyDockOpen`、`psx.agent.historyDockWidth`、`psx.agent.planWidth`；`psx.agent.inspectorWidth` 只在迁移时读取一次后废弃，`psx.agent.planPanelWidth` 已退役。
+- 动画限制在 120–160ms，只用 opacity 和小距离 translate，并尊重 prefers-reduced-motion。
 
 ## 6. WPF 与 WebView2 一致性
 

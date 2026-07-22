@@ -8,9 +8,8 @@ function role(panel, name) {
   return panel.querySelector('[data-role="' + name + '"]');
 }
 
-// Create a ready workspace and expose the inspector-owned nodes plus the
-// captured Bridge messages, then drive the peer Plan/History tabs the way a user
-// does (tab clicks) and read the live panel.
+// Create a ready workspace and expose the inspector-owned nodes, then drive
+// plan events the way the host sends them and read the live panel.
 async function mount() {
   const { app, panelFor, runtime } = await mountAgentApp();
   createAgentWorkspace(app, WS);
@@ -18,22 +17,8 @@ async function mount() {
   return { app, panel, posted: runtime.postedMessages };
 }
 
-test('keeps Plan and History as peer tabs and refreshes history only when requested', async () => {
-  const { panel, posted } = await mount();
-
-  role(panel, 'history-tab').click();
-  assert.equal(role(panel, 'plan-panel').hidden, true);
-  assert.equal(role(panel, 'history-panel').hidden, false);
-  assert.equal(posted.at(-1).command, 'history');
-
-  role(panel, 'plan-tab').click();
-  assert.equal(role(panel, 'plan-panel').hidden, false);
-  assert.equal(role(panel, 'history-panel').hidden, true);
-});
-
-test('renders normalized plan states and marks updates unread outside the Plan tab', async () => {
+test('renders normalized plan states from the reduced state', async () => {
   const { app, panel } = await mount();
-  role(panel, 'history-tab').click();
   app.handle({
     type: 'plan_update',
     workspaceId: WS,
@@ -46,29 +31,32 @@ test('renders normalized plan states and marks updates unread outside the Plan t
   });
 
   const planPanel = role(panel, 'plan-panel');
+  assert.equal(planPanel.hidden, false);
   assert.deepEqual(
     [...planPanel.querySelectorAll('.agent-plan-content')].map((node) => node.textContent),
     ['Inspect', 'Implement', 'Verify']
   );
   assert.notEqual(planPanel.querySelector('.agent-plan-item-completed'), null);
   assert.notEqual(planPanel.querySelector('.agent-plan-item-in-progress'), null);
-  assert.equal(role(panel, 'plan-unread').hidden, false);
 });
 
-test('restores History scroll position after rendering a refreshed list', async () => {
+test('keeps the plan panel stable while other workspaces change', async () => {
+  const OTHER = '22222222-2222-4222-8222-222222222222';
   const { app, panel } = await mount();
-  const historyPanel = role(panel, 'history-panel');
-  historyPanel.scrollTop = 144;
-  role(panel, 'history-tab').click();
   app.handle({
-    type: 'agent_threads',
+    type: 'plan_update',
     workspaceId: WS,
-    threads: [
-      { threadId: 'one', title: 'One', cwd: 'D:/one' },
-      { threadId: 'two', title: 'Two', cwd: 'D:/two' }
-    ]
+    entries: [{ content: 'Keep me', status: 'pending' }]
+  });
+  createAgentWorkspace(app, OTHER);
+  app.handle({
+    type: 'plan_update',
+    workspaceId: OTHER,
+    entries: [{ content: 'Other plan', status: 'pending' }]
   });
 
-  assert.equal(historyPanel.scrollTop, 144);
-  assert.equal(historyPanel.querySelectorAll('.agent-history-item').length, 2);
+  assert.deepEqual(
+    [...role(panel, 'plan-panel').querySelectorAll('.agent-plan-content')].map((node) => node.textContent),
+    ['Keep me']
+  );
 });

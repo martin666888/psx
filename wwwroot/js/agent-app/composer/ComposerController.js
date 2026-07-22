@@ -245,7 +245,8 @@ export class ComposerController {
                 return;
             if (keyboard.key === 'Enter' && !keyboard.shiftKey) {
                 keyboard.preventDefault();
-                if (!this.isBusy)
+                // `/history` is global UI navigation and stays available while busy.
+                if (!this.isBusy || this.isHistoryNavigation(this.input?.value ?? ''))
                     this.submit();
             }
         });
@@ -277,6 +278,20 @@ export class ComposerController {
         });
     }
     submit() {
+        if (!this.input)
+            return;
+        let text = this.input.value.trim();
+        // `/history` is global UI navigation, handled before every session guard:
+        // it never enters busy state, never writes thread history and never
+        // reaches the conversation as a prompt or a loading card.
+        if (this.isHistoryNavigation(text)) {
+            this.clearCommandHint();
+            this.input.value = '';
+            this.resizeInput();
+            this.hideCommandMenu();
+            this.host.openHistory(this.workspaceId);
+            return;
+        }
         if (!this.runtimeReady())
             return;
         if (this.isRestoring)
@@ -287,9 +302,6 @@ export class ComposerController {
             this.bridge()?.sendAgentCommand('stop');
             return;
         }
-        if (!this.input)
-            return;
-        let text = this.input.value.trim();
         const attachmentIds = this.pendingAttachmentIds();
         if (!text && attachmentIds.length === 0)
             return;
@@ -299,9 +311,6 @@ export class ComposerController {
             return;
         }
         text = commandValidation.text ?? text;
-        if (commandValidation.psxCommand === 'history') {
-            this.host.beginHistoryLoading(this.workspaceId);
-        }
         if (!this.attachmentsReady()) {
             this.host.appendSystemMessage(this.workspaceId, 'Images are still uploading. Wait for upload to finish, then send again.');
             return;
@@ -469,8 +478,10 @@ export class ComposerController {
         this.input.value = '';
         this.hideCommandMenu();
         this.resizeInput();
+        // The broker owns every `history` load; the menu entry only opens the dock.
         if (command.command === 'history') {
-            this.host.beginHistoryLoading(this.workspaceId);
+            this.host.openHistory(this.workspaceId);
+            return;
         }
         if (command.agent) {
             this.bridge()?.sendAgentCommand('agent_command', command.name);
@@ -498,6 +509,13 @@ export class ComposerController {
             return { name: trimmed, arguments: '' };
         return { name: trimmed.slice(0, separator), arguments: trimmed.slice(separator).trimStart() };
     }
+    /** `/history` is global UI navigation, not a prompt. Arguments are ignored
+     * (the C# gate matches the command name too), so `/history anything` takes
+     * the same navigation seam instead of dying as a dropped broker response. */
+    isHistoryNavigation(text) {
+        const parsed = this.parseLeadingSlashCommand(text);
+        return !!parsed && parsed.name.toLowerCase() === '/history';
+    }
     validateSubmissionCommand(text) {
         const parsed = this.parseLeadingSlashCommand(text);
         if (!parsed)
@@ -521,8 +539,7 @@ export class ComposerController {
         const canonicalName = matched.name.trim().split(/\s/, 1)[0];
         return {
             allowed: true,
-            text: parsed.arguments ? canonicalName + ' ' + parsed.arguments : canonicalName,
-            psxCommand: psxCommand?.command || ''
+            text: parsed.arguments ? canonicalName + ' ' + parsed.arguments : canonicalName
         };
     }
     showCommandHint(command, reason) {

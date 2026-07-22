@@ -11,11 +11,17 @@
 
 import type { AgentBridgePort } from '../contracts/bridge-port.js';
 import type { SessionRuntimeHost } from './SessionRuntimeController.js';
-import type { InspectorHost } from '../inspector/InspectorController.js';
+import type { PlanHost } from '../plan/PlanController.js';
 
 /** The one terminal-view method the host toggles when switching workspaces. */
 interface TerminalViewToggle {
   setViewVisible(visible: boolean): void;
+}
+
+/** The global History dock view: the whole agent area (dock included) hides
+ * while a terminal workspace is active. */
+export interface AgentViewVisibilityListener {
+  setAgentViewActive(active: boolean): void;
 }
 
 /** Appearance settings shape (subset of the app 'settings' host event). */
@@ -33,13 +39,14 @@ interface WorkspaceEntry {
   focusTimer: ReturnType<typeof setTimeout> | null;
 }
 
-export class WorkspaceHost implements SessionRuntimeHost, InspectorHost {
+export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
   private readonly terminalManager: TerminalViewToggle;
   private readonly container: HTMLElement;
   private readonly template: HTMLTemplateElement;
   private readonly workspaces = new Map<string, WorkspaceEntry>();
   private activeWorkspaceId = '';
   private settings: AgentAppearanceSettings | null = null;
+  private historyDockView: AgentViewVisibilityListener | null = null;
 
   constructor(
     terminalManager: TerminalViewToggle,
@@ -83,9 +90,15 @@ export class WorkspaceHost implements SessionRuntimeHost, InspectorHost {
     if (this.activeWorkspaceId === id) this.activeWorkspaceId = '';
   }
 
+  /** entry.ts attaches the global History dock after construction. */
+  setHistoryDockView(view: AgentViewVisibilityListener): void {
+    this.historyDockView = view;
+  }
+
   activate(workspaceId: string, kind: 'terminal' | 'agent'): void {
     const id = String(workspaceId || '');
     this.activeWorkspaceId = id;
+    this.historyDockView?.setAgentViewActive(kind === 'agent');
 
     if (kind === 'terminal') {
       for (const entry of this.workspaces.values()) this.setPanelVisible(entry.panel, false);
@@ -104,12 +117,6 @@ export class WorkspaceHost implements SessionRuntimeHost, InspectorHost {
       this.settings = settings as AgentAppearanceSettings;
       this.applyGlobalAppearance(this.settings);
     }
-  }
-
-  setProviders(_providers: unknown[]): void {
-    // The provider catalog has no DOM consumer in the panel shell; the registry
-    // still routes the event here for parity, but the host intentionally ignores
-    // it (kept as an explicit no-op rather than a stored-but-unread field).
   }
 
   getPanel(workspaceId: string): HTMLElement | null {
