@@ -165,7 +165,7 @@ Note: `RuntimeLocator.Locate()` resolves all install-relative paths at startup. 
 
 - No real-provider network test in the automated gate; account login, quota and subjective UI checks remain manual
 - No `IConPtyService` or `IAcpJsonRpcTransport` interfaces — those concrete classes are injected directly (`App.xaml.cs:42`)
-- No CI/CD — no `.github/workflows`, no `azure-pipelines.yml`. Builds are manual.
+- CI runs tests only — `.github/workflows/test.yml` runs `tools/test.ps1 -Suite Fast` (windows-latest, .NET 10 + Node 22, uploads `TestResults/`) on `dev`/`main` push and pull_request, matching the CI gate described in `AGENTS.md`. There is no CD/deployment pipeline and no `azure-pipelines.yml`; release packaging via `tools/build-release.ps1` is still run manually.
 - Release artifacts are generated under `bin/releases/` and are not committed (`.gitignore` excludes `[Bb]in/`).
 - No logging framework — `Debug.WriteLine` and `MessageBox.Show` are used for diagnostics
 - No `Models/TerminalOptions.cs` schema validation against the JS side — the contract is implicit, matched by string keys in C# `switch` and JS `switch`

@@ -41,7 +41,7 @@ Agent mode uses one provider-agnostic ACP session engine instance per Agent Work
 
 ## Commit & Pull Request Guidelines
 
-This repository has no commit history from which to infer a convention. Use short, imperative subjects (for example, `Fix ACP session shutdown`) and keep commits focused. Pull requests should explain the problem and solution, list verification steps, link related issues, and include screenshots or recordings for UI changes. Call out changes to runtime packaging, `psx.ini`, or the implicit C#/JavaScript bridge contract.
+The existing commit history uses short, imperative subjects (for example, `Fix ACP session shutdown` or `Add unified agent workspaces`); follow that convention and keep commits focused. Pull requests targeting `dev` or `main` trigger the CI test gate defined in `.github/workflows/test.yml`, so ensure the fast suite passes before requesting review. Pull requests should explain the problem and solution, list verification steps, link related issues, and include screenshots or recordings for UI changes. Call out changes to runtime packaging, `psx.ini`, or the implicit C#/JavaScript bridge contract.
 
 ## Security & Configuration Tips
 
