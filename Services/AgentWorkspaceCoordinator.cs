@@ -82,6 +82,8 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
     private readonly List<RuntimeStatusSubscription> _runtimeStatusSubscriptions = [];
     private readonly Dictionary<IAcpAgentRuntime, string?> _runtimeStatusMessages =
         new(ReferenceEqualityComparer.Instance);
+    private readonly HashSet<IAcpAgentRuntime> _readyRuntimeNotifications =
+        new(ReferenceEqualityComparer.Instance);
     private Guid? _activeAgentWorkspaceId;
     private Task? _shutdownTask;
     private bool _disposed;
@@ -607,9 +609,25 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
     private void OnRuntimeStatusChanged(IAcpAgentRuntime runtime, string message)
     {
         Entry? activeEntry = null;
+        var notifyRuntimeReady = false;
+        var runtimeReady = false;
+        try
+        {
+            runtimeReady = runtime.IsReady();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine("Unable to inspect Agent runtime readiness: " + ex);
+        }
+
         lock (_runtimeStatusLock)
         {
             _runtimeStatusMessages[runtime] = message;
+            if (runtimeReady)
+                notifyRuntimeReady = _readyRuntimeNotifications.Add(runtime);
+            else
+                _readyRuntimeNotifications.Remove(runtime);
+
             if (_activeAgentWorkspaceId is { } activeWorkspaceId
                 && _entries.TryGetValue(activeWorkspaceId, out var entry)
                 && !entry.Closing
@@ -621,6 +639,48 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
 
         if (activeEntry != null)
             PublishActiveRuntimeStatus(activeEntry);
+        if (notifyRuntimeReady)
+            _ = NotifyRuntimeReadySafelyAsync(runtime);
+    }
+
+    /// <summary>
+    /// A runtime is a dependency domain, not an application-wide singleton.
+    /// Notify only workspaces whose providers reference the runtime instance
+    /// that became ready. Providers with distinct packages/runtimes remain
+    /// isolated; providers intentionally sharing one runtime update together.
+    /// </summary>
+    private async Task NotifyRuntimeReadySafelyAsync(IAcpAgentRuntime runtime)
+    {
+        var entries = _entries.Values
+            .Where(entry => !entry.Closing && UsesRuntime(entry, runtime))
+            .ToArray();
+
+        await Task.WhenAll(entries.Select(NotifyWorkspaceRuntimeReadySafelyAsync)).ConfigureAwait(false);
+    }
+
+    private static async Task NotifyWorkspaceRuntimeReadySafelyAsync(Entry entry)
+    {
+        try
+        {
+            if (!entry.Closing)
+                await entry.Session.OnRuntimeReadyAsync().ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Closing a workspace while installation or automatic restore is
+            // completing is an expected lifecycle race.
+        }
+        catch (ObjectDisposedException)
+        {
+            // The entry may have been disposed after the coordinator snapshot.
+        }
+        catch (Exception ex)
+        {
+            // Runtime readiness in one workspace must not prevent sibling
+            // workspaces from receiving their update.
+            System.Diagnostics.Debug.WriteLine(
+                $"Unable to refresh Agent workspace {entry.Descriptor.WorkspaceId} after runtime became ready: {ex}");
+        }
     }
 
     private void PublishActiveRuntimeStatus(Entry entry)
@@ -682,6 +742,7 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
             foreach (var subscription in _runtimeStatusSubscriptions)
                 subscription.Runtime.StatusChanged -= subscription.Handler;
             _runtimeStatusSubscriptions.Clear();
+            _readyRuntimeNotifications.Clear();
             DeactivateRuntimeStatus();
             _shutdownTask = ShutdownCoreAsync();
             return _shutdownTask;

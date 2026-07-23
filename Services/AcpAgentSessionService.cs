@@ -135,6 +135,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     private bool _runtimeInstallInProgress;
     private string _runtimeInstallState = "missing";
     private string _runtimeInstallMessage = "Agent runtime is not installed.";
+    private bool _restoreBlockedByRuntime;
     private bool _disposed;
 
     internal AcpAgentSessionService(
@@ -389,6 +390,44 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             return;
 
         var token = _serviceLifetimeCts.Token;
+        await _sessionRestoreLock.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            await RestoreCoreAsync(token).ConfigureAwait(false);
+        }
+        finally
+        {
+            _sessionRestoreLock.Release();
+        }
+    }
+
+    public async Task OnRuntimeReadyAsync()
+    {
+        if (_disposed)
+            return;
+
+        // Every workspace owns a frontend runtime slice even when providers
+        // share one runtime. Refresh it immediately so stale install cards and
+        // disabled composers disappear in all matching tabs.
+        await PublishRuntimeStatusAsync().ConfigureAwait(false);
+
+        var token = _serviceLifetimeCts.Token;
+        await _sessionRestoreLock.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            if (_disposed || !_restoreBlockedByRuntime || !IsAgentRuntimeReady())
+                return;
+
+            await RestoreCoreAsync(token).ConfigureAwait(false);
+        }
+        finally
+        {
+            _sessionRestoreLock.Release();
+        }
+    }
+
+    private async Task RestoreCoreAsync(CancellationToken token)
+    {
         await CancelRunAsync(notify: false).ConfigureAwait(false);
         token.ThrowIfCancellationRequested();
 
@@ -411,6 +450,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             // Preparation failures (thread store IO, normalization, snapshot
             // send) must degrade to the local transcript, never kill the
             // restore — the workspace is already created and activated.
+            _restoreBlockedByRuntime = false;
             _status = "transcript_only";
             await SendResumeFailedAsync(
                 "PSX could not prepare the Agent session. The saved local transcript is still available to read.",
@@ -421,6 +461,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
         if (!IsBoundProviderThread(_currentThread))
         {
+            _restoreBlockedByRuntime = false;
             _status = "transcript_only";
             await SendResumeFailedAsync(BuildUnsupportedProviderMessage(_currentThread.Provider)).ConfigureAwait(false);
             await PublishStateAsync().ConfigureAwait(false);
@@ -429,11 +470,30 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
         if (string.IsNullOrWhiteSpace(_currentThread.AcpSessionId))
         {
+            _restoreBlockedByRuntime = false;
             _status = "transcript_only";
             await SendResumeFailedAsync("This thread has no ACP session ID. The saved local transcript is still available to read.").ConfigureAwait(false);
             await PublishStateAsync().ConfigureAwait(false);
             return;
         }
+
+        if (!IsAgentRuntimeReady())
+        {
+            _restoreBlockedByRuntime = true;
+            _status = "transcript_only";
+            await SendResumeFailedAsync(
+                "Install the Agent runtime to continue this saved session. PSX will retry automatically when the runtime is ready.").ConfigureAwait(false);
+            await PublishStateAsync().ConfigureAwait(false);
+
+            // Installation may finish between the readiness check above and
+            // the coordinator notification observing this blocked flag. Close
+            // that race locally instead of waiting for another status event
+            // which may never arrive.
+            if (!IsAgentRuntimeReady())
+                return;
+        }
+
+        _restoreBlockedByRuntime = false;
 
         // Publish the restoring state before the (slow) transport startup and
         // initialize: the workspace is already visible and should show
@@ -446,11 +506,13 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             var restored = await LoadAcpHistoryAsync(_currentThread.AcpSessionId, token).ConfigureAwait(false);
             if (restored)
             {
+                _restoreBlockedByRuntime = false;
                 _status = "restored";
                 await _bridgeService.SendEventAsync(new { type = "command_result", text = "ACP session history restored. Continuing will use this session." }).ConfigureAwait(false);
             }
             else
             {
+                _restoreBlockedByRuntime = false;
                 _status = "transcript_only";
                 await SendResumeFailedAsync("The Agent session loaded, but its transcript could not be replayed. The saved local transcript is still available to read.").ConfigureAwait(false);
             }
@@ -462,9 +524,12 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         catch (Exception ex)
         {
             _acpSessionId = null;
+            _restoreBlockedByRuntime = !IsAgentRuntimeReady();
             _status = "transcript_only";
             await SendResumeFailedAsync(
-                "PSX could not restore the Agent session. The saved local transcript is still available to read.",
+                _restoreBlockedByRuntime
+                    ? "The Agent runtime became unavailable while restoring this session. PSX will retry automatically when it is ready."
+                    : "PSX could not restore the Agent session. The saved local transcript is still available to read.",
                 ex.Message).ConfigureAwait(false);
         }
 

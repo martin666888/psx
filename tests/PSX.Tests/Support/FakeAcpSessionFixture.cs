@@ -139,18 +139,29 @@ internal sealed class RecordingAgentBridgeService : IAgentBridgeService
         AttachmentUploadReceived?.Invoke(this, args);
 }
 
-internal sealed class FakeAcpRuntime(TestWorkspace workspace) : IAcpAgentRuntime
+internal sealed class FakeAcpRuntime(TestWorkspace workspace, bool initiallyReady = true) : IAcpAgentRuntime
 {
+    private bool _ready = initiallyReady;
+
     public event Action<string>? StatusChanged;
 
     public string LogPath => Path.Combine(workspace.Path, "runtime.log");
 
-    public bool IsReady() => true;
+    public bool IsReady() => _ready;
 
-    public string BuildStatusText(string? suffix = null) => suffix ?? "Fake ACP runtime ready.";
+    public string BuildStatusText(string? suffix = null) =>
+        suffix ?? (_ready ? "Fake ACP runtime ready." : "Fake ACP runtime is not installed.");
 
-    public Task<AcpRuntimeOperationResult> EnsureInstalledAsync(CancellationToken cancellationToken = default) =>
-        Task.FromResult(new AcpRuntimeOperationResult(AcpRuntimeOperationKind.AlreadyReady, "Fake ACP runtime ready."));
+    public Task<AcpRuntimeOperationResult> EnsureInstalledAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var alreadyReady = _ready;
+        _ready = true;
+        StatusChanged?.Invoke(BuildStatusText());
+        return Task.FromResult(new AcpRuntimeOperationResult(
+            alreadyReady ? AcpRuntimeOperationKind.AlreadyReady : AcpRuntimeOperationKind.Success,
+            "Fake ACP runtime ready."));
+    }
 
     public Task<AcpRuntimeOperationResult> RefreshAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult(new AcpRuntimeOperationResult(AcpRuntimeOperationKind.AlreadyReady, "Fake ACP runtime ready."));
@@ -162,15 +173,27 @@ internal sealed class FakeAcpRuntime(TestWorkspace workspace) : IAcpAgentRuntime
     public void Dispose() { }
 
     public void PublishStatus(string status) => StatusChanged?.Invoke(status);
+
+    public void SetReady(bool ready, string? status = null)
+    {
+        _ready = ready;
+        StatusChanged?.Invoke(status ?? BuildStatusText());
+    }
 }
 
-internal sealed class FakeAcpProvider(IAcpAgentRuntime runtime) : IAcpAgentProvider
+internal sealed class FakeAcpProvider(
+    IAcpAgentRuntime runtime,
+    string key = "fake-acp",
+    string displayName = "Fake ACP",
+    string assistantName = "Fake") : IAcpAgentProvider
 {
     public AgentDescriptor Descriptor { get; } = new(
-        "fake-acp",
-        "Fake ACP",
-        "Fake",
-        ["fake-legacy"]);
+        key,
+        displayName,
+        assistantName,
+        string.Equals(key, "fake-acp", StringComparison.OrdinalIgnoreCase)
+            ? ["fake-legacy"]
+            : [key + "-legacy"]);
 
     public IAcpAgentRuntime Runtime { get; } = runtime;
 

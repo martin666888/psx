@@ -27,13 +27,13 @@ public sealed class AgentWorkspaceActivationTests
 
     private sealed class Fixture : IDisposable
     {
-        public Fixture(string scope)
+        public Fixture(string scope, bool runtimeReady = true)
         {
             Workspace = TestWorkspace.Create(scope);
             Store = new AgentThreadStore(Path.Combine(Workspace.Path, "store"));
             Bridge = new RecordingAgentBridgeService();
-            var runtime = new FakeAcpRuntime(Workspace);
-            var provider = new FakeAcpProvider(runtime);
+            Runtime = new FakeAcpRuntime(Workspace, runtimeReady);
+            var provider = new FakeAcpProvider(Runtime);
             Registry = new AgentProviderRegistry(
                 [provider],
                 new AgentProviderOptions { DefaultProviderKey = provider.Descriptor.Key });
@@ -51,6 +51,7 @@ public sealed class AgentWorkspaceActivationTests
         public TestWorkspace Workspace { get; }
         public AgentThreadStore Store { get; }
         public RecordingAgentBridgeService Bridge { get; }
+        public FakeAcpRuntime Runtime { get; }
         public AgentProviderRegistry Registry { get; }
         public AgentHistoryCatalog History { get; }
         public AgentWorkspaceCoordinator Coordinator { get; }
@@ -187,6 +188,105 @@ public sealed class AgentWorkspaceActivationTests
             "the local transcript must still render.");
         Assert.AreEqual(0, fixture.EventCount("agent_history_error"),
             "a supported degrade path must not surface as a history error.");
+    }
+
+    [TestMethod]
+    public async Task InstallRuntime_RefreshesDraftAndRestoresEveryBlockedHistoryWorkspace()
+    {
+        using var fixture = new Fixture(
+            nameof(InstallRuntime_RefreshesDraftAndRestoresEveryBlockedHistoryWorkspace),
+            runtimeReady: false);
+        var draftWorkspaceId = (await fixture.Coordinator.CreateAsync(
+            fixture.Registry.DefaultProvider.Descriptor.Key,
+            fixture.Workspace.Path))!.Value;
+        var firstThread = CreateRestorableThread(fixture.Store, fixture.Workspace.Path, "blocked-alpha");
+        var secondThread = CreateRestorableThread(fixture.Store, fixture.Workspace.Path, "blocked-beta");
+
+        var firstWorkspaceId = (await fixture.Coordinator.OpenThreadAsync(firstThread.ThreadId))!.Value;
+        var secondWorkspaceId = (await fixture.Coordinator.OpenThreadAsync(secondThread.ThreadId))!.Value;
+
+        foreach (var workspaceId in new[] { firstWorkspaceId, secondWorkspaceId })
+        {
+            Assert.IsGreaterThanOrEqualTo(0, fixture.EventIndex("agent_state", message =>
+                message.TryGetProperty("workspaceId", out var id) && id.GetString() == workspaceId.ToString()
+                && message.TryGetProperty("status", out var status) && status.GetString() == "transcript_only"));
+        }
+
+        fixture.Bridge.RaiseCommand("install_runtime", workspaceId: secondWorkspaceId);
+
+        foreach (var workspaceId in new[] { draftWorkspaceId, firstWorkspaceId, secondWorkspaceId })
+        {
+            await fixture.Bridge.WaitForEventAsync(
+                "runtime_status",
+                message => message.GetProperty("workspaceId").GetString() == workspaceId.ToString()
+                    && message.GetProperty("state").GetString() == "ready");
+        }
+
+        foreach (var workspaceId in new[] { firstWorkspaceId, secondWorkspaceId })
+        {
+            await fixture.Bridge.WaitForEventAsync(
+                "agent_state",
+                message => message.GetProperty("workspaceId").GetString() == workspaceId.ToString()
+                    && message.GetProperty("status").GetString() == "restored");
+        }
+
+        var restoredMessagesBeforeDuplicateReady = fixture.Bridge.Events.Count(message =>
+            message.TryGetProperty("type", out var type) && type.GetString() == "command_result"
+            && message.TryGetProperty("text", out var text)
+            && text.GetString() == "ACP session history restored. Continuing will use this session.");
+        Assert.AreEqual(2, restoredMessagesBeforeDuplicateReady);
+
+        fixture.Runtime.PublishStatus("Fake ACP runtime is still ready.");
+        await Task.Yield();
+
+        var restoredMessagesAfterDuplicateReady = fixture.Bridge.Events.Count(message =>
+            message.TryGetProperty("type", out var type) && type.GetString() == "command_result"
+            && message.TryGetProperty("text", out var text)
+            && text.GetString() == "ACP session history restored. Continuing will use this session.");
+        Assert.AreEqual(
+            restoredMessagesBeforeDuplicateReady,
+            restoredMessagesAfterDuplicateReady,
+            "Repeated ready notifications must not restore a history workspace twice.");
+    }
+
+    [TestMethod]
+    public async Task InstallRuntime_UpdatesOnlyProvidersSharingThatRuntime()
+    {
+        using var workspace = TestWorkspace.Create(nameof(InstallRuntime_UpdatesOnlyProvidersSharingThatRuntime));
+        var store = new AgentThreadStore(Path.Combine(workspace.Path, "store"));
+        var bridge = new RecordingAgentBridgeService();
+        var firstRuntime = new FakeAcpRuntime(workspace, initiallyReady: false);
+        var secondRuntime = new FakeAcpRuntime(workspace, initiallyReady: false);
+        var firstProvider = new FakeAcpProvider(firstRuntime, "provider-one", "Provider One", "One");
+        var secondProvider = new FakeAcpProvider(secondRuntime, "provider-two", "Provider Two", "Two");
+        var registry = new AgentProviderRegistry(
+            [firstProvider, secondProvider],
+            new AgentProviderOptions { DefaultProviderKey = firstProvider.Descriptor.Key });
+        using var history = new AgentHistoryCatalog();
+        var factory = new AgentWorkspaceFactory(
+            bridge,
+            new NullTabManagementService(),
+            new NullTerminalBridgeService(),
+            store,
+            new NullAgentDirectoryPicker(),
+            registry);
+        using var coordinator = new AgentWorkspaceCoordinator(bridge, store, registry, factory, history);
+        var firstWorkspaceId = (await coordinator.CreateAsync(firstProvider.Descriptor.Key, workspace.Path))!.Value;
+        var secondWorkspaceId = (await coordinator.CreateAsync(secondProvider.Descriptor.Key, workspace.Path))!.Value;
+
+        bridge.RaiseCommand("install_runtime", workspaceId: firstWorkspaceId);
+        await bridge.WaitForEventAsync(
+            "runtime_status",
+            message => message.GetProperty("workspaceId").GetString() == firstWorkspaceId.ToString()
+                && message.GetProperty("state").GetString() == "ready");
+
+        Assert.IsTrue(firstRuntime.IsReady());
+        Assert.IsFalse(secondRuntime.IsReady());
+        Assert.IsFalse(bridge.Events.Any(message =>
+            message.TryGetProperty("type", out var type) && type.GetString() == "runtime_status"
+            && message.TryGetProperty("workspaceId", out var id) && id.GetString() == secondWorkspaceId.ToString()
+            && message.TryGetProperty("state", out var state) && state.GetString() == "ready"),
+            "Installing one provider's packages must not mark a different runtime ready.");
     }
 
     /// <summary>Delegates everything except one LoadThread call, which fails.</summary>
