@@ -13,6 +13,7 @@ export function createInitialAgentHistoryState() {
         dirty: false,
         inFlightWorkspaceId: '',
         loaded: false,
-        providers: []
+        providers: [],
+        threadOpenError: null
     };
 }

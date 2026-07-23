@@ -138,6 +138,29 @@ export class AgentHistoryStore {
     );
   }
 
+  /** A row action failed: keep the catalog and its request state intact. */
+  applyThreadOpenError(threadId: string, text: string): void {
+    if (!threadId) return;
+    this.set(
+      {
+        ...this.state,
+        threadOpenError: {
+          threadId,
+          text: text || 'PSX could not open the selected Agent thread. Try again.'
+        }
+      },
+      { kind: 'thread-open-error' }
+    );
+  }
+
+  clearThreadOpenError(): void {
+    if (!this.state.threadOpenError) return;
+    this.set(
+      { ...this.state, threadOpenError: null },
+      { kind: 'thread-open-error' }
+    );
+  }
+
   private set(next: AgentHistoryState, notice: AgentHistoryNotice): void {
     this.state = next;
     for (const listener of this.listeners) listener(next, notice);

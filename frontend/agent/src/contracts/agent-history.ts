@@ -25,6 +25,14 @@ export interface AgentProviderCatalogItem {
   isDefault: boolean;
 }
 
+/** A failed load_thread action. This is independent from the catalog request
+ * status so the cached thread list remains usable and Retry can reopen the
+ * exact row that failed. */
+export interface AgentThreadOpenError {
+  threadId: string;
+  text: string;
+}
+
 /** Request status machine owned by AgentHistoryRequestBroker. */
 export type AgentHistoryRequestStatus =
   | 'idle'
@@ -46,12 +54,13 @@ export interface AgentHistoryState {
   // "never loaded" ('Open History...') apart from "loaded, empty" ('No saved...').
   loaded: boolean;
   providers: AgentProviderCatalogItem[];
+  threadOpenError: AgentThreadOpenError | null;
 }
 
 /** What changed in the store. Landing renders are driven purely by state, so
  * the notice only names the slice that changed. */
 export interface AgentHistoryNotice {
-  kind: 'threads' | 'error' | 'status' | 'providers';
+  kind: 'threads' | 'error' | 'status' | 'providers' | 'thread-open-error';
 }
 
 export type AgentHistoryListener = (state: AgentHistoryState, notice: AgentHistoryNotice) => void;
@@ -64,6 +73,7 @@ export function createInitialAgentHistoryState(): AgentHistoryState {
     dirty: false,
     inFlightWorkspaceId: '',
     loaded: false,
-    providers: []
+    providers: [],
+    threadOpenError: null
   };
 }

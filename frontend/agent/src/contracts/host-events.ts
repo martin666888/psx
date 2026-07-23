@@ -45,12 +45,15 @@ export interface WorkspaceLifecycleEvent {
 // agent_threads / agent_history_error / agent_history_invalidated still carry
 // the sender's workspaceId, but they feed the global AgentHistoryStore through
 // the AgentHistoryRequestBroker, never a per-workspace state slice.
+// agent_thread_open_error is broker-free by design: it reports a failed
+// load_thread straight to the dock, even after the source workspace closed.
 // ---------------------------------------------------------------------------
 export type AgentGlobalEventType =
   | 'agent_providers'
   | 'agent_threads'
   | 'agent_history_error'
   | 'agent_history_invalidated'
+  | 'agent_thread_open_error'
   | 'agent_workspace_limit_reached';
 
 export interface AgentGlobalEvent {
@@ -59,6 +62,8 @@ export interface AgentGlobalEvent {
   workspaceId?: string;
   providers?: unknown[];
   text?: string;
+  threadId?: string;
+  detail?: string;
   raw: RawHostMessage;
 }
 
@@ -131,6 +136,7 @@ const AGENT_GLOBAL_EVENT_TYPES: ReadonlySet<string> = new Set<AgentGlobalEventTy
   'agent_threads',
   'agent_history_error',
   'agent_history_invalidated',
+  'agent_thread_open_error',
   'agent_workspace_limit_reached'
 ]);
 

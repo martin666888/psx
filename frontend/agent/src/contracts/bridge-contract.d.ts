@@ -249,6 +249,14 @@ interface WorkspaceHostEvent extends BridgeInboundMessageBase {
     text?: string;
 }
 
+/** Agent-global events that deliberately do not belong to a workspace. */
+interface AgentGlobalHostEvent extends BridgeInboundMessageBase {
+    type: 'agent_thread_open_error';
+    threadId: string;
+    text?: string;
+    detail?: string;
+}
+
 /** Every event AgentThreadManager.handleEvent may receive. Narrowing on
  * `type === 'permission_request'` yields exactly the two concrete variants
  * above; narrowing on `presentation` then separates them. */
@@ -261,4 +269,5 @@ type AgentEvent =
 type BridgeInboundMessage =
     | BridgeTerminalEvent
     | WorkspaceHostEvent
+    | AgentGlobalHostEvent
     | AgentEvent;

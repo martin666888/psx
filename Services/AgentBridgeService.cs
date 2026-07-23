@@ -38,13 +38,19 @@ public sealed class AgentBridgeService : IAgentBridgeService, IDisposable
 
         if (dispatcher != null && !dispatcher.CheckAccess())
         {
-            dispatcher.BeginInvoke(() => coreWebView.PostWebMessageAsJson(json));
-        }
-        else
-        {
-            coreWebView.PostWebMessageAsJson(json);
+            // Return the dispatcher operation so callers awaiting us observe
+            // the actual in-order delivery instead of a bare enqueue.
+            if (dispatcher.HasShutdownStarted)
+                return Task.CompletedTask;
+
+            return dispatcher
+                .InvokeAsync(() => coreWebView.PostWebMessageAsJson(json))
+                .Task;
         }
 
+        // Already on the UI thread: deliver directly (never self-await the
+        // dispatcher).
+        coreWebView.PostWebMessageAsJson(json);
         return Task.CompletedTask;
     }
 

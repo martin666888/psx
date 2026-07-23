@@ -162,21 +162,22 @@ describe('Modes and config options', () => {
     return { app, panel: panelFor(workspaceId), posted: runtime.postedMessages };
   }
 
-  it('populates the mode select and submits set_mode on change', async () => {
+  it('populates the mode menu and submits set_mode on pick', async () => {
     const { app, panel, posted } = await mount();
     app.handle({ type: 'agent_modes', workspaceId, modes: [{ id: 'code', name: 'Code' }, { id: 'plan', name: 'Plan' }], currentModeId: 'plan' });
 
     const mode = role(panel, 'mode');
-    assert.deepEqual([...mode.querySelectorAll('option')].map((option) => option.value), ['code', 'plan']);
-    assert.equal(mode.value, 'plan');
+    assert.equal(mode.querySelector('.agent-menu-select-value').textContent, 'Plan');
 
-    mode.value = 'code';
-    mode.dispatchEvent(new Event('change'));
+    mode.click();
+    const options = [...document.querySelectorAll('.agent-menu-select-option')];
+    assert.deepEqual(options.map((option) => option.dataset.value), ['code', 'plan']);
+    options[0].click();
     assert.equal(posted.at(-1).command, 'set_mode');
     assert.equal(posted.at(-1).value, 'code');
   });
 
-  it('renders config selects and submits set_config_option on change', async () => {
+  it('renders config menus and submits set_config_option on pick', async () => {
     const { app, panel, posted } = await mount();
     app.handle({
       type: 'agent_config_options',
@@ -184,12 +185,13 @@ describe('Modes and config options', () => {
       options: [{ id: 'model', name: 'Model', type: 'select', options: [{ value: 'a', name: 'A' }, { value: 'b', name: 'B' }], currentValue: 'b' }]
     });
 
-    const select = role(panel, 'config-options').querySelector('select[data-config-id="model"]');
-    assert.ok(select);
-    assert.equal(select.value, 'b');
+    const trigger = role(panel, 'config-options').querySelector('button[data-config-id="model"]');
+    assert.ok(trigger);
+    assert.equal(trigger.querySelector('.agent-menu-select-value').textContent, 'B');
 
-    select.value = 'a';
-    select.dispatchEvent(new Event('change'));
+    trigger.click();
+    const options = [...document.querySelectorAll('.agent-menu-select-option')];
+    options.find((option) => option.dataset.value === 'a').click();
     assert.equal(posted.at(-1).command, 'set_config_option');
     assert.equal(posted.at(-1).value, 'a');
   });

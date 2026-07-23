@@ -392,13 +392,32 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         await CancelRunAsync(notify: false).ConfigureAwait(false);
         token.ThrowIfCancellationRequested();
 
-        if (ThinkingMessageNormalizer.Normalize(_currentThread.Messages))
-            _threadStore.SaveThread(_currentThread);
-        ApplyThread(_currentThread);
-        await SendAgentCommandsUnavailableAsync().ConfigureAwait(false);
-        _acpSessionId = null;
-        _threadStore.SaveLastThread(_currentThread);
-        await SendThreadLoadedAsync(clear: true).ConfigureAwait(false);
+        try
+        {
+            if (ThinkingMessageNormalizer.Normalize(_currentThread.Messages))
+                _threadStore.SaveThread(_currentThread);
+            ApplyThread(_currentThread);
+            await SendAgentCommandsUnavailableAsync().ConfigureAwait(false);
+            _acpSessionId = null;
+            _threadStore.SaveLastThread(_currentThread);
+            await SendThreadLoadedAsync(clear: true).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Preparation failures (thread store IO, normalization, snapshot
+            // send) must degrade to the local transcript, never kill the
+            // restore — the workspace is already created and activated.
+            _status = "transcript_only";
+            await SendResumeFailedAsync(
+                "PSX could not prepare the Agent session. The saved local transcript is still available to read.",
+                ex.Message).ConfigureAwait(false);
+            await PublishStateAsync().ConfigureAwait(false);
+            return;
+        }
 
         if (!IsBoundProviderThread(_currentThread))
         {
@@ -415,6 +434,12 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             await PublishStateAsync().ConfigureAwait(false);
             return;
         }
+
+        // Publish the restoring state before the (slow) transport startup and
+        // initialize: the workspace is already visible and should show
+        // progress instead of looking dead while ACP spins up.
+        _status = "restoring";
+        await PublishStateAsync().ConfigureAwait(false);
 
         try
         {

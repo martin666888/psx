@@ -17,6 +17,7 @@ const AGENT_GLOBAL_EVENT_TYPES = new Set([
     'agent_threads',
     'agent_history_error',
     'agent_history_invalidated',
+    'agent_thread_open_error',
     'agent_workspace_limit_reached'
 ]);
 const AGENT_WORKSPACE_EVENT_TYPES = new Set([

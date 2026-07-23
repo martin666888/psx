@@ -37,7 +37,7 @@ PSX 的标志模式是“即时反馈、确认持久化”：例如 Theme 条目
 
 ### 深度策略：边框与表面色差
 
-PSX 使用 borders-only 与轻微表面色差建立层级，不混入明显投影；唯一例外是 Agent 分层壳层的 canvas 与 context 卡片，允许使用 token 化的克制柔和阴影表达上下层关系（见 Agent 壳层布局）。
+PSX 使用 borders-only 与轻微表面色差建立层级，不混入明显投影；例外是 Agent 分层壳层的 canvas、context 卡片，以及无边框软面的 Composer 卡片，允许使用 token 化的克制柔和阴影表达上下层关系（见 Agent 壳层布局）。
 
 表面顺序：
 
@@ -69,7 +69,7 @@ PSX 使用 borders-only 与轻微表面色差建立层级，不混入明显投�
 - 小型按钮和提示：3–4px。
 - 弹层和卡片：6px。
 - 不在小控件上使用大圆角，也不混用胶囊形和锐利矩形。
-- Agent Shell 是显式例外：context 卡片（如 Plan）用 `--agent-radius-context-card`（12px），workspace canvas 左缘用 `--agent-radius-workspace-canvas`（16px）；消息条目与常规控件仍遵守上述规则。
+- Agent Shell 是显式例外：context 卡片（如 Plan）用 `--agent-radius-context-card`（12px），workspace canvas 左缘用 `--agent-radius-workspace-canvas`（16px），Composer 卡片用 `--agent-radius-composer`（28px，发送按钮为正圆，圆心与卡片右下角圆弧圆心重合）；消息条目与常规控件仍遵守上述规则。
 
 ### 字体
 
@@ -179,12 +179,12 @@ Theme 弹层是全局选择器的参考实现：
 ### Agent 壳层布局
 
 - Agent 界面是分层壳层：History 是页面唯一的底层 dock（左侧），Conversation canvas 位于上层并连接窗口顶/右/底边缘，Plan 是浮在 canvas 右上角（工具栏下方）的内容高度小卡片；层级观感 canvas 在上、dock 在下、Plan 最高，靠 background < canvas-surface < surface-raised 的明度阶梯加左缘圆角/细边/阴影表达。
-- 结构 token：`--agent-history-width`（默认 280px，可拖拽，控制器约束在 220–420px）、`--agent-plan-width`（固定 320px，不可调）、`--agent-reading-max-width`（920px）、`--agent-reading-min-width`（320px）、`--agent-toolbar-height`（44px）、`--agent-radius-context-card`（12px）、`--agent-radius-workspace-canvas`（16px）、`--agent-shadow-canvas`、`--agent-shadow-context-card`、`--agent-canvas-surface`（由 surface/surface-raised color-mix 推导）；阴影从 `--agent-shadow` 推导，不硬编码颜色。
+- 结构 token：`--agent-history-width`（默认 280px，可拖拽，控制器约束在 220–420px）、`--agent-plan-width`（固定 320px，不可调）、`--agent-reading-max-width`（920px）、`--agent-reading-min-width`（320px）、`--agent-toolbar-height`（44px）、`--agent-radius-context-card`（12px）、`--agent-radius-workspace-canvas`（16px）、`--agent-radius-composer`（28px）、`--agent-shadow-canvas`、`--agent-shadow-context-card`、`--agent-shadow-composer`、`--agent-canvas-surface`（由 surface/surface-raised color-mix 推导）；阴影从 `--agent-shadow` 推导，不硬编码颜色。
 - 阅读列采用“碰撞约束居中”：默认以 viewportWidth / 2 居中且保持 `--agent-reading-max-width`；左侧 dock 会相撞时，阅读列只向右让出 dock + 16px，不为 dock 在右侧镜像预留空白；若 dock + 间距 + 920px 阅读列 + 右侧边距不再同时放得下，Shell 临时收起 History，阅读列保持原宽度，直到视口本身触及左右边距才缩窄。Plan overlay 不参与布局计算；消息条目不卡片化。
 - 响应式：≥1000px 时 History 是参与布局的 dock、Plan 是 overlay；其中 History 会按当前可拖拽宽度和阅读列的碰撞阈值临时收起，不改写用户偏好。<1000px 时两者自动收起但不改变形态，手动打开时一次只显示一个，Esc 关闭并把焦点还给触发控件。Shell 是唯一响应式所有者；恢复不得抢占 Composer 焦点。
 - 窄窗口 History 使用 `--agent-history-narrow-width`（220px）作为临时有效宽度；用户保存的 `--agent-history-width` 不被任一响应式状态改写，离开对应状态后自动恢复。阅读空间不足时用户仍可手动临时打开 History，此时阅读列只使用实际剩余宽度。
 - Plan 卡片两态：visible/hidden，workspace 运行时偏好不持久化且默认显示；窄模式以临时覆盖收起，离开窄模式时恢复偏好。工具栏图标切换，隐藏期间新计划在图标上显示未读点。runtime 安装卡等内容卡片使用与对话、Composer 相同的阅读列宽度和位置规则。
-- History 只负责全局 Thread 导航：列表、加载状态和错误只在 dock 内展示，不得写入主对话流；行高亮使用 6–8px 圆角背景。
+- History 只负责全局 Thread 导航：列表、加载状态和错误只在 dock 内展示，不得写入主对话流；行高亮使用 6–8px 圆角背景。线程行是单行结构：标题承担截断，`Current`/`Open` 文字徽标与右侧短时间不收缩，完整的 provider|时间放 tooltip；分组折叠 affordance 用文件夹开合两态图标。
 - 持久化键：`psx.agent.historyDockOpen`、`psx.agent.historyDockWidth`；`psx.agent.planWidth`、`psx.agent.inspectorWidth`、`psx.agent.planPanelWidth` 均已退役（不再读取）。
 - 动画限制在 120–160ms，只用 opacity 和小距离 translate，并尊重 prefers-reduced-motion。
 

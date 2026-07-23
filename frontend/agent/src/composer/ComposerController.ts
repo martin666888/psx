@@ -1,8 +1,8 @@
 // ComposerController.ts — the Phase 4 Composer domain owner.
 //
 // Owns the whole Agent composer: the input textarea + send button, the slash
-// command menu + hint, the fallback mode <select>, the provider config
-// <select>s, and the image-attachment strip / preview. Slash commands, modes
+// command menu + hint, the fallback mode menu, the provider config
+// dropdowns, and the image-attachment strip / preview. Slash commands, modes
 // and config options are rendered purely from the reduced AgentWorkspaceState
 // (the reducer folds agent_commands / agent_modes / agent_config_options /
 // agent_mode_current). The pending-attachment upload list stays controller-
@@ -27,6 +27,7 @@ import type {
   ComposerConfigOption
 } from '../contracts/workspace-state.js';
 import { createInitialWorkspaceState } from '../contracts/workspace-state.js';
+import { MenuSelect } from './MenuSelect.js';
 
 /** The strangler seam the composer controller needs from the host. */
 export interface ComposerHost {
@@ -98,7 +99,8 @@ export class ComposerController implements FeatureController {
   private inputRow: HTMLElement | null = null;
   private commandMenu: HTMLElement | null = null;
   private commandHint: HTMLElement | null = null;
-  private mode: HTMLSelectElement | null = null;
+  private modeSelect: MenuSelect | null = null;
+  private readonly configSelects = new Map<string, MenuSelect>();
   private configOptionsHost: HTMLElement | null = null;
   private attachButton: HTMLButtonElement | null = null;
   private attachmentInput: HTMLInputElement | null = null;
@@ -134,7 +136,9 @@ export class ComposerController implements FeatureController {
     this.inputRow = role(panel, 'input-row');
     this.commandMenu = role(panel, 'command-menu');
     this.commandHint = role(panel, 'command-hint');
-    this.mode = role(panel, 'mode') as HTMLSelectElement | null;
+    this.modeSelect = new MenuSelect((value) => this.handleModeSelected(value), 'Agent mode');
+    this.modeSelect.element.dataset.role = 'mode';
+    panel.querySelector('.agent-mode-control')?.appendChild(this.modeSelect.element);
     this.configOptionsHost = role(panel, 'config-options');
     this.attachButton = role(panel, 'attach') as HTMLButtonElement | null;
     this.attachmentInput = role(panel, 'attachment-input') as HTMLInputElement | null;
@@ -145,7 +149,6 @@ export class ComposerController implements FeatureController {
 
     this.rebuildPsxCommands();
     this.wireComposer();
-    this.wireModeControl();
     this.wireAttachments();
     this.renderComposerControls();
     this.syncAttachmentControls();
@@ -212,6 +215,12 @@ export class ComposerController implements FeatureController {
   }
 
   dispose(): void {
+    // Menus portal their popup onto document.body: destroy them explicitly or
+    // an open menu (and its global listeners) would outlive the workspace.
+    this.modeSelect?.destroy();
+    this.modeSelect = null;
+    this.configSelects.forEach((menu) => menu.destroy());
+    this.configSelects.clear();
     if (this.commandMenuHideTimer !== null) {
       clearTimeout(this.commandMenuHideTimer);
       this.commandMenuHideTimer = null;
@@ -296,7 +305,7 @@ export class ComposerController implements FeatureController {
   }
 
   private updateModeControlTitle(): void {
-    const modeLabel = this.mode?.closest('.agent-mode-control') as HTMLElement | null;
+    const modeLabel = this.modeSelect?.element.closest('.agent-mode-control') as HTMLElement | null;
     if (modeLabel) modeLabel.title = this.assistantName + ' Agent mode';
   }
 
@@ -327,16 +336,13 @@ export class ComposerController implements FeatureController {
     });
   }
 
-  private wireModeControl(): void {
-    this.on(this.mode, 'change', () => {
-      const value = this.mode?.value;
-      if (!value) return;
-      if (this.hasConfigOption('mode')) {
-        this.bridge()?.sendAgentCommand('set_config_option', value, 'mode');
-      } else {
-        this.bridge()?.sendAgentCommand('set_mode', value);
-      }
-    });
+  private handleModeSelected(value: string): void {
+    if (!value) return;
+    if (this.hasConfigOption('mode')) {
+      this.bridge()?.sendAgentCommand('set_config_option', value, 'mode');
+    } else {
+      this.bridge()?.sendAgentCommand('set_mode', value);
+    }
   }
 
   private submit(): void {
@@ -425,9 +431,9 @@ export class ComposerController implements FeatureController {
       this.sendButton.disabled = this.isRestoring || this.isTranscriptOnly || !this.runtimeReady();
       this.sendButton.classList.toggle('agent-send-stop', this.isBusy);
     }
-    if (this.mode) {
+    if (this.modeSelect) {
       this.syncFallbackModeVisibility();
-      this.mode.disabled = this.configControlsDisabled() || this.modes.length === 0 || this.hasConfigOption('mode');
+      this.modeSelect.setDisabled(this.configControlsDisabled() || this.modes.length === 0 || this.hasConfigOption('mode'));
     }
     this.syncConfigOptionDisabledState();
     this.syncRuntimeControls();
@@ -651,40 +657,36 @@ export class ComposerController implements FeatureController {
   // --- Modes + config options ----------------------------------------------
 
   private renderModes(): void {
-    if (!this.mode) return;
+    if (!this.modeSelect) return;
     this.syncFallbackModeVisibility();
-    this.mode.innerHTML = '';
     if (this.modes.length === 0) {
-      const option = document.createElement('option');
-      option.value = '';
-      option.textContent = 'default';
-      this.mode.appendChild(option);
-      this.mode.disabled = true;
+      this.modeSelect.setItems([{ value: '', label: 'default' }], '');
+      this.modeSelect.setDisabled(true);
       return;
     }
 
-    this.modes.forEach((mode) => {
-      const option = document.createElement('option');
-      option.value = mode.id;
-      option.textContent = mode.name || mode.id;
-      option.title = mode.description || '';
-      this.mode!.appendChild(option);
-    });
-    this.setCurrentMode();
-    this.mode.disabled = this.configControlsDisabled() || this.hasConfigOption('mode');
+    this.modeSelect.setItems(
+      this.modes.map((mode) => ({
+        value: mode.id,
+        label: mode.name || mode.id,
+        title: mode.description || ''
+      })),
+      this.currentModeId ?? '');
+    this.modeSelect.setDisabled(this.configControlsDisabled() || this.hasConfigOption('mode'));
   }
 
-  private setCurrentMode(): void {
+    private setCurrentMode(): void {
     const modeId = this.currentModeId;
-    if (this.mode && modeId) this.mode.value = modeId;
-    const modeSelect = this.configOptionsHost?.querySelector<HTMLSelectElement>('select[data-config-id="mode"]');
-    if (modeSelect && modeId) modeSelect.value = modeId;
+    if (this.modeSelect && modeId) this.modeSelect.setValue(modeId);
+    if (modeId) this.configSelects.get('mode')?.setValue(modeId);
   }
 
   private renderConfigOptions(): void {
     const host = this.configOptionsHost;
     if (!host) return;
 
+    this.configSelects.forEach((menu) => menu.destroy());
+    this.configSelects.clear();
     host.innerHTML = '';
     this.configOptions.forEach((configOption) => {
       const label = document.createElement('label');
@@ -720,34 +722,29 @@ export class ComposerController implements FeatureController {
         return;
       }
 
-      const select = document.createElement('select');
-      select.dataset.configId = configOption.id;
-      configOption.options.forEach((item) => {
-        const option = document.createElement('option');
-        option.value = item.value;
-        option.textContent = item.name || item.value;
-        option.title = item.description || '';
-        select.appendChild(option);
-      });
-      if (typeof configOption.currentValue === 'string' && configOption.currentValue) {
-        select.value = configOption.currentValue;
-      }
-      select.addEventListener('change', () => {
-        if (select.value) {
-          this.bridge()?.sendAgentCommand('set_config_option', select.value, configOption.id);
-        }
-      });
-
-      label.appendChild(select);
+      const menu = new MenuSelect((value) => {
+        if (value) this.bridge()?.sendAgentCommand('set_config_option', value, configOption.id);
+      }, configOption.name || configOption.id);
+      menu.element.dataset.configId = configOption.id;
+      menu.setItems(
+        configOption.options.map((item) => ({
+          value: item.value,
+          label: item.name || item.value,
+          title: item.description || ''
+        })),
+        typeof configOption.currentValue === 'string' ? configOption.currentValue : '');
+      this.configSelects.set(configOption.id, menu);
+      label.appendChild(menu.element);
       host.appendChild(label);
     });
   }
 
   private syncConfigOptionDisabledState(): void {
     const disabled = this.configControlsDisabled();
-    this.configOptionsHost?.querySelectorAll<HTMLSelectElement | HTMLButtonElement>('select, button').forEach((control) => {
+    this.configOptionsHost?.querySelectorAll<HTMLButtonElement>('button').forEach((control) => {
       control.disabled = disabled;
     });
+    this.configSelects.forEach((menu) => menu.setDisabled(disabled));
   }
 
   private toggleValues(configOption: ComposerConfigOption): { enabled: string; disabled: string } | null {
@@ -760,7 +757,7 @@ export class ComposerController implements FeatureController {
   }
 
   private syncFallbackModeVisibility(): void {
-    const modeLabel = this.mode?.closest('label') as HTMLElement | null;
+    const modeLabel = this.modeSelect?.element.closest('label') as HTMLElement | null;
     if (!modeLabel) return;
     modeLabel.hidden = this.hasConfigOption('mode');
   }

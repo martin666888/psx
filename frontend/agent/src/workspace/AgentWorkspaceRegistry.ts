@@ -76,7 +76,12 @@ export class AgentWorkspaceRegistry {
       getState: () => this.historyStore.getState(),
       subscribe: (listener) => this.historyStore.subscribe(listener),
       requestRefresh: (originWorkspaceId) => this.historyBroker.requestRefresh(originWorkspaceId),
-      sendCommandOnChannel: (command, value) => this.historyBroker.sendCommandOnChannel(command, value),
+      openThread: (threadId) => {
+        const sent = this.historyBroker.sendCommandOnChannel('load_thread', threadId);
+        if (sent) this.historyStore.clearThreadOpenError();
+        return sent;
+      },
+      dismissThreadOpenError: () => this.historyStore.clearThreadOpenError(),
       hasAgentWorkspaces: () => this.controllers.size > 0,
       activeWorkspaceId: () => this.activeAgentWorkspace(),
       openWorkspaceThreadIds: () => this.openWorkspaceThreadIds()
@@ -156,6 +161,11 @@ export class AgentWorkspaceRegistry {
           this.historyBroker.handleHistoryError(event.workspaceId ?? '', event.raw);
         } else if (event.type === 'agent_history_invalidated') {
           this.historyBroker.handleInvalidated(event.workspaceId ?? '');
+        } else if (event.type === 'agent_thread_open_error') {
+          // A failed load_thread reports straight to the global dock: it must
+          // not enter the source conversation, and it stays visible even when
+          // the source workspace (or its in-flight channel) is already gone.
+          this.historyStore.applyThreadOpenError(event.threadId ?? '', event.text ?? '');
         } else if (event.type === 'agent_workspace_limit_reached') {
           this.showNotice(event.text ?? '');
         }

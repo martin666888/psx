@@ -20,24 +20,24 @@
 }
 
 .agent-composer-card {
-    /* The Context tooltip intentionally extends above the compact card. */
+    /* The Context tooltip intentionally extends above the compact card.
+     * Borderless soft-fill surface: the card lifts off the canvas via fill +
+     * shadow, not lines. Focus is a quiet accent glow, never a layout border. */
     overflow: visible;
-    border: 1px solid var(--agent-border-strong);
-    border-radius: var(--agent-radius-context-card);
-    background: var(--agent-surface);
-    box-shadow: var(--agent-shadow-context-card);
-    transition: border-color var(--agent-duration-fast) var(--agent-ease-standard),
-        box-shadow var(--agent-duration-fast) var(--agent-ease-standard);
+    border: 0;
+    border-radius: var(--agent-radius-composer);
+    background: var(--agent-surface-raised);
+    box-shadow: var(--agent-shadow-composer);
+    transition: box-shadow var(--agent-duration-fast) var(--agent-ease-standard);
 }
 
 .agent-composer-card:focus-within {
-    border-color: var(--agent-accent);
-    box-shadow: var(--agent-shadow-context-card), 0 0 0 2px var(--agent-focus-ring);
+    box-shadow: var(--agent-shadow-composer), 0 0 0 1.5px var(--agent-accent);
 }
 
 .agent-input-row {
     min-width: 0;
-    padding: var(--agent-space-2) var(--agent-space-3) var(--agent-space-1);
+    padding: 14px 18px 8px;
 }
 
 .agent-composer textarea {
@@ -82,14 +82,14 @@
     align-items: center;
     min-width: 0;
     gap: var(--agent-space-2);
-    min-height: 36px;
+    min-height: 51px;
     box-sizing: border-box;
-    padding: var(--agent-space-1) var(--agent-space-3);
-    border-top: 1px solid var(--agent-border);
-    /* The card permits the Context tooltip to escape. Clip this painted child
-     * itself so its raised surface still follows the card's lower corners. */
-    border-radius: 0 0 var(--agent-radius-context-card) var(--agent-radius-context-card);
-    background: color-mix(in srgb, var(--agent-surface-raised) 45%, var(--agent-surface));
+    /* Right/bottom padding = card radius (28px) − send radius (17px), so the
+     * circular send button's centre lands exactly on the corner arc centre. */
+    padding: 6px 11px 11px 14px;
+    /* No divider: the footer shares the card's soft fill. Clip this painted
+     * child itself so it still follows the card's lower corners. */
+    border-radius: 0 0 var(--agent-radius-composer) var(--agent-radius-composer);
 }
 
 .agent-input-row[hidden],
@@ -242,26 +242,13 @@
     align-items: center;
     gap: var(--agent-space-1);
     color: var(--agent-text-muted);
-    font-size: 11px;
+    font-size: 12px;
     white-space: nowrap;
 }
 
 .agent-mode-control[hidden],
 .agent-config-control[hidden] {
     display: none;
-}
-
-.agent-mode-control select,
-.agent-config-control select {
-    max-width: 164px;
-    min-width: 0;
-    border: 1px solid transparent;
-    border-radius: var(--agent-radius-sm);
-    background: transparent;
-    color: var(--agent-text);
-    padding: 2px 3px;
-    font: inherit;
-    text-overflow: ellipsis;
 }
 
 .agent-config-switch {
@@ -315,47 +302,133 @@
     opacity: 0.56;
 }
 
-.agent-config-control select[data-config-id="model"] {
-    max-width: 188px;
+/* --- MenuSelect: compact custom dropdown (trigger + on-demand popup) ------ */
+
+.agent-menu-select {
+    display: inline-flex;
+    max-width: 150px;
+    min-width: 0;
+    align-items: center;
+    gap: 5px;
+    box-sizing: border-box;
+    padding: 3px 6px;
+    border: 0;
+    border-radius: var(--agent-radius-md);
+    background: transparent;
+    color: var(--agent-text);
+    cursor: pointer;
+    font: inherit;
 }
 
-.agent-mode-control select:hover,
-.agent-config-control select:hover {
-    border-color: var(--agent-border-strong);
+.agent-menu-select:hover:not(:disabled) {
     background: var(--agent-hover);
 }
 
-.agent-mode-control select:focus-visible,
-.agent-config-control select:focus-visible {
+.agent-menu-select:focus-visible {
     outline: 2px solid var(--agent-focus-ring);
-    outline-offset: 2px;
+    outline-offset: 1px;
 }
 
-.agent-mode-control select:disabled,
-.agent-config-control select:disabled {
+.agent-menu-select:disabled {
     color: var(--agent-text-dim);
+    cursor: default;
     opacity: 0.72;
 }
 
+.agent-menu-select-value {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.agent-menu-select-chevron {
+    flex: 0 0 auto;
+    color: var(--agent-text-dim);
+}
+
+.agent-menu-select[aria-expanded="true"] .agent-menu-select-chevron {
+    transform: rotate(180deg);
+}
+
+/* The popup lives on document.body (position: fixed) so it can escape the
+ * composer card without clipping. */
+.agent-menu-select-popup {
+    position: fixed;
+    z-index: var(--agent-layer-menu);
+    display: grid;
+    min-width: 180px;
+    max-width: 260px;
+    max-height: 240px;
+    gap: 1px;
+    box-sizing: border-box;
+    overflow-y: auto;
+    padding: var(--agent-space-1);
+    border: 1px solid var(--agent-border-strong);
+    border-radius: var(--agent-radius-lg);
+    background: var(--agent-surface-raised);
+    box-shadow: var(--agent-shadow-context-card);
+    font-family: var(--agent-font-ui);
+}
+
+.agent-menu-select-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--agent-space-3);
+    padding: 6px 8px;
+    border-radius: var(--agent-radius-md);
+    color: var(--agent-text);
+    cursor: pointer;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.agent-menu-select-option:hover,
+.agent-menu-select-option-active {
+    background: var(--agent-hover);
+}
+
+.agent-menu-select-option:focus-visible {
+    outline: 2px solid var(--agent-focus-ring);
+    outline-offset: -2px;
+}
+
+.agent-menu-select-option[aria-selected="true"] {
+    color: var(--agent-accent);
+}
+
+.agent-menu-select-option svg {
+    color: var(--agent-accent);
+}
+
+.agent-menu-select[data-config-id="model"] {
+    max-width: 188px;
+}
+
+/* Send is the one primary action in the footer: accent whenever it can act,
+ * explicitly muted (not just dimmed) while disabled. It is a full circle whose
+ * centre coincides with the composer card's corner arc centre. */
 .agent-send {
-    flex: 0 0 28px;
-    width: 28px;
-    min-width: 28px;
-    height: 28px;
+    flex: 0 0 34px;
+    width: 34px;
+    min-width: 34px;
+    height: 34px;
     display: grid;
     place-items: center;
     box-sizing: border-box;
     padding: 0;
-    border-color: var(--agent-border);
-    background: var(--agent-surface-muted);
-    color: var(--agent-text-muted);
+    border: 0;
+    border-radius: 50%;
+    background: var(--agent-send-btn);
+    color: var(--agent-send-btn-text);
     font-size: 0;
 }
 
 .agent-send-icon {
     display: block;
-    width: 14px;
-    height: 14px;
+    width: 15px;
+    height: 15px;
     fill: currentColor;
 }
 
@@ -371,7 +444,10 @@
 
 .agent-send:disabled {
     cursor: default;
-    opacity: 0.52;
+    border-color: var(--agent-border);
+    background: var(--agent-surface-muted);
+    color: var(--agent-text-dim);
+    opacity: 1;
 }
 
 .agent-send-stop {

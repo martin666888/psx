@@ -49,6 +49,7 @@ export function installAgentRuntime() {
     value: dom.window.navigator
   });
   globalThis.HTMLElement = dom.window.HTMLElement;
+  globalThis.Node = dom.window.Node;
   globalThis.Event = dom.window.Event;
   globalThis.KeyboardEvent = dom.window.KeyboardEvent;
   globalThis.MouseEvent = dom.window.MouseEvent;

@@ -126,7 +126,7 @@ test('shell: composer and conversation share the same reading-column rules', () 
   // would reject the current accessible control.
   assert.ok(!composer.includes('grid-template-columns'), 'composer grid retired');
   assert.ok(!composer.includes('agent-plan-column'), 'plan-column separator retired');
-  assert.match(composer, /\.agent-composer-footer[\s\S]*?border-radius: 0 0 var\(--agent-radius-context-card\)/);
+  assert.match(composer, /\.agent-composer-footer[\s\S]*?border-radius: 0 0 var\(--agent-radius-composer\)/);
 });
 
 test('shell: dock width stays persisted in wide mode and becomes fixed only while narrow', () => {

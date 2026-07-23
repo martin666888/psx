@@ -53,6 +53,8 @@ export class HostEventDecoder {
                     workspaceId: workspaceId || undefined,
                     providers: Array.isArray(message.providers) ? message.providers : undefined,
                     text: typeof message.text === 'string' ? message.text : undefined,
+                    threadId: typeof message.threadId === 'string' ? message.threadId : undefined,
+                    detail: typeof message.detail === 'string' ? message.detail : undefined,
                     raw: message
                 };
             case 'agent-workspace':

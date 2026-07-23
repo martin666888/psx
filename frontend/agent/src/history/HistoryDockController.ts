@@ -31,7 +31,8 @@ export interface HistoryDockHost {
   getState(): AgentHistoryState;
   subscribe(listener: AgentHistoryListener): () => void;
   requestRefresh(originWorkspaceId: string): void;
-  sendCommandOnChannel(command: string, value: string): boolean;
+  openThread(threadId: string): boolean;
+  dismissThreadOpenError(): void;
   hasAgentWorkspaces(): boolean;
   /** The active Agent workspace, or '' when a terminal/nothing is active. */
   activeWorkspaceId(): string;
@@ -44,6 +45,13 @@ const MAX_WIDTH = 420;
 const DEFAULT_WIDTH = 280;
 const OPEN_STORAGE_KEY = 'psx.agent.historyDockOpen';
 const WIDTH_STORAGE_KEY = 'psx.agent.historyDockWidth';
+
+// Group fold affordance: a folder that is open when the group is expanded and
+// closed when folded. Both SVGs live in the header; CSS shows one per state.
+const FOLDER_CLOSED_ICON =
+  '<svg class="agent-history-folder-closed" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" focusable="false"><path d="M2.5 4h4l1.5 2h5.5v6.5h-11z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>';
+const FOLDER_OPEN_ICON =
+  '<svg class="agent-history-folder-open" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" focusable="false"><path d="M2.5 4h4l1.5 2h5.5v2h-8.5l-2.5 6.5h-1z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M4.5 8.5h9l-2 5h-9z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>';
 
 export class HistoryDockController {
   private readonly host: HistoryDockHost;
@@ -460,6 +468,13 @@ export class HistoryDockController {
       this.providerFilterValue
     );
 
+    if (state.threadOpenError) {
+      this.renderThreadOpenError(
+        state.threadOpenError.threadId,
+        state.threadOpenError.text
+      );
+    }
+
     if (state.threads.length === 0) {
       this.showState('empty', state.loaded ? 'No saved Agent threads.' : 'Loading history...');
       return;
@@ -517,10 +532,11 @@ export class HistoryDockController {
     header.className = 'agent-history-group-header';
     header.setAttribute('aria-expanded', String(!folded));
 
-    const chevron = document.createElement('span');
-    chevron.className = 'agent-history-group-chevron';
-    chevron.setAttribute('aria-hidden', 'true');
-    header.appendChild(chevron);
+    const folder = document.createElement('span');
+    folder.className = 'agent-history-group-folder';
+    folder.setAttribute('aria-hidden', 'true');
+    folder.innerHTML = FOLDER_CLOSED_ICON + FOLDER_OPEN_ICON;
+    header.appendChild(folder);
 
     const label = document.createElement('span');
     label.className = 'agent-history-group-label';
@@ -591,19 +607,23 @@ export class HistoryDockController {
     const heading = document.createElement('span');
     heading.className = 'agent-history-heading';
 
+    const titleText = thread.title || 'Agent Chat';
     const title = document.createElement('strong');
-    title.textContent = thread.title || 'Agent Chat';
+    title.textContent = titleText;
     heading.appendChild(title);
 
+    let badgeText = '';
     if (thread.threadId === activeThreadId) {
+      badgeText = 'Current';
       const current = document.createElement('span');
       current.className = 'agent-history-current';
-      current.textContent = 'Current';
+      current.textContent = badgeText;
       heading.appendChild(current);
     } else if (thread.threadId && openedElsewhere.has(thread.threadId)) {
+      badgeText = 'Open';
       const opened = document.createElement('span');
       opened.className = 'agent-history-open';
-      opened.textContent = 'Open';
+      opened.textContent = badgeText;
       heading.appendChild(opened);
     }
 
@@ -612,14 +632,52 @@ export class HistoryDockController {
     if (thread.providerDisplay) parts.push(thread.providerDisplay);
     const timeLabel = formatHistoryTime(thread.updatedAt);
     if (timeLabel) parts.push(timeLabel);
-    meta.textContent = parts.join(' | ');
+    // Single-line row: only the short time stays visible at the row's trailing
+    // edge. The full "provider | time" string is the row's tooltip and part of
+    // its accessible name — a tooltip on the trailing <small> is unreachable
+    // for keyboard and screen-reader users because focus lands on the row.
+    meta.textContent = timeLabel || thread.providerDisplay || '';
+    const fullDescription = parts.join(' | ');
+    if (fullDescription) row.title = fullDescription;
+    row.setAttribute(
+      'aria-label',
+      [titleText, badgeText, fullDescription].filter((part) => part).join(', '));
+    heading.appendChild(meta);
 
     row.appendChild(heading);
-    row.appendChild(meta);
     row.addEventListener('click', () => {
-      if (thread.threadId) this.host.sendCommandOnChannel('load_thread', thread.threadId);
+      if (thread.threadId) this.host.openThread(thread.threadId);
     });
     return row;
+  }
+
+  private renderThreadOpenError(threadId: string, text: string): void {
+    if (!this.content) return;
+    const notice = document.createElement('div');
+    notice.className = 'agent-history-open-error';
+    notice.setAttribute('role', 'alert');
+
+    const message = document.createElement('p');
+    message.textContent = text || 'PSX could not open the selected Agent thread. Try again.';
+
+    const actions = document.createElement('div');
+    actions.className = 'agent-history-open-error-actions';
+
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'agent-history-retry';
+    retry.textContent = 'Retry';
+    retry.addEventListener('click', () => this.host.openThread(threadId));
+
+    const dismiss = document.createElement('button');
+    dismiss.type = 'button';
+    dismiss.className = 'agent-history-dismiss';
+    dismiss.textContent = 'Dismiss';
+    dismiss.addEventListener('click', () => this.host.dismissThreadOpenError());
+
+    actions.append(retry, dismiss);
+    notice.append(message, actions);
+    this.content.appendChild(notice);
   }
 
   private renderError(text: string): void {

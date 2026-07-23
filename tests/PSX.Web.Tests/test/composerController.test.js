@@ -99,7 +99,7 @@ function composerSnapshot(panel) {
     },
     mode: {
       html: mode.innerHTML,
-      value: mode.value,
+      value: mode.querySelector('.agent-menu-select-value')?.textContent ?? '',
       disabled: mode.disabled,
       labelHidden: modeLabel ? modeLabel.hidden : null
     },
@@ -124,11 +124,11 @@ test('ComposerController renders composer controls from modes and config options
   const panel = await drive([stateEvent(WS, false), modesEvent(WS), configEvent(WS)]);
   const controlled = composerSnapshot(panel);
 
-  assert.deepEqual(
-    [...panel.querySelectorAll('[data-role="mode"] option')].map((option) => option.value),
-    ['default', 'plan']
-  );
-  assert.equal(controlled.mode.value, 'plan');
+  panel.querySelector('[data-role="mode"]').click();
+  const modeOptions = [...document.querySelectorAll('.agent-menu-select-option')];
+  assert.deepEqual(modeOptions.map((option) => option.dataset.value), ['default', 'plan']);
+  panel.querySelector('[data-role="mode"]').click();
+  assert.equal(controlled.mode.value, 'Plan');
   assert.match(controlled.configOptionsHtml, /Verbosity/);
   assert.equal(panel.querySelectorAll('.agent-config-switch').length, 2);
 });

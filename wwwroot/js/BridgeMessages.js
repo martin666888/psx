@@ -57,6 +57,7 @@ const BridgeEventType = Object.freeze({
     AgentThreads: 'agent_threads',
     AgentHistoryError: 'agent_history_error',
     AgentHistoryInvalidated: 'agent_history_invalidated',
+    AgentThreadOpenError: 'agent_thread_open_error',
     AgentCommands: 'agent_commands',
     AgentCommandRejected: 'agent_command_rejected',
     AgentModes: 'agent_modes',

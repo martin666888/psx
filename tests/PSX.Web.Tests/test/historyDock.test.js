@@ -322,6 +322,18 @@ test('dock: marks the active workspace thread Current and threads open elsewhere
   assert.equal(byId.t3.querySelector('.agent-history-open'), null);
 });
 
+test('dock: rows carry the full provider and time in tooltip and accessible name', async () => {
+  const { app } = await mountLoaded();
+  app.handle({ type: 'agent_providers', providers: [{ key: 'claude-code', displayName: 'Claude Code', assistantName: 'Claude', isDefault: true }] });
+  app.handle({ type: 'workspace_activated', workspaceId: WS, kind: 'agent' });
+  app.handle({ type: 'agent_state', workspaceId: WS, threadId: 't1', status: 'ready' });
+  drainInitialLoad(app, [thread({ threadId: 't1', title: 'Alpha' })]);
+
+  const row = dock().querySelector('.agent-history-item');
+  assert.match(row.title, /Claude Code \| /);
+  assert.match(row.getAttribute('aria-label'), /^Alpha, Current, Claude Code \| /);
+});
+
 test('dock: clicking a thread sends load_thread through a broker channel', async () => {
   const { app, posted } = await mountLoaded();
   app.handle({ type: 'workspace_activated', workspaceId: WS, kind: 'agent' });
@@ -344,6 +356,48 @@ test('dock: renders a retryable error and re-requests history when Retry is clic
   const before = posted.filter((entry) => entry.command === 'history').length;
   error.querySelector('.agent-history-retry').click();
   assert.equal(posted.filter((entry) => entry.command === 'history').length, before + 1);
+});
+
+test('dock: thread-open failures keep the list and Retry reopens the failed thread', async () => {
+  const { app, posted } = await mountLoaded();
+  drainInitialLoad(app, [thread({ threadId: 't-42' })]);
+  // Global by design: the source workspace may already be closed, so the
+  // event carries no workspaceId and must still land in the dock (and must
+  // never reach a workspace timeline).
+  app.handle({
+    type: 'agent_thread_open_error',
+    threadId: 't-42',
+    text: 'PSX could not open the selected Agent thread. Try again.'
+  });
+
+  const error = dockRole('history-content').querySelector('.agent-history-open-error');
+  assert.match(error.textContent, /could not open the selected Agent thread/);
+  assert.ok(dockRole('history-content').querySelector('.agent-history-item'), 'the cached list stays usable');
+  assert.equal(document.querySelector('.agent-panel')?.textContent.includes('could not open') ?? false, false);
+
+  error.querySelector('.agent-history-retry').click();
+  const retry = posted.at(-1);
+  assert.equal(retry.command, 'load_thread');
+  assert.equal(retry.value, 't-42');
+  assert.equal(dockRole('history-content').querySelector('.agent-history-open-error'), null);
+});
+
+test('dock: a new row selection dismisses a previous thread-open failure', async () => {
+  const { app, posted } = await mountLoaded();
+  drainInitialLoad(app, [
+    thread({ threadId: 't-42' }),
+    thread({ threadId: 't-43', title: 'Another thread' })
+  ]);
+  app.handle({
+    type: 'agent_thread_open_error',
+    threadId: 't-42',
+    text: 'PSX could not open the selected Agent thread. Try again.'
+  });
+
+  dockRole('history-content').querySelector('[data-thread-id="t-43"]').click();
+
+  assert.equal(posted.at(-1).value, 't-43');
+  assert.equal(dockRole('history-content').querySelector('.agent-history-open-error'), null);
 });
 
 test('dock: invalidation refreshes once through the broker', async () => {

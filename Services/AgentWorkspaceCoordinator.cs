@@ -129,6 +129,7 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
         if (_disposed)
             return null;
 
+        Entry? entry;
         await _creationLock.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -146,12 +147,18 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
             var thread = _threadStore.CreateThread(cwd);
             thread.Provider = provider.Descriptor.Key;
             _threadStore.SaveThread(thread);
-            return await CreateEntryAsync(thread, provider, restore: false).ConfigureAwait(false);
+            entry = await CreateEntryLockedAsync(thread, provider).ConfigureAwait(false);
         }
         finally
         {
             _creationLock.Release();
         }
+
+        if (entry == null)
+            return null;
+
+        await entry.Session.PublishStateAsync().ConfigureAwait(false);
+        return entry.Descriptor.WorkspaceId;
     }
 
     public async Task<Guid?> OpenThreadAsync(string threadId)
@@ -159,6 +166,7 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
         if (_disposed || string.IsNullOrWhiteSpace(threadId))
             return null;
 
+        Entry? entry;
         await _creationLock.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -179,21 +187,42 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
                 return null;
 
             var provider = _providerRegistry.Find(thread.Provider);
-            return await CreateEntryAsync(
-                thread,
-                provider,
-                restore: true).ConfigureAwait(false);
+            entry = await CreateEntryLockedAsync(thread, provider).ConfigureAwait(false);
         }
         finally
         {
             _creationLock.Release();
         }
+
+        if (entry == null)
+            return null;
+
+        // The slow ACP restore runs outside the creation lock so independent
+        // workspaces restore in parallel. Activation already happened above:
+        // the restore only fills this workspace's own content and must never
+        // re-activate or take the tab down with it.
+        try
+        {
+            await entry.Session.RestoreAsync().ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // The workspace was closed (or the app is shutting down) mid-restore.
+        }
+
+        return entry.Descriptor.WorkspaceId;
     }
 
-    private async Task<Guid?> CreateEntryAsync(
+    /// <summary>
+    /// Registration-only half of workspace creation. Runs inside
+    /// <see cref="_creationLock"/>; callers run the slow session restore /
+    /// initial publish after releasing the lock. The workspace is activated
+    /// here, immediately after the creation message, so the WebView switches
+    /// to the new panel without waiting for ACP restore.
+    /// </summary>
+    private async Task<Entry?> CreateEntryLockedAsync(
         AgentThread thread,
-        IAcpAgentProvider? provider,
-        bool restore)
+        IAcpAgentProvider? provider)
     {
         var workspaceId = Guid.NewGuid();
 
@@ -250,18 +279,18 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
             threadId = descriptor.ThreadId
         }).ConfigureAwait(false);
 
+        // Activate immediately: the WPF tab is already highlighted at this
+        // point, and the WebView must not stay on the old conversation while a
+        // slow ACP restore runs. There is deliberately no second activation
+        // after the restore, so a finished restore can never steal back a tab
+        // the user already switched away from.
+        await ActivateAsync(workspaceId).ConfigureAwait(false);
+
         // Re-publish the provider catalog with every workspace: the startup
         // broadcast can land before the WebView page subscribes, and the
         // global History dock needs the catalog whenever a workspace exists.
         await PublishProvidersAsync().ConfigureAwait(false);
-
-        if (restore)
-            await entry.Session.RestoreAsync().ConfigureAwait(false);
-        else
-            await entry.Session.PublishStateAsync().ConfigureAwait(false);
-
-        await ActivateAsync(workspaceId).ConfigureAwait(false);
-        return workspaceId;
+        return entry;
     }
 
     public Task ActivateAsync(Guid workspaceId)
@@ -486,7 +515,7 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
 
         if (args.Command == "load_thread" && !string.IsNullOrWhiteSpace(args.Value))
         {
-            _ = OpenThreadAsync(args.Value);
+            _ = OpenThreadSafelyAsync(args.Value);
             return;
         }
 
@@ -504,6 +533,50 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
         }
 
         entry.EventSink.Command(args);
+    }
+
+    /// <summary>
+    /// Observed fire-and-forget wrapper for History loads: failures surface as
+    /// a global agent_thread_open_error in the History dock instead of
+    /// vanishing into an unobserved task.
+    /// </summary>
+    private async Task OpenThreadSafelyAsync(string threadId)
+    {
+        try
+        {
+            await OpenThreadAsync(threadId).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Shutdown or a workspace closed mid-restore cancelled the open.
+        }
+        catch (Exception ex)
+        {
+            // Report to the global History dock (agent-global scope, no
+            // workspaceId): history errors must stay in the dock and never
+            // pollute a conversation, and a root-bridge event survives the
+            // source workspace closing mid-open. agent_history_error is
+            // deliberately not reused — the frontend broker drops it without
+            // a matching in-flight history request.
+            try
+            {
+                await _rootBridge.SendEventAsync(new
+                {
+                    type = "agent_thread_open_error",
+                    threadId,
+                    text = "PSX could not open the selected Agent thread. Try again or refresh History.",
+                    detail = ex.Message
+                }).ConfigureAwait(false);
+            }
+            catch (Exception reportException)
+            {
+                // This method is intentionally fire-and-forget. A disposed
+                // WebView must not turn the recovery notification itself into
+                // another unobserved exception.
+                System.Diagnostics.Debug.WriteLine(
+                    $"Unable to report Agent thread-open failure for {threadId}: {reportException}");
+            }
+        }
     }
 
     private void OnHistoryInvalidated(object? sender, EventArgs args)
