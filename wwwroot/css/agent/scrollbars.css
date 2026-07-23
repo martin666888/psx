@@ -1,4 +1,4 @@
-﻿.agent-thread::-webkit-scrollbar,
+.agent-thread::-webkit-scrollbar,
 .agent-composer textarea::-webkit-scrollbar,
 .agent-message-body pre::-webkit-scrollbar,
 .agent-tool pre::-webkit-scrollbar,
@@ -33,5 +33,5 @@
 .agent-command-menu::-webkit-scrollbar-thumb,
 .agent-history-dock-content::-webkit-scrollbar-thumb {
     background: var(--agent-scrollbar);
-    border-radius: 4px;
+    border-radius: 999px;
 }

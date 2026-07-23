@@ -128,7 +128,7 @@ public sealed class ThemeServiceTests
         using var workspace = TestWorkspace.Create(nameof(LoadTheme_InvalidColor_ReturnsDiagnosticInsteadOfThrowing));
         var themePath = Path.Combine(workspace.Path, "invalid.ini");
         var source = File.ReadAllText(Path.Combine(TestWorkspace.RepositoryRoot, "theme-presets", "dark.ini"));
-        File.WriteAllText(themePath, source.Replace("background=#1e1e1e", "background=red", StringComparison.Ordinal));
+        File.WriteAllText(themePath, source.Replace("background=#0c0c0d", "background=red", StringComparison.Ordinal));
         var service = new ThemeService(Path.Combine(workspace.Path, "built-in"), Path.Combine(workspace.Path, "user"));
 
         var result = service.LoadTheme(themePath, ThemeSource.User);

@@ -1,4 +1,4 @@
-﻿/* 权限请求卡片 - 使用 details 实现折叠 */
+/* 权限请求卡片 - 使用 details 实现折叠 */
 .agent-decision {
     padding: 0;
 }
@@ -109,28 +109,6 @@
     text-align: center;
     padding: 4px 14px;
     font-size: 12px;
-    border-radius: var(--agent-radius-sm);
-}
-
-.agent-decision-actions button:disabled {
-    opacity: 0.6;
-    cursor: default;
-}
-
-.agent-decision-actions .agent-btn-primary {
-    border-color: var(--agent-decision-primary);
-    background: var(--agent-decision-primary);
-    color: var(--agent-decision-primary-text);
-    font-weight: 700;
-}
-
-.agent-decision-actions .agent-btn-primary:hover {
-    border-color: var(--agent-decision-primary-hover);
-    background: var(--agent-decision-primary-hover);
-}
-
-.agent-decision-actions .agent-btn-subtle {
-    color: var(--agent-text-muted);
 }
 
 /* Raw Input 折叠区域 */
@@ -253,7 +231,7 @@
     width: 100%;
     max-width: 100%;
     border: 1px solid var(--agent-border-strong);
-    border-radius: 5px;
+    border-radius: var(--agent-radius-input);
     background: var(--agent-surface);
     color: var(--agent-text);
     padding: 7px 8px;
@@ -303,7 +281,7 @@
     box-sizing: border-box;
     padding: 8px 10px;
     border: 1px solid var(--agent-border-strong);
-    border-radius: 6px;
+    border-radius: var(--agent-radius-card);
     background: var(--agent-surface);
     color: var(--agent-text);
     text-align: left;
@@ -365,7 +343,7 @@
     margin: 0 0 var(--agent-space-5);
     overflow: hidden;
     border: 1px solid var(--agent-border-strong);
-    border-radius: var(--agent-radius-md);
+    border-radius: var(--agent-radius-card);
     background: var(--agent-surface-raised);
     color: var(--agent-text);
 }
@@ -476,7 +454,7 @@
     box-sizing: border-box;
     padding: var(--agent-space-2) var(--agent-space-3);
     border: 1px solid var(--agent-border-strong);
-    border-radius: var(--agent-radius-sm);
+    border-radius: var(--agent-radius-control);
     background: var(--agent-surface);
     color: var(--agent-text);
     font-family: var(--agent-font-ui);
@@ -517,7 +495,7 @@
 .agent-mode-transition-error {
     padding: var(--agent-space-2) var(--agent-space-3);
     border: 1px solid color-mix(in srgb, var(--agent-error) 55%, var(--agent-border));
-    border-radius: var(--agent-radius-sm);
+    border-radius: var(--agent-radius-control);
     background: color-mix(in srgb, var(--agent-error) 8%, transparent);
     color: var(--agent-error);
     font-size: 12px;
@@ -540,7 +518,7 @@
     box-sizing: border-box;
     padding: var(--agent-space-3);
     border: 1px solid var(--agent-border-strong);
-    border-radius: var(--agent-radius-md);
+    border-radius: var(--agent-radius-card);
     background: var(--agent-surface-raised);
     color: var(--agent-text);
 }
@@ -577,18 +555,9 @@
     min-width: 72px;
     min-height: 32px;
     padding: var(--agent-space-1) var(--agent-space-3);
-    border-color: var(--agent-stop-btn);
-    border-radius: var(--agent-radius-sm);
-    background: var(--agent-stop-btn);
-    color: var(--agent-send-btn-text);
     font-family: var(--agent-font-ui);
     font-size: 12px;
     font-weight: 600;
-}
-
-.agent-composer-decision-stop:hover:not(:disabled) {
-    border-color: var(--agent-stop-btn-hover);
-    background: var(--agent-stop-btn-hover);
 }
 
 .agent-composer-decision-options {
@@ -603,7 +572,7 @@
     box-sizing: border-box;
     padding: var(--agent-space-2) var(--agent-space-3);
     border: 1px solid var(--agent-border-strong);
-    border-radius: var(--agent-radius-sm);
+    border-radius: var(--agent-radius-control);
     background: var(--agent-surface);
     color: var(--agent-text);
     font-family: var(--agent-font-ui);

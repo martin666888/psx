@@ -1,4 +1,4 @@
-﻿.agent-message-body p {
+.agent-message-body p {
     margin: 0 0 12px;
 }
 
@@ -89,7 +89,7 @@
 
 .agent-message-body code {
     padding: 1px 4px;
-    border-radius: 4px;
+    border-radius: var(--agent-radius-control);
     background: var(--agent-surface-muted);
     color: var(--agent-text);
     font-family: var(--agent-font-mono);
@@ -99,7 +99,7 @@
 .agent-message-user .agent-message-body {
     padding: var(--agent-space-3) var(--agent-space-4);
     border: 1px solid var(--agent-border);
-    border-radius: var(--agent-radius-md);
+    border-radius: var(--agent-radius-card);
     background: var(--agent-surface);
     color: var(--agent-text);
 }
@@ -114,7 +114,7 @@
     overflow: auto;
     margin: 8px 0 0;
     padding: 10px 12px;
-    border-radius: 6px;
+    border-radius: var(--agent-radius-card);
     background: var(--agent-surface-muted);
     color: var(--agent-text);
     font-family: var(--agent-font-mono);

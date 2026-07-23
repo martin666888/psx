@@ -60,14 +60,23 @@
     --agent-space-5: 20px;
     --agent-space-6: 24px;
     --agent-space-8: 32px;
-    --agent-radius-sm: 4px;
-    --agent-radius-md: 6px;
-    --agent-radius-lg: 8px;
+    --agent-radius-control: 8px;
+    --agent-radius-input: 10px;
+    --agent-radius-card: 14px;
+    --agent-layer-dock: 5;
+    --agent-layer-cards: 6;
     --agent-layer-menu: 20;
     --agent-layer-dialog: 100;
     --agent-duration-fast: 120ms;
     --agent-duration-state: 160ms;
     --agent-ease-standard: cubic-bezier(0.2, 0, 0, 1);
-    --agent-ease-emphasized: cubic-bezier(0.2, 0, 0, 1.2);
     --agent-composer-input-min-height: 34px;
+}
+
+/* Product-level focus policy: keyboard navigation and focus restoration stay
+ * functional, but focus itself adds no visual outline. Selection and hover
+ * continue to use their own border/background states. */
+*:focus,
+*:focus-visible {
+    outline: none !important;
 }

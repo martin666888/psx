@@ -11,7 +11,7 @@
     gap: 2px;
     padding: var(--agent-space-2);
     border: 0;
-    border-radius: var(--agent-radius-md);
+    border-radius: var(--agent-radius-control);
     background: transparent;
     color: var(--agent-text);
     text-align: left;
@@ -26,7 +26,6 @@
 
 .agent-history-item[aria-current="true"] {
     background: var(--agent-surface-muted);
-    box-shadow: inset 2px 0 0 var(--agent-accent);
 }
 
 .agent-history-heading {
@@ -84,7 +83,7 @@
     margin-bottom: var(--agent-space-3);
     padding: var(--agent-space-2);
     border: 1px solid color-mix(in srgb, var(--agent-warning) 45%, var(--agent-border));
-    border-radius: var(--agent-radius-md);
+    border-radius: var(--agent-radius-control);
     background: color-mix(in srgb, var(--agent-warning) 8%, transparent);
     color: var(--agent-text);
     font-size: 12px;
@@ -103,31 +102,14 @@
 
 .agent-history-retry {
     padding: 5px 9px;
-    border: 1px solid var(--agent-border-strong);
-    border-radius: 4px;
-    background: var(--agent-surface-raised);
-    color: var(--agent-text);
     cursor: pointer;
     font: inherit;
-}
-
-.agent-history-retry:hover {
-    background: var(--agent-hover);
 }
 
 .agent-history-dismiss {
     padding: 5px 9px;
-    border: 0;
-    border-radius: 4px;
-    background: transparent;
-    color: var(--agent-text-muted);
     cursor: pointer;
     font: inherit;
-}
-
-.agent-history-dismiss:hover {
-    background: var(--agent-hover);
-    color: var(--agent-text);
 }
 
 .agent-history-dismiss:focus-visible {
@@ -142,7 +124,7 @@
     top: 0;
     bottom: 0;
     left: 0;
-    z-index: 5;
+    z-index: var(--agent-layer-dock);
     display: flex;
     flex-direction: column;
     width: var(--agent-history-width-effective, 280px);
@@ -173,7 +155,7 @@
     min-width: 0;
     padding: 5px 8px;
     border: 1px solid var(--agent-border);
-    border-radius: var(--agent-radius-sm);
+    border-radius: var(--agent-radius-input);
     background: var(--agent-surface-raised);
     color: var(--agent-text);
     font: inherit;
@@ -185,7 +167,7 @@
     max-width: 100%;
     padding: 5px 6px;
     border: 1px solid var(--agent-border);
-    border-radius: var(--agent-radius-sm);
+    border-radius: var(--agent-radius-input);
     background: var(--agent-surface-raised);
     color: var(--agent-text);
     font: inherit;
@@ -205,7 +187,7 @@
     justify-content: center;
     padding: 5px;
     border: 1px solid var(--agent-border);
-    border-radius: var(--agent-radius-sm);
+    border-radius: var(--agent-radius-control);
     background: var(--agent-surface-raised);
     color: var(--agent-text);
     cursor: pointer;
@@ -291,7 +273,7 @@
 
 .agent-history-group-header:hover {
     background: var(--agent-hover);
-    border-radius: var(--agent-radius-md);
+    border-radius: var(--agent-radius-control);
 }
 
 .agent-history-group-header:hover .agent-history-group-folder {
@@ -379,7 +361,7 @@
 
 .agent-history-show-more:hover {
     color: var(--agent-text);
-    border-radius: var(--agent-radius-md);
+    border-radius: var(--agent-radius-control);
     background: var(--agent-hover);
 }
 

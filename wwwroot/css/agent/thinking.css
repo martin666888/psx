@@ -1,4 +1,4 @@
-﻿.agent-thinking {
+.agent-thinking {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -63,7 +63,7 @@
     overflow: auto;
     margin: 0 0 var(--agent-space-2) var(--agent-space-4);
     padding: var(--agent-space-2) var(--agent-space-3);
-    border-radius: var(--agent-radius-sm);
+    border-radius: var(--agent-radius-control);
     background: var(--agent-surface-muted);
     color: var(--agent-text-muted);
     font-family: var(--agent-font-mono);

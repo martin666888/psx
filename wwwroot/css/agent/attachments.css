@@ -18,7 +18,7 @@
     height: 54px;
     overflow: hidden;
     border: 1px solid var(--agent-border-strong);
-    border-radius: var(--agent-radius-md);
+    border-radius: var(--agent-radius-card);
     background: var(--agent-surface-raised);
     cursor: pointer;
     padding: 0;
@@ -79,7 +79,7 @@
     position: relative;
     box-sizing: border-box;
     border: 1px solid transparent;
-    border-radius: 10px;
+    border-radius: var(--agent-radius-control);
     padding: 0;
     background: transparent;
     color: var(--agent-text-muted);
@@ -156,8 +156,8 @@
 .agent-image-preview img {
     max-width: min(92vw, 1200px);
     max-height: 88vh;
-    border-radius: var(--agent-radius-lg);
-    box-shadow: 0 18px 60px color-mix(in srgb, var(--agent-shadow) 50%, transparent);
+    border-radius: var(--agent-radius-card);
+    box-shadow: var(--agent-shadow-dialog);
     object-fit: contain;
 }
 
@@ -170,7 +170,7 @@
     display: grid;
     place-items: center;
     border: 1px solid var(--agent-border-strong);
-    border-radius: var(--agent-radius-md);
+    border-radius: var(--agent-radius-control);
     background: var(--agent-surface-raised);
     color: var(--agent-text);
     cursor: pointer;

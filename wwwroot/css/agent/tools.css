@@ -1,10 +1,10 @@
-﻿.agent-tool,
+.agent-tool,
 .agent-decision {
     width: 100%;
     box-sizing: border-box;
     margin: 0 0 14px;
     border: 1px solid var(--agent-border);
-    border-radius: var(--agent-radius-md);
+    border-radius: var(--agent-radius-card);
     background: var(--agent-surface);
 }
 
@@ -165,7 +165,7 @@
     overflow: auto;
     margin: 0;
     padding: 8px 10px;
-    border-radius: var(--agent-radius-sm);
+    border-radius: var(--agent-radius-control);
     background: var(--agent-surface-muted);
     color: var(--agent-text);
     font-family: var(--agent-font-mono);

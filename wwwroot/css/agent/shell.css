@@ -11,14 +11,17 @@
      * context cards (--agent-surface-raised) — the luminance ladder that makes
      * the layered shell read without hard borders. Derived, never hardcoded. */
     --agent-canvas-surface: color-mix(in srgb, var(--agent-surface) 50%, var(--agent-surface-raised));
-    --agent-radius-context-card: 12px;
-    --agent-radius-workspace-canvas: 16px;
+    --agent-radius-context-card: var(--agent-radius-card);
+    --agent-radius-workspace-canvas: 18px;
     /* Composer card: the one large-radius surface (borderless soft fill). */
-    --agent-radius-composer: 28px;
+    --agent-radius-composer: 24px;
     --agent-shadow-canvas: -12px 0 28px color-mix(in srgb, var(--agent-shadow) 28%, transparent);
     --agent-shadow-context-card: 0 6px 20px color-mix(in srgb, var(--agent-shadow) 36%, transparent),
         0 2px 6px color-mix(in srgb, var(--agent-shadow) 28%, transparent);
     --agent-shadow-composer: 0 10px 28px color-mix(in srgb, var(--agent-shadow) 34%, transparent);
+    /* Floating menus / popovers and modal media: the only other elevated layers. */
+    --agent-shadow-popover: 0 12px 28px color-mix(in srgb, var(--agent-shadow) 34%, transparent);
+    --agent-shadow-dialog: 0 18px 60px color-mix(in srgb, var(--agent-shadow) 50%, transparent);
 }
 
 #agent-workspace-container {
@@ -57,7 +60,7 @@
 .agent-load-error-card {
     width: min(520px, 100%);
     border: 1px solid var(--agent-error);
-    border-radius: var(--agent-radius-md);
+    border-radius: var(--agent-radius-card);
     background: var(--agent-error-bg);
     padding: var(--agent-space-5);
 }
@@ -142,7 +145,7 @@
     justify-content: center;
     padding: 5px;
     border: 1px solid var(--agent-border-strong);
-    border-radius: var(--agent-radius-sm);
+    border-radius: var(--agent-radius-control);
     background: var(--agent-surface-raised);
     color: var(--agent-text);
     cursor: pointer;
@@ -217,7 +220,7 @@
 .agent-link-button:focus-visible {
     outline: 2px solid var(--agent-focus-ring);
     outline-offset: 2px;
-    border-radius: var(--agent-radius-sm);
+    border-radius: var(--agent-radius-control);
 }
 
 /* Right group floats to the toolbar edge; everything else (history toggle +
@@ -231,18 +234,6 @@
     gap: var(--agent-space-2);
 }
 
-.agent-toolbar button,
-.agent-send,
-.agent-decision-actions button {
-    border: 1px solid var(--agent-border-strong);
-    background: var(--agent-surface-raised);
-    color: var(--agent-text);
-    border-radius: var(--agent-radius-sm);
-    padding: 6px 10px;
-    cursor: pointer;
-    font: inherit;
-}
-
 .agent-toolbar button {
     box-sizing: border-box;
     display: inline-flex;
@@ -253,13 +244,6 @@
     font-size: 12px;
     line-height: 1;
     white-space: nowrap;
-}
-
-.agent-toolbar button:hover,
-.agent-send:hover,
-.agent-decision-actions button:hover {
-    background: var(--agent-hover);
-    border-color: var(--agent-border-strong);
 }
 
 .agent-toolbar button:focus-visible,
@@ -278,13 +262,6 @@
 .agent-attach:active,
 .agent-history-item:active {
     transform: translateY(1px);
-}
-
-.agent-toolbar button:disabled,
-.agent-send:disabled,
-.agent-decision-actions button:disabled {
-    cursor: default;
-    opacity: 0.56;
 }
 
 .agent-panel button:focus-visible {

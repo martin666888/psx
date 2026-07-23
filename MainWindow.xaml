@@ -11,18 +11,6 @@
 
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
-        <Style x:Key="ShellFocusVisualStyle">
-            <Setter Property="Control.Template">
-                <Setter.Value>
-                    <ControlTemplate>
-                        <Border Margin="1"
-                                BorderBrush="{DynamicResource AccentBrush}"
-                                BorderThickness="2"
-                                CornerRadius="4"/>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
     </Window.Resources>
 
     <Window.InputBindings>
@@ -49,16 +37,11 @@
                 <Grid Margin="0,0,6,0">
                     <ToggleButton x:Name="ThemeButton"
                             Content="Theme"
+                            Style="{StaticResource SoftWorkbenchToggleButtonStyle}"
                             MinWidth="62"
                             MinHeight="32"
                             Padding="10,3"
-                            Background="{DynamicResource SurfaceBrush}"
-                            Foreground="{DynamicResource TextSecondaryBrush}"
-                            BorderBrush="{DynamicResource BorderBrush}"
-                            BorderThickness="1"
-                            Cursor="Hand"
                             FontSize="12"
-                            FocusVisualStyle="{StaticResource ShellFocusVisualStyle}"
                             IsChecked="{Binding ThemePicker.IsOpen, Mode=TwoWay}"/>
                     <Popup x:Name="ThemePopup"
                            PlacementTarget="{Binding ElementName=ThemeButton}"
@@ -76,7 +59,7 @@
                                 Background="{DynamicResource SurfaceRaisedBrush}"
                                 BorderBrush="{DynamicResource BorderStrongBrush}"
                                 BorderThickness="1"
-                                CornerRadius="6">
+                                CornerRadius="{StaticResource CardCornerRadius}">
                             <Grid>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/>
@@ -133,15 +116,11 @@
                                                             </Grid>
                                                         </Button>
                                                         <Button Grid.Column="1"
+                                                                Style="{StaticResource SoftWorkbenchButtonStyle}"
                                                                 Margin="4,0,2,0"
                                                                 Padding="8,4"
                                                                 VerticalAlignment="Center"
                                                                 Content="Confirm"
-                                                                Background="{DynamicResource SurfaceMutedBrush}"
-                                                                Foreground="{DynamicResource TextPrimaryBrush}"
-                                                                BorderBrush="{DynamicResource AccentBrush}"
-                                                                BorderThickness="1"
-                                                                Cursor="Hand"
                                                                 Visibility="{Binding ShowConfirm, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                                 Command="{Binding DataContext.ThemePicker.ConfirmThemeCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                                 CommandParameter="{Binding}"/>
@@ -200,15 +179,11 @@
                                                             </Grid>
                                                         </Button>
                                                         <Button Grid.Column="1"
+                                                                Style="{StaticResource SoftWorkbenchButtonStyle}"
                                                                 Margin="4,0,2,0"
                                                                 Padding="8,4"
                                                                 VerticalAlignment="Center"
                                                                 Content="Confirm"
-                                                                Background="{DynamicResource SurfaceMutedBrush}"
-                                                                Foreground="{DynamicResource TextPrimaryBrush}"
-                                                                BorderBrush="{DynamicResource AccentBrush}"
-                                                                BorderThickness="1"
-                                                                Cursor="Hand"
                                                                 Visibility="{Binding ShowConfirm, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                                 Command="{Binding DataContext.ThemePicker.ConfirmThemeCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                                 CommandParameter="{Binding}"/>
@@ -219,7 +194,7 @@
                                     </StackPanel>
                                 </ScrollViewer>
 
-                                <Border Grid.Row="2" Margin="3,7,3,3" Padding="7,5" Background="{DynamicResource SurfaceMutedBrush}" CornerRadius="3">
+                                <Border Grid.Row="2" Margin="3,7,3,3" Padding="7,5" Background="{DynamicResource SurfaceMutedBrush}" CornerRadius="{StaticResource InputCornerRadius}">
                                     <Border.Style>
                                         <Style TargetType="Border">
                                             <Setter Property="Visibility" Value="Visible"/>
@@ -252,20 +227,14 @@
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
                                     <Button Content="Refresh"
+                                            Style="{StaticResource SoftWorkbenchButtonStyle}"
                                             Padding="8,4"
-                                            Background="Transparent"
-                                            Foreground="{DynamicResource TextSecondaryBrush}"
-                                            BorderThickness="0"
-                                            Cursor="Hand"
                                             Command="{Binding ThemePicker.RefreshThemesCommand}"/>
                                     <Button Grid.Column="1"
                                             HorizontalAlignment="Right"
                                             Content="Open theme folder"
+                                            Style="{StaticResource SoftWorkbenchButtonStyle}"
                                             Padding="8,4"
-                                            Background="Transparent"
-                                            Foreground="{DynamicResource TextSecondaryBrush}"
-                                            BorderThickness="0"
-                                            Cursor="Hand"
                                             Command="{Binding ThemePicker.OpenThemeFolderCommand}"/>
                                 </Grid>
                             </Grid>
@@ -309,18 +278,22 @@
                            FontSize="11"
                            TextTrimming="CharacterEllipsis"/>
                 <Button Grid.Column="1"
+                        Style="{StaticResource SoftWorkbenchIconButtonStyle}"
                         Width="22"
                         Height="20"
                         Margin="8,0,0,0"
-                        Padding="0"
-                        Content="×"
                         ToolTip="Dismiss warning"
-                        Background="Transparent"
-                        BorderThickness="0"
-                        Foreground="{DynamicResource TextSecondaryBrush}"
-                        Cursor="Hand"
                         Command="{Binding DismissPersistentWarningCommand}"
-                        Visibility="{Binding HasPersistentWarning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                        Visibility="{Binding HasPersistentWarning, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <Path Data="M3,3 L9,9 M9,3 L3,9"
+                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                          StrokeThickness="1.5"
+                          StrokeStartLineCap="Round"
+                          StrokeEndLineCap="Round"
+                          Stretch="Uniform"
+                          Width="9"
+                          Height="9"/>
+                </Button>
             </Grid>
         </Border>
     </Grid>

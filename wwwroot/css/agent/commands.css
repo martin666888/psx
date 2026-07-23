@@ -7,9 +7,9 @@
     max-height: 260px;
     overflow: auto;
     border: 1px solid var(--agent-border-strong);
-    border-radius: var(--agent-radius-md);
+    border-radius: var(--agent-radius-card);
     background: var(--agent-surface-raised);
-    box-shadow: 0 12px 28px color-mix(in srgb, var(--agent-shadow) 34%, transparent);
+    box-shadow: var(--agent-shadow-popover);
     z-index: var(--agent-layer-menu);
 }
 

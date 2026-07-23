@@ -12,7 +12,7 @@
     margin: 12px auto 0 max(0px, var(--agent-reading-column-start));
     padding: 14px 16px;
     border: 1px solid var(--agent-permission-border);
-    border-radius: 8px;
+    border-radius: var(--agent-radius-card);
     background: var(--agent-permission-bg);
     color: var(--agent-text);
 }
@@ -75,28 +75,12 @@
 
 .agent-runtime-actions button {
     min-width: 104px;
-    border: 1px solid var(--agent-border-strong);
-    border-radius: 5px;
     padding: 7px 12px;
-    background: var(--agent-surface-raised);
-    color: var(--agent-text);
-    cursor: pointer;
-    font: inherit;
-}
-
-.agent-runtime-actions button:hover {
-    border-color: var(--agent-accent);
-    background: var(--agent-hover);
 }
 
 .agent-runtime-actions button:focus-visible {
     outline: 2px solid var(--agent-focus-ring);
     outline-offset: 2px;
-}
-
-.agent-runtime-actions button:disabled {
-    cursor: default;
-    opacity: 0.6;
 }
 
 @keyframes agent-runtime-spin {

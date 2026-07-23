@@ -7,7 +7,7 @@
     position: absolute;
     top: calc(var(--agent-toolbar-height) + var(--agent-space-2));
     right: var(--agent-space-4);
-    z-index: 6;
+    z-index: var(--agent-layer-cards);
     display: flex;
     flex-direction: column;
     width: var(--agent-plan-width);

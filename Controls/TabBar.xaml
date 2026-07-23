@@ -13,6 +13,9 @@
                 <DataTrigger Binding="{Binding IsActive}" Value="True">
                     <Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/>
                 </DataTrigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}"/>
+                </Trigger>
             </Style.Triggers>
         </Style>
 
@@ -34,13 +37,25 @@
                                     Background="{TemplateBinding Background}"
                                     BorderBrush="Transparent"
                                     BorderThickness="2"
-                                    CornerRadius="3">
+                                    CornerRadius="{StaticResource ControlCornerRadius}">
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <TextBlock Margin="0,0,7,0"
-                                               Text="{Binding IconGlyph}"
-                                               Foreground="{DynamicResource AccentBrush}"
-                                               FontFamily="Consolas"
-                                               FontSize="11"/>
+                                    <Grid Margin="0,0,7,0" Width="12" Height="12">
+                                        <!-- Terminal: chevron + prompt line (stroked). -->
+                                        <Path x:Name="TerminalIcon"
+                                              Data="M1.5,2 L5.5,6 L1.5,10 M6.5,10.5 L11,10.5"
+                                              Stroke="{DynamicResource AccentBrush}"
+                                              StrokeThickness="1.5"
+                                              StrokeStartLineCap="Round"
+                                              StrokeEndLineCap="Round"
+                                              StrokeLineJoin="Round"
+                                              Stretch="Uniform"/>
+                                        <!-- Agent: four-point sparkle (filled). -->
+                                        <Path x:Name="AgentIcon"
+                                              Data="M6,0.8 L7.3,4.7 L11.2,6 L7.3,7.3 L6,11.2 L4.7,7.3 L0.8,6 L4.7,4.7 Z"
+                                              Fill="{DynamicResource AccentBrush}"
+                                              Stretch="Uniform"
+                                              Visibility="Collapsed"/>
+                                    </Grid>
                                     <TextBlock Text="{Binding Title}"
                                                VerticalAlignment="Center"
                                                Foreground="{TemplateBinding Foreground}"
@@ -58,9 +73,14 @@
                                     Height="2"
                                     Margin="10,0"
                                     VerticalAlignment="Bottom"
+                                    CornerRadius="1"
                                     Background="Transparent"/>
                         </Grid>
                         <ControlTemplate.Triggers>
+                            <DataTrigger Binding="{Binding Kind}" Value="{x:Static models:WorkspaceKind.Agent}">
+                                <Setter TargetName="TerminalIcon" Property="Visibility" Value="Collapsed"/>
+                                <Setter TargetName="AgentIcon" Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
                             <DataTrigger Binding="{Binding IsActive}" Value="True">
                                 <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
                                 <Setter TargetName="ActiveIndicator" Property="Background" Value="{DynamicResource AccentBrush}"/>
@@ -92,7 +112,7 @@
                                 <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}"/>
                             </Trigger>
                             <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="SwitchSurface" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                <Setter TargetName="SwitchSurface" Property="BorderBrush" Value="Transparent"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter Property="Foreground" Value="{DynamicResource TextDimBrush}"/>
@@ -104,7 +124,6 @@
         </Style>
 
         <Style x:Key="TabCloseButtonStyle" TargetType="Button">
-            <Setter Property="Content" Value="&#x2715;"/>
             <Setter Property="FontSize" Value="10"/>
             <Setter Property="Width" Value="20"/>
             <Setter Property="Height" Value="20"/>
@@ -122,8 +141,17 @@
                                 Background="{TemplateBinding Background}"
                                 BorderBrush="Transparent"
                                 BorderThickness="2"
-                                CornerRadius="3">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                CornerRadius="{StaticResource ControlCornerRadius}">
+                            <Path Data="M3,3 L9,9 M9,3 L3,9"
+                                  Stroke="{TemplateBinding Foreground}"
+                                  StrokeThickness="1.5"
+                                  StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round"
+                                  Stretch="Uniform"
+                                  Width="10"
+                                  Height="10"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
@@ -134,7 +162,7 @@
                                 <Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/>
                             </Trigger>
                             <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="CloseSurface" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                <Setter TargetName="CloseSurface" Property="BorderBrush" Value="Transparent"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -190,7 +218,6 @@
         <!-- New tab button -->
         <Button Grid.Column="1"
                 x:Name="NewWorkspaceButton"
-                Content="+"
                 ToolTip="New workspace"
                 AutomationProperties.Name="New workspace"
                 FontSize="16"
@@ -203,12 +230,21 @@
             <Button.Template>
                 <ControlTemplate TargetType="Button">
                     <Border x:Name="NewTabSurface"
-                            Margin="1"
+                            Margin="6"
                             Background="{TemplateBinding Background}"
                             BorderBrush="Transparent"
                             BorderThickness="2"
-                            CornerRadius="3">
-                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            CornerRadius="{StaticResource ControlCornerRadius}">
+                        <Path Data="M10,3 L10,17 M3,10 L17,10"
+                              Stroke="{TemplateBinding Foreground}"
+                              StrokeThickness="1.5"
+                              StrokeStartLineCap="Round"
+                              StrokeEndLineCap="Round"
+                              Stretch="Uniform"
+                              Width="14"
+                              Height="14"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Center"/>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
@@ -219,7 +255,7 @@
                             <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}"/>
                         </Trigger>
                         <Trigger Property="IsKeyboardFocused" Value="True">
-                            <Setter TargetName="NewTabSurface" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                            <Setter TargetName="NewTabSurface" Property="BorderBrush" Value="Transparent"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

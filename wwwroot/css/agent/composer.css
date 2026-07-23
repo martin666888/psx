@@ -22,7 +22,7 @@
 .agent-composer-card {
     /* The Context tooltip intentionally extends above the compact card.
      * Borderless soft-fill surface: the card lifts off the canvas via fill +
-     * shadow, not lines. Focus is a quiet accent glow, never a layout border. */
+     * shadow, not lines. Focus does not add a separate visual treatment. */
     overflow: visible;
     border: 0;
     border-radius: var(--agent-radius-composer);
@@ -32,7 +32,7 @@
 }
 
 .agent-composer-card:focus-within {
-    box-shadow: var(--agent-shadow-composer), 0 0 0 1.5px var(--agent-accent);
+    box-shadow: var(--agent-shadow-composer);
 }
 
 .agent-input-row {
@@ -84,9 +84,9 @@
     gap: var(--agent-space-2);
     min-height: 51px;
     box-sizing: border-box;
-    /* Right/bottom padding = card radius (28px) − send radius (17px), so the
+    /* Right/bottom padding = card radius (24px) − send radius (17px), so the
      * circular send button's centre lands exactly on the corner arc centre. */
-    padding: 6px 11px 11px 14px;
+    padding: 6px 7px 7px 14px;
     /* No divider: the footer shares the card's soft fill. Clip this painted
      * child itself so it still follows the card's lower corners. */
     border-radius: 0 0 var(--agent-radius-composer) var(--agent-radius-composer);
@@ -125,7 +125,7 @@
 
 .agent-context-usage:focus-visible {
     border-radius: 50%;
-    box-shadow: 0 0 0 2px var(--agent-focus-ring);
+    box-shadow: none;
 }
 
 .agent-context-ring {
@@ -184,10 +184,10 @@
     gap: 2px;
     box-sizing: border-box;
     border: 1px solid var(--agent-border-strong);
-    border-radius: var(--agent-radius-md);
+    border-radius: var(--agent-radius-card);
     padding: var(--agent-space-2) var(--agent-space-3);
     background: var(--agent-surface-raised);
-    box-shadow: var(--agent-shadow-context-card);
+    box-shadow: var(--agent-shadow-popover);
     color: var(--agent-text);
     font-size: 12px;
     line-height: 1.35;
@@ -313,7 +313,7 @@
     box-sizing: border-box;
     padding: 3px 6px;
     border: 0;
-    border-radius: var(--agent-radius-md);
+    border-radius: var(--agent-radius-input);
     background: transparent;
     color: var(--agent-text);
     cursor: pointer;
@@ -365,9 +365,9 @@
     overflow-y: auto;
     padding: var(--agent-space-1);
     border: 1px solid var(--agent-border-strong);
-    border-radius: var(--agent-radius-lg);
+    border-radius: var(--agent-radius-card);
     background: var(--agent-surface-raised);
-    box-shadow: var(--agent-shadow-context-card);
+    box-shadow: var(--agent-shadow-popover);
     font-family: var(--agent-font-ui);
 }
 
@@ -377,7 +377,7 @@
     justify-content: space-between;
     gap: var(--agent-space-3);
     padding: 6px 8px;
-    border-radius: var(--agent-radius-md);
+    border-radius: var(--agent-radius-control);
     color: var(--agent-text);
     cursor: pointer;
     font-size: 12px;
@@ -450,23 +450,12 @@
     opacity: 1;
 }
 
-.agent-send-stop {
-    background: var(--agent-stop-btn);
-    border-color: var(--agent-stop-btn);
-    color: var(--agent-send-btn-text);
-}
-
 .agent-send-stop .agent-send-icon-submit {
     display: none;
 }
 
 .agent-send-stop .agent-send-icon-stop {
     display: block;
-}
-
-.agent-send-stop:hover:not(:disabled) {
-    background: var(--agent-stop-btn-hover);
-    border-color: var(--agent-stop-btn-hover);
 }
 
 .agent-attachments-strip,
