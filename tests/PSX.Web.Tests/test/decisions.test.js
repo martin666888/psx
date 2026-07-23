@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { mountAgentApp, createAgentWorkspace, modeTransitionEvent } from './agentHarness.js';
 
 const WS = '11111111-1111-4111-8111-111111111111';
@@ -25,7 +26,7 @@ async function mount() {
   };
 }
 
-test('renders ordinary ACP options in their original order and submits the original optionId', async () => {
+test('renders ordinary ACP options in their original order and retains only the chosen option', async () => {
   const { app, thread, posted } = await mount();
   app.handle({
     type: 'permission_request',
@@ -35,20 +36,62 @@ test('renders ordinary ACP options in their original order and submits the origi
     text: '{"command":"build"}',
     options: [
       { optionId: 'once', name: 'Allow once', kind: 'allow_once' },
+      { optionId: 'always', name: 'Always allow', kind: 'allow_always' },
       { optionId: 'never', name: 'Reject', kind: 'reject_once' }
     ]
   });
 
   const buttons = [...thread.querySelectorAll('.agent-decision-actions button')];
-  assert.deepEqual(buttons.map((button) => button.textContent), ['Allow once', 'Reject']);
-  buttons[0].click();
+  assert.deepEqual(buttons.map((button) => button.textContent), ['Allow once', 'Always allow', 'Reject']);
+  assert.deepEqual(buttons.map((button) => button.dataset.optionId), ['once', 'always', 'never']);
+  buttons[2].click();
   assert.deepEqual(posted.at(-1), {
     type: 'agent_permission_response',
     workspaceId: WS,
     requestId: 'permission-1',
-    value: 'once'
+    value: 'never'
   });
   assert.equal(buttons.every((button) => button.disabled), true);
+  const actions = thread.querySelector('.agent-decision-actions');
+  const visibleButtons = [...actions.querySelectorAll('button')].filter((button) => !button.hidden);
+  assert.deepEqual(visibleButtons.map((button) => button.textContent), ['Reject']);
+  assert.equal(actions.firstElementChild, buttons[2]);
+  assert.equal(buttons[2].classList.contains('agent-decision-option-selected'), true);
+  assert.equal(buttons[2].classList.contains('agent-btn-reject'), false);
+  assert.equal(thread.querySelector('.agent-decision-status'), null);
+  assert.equal(thread.querySelector('.agent-decision-header-subtitle').textContent, 'Selection recorded.');
+});
+
+test('authoritative resolution can select and move a later ordinary option', async () => {
+  const { app, thread } = await mount();
+  app.handle({
+    type: 'question_request',
+    workspaceId: WS,
+    requestId: 'question-1',
+    title: 'Choose one',
+    options: [
+      { optionId: 'first', name: 'First' },
+      { optionId: 'second', name: 'Second' },
+      { optionId: 'third', name: 'Third' }
+    ]
+  });
+  app.handle({
+    type: 'permission_resolved',
+    workspaceId: WS,
+    requestId: 'question-1',
+    optionId: 'second',
+    optionName: 'Second'
+  });
+
+  const actions = thread.querySelector('.agent-decision-actions');
+  const buttons = [...actions.querySelectorAll('.agent-decision-option')];
+  assert.equal(actions.firstElementChild.textContent, 'Second');
+  assert.deepEqual(
+    buttons.filter((button) => !button.hidden).map((button) => button.textContent),
+    ['Second']
+  );
+  assert.equal(actions.firstElementChild.disabled, true);
+  assert.equal(actions.firstElementChild.getAttribute('aria-pressed'), 'true');
 });
 
 test('does not invent Allow or Reject when ACP supplies an empty options array', async () => {
@@ -57,6 +100,31 @@ test('does not invent Allow or Reject when ACP supplies an empty options array',
 
   assert.equal(thread.querySelectorAll('.agent-decision-actions button').length, 0);
   assert.match(thread.querySelector('.agent-decision-options-error').textContent, /did not provide/);
+});
+
+test('keeps ordinary cancellation status inside the padded decision body', async () => {
+  const { app, thread } = await mount();
+  app.handle({ type: 'permission_request', workspaceId: WS, requestId: 'cancel-ordinary' });
+  app.handle({
+    type: 'permission_cancelled',
+    workspaceId: WS,
+    requestId: 'cancel-ordinary',
+    text: 'Request expired.'
+  });
+
+  const card = thread.querySelector('[data-request-id="cancel-ordinary"]');
+  const status = card.querySelector('.agent-decision-status');
+  assert.equal(status.parentElement.classList.contains('agent-decision-body'), true);
+  assert.equal(status.textContent, 'Request expired.');
+});
+
+test('ordinary decision options use capsule geometry and a neutral completed state', () => {
+  const css = readFileSync(new URL('../../../wwwroot/css/agent/decisions.css', import.meta.url), 'utf8');
+  assert.match(css, /\.agent-decision-option\s*\{[^}]*border-radius:\s*999px;/s);
+  assert.match(
+    css,
+    /\.agent-decision-option\.agent-decision-option-selected:disabled[^}]*background:\s*var\(--agent-surface-muted\)/s
+  );
 });
 
 test('moves an active mode transition into the composer and submits the exact selection', async () => {

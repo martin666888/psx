@@ -15,7 +15,8 @@
 //   wwwroot/js/agent/elicitation.js    (_appendElicitation, _createElicitationField,
 //                                        _createElicitationOptionButton)
 //   wwwroot/js/agent/modeTransition.js (_appendModeTransition, prompt lifecycle)
-// so the produced DOM is byte-identical to the pre-refactor engine.
+// so the produced DOM remains compatible with the pre-refactor engine while
+// allowing focused interaction refinements inside this domain owner.
 //
 // Decision cards are placed into the timeline thread through the DecisionHost
 // seam (appendToTimeline / scrollTimelineToBottom) so the thread keeps a single
@@ -159,24 +160,61 @@ export class DecisionController {
             return null;
         return (Array.from(thread.querySelectorAll('[data-request-id]')).find((element) => element.dataset.requestId === requestId) || null);
     }
-    /** Faithful port of _disableDecisionCard. */
+    markDecisionDisabled(card) {
+        if (card.dataset.decisionState === 'disabled')
+            return;
+        card.dataset.decisionState = 'disabled';
+        card.classList.add('agent-decision-disabled');
+        card.querySelectorAll('button, input, textarea, select').forEach((control) => {
+            control.disabled = true;
+        });
+    }
+    /** Disable a decision that ended without a selected option. */
     disableDecisionCard(card, text) {
         if (!card)
             return;
-        if (card.dataset.decisionState !== 'disabled') {
-            card.dataset.decisionState = 'disabled';
-            card.classList.add('agent-decision-disabled');
-            card.querySelectorAll('button, input, textarea, select').forEach((control) => {
-                control.disabled = true;
-            });
-        }
+        this.markDecisionDisabled(card);
         let status = card.querySelector('.agent-decision-status');
         if (!status) {
             status = document.createElement('div');
             status.className = 'agent-decision-status';
-            card.appendChild(status);
+            const statusHost = card.querySelector('.agent-decision-body') || card;
+            statusHost.appendChild(status);
         }
         status.textContent = text || 'Request closed.';
+    }
+    /**
+     * Finish an ordinary permission/question card with one compact audit affordance:
+     * retain the selected option, move it to the leading position, and neutralize
+     * its semantic action colour now that it is no longer actionable.
+     */
+    completeDecisionCard(card, selectedOptionId, selectedOptionName) {
+        this.markDecisionDisabled(card);
+        const resolvedOptionId = selectedOptionId || card.dataset.selectedOptionId || '';
+        const resolvedOptionName = selectedOptionName || card.dataset.selectedOptionName || '';
+        if (resolvedOptionId)
+            card.dataset.selectedOptionId = resolvedOptionId;
+        if (resolvedOptionName)
+            card.dataset.selectedOptionName = resolvedOptionName;
+        const buttons = Array.from(card.querySelectorAll('.agent-decision-option'));
+        let selectedButton = buttons.find((button) => resolvedOptionId && button.dataset.optionId === resolvedOptionId) || null;
+        if (!selectedButton && resolvedOptionName) {
+            selectedButton = buttons.find((button) => button.textContent === resolvedOptionName) || null;
+        }
+        if (selectedButton) {
+            buttons.forEach((button) => {
+                const selected = button === selectedButton;
+                button.hidden = !selected;
+                button.classList.toggle('agent-decision-option-selected', selected);
+                button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+            });
+            selectedButton.classList.remove('agent-btn-allow', 'agent-btn-always-allow', 'agent-btn-reject');
+            selectedButton.parentElement?.prepend(selectedButton);
+        }
+        card.querySelector('.agent-decision-status')?.remove();
+        const subtitle = card.querySelector('.agent-decision-header-subtitle');
+        if (subtitle)
+            subtitle.textContent = 'Selection recorded.';
     }
     // --- Permission / question cards -----------------------------------------
     /** Faithful port of _appendDecision. */
@@ -252,8 +290,11 @@ export class DecisionController {
                 else {
                     this.bridge()?.sendAgentQuestionResponse(requestId, optionId);
                 }
-                this.disableDecisionCard(details, 'Response sent.');
+                this.completeDecisionCard(details, optionId, optionName);
             });
+            btn.classList.add('agent-decision-option');
+            btn.dataset.optionId = optionId;
+            btn.setAttribute('aria-pressed', 'false');
             const semanticClass = decisionOptionClass(option);
             if (semanticClass)
                 btn.classList.add(semanticClass);
@@ -275,16 +316,7 @@ export class DecisionController {
             return;
         }
         if (!card.classList.contains('agent-mode-transition')) {
-            const optionName = asString(event.optionName);
-            const text = optionName ? 'Selected: ' + optionName : 'Response sent.';
-            if (card.dataset.decisionState === 'disabled') {
-                const status = card.querySelector('.agent-decision-status');
-                if (status)
-                    status.textContent = text;
-            }
-            else {
-                this.disableDecisionCard(card, text);
-            }
+            this.completeDecisionCard(card, asString(event.optionId), asString(event.optionName));
             return;
         }
         card.dataset.decisionState = 'disabled';

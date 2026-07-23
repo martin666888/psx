@@ -15,7 +15,8 @@
 //   wwwroot/js/agent/elicitation.js    (_appendElicitation, _createElicitationField,
 //                                        _createElicitationOptionButton)
 //   wwwroot/js/agent/modeTransition.js (_appendModeTransition, prompt lifecycle)
-// so the produced DOM is byte-identical to the pre-refactor engine.
+// so the produced DOM remains compatible with the pre-refactor engine while
+// allowing focused interaction refinements inside this domain owner.
 //
 // Decision cards are placed into the timeline thread through the DecisionHost
 // seam (appendToTimeline / scrollTimelineToBottom) so the thread keeps a single
@@ -215,24 +216,69 @@ export class DecisionController implements FeatureController {
     );
   }
 
-  /** Faithful port of _disableDecisionCard. */
+  private markDecisionDisabled(card: HTMLElement): void {
+    if (card.dataset.decisionState === 'disabled') return;
+
+    card.dataset.decisionState = 'disabled';
+    card.classList.add('agent-decision-disabled');
+    card.querySelectorAll<HTMLInputElement>('button, input, textarea, select').forEach((control) => {
+      control.disabled = true;
+    });
+  }
+
+  /** Disable a decision that ended without a selected option. */
   private disableDecisionCard(card: HTMLElement | null, text: string): void {
     if (!card) return;
-    if (card.dataset.decisionState !== 'disabled') {
-      card.dataset.decisionState = 'disabled';
-      card.classList.add('agent-decision-disabled');
-      card.querySelectorAll<HTMLInputElement>('button, input, textarea, select').forEach((control) => {
-        control.disabled = true;
-      });
-    }
+    this.markDecisionDisabled(card);
 
     let status = card.querySelector<HTMLElement>('.agent-decision-status');
     if (!status) {
       status = document.createElement('div');
       status.className = 'agent-decision-status';
-      card.appendChild(status);
+      const statusHost = card.querySelector<HTMLElement>('.agent-decision-body') || card;
+      statusHost.appendChild(status);
     }
     status.textContent = text || 'Request closed.';
+  }
+
+  /**
+   * Finish an ordinary permission/question card with one compact audit affordance:
+   * retain the selected option, move it to the leading position, and neutralize
+   * its semantic action colour now that it is no longer actionable.
+   */
+  private completeDecisionCard(
+    card: HTMLElement,
+    selectedOptionId: string,
+    selectedOptionName: string
+  ): void {
+    this.markDecisionDisabled(card);
+
+    const resolvedOptionId = selectedOptionId || card.dataset.selectedOptionId || '';
+    const resolvedOptionName = selectedOptionName || card.dataset.selectedOptionName || '';
+    if (resolvedOptionId) card.dataset.selectedOptionId = resolvedOptionId;
+    if (resolvedOptionName) card.dataset.selectedOptionName = resolvedOptionName;
+
+    const buttons = Array.from(card.querySelectorAll<HTMLButtonElement>('.agent-decision-option'));
+    let selectedButton: HTMLButtonElement | null =
+      buttons.find((button) => resolvedOptionId && button.dataset.optionId === resolvedOptionId) || null;
+    if (!selectedButton && resolvedOptionName) {
+      selectedButton = buttons.find((button) => button.textContent === resolvedOptionName) || null;
+    }
+
+    if (selectedButton) {
+      buttons.forEach((button) => {
+        const selected = button === selectedButton;
+        button.hidden = !selected;
+        button.classList.toggle('agent-decision-option-selected', selected);
+        button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+      });
+      selectedButton.classList.remove('agent-btn-allow', 'agent-btn-always-allow', 'agent-btn-reject');
+      selectedButton.parentElement?.prepend(selectedButton);
+    }
+
+    card.querySelector<HTMLElement>('.agent-decision-status')?.remove();
+    const subtitle = card.querySelector<HTMLElement>('.agent-decision-header-subtitle');
+    if (subtitle) subtitle.textContent = 'Selection recorded.';
   }
 
   // --- Permission / question cards -----------------------------------------
@@ -327,9 +373,12 @@ export class DecisionController implements FeatureController {
           this.bridge()?.sendAgentQuestionResponse(requestId, optionId);
         }
 
-        this.disableDecisionCard(details, 'Response sent.');
+        this.completeDecisionCard(details, optionId, optionName);
       });
 
+      btn.classList.add('agent-decision-option');
+      btn.dataset.optionId = optionId;
+      btn.setAttribute('aria-pressed', 'false');
       const semanticClass = decisionOptionClass(option);
       if (semanticClass) btn.classList.add(semanticClass);
 
@@ -355,14 +404,7 @@ export class DecisionController implements FeatureController {
     }
 
     if (!card.classList.contains('agent-mode-transition')) {
-      const optionName = asString(event.optionName);
-      const text = optionName ? 'Selected: ' + optionName : 'Response sent.';
-      if (card.dataset.decisionState === 'disabled') {
-        const status = card.querySelector<HTMLElement>('.agent-decision-status');
-        if (status) status.textContent = text;
-      } else {
-        this.disableDecisionCard(card, text);
-      }
+      this.completeDecisionCard(card, asString(event.optionId), asString(event.optionName));
       return;
     }
 
