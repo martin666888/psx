@@ -59,6 +59,30 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 
+    /// <summary>
+    /// A standard ACP authentication method as advertised by the agent in the
+    /// <c>initialize</c> result's <c>authMethods</c> array. Parsed generically
+    /// (type/args/env are read from the payload) — no provider-name branching.
+    /// </summary>
+    private sealed class AcpAuthMethod
+    {
+        public string Id { get; init; } = "";
+        public string Name { get; init; } = "";
+        public string Description { get; init; } = "";
+    }
+
+    /// <summary>
+    /// Raised when an ACP request fails with the authentication-required code
+    /// (<see cref="AcpJsonRpcException.AuthRequiredCode"/>) and PSX could not
+    /// silently re-authenticate. Callers must treat this as a recoverable
+    /// <c>auth_required</c> state (the user can log in and retry), never as a
+    /// permanent <c>transcript_only</c> fallback.
+    /// </summary>
+    private sealed class AcpAuthRequiredException : Exception
+    {
+        public AcpAuthRequiredException(string message) : base(message) { }
+    }
+
     private sealed class AcpTerminalProcess
     {
         public Process Process { get; init; } = null!;
@@ -137,6 +161,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     private string _runtimeInstallMessage = "Agent runtime is not installed.";
     private bool _restoreBlockedByRuntime;
     private bool _disposed;
+    private IReadOnlyList<AcpAuthMethod> _authMethods = Array.Empty<AcpAuthMethod>();
 
     internal AcpAgentSessionService(
         Guid workspaceId,
@@ -520,6 +545,14 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
             throw;
+        }
+        catch (AcpAuthRequiredException ex)
+        {
+            // Login required to restore this session. Keep it recoverable: the
+            // user can log in and retry, so do NOT fall back to transcript_only.
+            _restoreBlockedByRuntime = false;
+            _status = "auth_required";
+            await SendResumeFailedAsync(ex.Message).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -1075,6 +1108,197 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         await PublishStateAsync().ConfigureAwait(false);
     }
 
+    // ---- Standard ACP terminal-auth login ----
+
+    private static IReadOnlyList<AcpAuthMethod> ParseAuthMethods(JsonElement initResult)
+    {
+        if (initResult.ValueKind != JsonValueKind.Object
+            || !initResult.TryGetProperty("authMethods", out var array)
+            || array.ValueKind != JsonValueKind.Array)
+        {
+            return Array.Empty<AcpAuthMethod>();
+        }
+
+        var methods = new List<AcpAuthMethod>();
+        foreach (var method in array.EnumerateArray())
+        {
+            if (method.ValueKind != JsonValueKind.Object)
+                continue;
+            var id = GetString(method, "id");
+            if (string.IsNullOrWhiteSpace(id))
+                continue;
+            methods.Add(new AcpAuthMethod
+            {
+                Id = id,
+                Name = GetString(method, "name") ?? id,
+                Description = GetString(method, "description") ?? ""
+            });
+        }
+
+        return methods;
+    }
+
+    /// <summary>
+    /// Runs an ACP request that may fail with the auth-required code, driving
+    /// the standard terminal-auth recovery on the first failure and retrying
+    /// exactly once. If authentication still cannot be established, throws
+    /// <see cref="AcpAuthRequiredException"/> so callers stay in a recoverable
+    /// <c>auth_required</c> state instead of degrading to transcript-only.
+    /// The single-attempt gate prevents an infinite login/retry loop.
+    /// </summary>
+    private async Task<JsonElement> SendWithAuthRetryAsync(
+        Func<CancellationToken, Task<JsonElement>> send,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                return await send(cancellationToken).ConfigureAwait(false);
+            }
+            catch (AcpJsonRpcException ex) when (ex.IsAuthRequired)
+            {
+                if (attempt == 0
+                    && await RecoverFromAuthRequiredAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    continue;
+                }
+
+                throw new AcpAuthRequiredException(BuildLoginRequiredMessage());
+            }
+        }
+    }
+
+    /// <summary>
+    /// Enters the recoverable <c>auth_required</c> state and attempts to
+    /// re-authenticate. Returns true when credentials are now valid and the
+    /// caller should retry the original request; false when the user still
+    /// needs to complete an interactive login (a login terminal is opened).
+    /// </summary>
+    private async Task<bool> RecoverFromAuthRequiredAsync(CancellationToken cancellationToken)
+    {
+        _status = "auth_required";
+        await PublishStateAsync().ConfigureAwait(false);
+
+        // The user may already have valid credentials in ~/.kimi-code (e.g. a
+        // prior login). authenticate() only validates the token; if it passes
+        // we can resume immediately with no terminal.
+        if (await TryAuthenticateAsync(cancellationToken).ConfigureAwait(false))
+        {
+            _status = _isRunning ? "running" : "ready";
+            await PublishStateAsync().ConfigureAwait(false);
+            return true;
+        }
+
+        // No valid token yet — open an interactive login terminal running the
+        // agent's `acp --login` and leave the workspace in auth_required so the
+        // user can retry after finishing login.
+        await LaunchLoginTerminalAsync().ConfigureAwait(false);
+        return false;
+    }
+
+    private async Task<bool> TryAuthenticateAsync(CancellationToken cancellationToken)
+    {
+        var transport = _transport;
+        if (transport is not { IsRunning: true })
+            return false;
+
+        var methodId = SelectAuthMethodId();
+        if (methodId == null)
+            return false;
+
+        try
+        {
+            await transport.SendRequestAsync(
+                "authenticate",
+                new { methodId },
+                TimeSpan.FromSeconds(30),
+                GetEffectiveCancellationToken(cancellationToken)).ConfigureAwait(false);
+            return true;
+        }
+        catch (AcpJsonRpcException)
+        {
+            // -32000 (no token) or any other auth failure: cannot authenticate
+            // silently; the caller falls back to the interactive login flow.
+            return false;
+        }
+    }
+
+    private string? SelectAuthMethodId()
+    {
+        if (_authMethods.Count == 0)
+            return "login"; // ACP terminal-auth default method id.
+
+        var login = _authMethods.FirstOrDefault(
+            method => string.Equals(method.Id, "login", StringComparison.OrdinalIgnoreCase));
+        return (login ?? _authMethods[0]).Id;
+    }
+
+    private async Task LaunchLoginTerminalAsync()
+    {
+        var profile = CreateLoginTerminalProfile();
+        if (profile == null)
+        {
+            await _bridgeService.SendEventAsync(new
+            {
+                type = "command_result",
+                text = $"{_provider.Descriptor.DisplayName} 需要登录，但未提供可用的登录入口。"
+            }).ConfigureAwait(false);
+            return;
+        }
+
+        await _tabManagementService.CreateTabAsync(profile).ConfigureAwait(false);
+        await _terminalBridgeService.SetViewModeAsync("terminal").ConfigureAwait(false);
+        await _bridgeService.SendEventAsync(new
+        {
+            type = "command_result",
+            text = BuildLoginRequiredMessage()
+        }).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Builds a login terminal profile from the runtime's ACP launch spec by
+    /// appending <c>--login</c>. Provider-agnostic: whatever the runtime uses
+    /// to launch ACP is reused, so no Kimi-specific paths are hard-coded here.
+    /// </summary>
+    private ShellProfile? CreateLoginTerminalProfile()
+    {
+        AcpProcessSpec spec;
+        try
+        {
+            spec = _runtime.CreateProcessSpec(_workingDirectory);
+        }
+        catch
+        {
+            return null;
+        }
+
+        var args = spec.Arguments.ToList();
+        if (!args.Contains("--login", StringComparer.OrdinalIgnoreCase))
+            args.Add("--login");
+
+        var command = new StringBuilder();
+        command.Append("& ").Append(QuoteForPowerShell(spec.FileName));
+        foreach (var arg in args)
+            command.Append(' ').Append(QuoteForPowerShell(arg));
+
+        var escapedCwd = _workingDirectory.Replace("'", "''");
+        return new ShellProfile
+        {
+            Id = $"{_provider.Descriptor.Key}-login",
+            Name = $"{_provider.Descriptor.DisplayName} 登录",
+            Command = "powershell.exe",
+            Arguments = $"-NoExit -Command Set-Location -LiteralPath '{escapedCwd}'; {command}",
+            StartingDirectory = _workingDirectory
+        };
+    }
+
+    private static string QuoteForPowerShell(string value)
+        => "'" + value.Replace("'", "''") + "'";
+
+    private string BuildLoginRequiredMessage()
+        => $"{_provider.Descriptor.DisplayName} 需要登录后才能继续：已打开登录终端，请在其中完成登录（设备码或 API key），完成后返回并重新发送消息即可继续。";
+
     private async Task StartAcpRunAsync(string prompt, IReadOnlyList<string>? attachmentIds = null)
     {
         var requestedAttachmentIds = attachmentIds?
@@ -1115,6 +1339,16 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             try
             {
                 await RestoreSessionAfterTransportResetAsync().ConfigureAwait(false);
+            }
+            catch (AcpAuthRequiredException)
+            {
+                // Restore surfaced a recoverable authRequired: a login terminal
+                // is already open and the workspace is in auth_required. Do not
+                // degrade to transcript_only; let the user finish login and
+                // re-send the prompt.
+                await SendRunFailedAsync(BuildLoginRequiredMessage()).ConfigureAwait(false);
+                await PublishStateAsync().ConfigureAwait(false);
+                return;
             }
             catch (Exception ex)
             {
@@ -1167,18 +1401,6 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             runId = _currentRunId;
         }
 
-        AddMessage("user", prompt, attachments: attachments);
-        await _bridgeService.SendEventAsync(new
-        {
-            type = "user_message",
-            text = prompt,
-            title = _currentThread.Title,
-            runId,
-            attachments = attachments.Select(ToAttachmentPayload).ToArray()
-        }).ConfigureAwait(false);
-        await _bridgeService.SendEventAsync(new { type = "thinking_started" }).ConfigureAwait(false);
-        await PublishStateAsync().ConfigureAwait(false);
-
         var runStart = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var runTask = Task.Run(async () =>
         {
@@ -1189,6 +1411,11 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             try
             {
                 token.ThrowIfCancellationRequested();
+                // Establish (and if necessary authenticate) the ACP session
+                // BEFORE committing the user message to history. When login is
+                // required and the user cancels it, EnsureAcpSessionAsync throws
+                // and we never write a half-sent message — the composer/pending
+                // prompt stays intact instead of leaving stale unsent history.
                 await EnsureAcpSessionAsync(createIfMissing: true, requestCts.Token).ConfigureAwait(false);
                 token.ThrowIfCancellationRequested();
 
@@ -1204,15 +1431,34 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                     }
                 }
 
+                // Session is ready and authenticated — now it is safe to record
+                // the user message and begin the assistant turn.
+                AddMessage("user", prompt, attachments: attachments);
+                await _bridgeService.SendEventAsync(new
+                {
+                    type = "user_message",
+                    text = prompt,
+                    title = _currentThread.Title,
+                    runId,
+                    attachments = attachments.Select(ToAttachmentPayload).ToArray()
+                }).ConfigureAwait(false);
+                await _bridgeService.SendEventAsync(new { type = "thinking_started" }).ConfigureAwait(false);
+                await PublishStateAsync().ConfigureAwait(false);
+
                 var promptBlocks = BuildPromptBlocks(prompt, attachments);
+                var capturedTransport = usedTransport;
 
                 // Use a 10-minute timeout so a stuck adapter doesn't hang forever.
-                await usedTransport.SendRequestAsync("session/prompt", new
-                {
-                    sessionId = _acpSessionId,
-                    messageId = Guid.NewGuid().ToString(),
-                    prompt = promptBlocks
-                }, TimeSpan.FromMinutes(10), requestCts.Token).ConfigureAwait(false);
+                // Wrapped so a mid-conversation authRequired drives the standard
+                // login recovery and retries once instead of failing hard.
+                await SendWithAuthRetryAsync(
+                    innerToken => capturedTransport.SendRequestAsync("session/prompt", new
+                    {
+                        sessionId = _acpSessionId,
+                        messageId = Guid.NewGuid().ToString(),
+                        prompt = promptBlocks
+                    }, TimeSpan.FromMinutes(10), innerToken),
+                    requestCts.Token).ConfigureAwait(false);
 
                 token.ThrowIfCancellationRequested();
                 await FinishAssistantMessageAsync().ConfigureAwait(false);
@@ -1228,6 +1474,22 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 SaveCurrentThread();
                 if (!_disposed)
                     await _bridgeService.SendEventAsync(new { type = "thinking_finished" }).ConfigureAwait(false);
+            }
+            catch (AcpAuthRequiredException ex)
+            {
+                // Recoverable auth failure: stay in auth_required so the user
+                // can finish the interactive login and resend. Never downgrade
+                // to "error" or "transcript_only" here.
+                lock (_runLock)
+                {
+                    if (_currentRunId == runId)
+                        _status = "auth_required";
+                }
+                if (!_disposed)
+                {
+                    await _bridgeService.SendEventAsync(new { type = "thinking_finished" }).ConfigureAwait(false);
+                    await SendRunFailedAsync(ex.Message, runId).ConfigureAwait(false);
+                }
             }
             catch (TimeoutException ex)
             {
@@ -1326,11 +1588,13 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         if (!createIfMissing)
             return;
 
-        var result = await _transport!.SendRequestAsync(
-            "session/new",
-            _provider.CreateNewSessionParameters(_workingDirectory),
-            TimeSpan.FromSeconds(30),
-            GetEffectiveCancellationToken(cancellationToken)).ConfigureAwait(false);
+        var result = await SendWithAuthRetryAsync(
+            token => _transport!.SendRequestAsync(
+                "session/new",
+                _provider.CreateNewSessionParameters(_workingDirectory),
+                TimeSpan.FromSeconds(30),
+                GetEffectiveCancellationToken(token)),
+            cancellationToken).ConfigureAwait(false);
 
         _acpSessionId = GetString(result, "sessionId");
         _sessionIdForTransportRecovery = null;
@@ -1362,11 +1626,13 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
         try
         {
-            var loadResult = await _transport!.SendRequestAsync(
-                "session/load",
-                _provider.CreateLoadSessionParameters(sessionId, _workingDirectory),
-                TimeSpan.FromSeconds(45),
-                GetEffectiveCancellationToken(cancellationToken)).ConfigureAwait(false);
+            var loadResult = await SendWithAuthRetryAsync(
+                token => _transport!.SendRequestAsync(
+                    "session/load",
+                    _provider.CreateLoadSessionParameters(sessionId, _workingDirectory),
+                    TimeSpan.FromSeconds(45),
+                    GetEffectiveCancellationToken(token)),
+                cancellationToken).ConfigureAwait(false);
 
             _acpSessionId = sessionId;
             _sessionIdForTransportRecovery = null;
@@ -1479,6 +1745,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
                 _adapterVersion = ReadNestedString(initResult, "agentInfo", "version");
                 _supportsImage = ReadNestedBool(initResult, "agentCapabilities", "promptCapabilities", "image") ?? false;
+                _authMethods = ParseAuthMethods(initResult);
                 _currentThread.AdapterVersion = _adapterVersion;
                 SaveCurrentThread();
                 await PublishStateAsync().ConfigureAwait(false);
@@ -1522,6 +1789,16 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             _sessionIdForTransportRecovery = null;
             _transportRecoveryRequired = false;
             _status = _isRunning ? "running" : "restored";
+        }
+        catch (AcpAuthRequiredException)
+        {
+            // session/load hit authRequired: this is recoverable. Keep the
+            // transport (it is still valid) and stay in auth_required so the
+            // user can finish the interactive login and retry — never degrade
+            // to a permanent transcript_only fallback.
+            _status = "auth_required";
+            await PublishStateAsync().ConfigureAwait(false);
+            throw;
         }
         catch (Exception ex)
         {

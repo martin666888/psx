@@ -8,12 +8,12 @@ namespace PSX.Tests.Support;
 
 internal sealed class FakeAcpSessionFixture : IDisposable
 {
-    public FakeAcpSessionFixture(string scope)
+    public FakeAcpSessionFixture(string scope, string? scenario = null)
     {
         Workspace = TestWorkspace.Create(scope);
         Store = new AgentThreadStore(Path.Combine(Workspace.Path, "store"));
         Bridge = new RecordingAgentBridgeService();
-        Runtime = new FakeAcpRuntime(Workspace);
+        Runtime = new FakeAcpRuntime(Workspace, scenario: scenario);
         Provider = new FakeAcpProvider(Runtime);
         Registry = new FakeAgentProviderRegistry(Provider);
         var thread = Store.CreateThread(Workspace.Path);
@@ -139,7 +139,7 @@ internal sealed class RecordingAgentBridgeService : IAgentBridgeService
         AttachmentUploadReceived?.Invoke(this, args);
 }
 
-internal sealed class FakeAcpRuntime(TestWorkspace workspace, bool initiallyReady = true) : IAcpAgentRuntime
+internal sealed class FakeAcpRuntime(TestWorkspace workspace, bool initiallyReady = true, string? scenario = null) : IAcpAgentRuntime
 {
     private bool _ready = initiallyReady;
 
@@ -168,7 +168,7 @@ internal sealed class FakeAcpRuntime(TestWorkspace workspace, bool initiallyRead
 
     public Task PrepareForStartupAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
-    public AcpProcessSpec CreateProcessSpec(string workingDirectory) => workspace.CreateTestAgentSpec();
+    public AcpProcessSpec CreateProcessSpec(string workingDirectory) => workspace.CreateTestAgentSpec(scenario);
 
     public void Dispose() { }
 

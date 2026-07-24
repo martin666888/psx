@@ -193,6 +193,35 @@ test('history model: filter options come from the catalog plus unknown keys seen
   ]);
 });
 
+test('history model: two registered providers (Claude + Kimi) each filter to their own threads', () => {
+  const providers = [
+    { key: 'acp-claude', displayName: 'Claude Code', assistantName: 'Claude', isDefault: true },
+    { key: 'acp-kimi', displayName: 'Kimi Code', assistantName: 'Kimi', isDefault: false }
+  ];
+  const groups = buildHistoryGroups([
+    thread({ threadId: 'c1', title: 'Claude chat', provider: 'acp-claude' }),
+    thread({ threadId: 'k1', title: 'Kimi chat', cwd: 'D:/kimi', provider: 'acp-kimi' })
+  ], providers);
+
+  // Both registered providers surface as catalog-labelled filter options.
+  assert.deepEqual(providerFilterOptions(
+    [thread({ provider: 'acp-claude' }), thread({ provider: 'acp-kimi' })],
+    providers
+  ), [
+    { value: 'acp-claude', label: 'Claude Code' },
+    { value: 'acp-kimi', label: 'Kimi Code' }
+  ]);
+
+  const flat = groups.flatMap((g) => g.threads);
+  assert.equal(flat.find((t) => t.threadId === 'c1').providerDisplay, 'Claude Code');
+  assert.equal(flat.find((t) => t.threadId === 'k1').providerDisplay, 'Kimi Code');
+
+  const ids = (query, providerKey) => filterHistoryGroups(groups, query, providerKey).flatMap((g) => g.threads.map((t) => t.threadId));
+  assert.deepEqual(ids('', 'acp-kimi'), ['k1'], 'filtering by Kimi keeps only Kimi threads');
+  assert.deepEqual(ids('', 'acp-claude'), ['c1'], 'filtering by Claude keeps only Claude threads');
+  assert.deepEqual(ids('kimi code', ''), ['k1'], 'search matches the Kimi provider display name');
+});
+
 // --- dock shell ------------------------------------------------------------------
 
 test('dock: a newly created workspace toolbar toggle inherits the dock open state', async () => {

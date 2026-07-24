@@ -233,7 +233,10 @@ public sealed class AcpJsonRpcTransport : IDisposable
             {
                 if (root.TryGetProperty("error", out var error))
                 {
-                    pending.TrySetException(new InvalidOperationException(FormatError(error)));
+                    // Preserve the JSON-RPC code (e.g. -32000 authRequired) so
+                    // the session layer can branch on it instead of treating
+                    // every failure as an opaque InvalidOperationException.
+                    pending.TrySetException(AcpJsonRpcException.FromErrorElement(error));
                 }
                 else if (root.TryGetProperty("result", out var result))
                 {
@@ -306,18 +309,6 @@ public sealed class AcpJsonRpcTransport : IDisposable
                 message
             }
         });
-    }
-
-    private static string FormatError(JsonElement error)
-    {
-        if (error.ValueKind == JsonValueKind.Object
-            && error.TryGetProperty("message", out var message)
-            && message.ValueKind == JsonValueKind.String)
-        {
-            return message.GetString() ?? error.GetRawText();
-        }
-
-        return error.GetRawText();
     }
 
     private void CompletePendingWithError(Exception exception)

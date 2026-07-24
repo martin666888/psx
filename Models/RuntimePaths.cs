@@ -83,4 +83,14 @@ public sealed record RuntimePaths
     /// Directory containing the PSX executable (AppContext.BaseDirectory).
     /// </summary>
     public required string InstallDirectory { get; init; }
+
+    /// <summary>
+    /// Root of the bundled Kimi Code CLI install shipped inside the release zip
+    /// at <c>{InstallDir}/tools/kimi/</c>. Unlike the ACP adapter directories,
+    /// this is pre-installed at build time (Kimi Code is MIT-licensed) and is
+    /// never populated by a runtime <c>npm ci</c>. Contains
+    /// <c>package-lock.json</c> and <c>node_modules/@moonshot-ai/kimi-code/</c>.
+    /// The directory is not guaranteed to exist in a development build.
+    /// </summary>
+    public required string BundledKimiDirectory { get; init; }
 }

@@ -18,6 +18,31 @@ internal sealed class FakeAcpAgent
     private bool _clientSupportsBooleanConfigOptions;
     private int _nextClientRequestId = 7000;
 
+    // Standard ACP terminal-auth simulation. Scenario format is
+    // "auth:<method>:<mode>" where method is new|load|prompt and mode is
+    // recover|blocked. "recover" fails the gated method with -32000 until an
+    // authenticate call succeeds; "blocked" fails both the gated method and
+    // authenticate forever (the client must stay in auth_required).
+    private readonly string _authGate;
+    private readonly string _authMode;
+    private bool _authenticated;
+
+    public FakeAcpAgent()
+    {
+        var scenario = Environment.GetEnvironmentVariable("PSX_TEST_AGENT_SCENARIO") ?? "default";
+        var parts = scenario.Split(':');
+        if (parts.Length == 3 && parts[0] == "auth")
+        {
+            _authGate = parts[1];
+            _authMode = parts[2];
+        }
+        else
+        {
+            _authGate = "";
+            _authMode = "";
+        }
+    }
+
     public async Task RunAsync()
     {
         while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } line)
@@ -101,17 +126,44 @@ internal sealed class FakeAcpAgent
                 {
                     protocolVersion = 1,
                     agentInfo = new { name = "PSX Fake ACP Agent", version = "1.0-test" },
-                    agentCapabilities = new { promptCapabilities = new { image = true } }
+                    agentCapabilities = new { promptCapabilities = new { image = true } },
+                    authMethods = _authGate.Length > 0
+                        ? new object[] { new { id = "login", name = "Log in", description = "Terminal auth" } }
+                        : Array.Empty<object>()
                 });
                 break;
+            case "authenticate":
+                if (_authMode == "blocked")
+                    WriteError(id, -32000, "Authentication required");
+                else
+                {
+                    _authenticated = true;
+                    WriteResult(id, new { });
+                }
+                break;
             case "session/new":
+                if (ShouldFailAuth("session/new"))
+                {
+                    WriteError(id, -32000, "Authentication required");
+                    break;
+                }
                 WriteResult(id, SessionResult("fake-session-new"));
                 break;
             case "session/load":
+                if (ShouldFailAuth("session/load"))
+                {
+                    WriteError(id, -32000, "Authentication required");
+                    break;
+                }
                 await ReplayHistoryAsync(parameters).ConfigureAwait(false);
                 WriteResult(id, SessionResult(GetString(parameters, "sessionId", "fake-session-loaded")));
                 break;
             case "session/prompt":
+                if (ShouldFailAuth("session/prompt"))
+                {
+                    WriteError(id, -32000, "Authentication required");
+                    break;
+                }
                 _pendingPrompts[IdKey(id)] = id;
                 await HandlePromptAsync(id, parameters).ConfigureAwait(false);
                 break;
@@ -381,6 +433,30 @@ internal sealed class FakeAcpAgent
     private void WriteResult(JsonElement id, object result)
     {
         Write(new { jsonrpc = "2.0", id, result });
+    }
+
+    private void WriteError(JsonElement id, int code, string message)
+    {
+        Write(new { jsonrpc = "2.0", id, error = new { code, message } });
+    }
+
+    private bool ShouldFailAuth(string method)
+    {
+        var gatedMethod = _authGate switch
+        {
+            "new" => "session/new",
+            "load" => "session/load",
+            "prompt" => "session/prompt",
+            _ => ""
+        };
+        if (method != gatedMethod)
+            return false;
+        return _authMode switch
+        {
+            "blocked" => true,
+            "recover" => !_authenticated,
+            _ => false
+        };
     }
 
     private void Write(object message)

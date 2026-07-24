@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
 using PSX.Models;
@@ -59,6 +59,18 @@ public partial class App : Application
                 Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "agent", "acp-logs")));
         services.AddSingleton<ClaudeAcpAgentProvider>();
         services.AddSingleton<IAcpAgentProvider>(sp => sp.GetRequiredService<ClaudeAcpAgentProvider>());
+
+        // Kimi Code is MIT-licensed and pre-installed into tools/kimi/ at build
+        // time, so it uses its own bundled runtime (no npm ci / promote). Its
+        // logs land next to the ACP logs. Registering the provider is enough
+        // for it to appear in the New Agent menu / workspace creation / history
+        // filter / provider catalog. Default provider stays Claude.
+        services.AddSingleton<KimiCodeAcpRuntime>(sp =>
+            new KimiCodeAcpRuntime(
+                sp.GetRequiredService<RuntimeLocator>(),
+                Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "agent", "acp-logs")));
+        services.AddSingleton<KimiCodeAcpAgentProvider>();
+        services.AddSingleton<IAcpAgentProvider>(sp => sp.GetRequiredService<KimiCodeAcpAgentProvider>());
         services.AddSingleton(new AgentProviderOptions { DefaultProviderKey = "acp-claude" });
         services.AddSingleton<IAgentProviderRegistry, AgentProviderRegistry>();
         services.AddSingleton<IAgentRuntimeCoordinator, AgentRuntimeCoordinator>();

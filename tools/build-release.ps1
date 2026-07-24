@@ -8,6 +8,8 @@
       - wwwroot/, psx.ini, theme-presets/   (copied from publish output)
       - tools/node/                          (portable Node 22.23.1, downloaded)
       - tools/acp-seed/                      (installed by the user on first Agent use)
+      - tools/kimi/                          (Kimi Code ACP runtime, installed at
+                                              build time from tools/kimi-seed/ via npm ci)
 
     The output zip is portable for end users: unzip and double-click PSX.exe.
     .NET and Node are bundled. Agent mode asks for confirmation before it
@@ -114,7 +116,7 @@ if (-not [string]::IsNullOrWhiteSpace($WebView2FixedRuntimePath)) {
 Write-Host ""
 
 # ---- step 1: dotnet publish ----
-Write-Host "==> [1/4] dotnet publish (self-contained, win-x64, non-single-file)" -ForegroundColor Cyan
+Write-Host "==> [1/5] dotnet publish (self-contained, win-x64, non-single-file)" -ForegroundColor Cyan
 if (Test-Path $PublishOutput) {
     Remove-Item -Recurse -Force $PublishOutput
 }
@@ -130,7 +132,7 @@ if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed (exit $LASTEXITCODE)" }
 Write-Host ""
 
 # ---- step 2: stage publish output ----
-Write-Host "==> [2/4] Stage publish output" -ForegroundColor Cyan
+Write-Host "==> [2/5] Stage publish output" -ForegroundColor Cyan
 if (Test-Path $StagingDir) {
     Remove-Item -Recurse -Force $StagingDir
 }
@@ -144,12 +146,12 @@ $nodeDir = Join-Path $StagingDir "tools\node"
 $archivePath = Join-Path $BuildCacheDir $PortableNodeArchive
 New-Item -ItemType Directory -Path $BuildCacheDir -Force | Out-Null
 if ($SkipNodeDownload) {
-    Write-Host "==> [3/4] Use cached portable Node $PortableNodeVersion" -ForegroundColor Cyan
+    Write-Host "==> [3/5] Use cached portable Node $PortableNodeVersion" -ForegroundColor Cyan
     if (-not (Test-Path $archivePath)) {
         throw "-SkipNodeDownload requires the verified archive at: $archivePath"
     }
 } else {
-    Write-Host "==> [3/4] Download + extract portable Node $PortableNodeVersion" -ForegroundColor Cyan
+    Write-Host "==> [3/5] Download + extract portable Node $PortableNodeVersion" -ForegroundColor Cyan
     if (-not (Test-Path $archivePath)) {
         Write-Host "    Downloading $PortableNodeUrl"
         Invoke-WebRequest -Uri $PortableNodeUrl -OutFile $archivePath -UseBasicParsing
@@ -180,10 +182,37 @@ Set-Content -Path (Join-Path $nodeDir "node-version.txt") -Value $PortableNodeVe
 Write-Host "    Installed Node into staging/tools/node/; wrote node-version.txt"
 Write-Host ""
 
-# ---- step 4: optional WebView2 Fixed Version runtime ----
+# ---- step 4: bundle Kimi Code ACP runtime (lockfile-driven, reproducible) ----
+Write-Host "==> [4/5] Install Kimi Code ACP runtime into staging/tools/kimi" -ForegroundColor Cyan
+$kimiSeedDir = Join-Path $RepoRoot "tools\kimi-seed"
+$kimiTargetDir = Join-Path $StagingDir "tools\kimi"
+foreach ($seedFile in @("package.json", "package-lock.json", ".npmrc")) {
+    $seedSource = Join-Path $kimiSeedDir $seedFile
+    if (-not (Test-Path -LiteralPath $seedSource -PathType Leaf)) {
+        throw "Kimi seed file is missing: tools/kimi-seed/$seedFile"
+    }
+}
+New-Item -ItemType Directory -Path $kimiTargetDir -Force | Out-Null
+Copy-Item (Join-Path $kimiSeedDir "package.json") $kimiTargetDir -Force
+Copy-Item (Join-Path $kimiSeedDir "package-lock.json") $kimiTargetDir -Force
+Copy-Item (Join-Path $kimiSeedDir ".npmrc") $kimiTargetDir -Force
+
+$nodeExe = Join-Path $nodeDir "node.exe"
+$npmCli = Join-Path $nodeDir "node_modules\npm\bin\npm-cli.js"
+# `npm ci` from the pinned lockfile is more reproducible than
+# `npm install @moonshot-ai/kimi-code@<version>`. --include=optional pulls in
+# the Windows-native components (node-pty, clipboard-win32-x64); the seed
+# .npmrc constrains os/cpu so only win32-x64 packages are installed. Building
+# node-pty's native addon requires the machine's C++ build toolchain.
+& $nodeExe $npmCli ci --prefix $kimiTargetDir --omit=dev --include=optional --no-audit --no-fund | Out-Host
+if ($LASTEXITCODE -ne 0) { throw "npm ci for Kimi Code failed (exit $LASTEXITCODE)" }
+Write-Host "    Installed Kimi Code into staging/tools/kimi/"
+Write-Host ""
+
+# ---- step 5: optional WebView2 Fixed Version runtime ----
 $fixedWebView2Source = Resolve-WebView2FixedRuntimeDirectory $WebView2FixedRuntimePath
 if ($fixedWebView2Source) {
-    Write-Host "==> [4/4] Bundle WebView2 Fixed Version runtime" -ForegroundColor Cyan
+    Write-Host "==> [5/5] Bundle WebView2 Fixed Version runtime" -ForegroundColor Cyan
     $fixedWebView2Target = Join-Path $StagingDir "runtime\webview2-fixed"
     if (Test-Path $fixedWebView2Target) {
         Remove-Item -Recurse -Force $fixedWebView2Target
@@ -192,7 +221,7 @@ if ($fixedWebView2Source) {
     Copy-Item -Recurse -Force (Join-Path $fixedWebView2Source "*") $fixedWebView2Target
     Write-Host "    Copied fixed runtime from $fixedWebView2Source"
 } else {
-    Write-Host "==> [4/4] WebView2 runtime is NOT bundled" -ForegroundColor Yellow
+    Write-Host "==> [5/5] WebView2 runtime is NOT bundled" -ForegroundColor Yellow
     Write-Host "    Users without WebView2 will see a prompt asking them to install it."
 }
 Write-Host ""
@@ -206,6 +235,8 @@ $requiredFiles = @(
     "LICENSE.txt",
     "THIRD-PARTY-NOTICES.md",
     "licenses\acp\LICENSE",
+    "licenses\kimi\LICENSE",
+    "licenses\kimi\THIRD-PARTY-NOTICES.md",
     "licenses\communitytoolkit.mvvm\License.md",
     "licenses\dotnet\LICENSE.txt",
     "licenses\microsoft.extensions\LICENSE.TXT",
@@ -219,7 +250,11 @@ $requiredFiles = @(
     "tools\node\node_modules\npm\bin\npm-cli.js",
     "tools\acp-seed\package.json",
     "tools\acp-seed\package-lock.json",
-    "tools\acp-seed\.npmrc"
+    "tools\acp-seed\.npmrc",
+    "tools\kimi\package.json",
+    "tools\kimi\package-lock.json",
+    "tools\kimi\node_modules\@moonshot-ai\kimi-code\package.json",
+    "tools\kimi\node_modules\@moonshot-ai\kimi-code\dist\main.mjs"
 )
 foreach ($relativePath in $requiredFiles) {
     $fullPath = Join-Path $StagingDir $relativePath
@@ -235,7 +270,7 @@ if (Test-Path -LiteralPath $forbiddenAcpRuntime) {
 
 $forbiddenFiles = @(Get-ChildItem -LiteralPath $StagingDir -Recurse -File | Where-Object {
     $relative = $_.FullName.Substring($StagingDir.Length).TrimStart('\').Replace('\', '/')
-    $strayNodeModules = ($relative -match '(^|/)node_modules/') -and (-not $relative.StartsWith('tools/node/node_modules/', [StringComparison]::OrdinalIgnoreCase))
+    $strayNodeModules = ($relative -match '(^|/)node_modules/') -and (-not $relative.StartsWith('tools/node/node_modules/', [StringComparison]::OrdinalIgnoreCase)) -and (-not $relative.StartsWith('tools/kimi/node_modules/', [StringComparison]::OrdinalIgnoreCase))
     # Source maps and TypeScript are forbidden only for the generated Agent
     # frontend. Portable Node/npm and vendor assets legitimately contain maps.
     $agentSourceArtifact = $relative.StartsWith('wwwroot/js/agent-app/', [StringComparison]::OrdinalIgnoreCase) -and $_.Extension -in @('.ts', '.map')
@@ -298,7 +333,7 @@ try {
         $normalized = $_.Replace('\', '/')
         $leaf = [IO.Path]::GetFileName($normalized)
         $extension = [IO.Path]::GetExtension($normalized)
-        $strayNodeModules = ($normalized -match '(^|/)node_modules/') -and (-not $normalized.StartsWith('tools/node/node_modules/', [StringComparison]::OrdinalIgnoreCase))
+        $strayNodeModules = ($normalized -match '(^|/)node_modules/') -and (-not $normalized.StartsWith('tools/node/node_modules/', [StringComparison]::OrdinalIgnoreCase)) -and (-not $normalized.StartsWith('tools/kimi/node_modules/', [StringComparison]::OrdinalIgnoreCase))
         # Keep this scoped to Agent output for parity with the staging check;
         # Node/npm and vendor files can legitimately ship source maps.
         $agentSourceArtifact = $normalized.StartsWith('wwwroot/js/agent-app/', [StringComparison]::OrdinalIgnoreCase) -and $extension -in @('.ts', '.map')
