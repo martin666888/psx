@@ -16,6 +16,11 @@ public sealed class AcpJsonRpcTransport : IDisposable
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
+    // After the process exits, give the stdout reader a brief, bounded window to
+    // drain any session/update lines the agent wrote just before exiting so tail
+    // output is not lost before we fault pending requests.
+    private static readonly TimeSpan ProcessExitDrainGrace = TimeSpan.FromMilliseconds(500);
+
     private readonly AcpProcessSpec _processSpec;
     private readonly string _logPath;
     private readonly Func<JsonElement, Task<object?>> _requestHandler;
@@ -103,9 +108,12 @@ public sealed class AcpJsonRpcTransport : IDisposable
 
             _process = process;
             _started = true;
-            process.Exited += (_, _) => SignalDisconnected(
-                new EndOfStreamException($"ACP adapter exited with code {TryGetExitCode(process)}."));
-            _ = Task.Run(() => ReadStdoutAsync(process));
+            // Start the stdout reader before wiring Process.Exited so the exit
+            // handler can wait on it: on exit we let the reader drain buffered
+            // stdout (its own EOF path signals the disconnect) and only force the
+            // disconnect if that drain does not finish within a bounded grace.
+            var stdoutTask = Task.Run(() => ReadStdoutAsync(process));
+            process.Exited += (_, _) => OnProcessExited(process, stdoutTask);
             _ = Task.Run(() => ReadStderrAsync(process));
         }
     }
@@ -328,6 +336,30 @@ public sealed class AcpJsonRpcTransport : IDisposable
         _disconnected = true;
         Log("!! transport disconnected: " + exception.Message);
         CompletePendingWithError(exception);
+    }
+
+    private void OnProcessExited(Process process, Task stdoutTask)
+    {
+        // The process is gone, but the agent may have written a final burst of
+        // session/update lines just before exiting. Let the stdout reader drain
+        // them first (it calls SignalDisconnected at EOF); only if that drain
+        // stalls past the bounded grace do we fault pending requests here, so a
+        // stuck pipe cannot hang the session forever. SignalDisconnected is
+        // idempotent, so whichever path wins is authoritative.
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await stdoutTask.WaitAsync(ProcessExitDrainGrace).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Drain timed out or faulted; fall through to force the disconnect.
+            }
+
+            SignalDisconnected(new EndOfStreamException(
+                $"ACP adapter exited with code {TryGetExitCode(process)}."));
+        });
     }
 
     private void ThrowIfDisposed()

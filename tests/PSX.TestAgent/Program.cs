@@ -27,9 +27,14 @@ internal sealed class FakeAcpAgent
     private readonly string _authMode;
     private bool _authenticated;
 
+    // When true the agent silently ignores session/cancel so the client's cancel
+    // path must fall back to force-resetting the transport after its grace.
+    private readonly bool _ignoreCancel;
+
     public FakeAcpAgent()
     {
         var scenario = Environment.GetEnvironmentVariable("PSX_TEST_AGENT_SCENARIO") ?? "default";
+        _ignoreCancel = string.Equals(scenario, "ignorecancel", StringComparison.OrdinalIgnoreCase);
         var parts = scenario.Split(':');
         if (parts.Length == 3 && parts[0] == "auth")
         {
@@ -192,6 +197,16 @@ internal sealed class FakeAcpAgent
                 sessionUpdate = "agent_thought_chunk",
                 content = new { type = "text", text = "Waiting for cancellation" }
             });
+            return;
+        }
+
+        // Streams a partial assistant answer and then kills the process mid-turn
+        // to simulate a real transport disconnect (process exit -> stdout EOF).
+        // The client must persist the partial text and enter recovery_pending.
+        if (text.Contains("crash after partial", StringComparison.OrdinalIgnoreCase))
+        {
+            WriteAssistantChunk("Partial answer before crash.");
+            Environment.Exit(37);
             return;
         }
 
@@ -389,6 +404,9 @@ internal sealed class FakeAcpAgent
     private Task HandleNotificationAsync(JsonElement message, string method)
     {
         if (method != "session/cancel")
+            return Task.CompletedTask;
+
+        if (_ignoreCancel)
             return Task.CompletedTask;
 
         foreach (var pending in _pendingPrompts.ToArray())

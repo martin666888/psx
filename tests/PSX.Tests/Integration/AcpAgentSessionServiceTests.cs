@@ -1,5 +1,7 @@
 using System.Text.Json;
+using System.Diagnostics;
 using PSX.Models;
+using PSX.Services;
 using PSX.Tests.Support;
 
 namespace PSX.Tests.Integration;
@@ -263,6 +265,81 @@ public sealed class AcpAgentSessionServiceTests
         Assert.AreEqual("commands_loading", rejected.GetProperty("reason").GetString());
         Assert.IsFalse(Directory.Exists(Path.Combine(fixture.Store.RootDirectory, "agent", "acp-logs")));
         Assert.IsEmpty(fixture.Store.ListThreads());
+    }
+
+    [TestMethod]
+    public void PromptRequestTimeout_IsNullSoLongMultiAgentTurnsAreNeverKilled()
+    {
+        // The core P0-1 fix: session/prompt carries no wall-clock deadline. A
+        // finite value here would kill long multi-agent turns mid-flight.
+        Assert.IsNull(AcpAgentSessionService.PromptRequestTimeout);
+    }
+
+    [TestMethod]
+    public async Task Disconnect_DuringPrompt_PersistsPartialOutputAndEntersRecoveryPending()
+    {
+        using var fixture = new FakeAcpSessionFixture(nameof(Disconnect_DuringPrompt_PersistsPartialOutputAndEntersRecoveryPending));
+
+        await fixture.Service.SubmitMessageAsync("crash after partial");
+
+        // MF3 + P1-2: a real mid-turn disconnect drives the transport reset and
+        // leaves the workspace in recovery_pending rather than a bare error.
+        var state = await fixture.Bridge.WaitForEventAsync(
+            "agent_state",
+            message => message.GetProperty("status").GetString() == "recovery_pending",
+            timeout: TimeSpan.FromSeconds(15));
+
+        // P1-1: sessionId falls back to the recovery id instead of blanking out.
+        Assert.AreEqual("fake-session-new", state.GetProperty("sessionId").GetString());
+
+        // P0-2: the partial assistant text streamed before the crash is persisted.
+        var thread = fixture.LoadOnlyVisibleThread();
+        Assert.IsTrue(
+            thread.Messages.Any(message => message.Role == "assistant"
+                && message.Text == "Partial answer before crash."),
+            "Partial assistant output must survive a mid-turn disconnect.");
+    }
+
+    [TestMethod]
+    public async Task Cancel_WhenAgentIgnoresCancel_ForceResetsWithinInjectedGrace()
+    {
+        using var fixture = new FakeAcpSessionFixture(
+            nameof(Cancel_WhenAgentIgnoresCancel_ForceResetsWithinInjectedGrace),
+            scenario: "ignorecancel");
+        // Inject a tiny grace so the force-reset fallback fires quickly instead
+        // of waiting the full production 5s.
+        fixture.Service.CancelGracePeriod = TimeSpan.FromMilliseconds(50);
+
+        await fixture.Service.SubmitMessageAsync("hang until cancelled");
+        await fixture.Bridge.WaitForEventAsync("thinking_delta");
+
+        var stopwatch = Stopwatch.StartNew();
+        await fixture.Service.CancelAsync();
+        await fixture.Bridge.WaitForEventAsync("run_finished");
+        stopwatch.Stop();
+
+        Assert.IsTrue(
+            stopwatch.Elapsed < TimeSpan.FromSeconds(3),
+            $"Force reset must honor the injected grace; took {stopwatch.Elapsed}.");
+
+        // The forced reset killed the transport, so the workspace must report a
+        // pending reconnect rather than a misleading "ready" (regression guard for
+        // the status overwrite in the cancel finally / tail).
+        var recovery = await fixture.Bridge.WaitForEventAsync(
+            "agent_state",
+            message => message.GetProperty("status").GetString() == "recovery_pending",
+            timeout: TimeSpan.FromSeconds(5));
+        Assert.AreEqual("recovery_pending", recovery.GetProperty("status").GetString());
+
+        // The transport recovers so the next turn completes normally.
+        await fixture.Service.SubmitMessageAsync("run after forced reset");
+        await fixture.Bridge.WaitForEventAsync(
+            "assistant_message_done",
+            timeout: TimeSpan.FromSeconds(15));
+
+        var thread = fixture.LoadOnlyVisibleThread();
+        Assert.IsTrue(thread.Messages.Any(message => message.Role == "assistant"
+            && message.Text == "Fake response completed."));
     }
 
     private static string? EventType(JsonElement message) =>

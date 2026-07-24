@@ -163,6 +163,19 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     private bool _disposed;
     private IReadOnlyList<AcpAuthMethod> _authMethods = Array.Empty<AcpAuthMethod>();
 
+    // Absolute wall-clock timeout for the session/prompt request. Null means the
+    // request only completes on result, cancellation, or a real transport
+    // disconnect (SignalDisconnected -> CompletePendingWithError faults the
+    // pending request). A finite timeout here would kill long multi-agent turns
+    // mid-flight. Exposed as a test seam so tests can assert it is null while
+    // control operations keep their finite timeouts.
+    internal static readonly TimeSpan? PromptRequestTimeout = null;
+
+    // Grace period the cancel path waits for the adapter's session/cancel before
+    // force-resetting the transport. Injectable so tests need not wait the full
+    // wall-clock duration.
+    internal TimeSpan CancelGracePeriod = TimeSpan.FromSeconds(5);
+
     internal AcpAgentSessionService(
         Guid workspaceId,
         IAgentBridgeService bridgeService,
@@ -335,7 +348,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         {
             try
             {
-                await oldTask.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+                await oldTask.WaitAsync(CancelGracePeriod).ConfigureAwait(false);
             }
             catch (TimeoutException)
             {
@@ -372,9 +385,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         }
         if (ownsStoppingRun)
         {
-            FinishThinkingMessage();
-            await FinishAssistantMessageAsync().ConfigureAwait(false);
-            SaveCurrentThread();
+            await FinalizeRunOutputAsync(stoppingRunId, cts).ConfigureAwait(false);
         }
 
         lock (_runLock)
@@ -388,13 +399,27 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 && ReferenceEquals(_runCts, cts))
             {
                 _isRunning = false;
-                _status = "ready";
+                // A forced cancel resets (kills) the transport, so the next
+                // prompt must reload the session. Report that instead of a
+                // misleading "ready".
+                _status = _transportRecoveryRequired ? "recovery_pending" : "ready";
                 _currentRunId = null;
                 _runCts = null;
                 _runRequestCts = null;
                 _currentRunTask = null;
                 _currentRunTransport = null;
                 _currentRunTransportGeneration = 0;
+            }
+            else if (_transportRecoveryRequired
+                && _currentRunId == null
+                && _status != "transcript_only")
+            {
+                // The run's own finally already cleared its state while we were
+                // force-resetting the transport, and may have written "ready"
+                // before the reset flag was set. Force the recovery status so the
+                // UI does not claim the workspace is ready when the next prompt
+                // must reload the session.
+                _status = "recovery_pending";
             }
         }
 
@@ -660,7 +685,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         {
             type = "agent_state",
             cwd = _workingDirectory,
-            sessionId = _acpSessionId ?? "",
+            sessionId = _acpSessionId ?? _sessionIdForTransportRecovery ?? _currentThread.AcpSessionId ?? "",
             threadId = _currentThread.ThreadId,
             title = _currentThread.Title,
             status = _status,
@@ -1448,30 +1473,35 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 var promptBlocks = BuildPromptBlocks(prompt, attachments);
                 var capturedTransport = usedTransport;
 
-                // Use a 10-minute timeout so a stuck adapter doesn't hang forever.
-                // Wrapped so a mid-conversation authRequired drives the standard
-                // login recovery and retries once instead of failing hard.
+                // No wall-clock timeout on session/prompt: a long multi-agent
+                // turn streams progress via session/update and must not be killed
+                // mid-flight. A real disconnect (process exit / stdout EOF / read
+                // error) still faults this request through SignalDisconnected ->
+                // CompletePendingWithError, so the request remains
+                // user-cancellable, and real transport disconnects fault it.
+                // Wrapped so a mid-conversation
+                // authRequired drives the standard login recovery and retries
+                // once instead of failing hard.
                 await SendWithAuthRetryAsync(
                     innerToken => capturedTransport.SendRequestAsync("session/prompt", new
                     {
                         sessionId = _acpSessionId,
                         messageId = Guid.NewGuid().ToString(),
                         prompt = promptBlocks
-                    }, TimeSpan.FromMinutes(10), innerToken),
+                    }, PromptRequestTimeout, innerToken),
                     requestCts.Token).ConfigureAwait(false);
 
                 token.ThrowIfCancellationRequested();
-                await FinishAssistantMessageAsync().ConfigureAwait(false);
+                await FinalizeRunOutputAsync(runId, cts).ConfigureAwait(false);
                 await _bridgeService.SendEventAsync(new { type = "thinking_finished" }).ConfigureAwait(false);
                 await _bridgeService.SendEventAsync(new { type = "assistant_message_done" }).ConfigureAwait(false);
             }
             catch (Exception) when (token.IsCancellationRequested)
             {
                 // Run was cancelled by user — do NOT set _status to "error".
-                // CancelRunAsync already set _status = "ready".
-                FinishThinkingMessage();
-                await FinishAssistantMessageAsync().ConfigureAwait(false);
-                SaveCurrentThread();
+                // CancelRunAsync already set the terminal status ("ready", or
+                // "recovery_pending" when a forced reset killed the transport).
+                await FinalizeRunOutputAsync(runId, cts).ConfigureAwait(false);
                 if (!_disposed)
                     await _bridgeService.SendEventAsync(new { type = "thinking_finished" }).ConfigureAwait(false);
             }
@@ -1480,6 +1510,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 // Recoverable auth failure: stay in auth_required so the user
                 // can finish the interactive login and resend. Never downgrade
                 // to "error" or "transcript_only" here.
+                await FinalizeRunOutputAsync(runId, cts).ConfigureAwait(false);
                 lock (_runLock)
                 {
                     if (_currentRunId == runId)
@@ -1493,6 +1524,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             }
             catch (TimeoutException ex)
             {
+                await FinalizeRunOutputAsync(runId, cts).ConfigureAwait(false);
                 var timedOutTransport = usedTransport ?? _transport;
                 var timedOutGeneration = usedTransportGeneration != 0
                     ? usedTransportGeneration
@@ -1502,8 +1534,11 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
                 lock (_runLock)
                 {
-                    if (_currentRunId == runId)
-                        _status = "error";
+                    // A session/load timeout during restore can set
+                    // "transcript_only" and then surface here as TimeoutException;
+                    // never downgrade that terminal read-only state to "error".
+                    if (_currentRunId == runId && _status != "transcript_only")
+                        _status = _transportRecoveryRequired ? "recovery_pending" : "error";
                 }
                 if (!_disposed)
                 {
@@ -1513,12 +1548,19 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             }
             catch (Exception ex)
             {
-                // Real error (not cancellation) — only update state if this
-                // run is still the current one (guard against orphaned tasks).
+                // Real error (not cancellation). Persist any partial output first,
+                // then — only if this run's transport actually died — reset it so
+                // the next message recovers. A transport still alive (ordinary
+                // JSON-RPC error) is left untouched: no process kill, status
+                // stays "error".
+                await FinalizeRunOutputAsync(runId, cts).ConfigureAwait(false);
+                if (usedTransport != null && !usedTransport.IsRunning)
+                    await ResetTransportAsync(usedTransport, usedTransportGeneration).ConfigureAwait(false);
+
                 lock (_runLock)
                 {
                     if (_currentRunId == runId && _status != "transcript_only")
-                        _status = "error";
+                        _status = _transportRecoveryRequired ? "recovery_pending" : "error";
                 }
                 if (!_disposed)
                 {
@@ -1536,7 +1578,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                     {
                         _isRunning = false;
                         if (_status == "running")
-                            _status = "ready";
+                            _status = _transportRecoveryRequired ? "recovery_pending" : "ready";
                         _currentRunId = null;
                         _runCts = null;
                         _runRequestCts = null;
@@ -2952,34 +2994,70 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         }).ConfigureAwait(false);
     }
 
-    private Task FinishAssistantMessageAsync()
+    /// <summary>
+    /// Flushes the current run's streamed thinking/assistant buffers into the
+    /// thread transcript, but only when <paramref name="runId"/>/<paramref name="cts"/>
+    /// still own the run. The ownership check prevents an orphaned old run task
+    /// (a task whose run was already superseded by a newer prompt) from writing
+    /// stale text into the shared buffers of the new run. The buffers are read
+    /// and cleared atomically under <c>_runLock</c>, so repeat calls are
+    /// naturally idempotent (the second call sees empty buffers) and the
+    /// persistence IO happens outside the lock.
+    /// </summary>
+    private Task FinalizeRunOutputAsync(string? runId, CancellationTokenSource? cts)
     {
-        FinishThinkingMessage();
-        var text = _assistantBuffer.ToString();
-        if (!string.IsNullOrWhiteSpace(text))
-            AddMessage("assistant", text);
-
-        _assistantBuffer.Clear();
+        string thinkingText;
+        string assistantText;
+        lock (_runLock)
+        {
+            if (_currentRunId != runId || !ReferenceEquals(_runCts, cts))
+                return Task.CompletedTask;
+            thinkingText = _thinkingBuffer.ToString();
+            _thinkingBuffer.Clear();
+            assistantText = _assistantBuffer.ToString();
+            _assistantBuffer.Clear();
+        }
+        PersistRunOutput(runId, thinkingText, assistantText);
         return Task.CompletedTask;
     }
 
-    private void FinishThinkingMessage()
+    /// <summary>
+    /// Synchronous drain core shared by <see cref="FinalizeRunOutputAsync"/> and
+    /// <see cref="Dispose"/>. Writes the given thinking/assistant text under the
+    /// explicit <paramref name="runId"/> (never re-reading <c>_currentRunId</c>,
+    /// which a finally block may already have cleared) and saves the thread.
+    /// Sends no bridge events, so it is safe to call while tearing down.
+    /// </summary>
+    private void PersistRunOutput(string? runId, string thinkingText, string assistantText)
     {
-        var text = _thinkingBuffer.ToString();
-        if (!string.IsNullOrWhiteSpace(text))
+        var changed = false;
+        if (!string.IsNullOrWhiteSpace(thinkingText))
         {
             _currentThread.Messages.Add(new AgentMessage
             {
                 Role = "thinking",
-                Text = text,
-                RunId = _currentRunId,
+                Text = thinkingText,
+                RunId = runId,
                 CreatedAt = DateTimeOffset.Now
             });
             ThinkingMessageNormalizer.Normalize(_currentThread.Messages);
-            SaveCurrentThread();
+            changed = true;
         }
 
-        _thinkingBuffer.Clear();
+        if (!string.IsNullOrWhiteSpace(assistantText))
+        {
+            _currentThread.Messages.Add(new AgentMessage
+            {
+                Role = "assistant",
+                Text = assistantText,
+                RunId = runId,
+                CreatedAt = DateTimeOffset.Now
+            });
+            changed = true;
+        }
+
+        if (changed)
+            SaveCurrentThread();
     }
 
     private void AddMessage(string role, string text, string? name = null, IReadOnlyList<AgentAttachment>? attachments = null)
@@ -3672,6 +3750,25 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         _runtimeInstallCts?.Dispose();
         _runCts?.Dispose();
         _runRequestCts?.Dispose();
+
+        // Best-effort flush of any in-flight streamed output before the transport
+        // is killed. The run task's finally is short-circuited by _disposed, so
+        // this is the only chance to persist a partial turn on shutdown. No
+        // ownership check (the service is going away) and no bridge events.
+        try
+        {
+            string thinkingText;
+            string assistantText;
+            lock (_runLock)
+            {
+                thinkingText = _thinkingBuffer.ToString();
+                _thinkingBuffer.Clear();
+                assistantText = _assistantBuffer.ToString();
+                _assistantBuffer.Clear();
+            }
+            PersistRunOutput(_currentRunId, thinkingText, assistantText);
+        }
+        catch { }
 
         _transportLock.Wait();
         try

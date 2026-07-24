@@ -121,3 +121,18 @@ test('SessionRuntimeController changes Context ring color at warning and error t
   assert.match(context.summary, /^95%/);
   assert.equal(context.progress, '5');
 });
+
+test('SessionRuntimeController renders recovery_pending status with a session id fallback', async () => {
+  const event = stateEvent(WS);
+  event.status = 'recovery_pending';
+  // The backend keeps the recovery session id in the state field so the row
+  // does not blank out to "no session" while a reconnect is pending.
+  event.sessionId = 'fake-session-new';
+  const panel = await drive([event]);
+  const snapshot = sessionRuntimeSnapshot(panel);
+
+  assert.equal(snapshot.status.state, 'recovery_pending');
+  assert.equal(snapshot.status.text, 'Recovery Pending');
+  assert.notEqual(snapshot.session, 'no session');
+  assert.match(snapshot.session, /^session /);
+});
