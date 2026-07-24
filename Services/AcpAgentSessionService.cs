@@ -176,6 +176,16 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     // wall-clock duration.
     internal TimeSpan CancelGracePeriod = TimeSpan.FromSeconds(5);
 
+    // Short budget for the session/cancel stdin write. The writer pump makes the
+    // write non-blocking; this budget guarantees the stop watchdog never waits on
+    // a stalled pipe or an agent that stopped acknowledging cancel.
+    internal TimeSpan StopCancelWriteBudget = TimeSpan.FromSeconds(1);
+
+    // Bounded wait to acquire the transport lock during a forced reset or dispose.
+    // If a stalled operation holds it, we hard-stop by disposing the transport
+    // directly so stop/close always completes in a determinate time.
+    internal TimeSpan TransportResetLockBudget = TimeSpan.FromSeconds(2);
+
     internal AcpAgentSessionService(
         Guid workspaceId,
         IAgentBridgeService bridgeService,
@@ -302,13 +312,32 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         // request wait briefly for the adapter's session/cancel handling.
         try { cts?.Cancel(); } catch { }
 
+        // Publish "stopping" right away so the UI reacts instantly, before any
+        // transport I/O. This must never depend on the agent acknowledging cancel.
+        if (notify && hadRun)
+        {
+            lock (_runLock)
+            {
+                if (_currentRunId == stoppingRunId && ReferenceEquals(_runCts, cts))
+                    _status = "stopping";
+            }
+            await PublishStateAsync().ConfigureAwait(false);
+        }
+
         var sessionId = _acpSessionId;
         var notificationTransport = runTransport ?? _transport;
         if (oldTask != null && !string.IsNullOrWhiteSpace(sessionId) && notificationTransport != null)
         {
             try
             {
-                await notificationTransport.SendNotificationAsync("session/cancel", new { sessionId }).ConfigureAwait(false);
+                // Best-effort cancel with a short write budget. The writer pump
+                // makes this non-blocking, and the budget ensures a stalled pipe
+                // (or an agent that stopped reading stdin) cannot delay the
+                // watchdog below.
+                await notificationTransport
+                    .SendNotificationAsync("session/cancel", new { sessionId })
+                    .WaitAsync(StopCancelWriteBudget)
+                    .ConfigureAwait(false);
             }
             catch { }
         }
@@ -1577,7 +1606,11 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                     if (_currentRunId == runId)
                     {
                         _isRunning = false;
-                        if (_status == "running")
+                        // Resolve any transient live status (running, or the
+                        // "stopping" set by a user cancel) to a terminal one. A
+                        // forced reset that killed the transport surfaces as
+                        // recovery_pending so the next prompt reloads the session.
+                        if (_status == "running" || _status == "stopping")
                             _status = _transportRecoveryRequired ? "recovery_pending" : "ready";
                         _currentRunId = null;
                         _runCts = null;
@@ -1757,27 +1790,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 var initResult = await transport.SendRequestAsync("initialize", new
                 {
                     protocolVersion = 1,
-                    clientCapabilities = new Dictionary<string, object?>
-                    {
-                        ["fs"] = new { readTextFile = true, writeTextFile = true },
-                        ["terminal"] = true,
-                        ["session"] = new
-                        {
-                            configOptions = new
-                            {
-                                boolean = new { }
-                            }
-                        },
-                        ["elicitation"] = new
-                        {
-                            form = new { },
-                            url = new { }
-                        },
-                        ["_meta"] = new Dictionary<string, object?>
-                        {
-                            ["terminal_output"] = true
-                        }
-                    },
+                    clientCapabilities = BuildClientCapabilities(_provider.ClientCapabilities),
                     clientInfo = new
                     {
                         name = "PSX",
@@ -1802,6 +1815,36 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         {
             _transportLock.Release();
         }
+    }
+
+    internal static Dictionary<string, object?> BuildClientCapabilities(AcpClientCapabilityProfile profile)
+    {
+        var capabilities = new Dictionary<string, object?>();
+
+        // Omit the fs key entirely when a provider opts out of the reverse
+        // filesystem bridge so the agent falls back to its own local file tools.
+        if (profile.FileSystemReadText || profile.FileSystemWriteText)
+        {
+            capabilities["fs"] = new
+            {
+                readTextFile = profile.FileSystemReadText,
+                writeTextFile = profile.FileSystemWriteText
+            };
+        }
+
+        if (profile.Terminal)
+            capabilities["terminal"] = true;
+
+        if (profile.SessionBooleanConfig)
+            capabilities["session"] = new { configOptions = new { boolean = new { } } };
+
+        if (profile.ElicitationFormUrl)
+            capabilities["elicitation"] = new { form = new { }, url = new { } };
+
+        if (profile.TerminalOutputMeta)
+            capabilities["_meta"] = new Dictionary<string, object?> { ["terminal_output"] = true };
+
+        return capabilities;
     }
 
     private async Task RestoreSessionAfterTransportResetAsync(CancellationToken cancellationToken = default)
@@ -1861,14 +1904,24 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     private async Task ResetTransportAsync(AcpJsonRpcTransport expectedTransport, long expectedGeneration)
     {
-        await _transportLock.WaitAsync().ConfigureAwait(false);
-        try
+        if (await _transportLock.WaitAsync(TransportResetLockBudget).ConfigureAwait(false))
         {
-            ResetTransportCore(expectedTransport, expectedGeneration);
+            try
+            {
+                ResetTransportCore(expectedTransport, expectedGeneration);
+            }
+            finally
+            {
+                _transportLock.Release();
+            }
         }
-        finally
+        else
         {
-            _transportLock.Release();
+            // A stalled operation holds the transport lock. Never wait forever:
+            // dispose the transport directly (idempotent, non-blocking, kills the
+            // whole process tree) so the forced reset always completes. Remaining
+            // state cleanup runs when the lock frees.
+            expectedTransport.Dispose();
         }
     }
 
@@ -3770,11 +3823,21 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         }
         catch { }
 
-        _transportLock.Wait();
+        var lockTaken = _transportLock.Wait(TransportResetLockBudget);
         try
         {
-            if (_transport != null)
-                ResetTransportCore(_transport, _transportGeneration);
+            if (lockTaken)
+            {
+                if (_transport != null)
+                    ResetTransportCore(_transport, _transportGeneration);
+            }
+            else
+            {
+                // Could not acquire the lock within the budget (a stalled op holds
+                // it). Never block shutdown: dispose the transport directly so the
+                // child process tree is killed and the window can always close.
+                _transport?.Dispose();
+            }
 
             foreach (var item in _terminals.ToArray())
             {
@@ -3784,7 +3847,8 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         }
         finally
         {
-            _transportLock.Release();
+            if (lockTaken)
+                _transportLock.Release();
         }
 
         _serviceLifetimeCts.Dispose();

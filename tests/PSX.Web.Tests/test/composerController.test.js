@@ -162,6 +162,21 @@ test('ComposerController flips Send into Stop while a run is busy', async () => 
   assert.equal(controlled.send.stop, true);
 });
 
+test('ComposerController keeps the Stop affordance live and the composer interactive while stopping', async () => {
+  const event = stateEvent(WS, true);
+  event.status = 'stopping';
+  const panel = await drive([event]);
+  const controlled = composerSnapshot(panel);
+
+  // stopping is a busy state: the button stays a live Stop and neither it nor
+  // the input is disabled, so the user can press Stop again / keep typing while
+  // the forced-reset watchdog runs.
+  assert.equal(controlled.send.text, 'Stop');
+  assert.equal(controlled.send.stop, true);
+  assert.equal(controlled.send.disabled, false);
+  assert.equal(controlled.input.disabled, false);
+});
+
 test('Composer template keeps input, controls, and actions in one reading-column card', async () => {
   const panel = await drive([stateEvent(WS, false)]);
   const card = panel.querySelector('.agent-composer-card');

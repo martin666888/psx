@@ -121,6 +121,38 @@ public sealed class AcpJsonRpcTransportTests
             "Disposing the ACP transport left the Fake ACP Agent running.");
     }
 
+    [TestMethod]
+    public async Task StalledAgentStdin_NeverBlocksTheCallingThreadOnEnqueue()
+    {
+        using var workspace = TestWorkspace.Create(nameof(StalledAgentStdin_NeverBlocksTheCallingThreadOnEnqueue));
+        using var transport = CreateTransport(workspace);
+
+        // Wedge the agent so it stops draining stdin but stays alive; the OS pipe
+        // buffer then fills after a few KB.
+        await transport.SendNotificationAsync("test/stall_stdin", new { });
+        await Task.Delay(200);
+
+        // Flood far past any pipe buffer. P0-1: the synchronous enqueue must stay
+        // instant even though the background writer pump is now blocked on a full
+        // pipe. The old synchronous writer flushed on the caller thread and would
+        // block here forever, hanging the WPF UI thread on Stop/close.
+        var payload = new string('x', 4096);
+        var writes = new List<Task>();
+        var stopwatch = Stopwatch.StartNew();
+        for (var i = 0; i < 300; i++)
+            writes.Add(transport.SendNotificationAsync("test/flood", new { i, payload }));
+        stopwatch.Stop();
+
+        Assert.IsTrue(
+            stopwatch.Elapsed < TimeSpan.FromSeconds(5),
+            $"Enqueuing to a stalled child pipe must not block the caller; took {stopwatch.Elapsed}.");
+
+        // Tear down and observe the queued writes so their faults are not left
+        // unobserved once the pump is torn down.
+        transport.Dispose();
+        try { await Task.WhenAll(writes).WaitAsync(TimeSpan.FromSeconds(5)); } catch { }
+    }
+
     private static AcpJsonRpcTransport CreateTransport(
         TestWorkspace workspace,
         Func<JsonElement, Task<object?>>? requestHandler = null,

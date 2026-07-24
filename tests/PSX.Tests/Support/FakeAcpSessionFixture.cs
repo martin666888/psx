@@ -197,6 +197,16 @@ internal sealed class FakeAcpProvider(
 
     public IAcpAgentRuntime Runtime { get; } = runtime;
 
+    public AcpClientCapabilityProfile ClientCapabilities { get; set; } = new()
+    {
+        FileSystemReadText = true,
+        FileSystemWriteText = true,
+        Terminal = true,
+        SessionBooleanConfig = true,
+        ElicitationFormUrl = true,
+        TerminalOutputMeta = true
+    };
+
     public object CreateNewSessionParameters(string workingDirectory) => new { cwd = workingDirectory };
 
     public object CreateLoadSessionParameters(string sessionId, string workingDirectory) =>

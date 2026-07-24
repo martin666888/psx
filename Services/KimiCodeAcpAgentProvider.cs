@@ -23,6 +23,21 @@ public sealed class KimiCodeAcpAgentProvider : IAcpAgentProvider
 
     public IAcpAgentRuntime Runtime { get; }
 
+    // Kimi Code 0.29.1's reverse ACP filesystem bridge (fs/read_text_file) can
+    // hang on parallel/large reads and stall ACP input processing. Do not
+    // advertise fs, so Kimi falls back to its own local filesystem tools and
+    // never routes file contents through a large reverse JSON-RPC response.
+    // Terminal stays enabled: login goes through standard ACP terminal-auth.
+    public AcpClientCapabilityProfile ClientCapabilities { get; } = new()
+    {
+        FileSystemReadText = false,
+        FileSystemWriteText = false,
+        Terminal = true,
+        SessionBooleanConfig = true,
+        ElicitationFormUrl = true,
+        TerminalOutputMeta = true
+    };
+
     public object CreateNewSessionParameters(string workingDirectory)
     {
         return new

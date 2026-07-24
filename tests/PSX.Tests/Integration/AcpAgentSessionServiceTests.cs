@@ -342,6 +342,31 @@ public sealed class AcpAgentSessionServiceTests
             && message.Text == "Fake response completed."));
     }
 
+    [TestMethod]
+    public async Task Cancel_PublishesStoppingStatusImmediatelyWhileTheRunIsStillBusy()
+    {
+        using var fixture = new FakeAcpSessionFixture(
+            nameof(Cancel_PublishesStoppingStatusImmediatelyWhileTheRunIsStillBusy),
+            scenario: "ignorecancel");
+
+        await fixture.Service.SubmitMessageAsync("hang until cancelled");
+        await fixture.Bridge.WaitForEventAsync("thinking_delta");
+
+        await fixture.Service.CancelAsync();
+
+        // P0-2: the UI must see "stopping" the instant Stop is pressed, before any
+        // transport I/O and independent of whether the agent ever acknowledges
+        // session/cancel. busy stays true so the live Stop affordance is kept.
+        var stopping = await fixture.Bridge.WaitForEventAsync(
+            "agent_state",
+            message => message.GetProperty("status").GetString() == "stopping",
+            timeout: TimeSpan.FromSeconds(5));
+        Assert.AreEqual("stopping", stopping.GetProperty("status").GetString());
+        Assert.IsTrue(
+            stopping.GetProperty("busy").GetBoolean(),
+            "The run is still in flight while stopping, so busy must stay true.");
+    }
+
     private static string? EventType(JsonElement message) =>
         message.TryGetProperty("type", out var type) ? type.GetString() : null;
 }

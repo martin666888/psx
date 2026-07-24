@@ -450,6 +450,15 @@ internal sealed class TestProvider(
 {
     public AgentDescriptor Descriptor { get; } = new(key, displayName, displayName, legacyKeys);
     public IAcpAgentRuntime Runtime { get; } = runtime;
+    public AcpClientCapabilityProfile ClientCapabilities { get; } = new()
+    {
+        FileSystemReadText = true,
+        FileSystemWriteText = true,
+        Terminal = true,
+        SessionBooleanConfig = true,
+        ElicitationFormUrl = true,
+        TerminalOutputMeta = true
+    };
     public object CreateNewSessionParameters(string workingDirectory) => new { cwd = workingDirectory };
     public object CreateLoadSessionParameters(string sessionId, string workingDirectory) =>
         new { sessionId, cwd = workingDirectory };

@@ -69,6 +69,14 @@ internal sealed class FakeAcpAgent
             if (message.TryGetProperty("method", out var methodElement))
             {
                 var method = methodElement.GetString() ?? "";
+                // Simulate a wedged agent that stops draining stdin but stays
+                // alive: the OS pipe buffer then fills, so the client's writer
+                // pump must absorb a full pipe without ever blocking the caller.
+                if (method == "test/stall_stdin")
+                {
+                    await Task.Delay(Timeout.Infinite).ConfigureAwait(false);
+                    return;
+                }
                 if (message.TryGetProperty("id", out _))
                 {
                     _ = HandleRequestAsync(message.Clone(), method);

@@ -136,3 +136,15 @@ test('SessionRuntimeController renders recovery_pending status with a session id
   assert.notEqual(snapshot.session, 'no session');
   assert.match(snapshot.session, /^session /);
 });
+
+test('SessionRuntimeController renders the transient stopping status while a run is being cancelled', async () => {
+  const event = stateEvent(WS);
+  event.status = 'stopping';
+  const panel = await drive([event]);
+  const snapshot = sessionRuntimeSnapshot(panel);
+
+  // stopping is a new transient busy status; the generic formatStatus split
+  // renders it with zero production changes.
+  assert.equal(snapshot.status.state, 'stopping');
+  assert.equal(snapshot.status.text, 'Stopping');
+});

@@ -129,6 +129,63 @@ public sealed class KimiCodeAcpAgentProviderTests
         await coordinator.ShutdownAsync();
     }
 
+    [TestMethod]
+    public void ClientCapabilities_OmitsFilesystemBridgeButKeepsTerminal()
+    {
+        var provider = CreateProvider(out var workspace);
+        using (workspace)
+        {
+            // Kimi Code 0.29.1's reverse fs bridge can hang, so Kimi must never
+            // advertise it; terminal stays on for standard ACP terminal-auth.
+            Assert.IsFalse(provider.ClientCapabilities.FileSystemReadText);
+            Assert.IsFalse(provider.ClientCapabilities.FileSystemWriteText);
+            Assert.IsTrue(provider.ClientCapabilities.Terminal);
+        }
+    }
+
+    [TestMethod]
+    public void ClaudeClientCapabilities_AdvertisesTheFullReverseFilesystemBridge()
+    {
+        using var workspace = TestWorkspace.Create(nameof(ClaudeClientCapabilities_AdvertisesTheFullReverseFilesystemBridge));
+        using var runtime = new AcpRuntimeManager(
+            new RuntimeLocator(workspace.Path), Path.Combine(workspace.Path, "logs"));
+        var claude = new ClaudeAcpAgentProvider(runtime);
+
+        // Claude keeps the full client surface, including fs read/write, so this
+        // guards against a provider-agnostic change accidentally dropping it.
+        Assert.IsTrue(claude.ClientCapabilities.FileSystemReadText);
+        Assert.IsTrue(claude.ClientCapabilities.FileSystemWriteText);
+        Assert.IsTrue(claude.ClientCapabilities.Terminal);
+    }
+
+    [TestMethod]
+    public void BuildClientCapabilities_OmitsFsKeyWhenAProviderOptsOut()
+    {
+        var capabilities = AcpAgentSessionService.BuildClientCapabilities(
+            new KimiCodeAcpAgentProvider(new KimiCodeAcpRuntime(
+                new RuntimeLocator(Path.GetTempPath()), Path.Combine(Path.GetTempPath(), "psx-kimi-logs")))
+                .ClientCapabilities);
+
+        Assert.IsFalse(capabilities.ContainsKey("fs"), "Kimi must not advertise the reverse fs bridge.");
+        Assert.IsTrue(capabilities.ContainsKey("terminal"));
+    }
+
+    [TestMethod]
+    public void BuildClientCapabilities_IncludesFsKeyWhenAProviderOptsIn()
+    {
+        var capabilities = AcpAgentSessionService.BuildClientCapabilities(new AcpClientCapabilityProfile
+        {
+            FileSystemReadText = true,
+            FileSystemWriteText = true,
+            Terminal = true
+        });
+
+        Assert.IsTrue(capabilities.ContainsKey("fs"));
+        using var json = JsonSerializer.SerializeToDocument(capabilities["fs"]);
+        Assert.IsTrue(json.RootElement.GetProperty("readTextFile").GetBoolean());
+        Assert.IsTrue(json.RootElement.GetProperty("writeTextFile").GetBoolean());
+    }
+
     // ---- helpers ----
 
     private static KimiCodeAcpAgentProvider CreateProvider(out TestWorkspace workspace)
