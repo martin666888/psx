@@ -4,6 +4,6 @@
   "version": "0.1.0",
   "description": "PSX ACP adapter runtime — first install uses the seed lockfile; background refresh installs the latest registry version into acp-next for the next launch.",
   "dependencies": {
-    "@agentclientprotocol/claude-agent-acp": "0.57.0"
+    "@agentclientprotocol/claude-agent-acp": "0.61.0"
   }
 }
