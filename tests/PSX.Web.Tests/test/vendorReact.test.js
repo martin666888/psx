@@ -87,7 +87,12 @@ describe('vendored React bundles', () => {
 describe('flag-off React zero-load guard', () => {
   const agentApp = path.join(repositoryRoot, 'wwwroot', 'js', 'agent-app');
   // The only compiled modules allowed to statically import React.
-  const island = ['workspace/runtimeIsland.js', 'workspace/SessionRuntimeCard.js'];
+  const island = [
+    'workspace/runtimeIsland.js',
+    'workspace/SessionRuntimeCard.js',
+    'plan/planIsland.js',
+    'plan/PlanCard.js'
+  ];
 
   it('keeps static React imports confined to the island modules', () => {
     const offenders = [];
@@ -108,8 +113,20 @@ describe('flag-off React zero-load guard', () => {
   });
 
   it('reaches the island only through a dynamic import', () => {
-    const controller = fs.readFileSync(path.join(agentApp, 'workspace', 'SessionRuntimeController.js'), 'utf8');
-    assert.ok(!/import[^;]*from\s*['"]\.\/runtimeIsland\.js['"]/.test(controller), 'static island import found');
-    assert.ok(controller.includes("import('./runtimeIsland.js')"), 'dynamic island import missing');
+    const controllers = [
+      ['workspace/SessionRuntimeController.js', 'runtimeIsland'],
+      ['plan/PlanController.js', 'planIsland']
+    ];
+    for (const [controller, islandModule] of controllers) {
+      const source = fs.readFileSync(path.join(agentApp, controller.replaceAll('/', path.sep)), 'utf8');
+      assert.ok(
+        !new RegExp("import[^;]*from\\s*['\"]\\./" + islandModule + "\\.js['\"]").test(source),
+        controller + ': static island import found'
+      );
+      assert.ok(
+        source.includes("import('./" + islandModule + ".js')"),
+        controller + ': dynamic island import missing'
+      );
+    }
   });
 });
