@@ -42,6 +42,22 @@ function snap(node) {
   if (node.hasAttribute('open')) out.open = true;
   if (node.hasAttribute('hidden')) out.hidden = true;
   if (node.disabled) out.disabled = true;
+  if (tag === 'input' || tag === 'textarea') {
+    if (node.type === 'checkbox') {
+      out.checked = node.checked;
+    } else {
+      out.value = node.value;
+    }
+    if (node.getAttribute('type')) out.type = node.getAttribute('type');
+    if (node.getAttribute('step')) out.step = node.getAttribute('step');
+    if (node.getAttribute('rows')) out.rows = node.getAttribute('rows');
+  }
+  if (tag === 'a') {
+    out.href = node.getAttribute('href');
+    out.target = node.getAttribute('target');
+    out.rel = node.getAttribute('rel');
+  }
+  if (node.hasAttribute('aria-checked')) out['aria-checked'] = node.getAttribute('aria-checked');
   const style = node.getAttribute('style');
   if (style) out.style = style.replace(/\s/g, '');
   const children = [];
@@ -170,6 +186,65 @@ test('React permission/question cards match legacy for active, resolved and canc
   ];
   const legacy = await legacyThread(events);
   const react = await reactThread(events);
+  assert.deepEqual(react, legacy);
+});
+
+const ELICITATION = [
+  ['user_message', { text: 'q' }],
+  [
+    'elicitation_request',
+    {
+      requestId: 'e1',
+      message: 'Pick your options.',
+      schema: {
+        properties: {
+          choice: { type: 'string', title: 'Choice', enum: ['a', 'b'] },
+          count: { type: 'integer', title: 'Count', default: 3 },
+          flags: { type: 'array', title: 'Flags', items: { enum: ['x', 'y'] }, default: ['x'] },
+          ok: { type: 'boolean', title: 'OK', default: true },
+          reason: { type: 'string', title: 'Reason' }
+        },
+        required: ['choice', 'reason']
+      }
+    }
+  ],
+  ['elicitation_request', { requestId: 'e2', mode: 'url', url: 'https://example.com/verify' }]
+];
+
+test('React elicitation forms render structurally equivalent to legacy', async () => {
+  const legacy = await legacyThread(ELICITATION);
+  const react = await reactThread(ELICITATION);
+  assert.deepEqual(react, legacy);
+});
+
+test('React elicitation validation errors match legacy on an empty required submit', async () => {
+  const events = ELICITATION.slice(0, 2);
+  let legacy;
+  {
+    const { app, panelFor } = await mountAgentApp();
+    createAgentWorkspace(app, WS);
+    for (const [type, raw] of events) app.handle({ type, workspaceId: WS, ...raw });
+    const thread = panelFor(WS).querySelector('[data-role="thread"]');
+    // Continue with the required 'reason' textarea empty: the error renders,
+    // nothing is posted (validation fails before the bridge call).
+    [...thread.querySelectorAll('button')].find((b) => b.textContent === 'Continue').click();
+    legacy = threadSnapshot(thread);
+  }
+
+  const projection = new TimelineProjection();
+  for (const [type, raw] of events) projection.apply(type, raw ?? {}, NAME);
+  const host = document.createElement('div');
+  document.body.appendChild(host);
+  const island = mountTimelineIsland(host);
+  await act(async () => {
+    island.render({ rows: projection.snapshot().rows, assistantName: NAME, callbacks: CALLBACKS });
+  });
+  await act(async () => {
+    [...host.querySelectorAll('button')].find((b) => b.textContent === 'Continue').click();
+  });
+  const react = threadSnapshot(host);
+  island.dispose();
+  host.remove();
   assert.deepEqual(react, legacy);
 });
 
