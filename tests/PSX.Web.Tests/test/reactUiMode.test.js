@@ -91,17 +91,20 @@ test('a failing island import falls back to the legacy card permanently', async 
     assert.equal(card.hidden, false);
     assert.equal(card.dataset.state, 'missing');
     assert.equal(panel.querySelector('.agent-runtime-react-host'), null, 'no island host after failure');
-    assert.deepEqual(attempts, ['runtime-card']);
-    assert.equal(warnings.length, 1);
-    assert.match(String(warnings[0]), /island "runtime-card" failed to load/);
+    // Other islands (composer actions, …) load at mount and fail here too;
+    // this test pins the runtime-card path specifically.
+    assert.deepEqual(attempts.filter((name) => name === 'runtime-card'), ['runtime-card']);
+    const runtimeWarnings = () => warnings.filter((w) => /island "runtime-card"/.test(String(w)));
+    assert.equal(runtimeWarnings().length, 1);
+    assert.match(String(runtimeWarnings()[0]), /island "runtime-card" failed to load/);
 
     // Later events render legacy without retrying the import, and the app
     // stays fully usable.
     app.handle(runtimeEvent({ state: 'installing', message: 'Downloading', canInstall: false, canCancel: true }));
     assert.equal(card.dataset.state, 'installing');
     assert.equal(card.getAttribute('aria-busy'), 'true');
-    assert.deepEqual(attempts, ['runtime-card']);
-    assert.equal(warnings.length, 1);
+    assert.deepEqual(attempts.filter((name) => name === 'runtime-card'), ['runtime-card']);
+    assert.equal(runtimeWarnings().length, 1);
   } finally {
     console.warn = originalWarn;
     setIslandLoadInterceptorForTests(null);
@@ -156,7 +159,11 @@ test('closing the workspace during a failing import leaves the app clean', async
     assert.equal(document.querySelector('.agent-runtime-react-host'), null);
     // The disposed loader must not invoke the legacy fallback of a dead panel.
     assert.equal(document.querySelector(`.agent-panel[data-workspace-id="${WS}"]`), null);
-    assert.equal(warnings.length, 1, 'the load failure is still reported once');
+    assert.equal(
+      warnings.filter((w) => /island "runtime-card"/.test(String(w))).length,
+      1,
+      'the load failure is still reported once'
+    );
   } finally {
     console.warn = originalWarn;
     setIslandLoadInterceptorForTests(null);
