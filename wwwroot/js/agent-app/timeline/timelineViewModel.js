@@ -183,6 +183,18 @@ export class TimelineProjection {
         if (item.kind === 'mode_transition')
             item.headerState = 'Sending';
     }
+    /** External hook: a locally-resolved elicitation (legacy disableDecisionCard). */
+    disableDecision(requestId, statusText) {
+        const item = this.findDecision(requestId);
+        if (!item || item.decisionState !== 'active')
+            return;
+        item.decisionState = 'disabled';
+        item.statusText = statusText;
+    }
+    /** Composer/notice seam: append a system row (legacy _appendSystem). */
+    appendSystemMessage(text) {
+        this.appendSystem(text);
+    }
     // --- turns / system ---------------------------------------------------------
     startTurn() {
         this.currentTurnId = this.nextId('turn');
@@ -483,6 +495,10 @@ export class TimelineProjection {
         });
     }
     appendModeTransition(raw, historical) {
+        if (!historical) {
+            // legacy: a newer pending transition interrupts the older one.
+            this.interruptModeTransition('A newer mode transition request replaced this one.');
+        }
         if (!historical && asString(raw.toolCallId)) {
             this.removeToolCardForModeTransition(asString(raw.toolCallId));
         }

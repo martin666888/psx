@@ -28,6 +28,7 @@
 // [data-role="mode-transition-prompt"] node is decisions-owned, so the
 // controller writes it directly.
 import { createInitialWorkspaceState } from '../contracts/workspace-state.js';
+import { isReactUiEnabled } from '../core/flags.js';
 import { defaultOptionValue, orderElicitationFields, readElicitationOptions } from '../core/elicitation.js';
 function asString(value) {
     return typeof value === 'string' ? value : '';
@@ -60,6 +61,10 @@ export class DecisionController {
     modeTransitionCards = {};
     activeModeTransitionRequestId = '';
     animationFrames = new Set();
+    // React mode: the Timeline projection owns every thread card (single React
+    // tree, single DOM owner); this controller keeps only the composer-region
+    // mode-transition prompt, which is a decisions-owned node outside the thread.
+    reactUiEnabled = false;
     constructor(workspaceId, host) {
         this.workspaceId = workspaceId;
         this.host = host;
@@ -68,10 +73,15 @@ export class DecisionController {
     mount() {
         // Decision cards are created lazily in response to ACP requests; there is no
         // static DOM to build at mount time.
+        this.reactUiEnabled = isReactUiEnabled();
     }
     update(event, state) {
         this.state = state;
         const raw = event.raw;
+        if (this.reactUiEnabled) {
+            this.updateReact(event.type, raw);
+            return;
+        }
         switch (event.type) {
             case 'permission_request':
                 if (raw.presentation === 'mode_transition' && raw.documentText) {
@@ -114,6 +124,43 @@ export class DecisionController {
         this.animationFrames.clear();
         this.modeTransitionCards = {};
         this.activeModeTransitionRequestId = '';
+    }
+    // --- React-mode event routing ---------------------------------------------
+    //
+    // Thread cards belong to the Timeline projection; only the composer-region
+    // prompt lifecycle runs here (faithful to the legacy prompt behavior).
+    updateReact(type, raw) {
+        switch (type) {
+            case 'permission_request': {
+                if (raw.presentation !== 'mode_transition' || !raw.documentText)
+                    return;
+                const requestId = asString(raw.requestId);
+                const options = asOptionArray(raw.options);
+                const storedState = asString(raw.decisionState) || 'pending';
+                const pending = storedState === 'pending';
+                const interactive = pending && !!requestId && options.length > 0;
+                if (pending) {
+                    this.showModeTransitionPrompt(raw, null, interactive);
+                }
+                return;
+            }
+            case 'permission_resolved':
+            case 'permission_cancelled':
+            case 'elicitation_cancelled':
+                this.clearModeTransitionPrompt(asString(raw.requestId), true);
+                return;
+            case 'run_failed':
+            case 'run_finished': {
+                // The projection marks the card interrupted; here only the prompt clears.
+                const prompt = this.promptNode;
+                if (this.activeModeTransitionRequestId || (prompt && !prompt.hidden)) {
+                    this.clearModeTransitionPrompt(this.activeModeTransitionRequestId || '', true);
+                }
+                return;
+            }
+            default:
+                return;
+        }
     }
     // --- Derived state -------------------------------------------------------
     get assistantName() {
@@ -807,7 +854,7 @@ export class DecisionController {
             return 'Request cancelled.';
         return 'This request is no longer active.';
     }
-    /** Faithful port of _showModeTransitionPrompt. */
+    /** Faithful port of _showModeTransitionPrompt (card is null in react mode). */
     showModeTransitionPrompt(event, card, interactive) {
         const prompt = this.promptNode;
         const inputRow = this.inputRowNode;
@@ -874,14 +921,16 @@ export class DecisionController {
                         candidate.disabled = true;
                     });
                     button.classList.add('agent-mode-transition-option-pending');
-                    card.dataset.decisionState = 'sending';
-                    card.classList.add('agent-mode-transition-sending');
-                    const cardHeaderState = card.querySelector('.agent-mode-transition-header-state');
-                    if (cardHeaderState)
-                        cardHeaderState.textContent = 'Sending';
-                    const cardStatus = card.querySelector('.agent-mode-transition-status');
-                    if (cardStatus)
-                        cardStatus.textContent = 'Sending ' + optionName + '…';
+                    if (card) {
+                        card.dataset.decisionState = 'sending';
+                        card.classList.add('agent-mode-transition-sending');
+                        const cardHeaderState = card.querySelector('.agent-mode-transition-header-state');
+                        if (cardHeaderState)
+                            cardHeaderState.textContent = 'Sending';
+                        const cardStatus = card.querySelector('.agent-mode-transition-status');
+                        if (cardStatus)
+                            cardStatus.textContent = 'Sending ' + optionName + '…';
+                    }
                     status.textContent = 'Sending ' + optionName + '…';
                     this.bridge()?.sendAgentPermissionResponse(requestId, optionId);
                 });

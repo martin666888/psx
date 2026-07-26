@@ -8,6 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { act } from 'react';
 import { mountAgentApp, createAgentWorkspace, appModule } from './agentHarness.js';
+import { threadSnapshot } from './domSnapshot.js';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -16,65 +17,6 @@ const NAME = 'Agent'; // createInitialWorkspaceState default identity
 
 const { TimelineProjection } = await appModule('timeline/timelineViewModel.js');
 const { mountTimelineIsland } = await appModule('timeline/timelineIsland.js');
-
-// Structural snapshot: tag, class, high-signal attributes, children (svg
-// subtrees collapse to their tag — icon markup formatting differs between
-// innerHTML strings and JSX but is visually identical).
-const ATTRS = [
-  'data-state', 'data-run-id', 'data-tool-id', 'data-request-id', 'data-option-id',
-  'data-option-kind', 'data-raw', 'data-decision-state', 'aria-label', 'aria-live',
-  'aria-busy', 'aria-pressed', 'aria-atomic', 'role', 'title', 'type'
-];
-
-function snap(node) {
-  if (node.nodeType === 3) {
-    return node.textContent;
-  }
-  const tag = node.tagName.toLowerCase();
-  if (tag === 'svg') return { tag };
-  const out = { tag };
-  const cls = node.getAttribute('class');
-  if (cls) out.class = cls;
-  for (const name of ATTRS) {
-    const value = node.getAttribute(name);
-    if (value !== null) out[name] = value;
-  }
-  if (node.hasAttribute('open')) out.open = true;
-  if (node.hasAttribute('hidden')) out.hidden = true;
-  if (node.disabled) out.disabled = true;
-  if (tag === 'input' || tag === 'textarea') {
-    if (node.type === 'checkbox') {
-      out.checked = node.checked;
-    } else {
-      out.value = node.value;
-    }
-    if (node.getAttribute('type')) out.type = node.getAttribute('type');
-    if (node.getAttribute('step')) out.step = node.getAttribute('step');
-    if (node.getAttribute('rows')) out.rows = node.getAttribute('rows');
-  }
-  if (tag === 'a') {
-    out.href = node.getAttribute('href');
-    out.target = node.getAttribute('target');
-    out.rel = node.getAttribute('rel');
-  }
-  if (node.hasAttribute('aria-checked')) out['aria-checked'] = node.getAttribute('aria-checked');
-  const style = node.getAttribute('style');
-  if (style) out.style = style.replace(/\s/g, '');
-  const children = [];
-  for (const child of node.childNodes) {
-    if (child.nodeType === 3) {
-      if (child.textContent) children.push(child.textContent);
-    } else if (child.nodeType === 1) {
-      children.push(snap(child));
-    }
-  }
-  if (children.length) out.children = children;
-  return out;
-}
-
-function threadSnapshot(container) {
-  return [...container.children].map((child) => snap(child));
-}
 
 async function legacyThread(events) {
   const { app, panelFor } = await mountAgentApp(); // legacy pinned
@@ -104,7 +46,9 @@ async function reactThread(events) {
     island.render({ rows: projection.snapshot().rows, assistantName: NAME, callbacks: CALLBACKS });
   });
   const snapshot = threadSnapshot(host);
-  island.dispose();
+  await act(async () => {
+    island.dispose();
+  });
   host.remove();
   return snapshot;
 }
@@ -243,7 +187,9 @@ test('React elicitation validation errors match legacy on an empty required subm
     [...host.querySelectorAll('button')].find((b) => b.textContent === 'Continue').click();
   });
   const react = threadSnapshot(host);
-  island.dispose();
+  await act(async () => {
+    island.dispose();
+  });
   host.remove();
   assert.deepEqual(react, legacy);
 });
@@ -267,6 +213,8 @@ test('assistant delta re-renders keep node identity (no remount churn)', async (
   await render();
   assert.equal(host.querySelector('.agent-message-assistant .agent-message-body'), body);
   assert.equal(body.dataset.raw, 'ab');
-  island.dispose();
+  await act(async () => {
+    island.dispose();
+  });
   host.remove();
 });

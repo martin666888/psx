@@ -147,7 +147,8 @@ describe('flag-off React zero-load guard', () => {
       ['workspace/SessionRuntimeController.js', 'sessionIsland'],
       ['plan/PlanController.js', 'planIsland'],
       ['history/HistoryDockController.js', 'historyIsland'],
-      ['composer/ComposerController.js', 'composerIsland']
+      ['composer/ComposerController.js', 'composerIsland'],
+      ['timeline/TimelineController.js', 'timelineIsland']
     ];
     for (const [controller, islandModule] of controllers) {
       const source = fs.readFileSync(path.join(agentApp, controller.replaceAll('/', path.sep)), 'utf8');
