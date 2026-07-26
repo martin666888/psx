@@ -8,7 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { act } from 'react';
-import { mountAgentApp, createAgentWorkspace, appModule } from './agentHarness.js';
+import { mountAgentApp, createAgentWorkspace, appModule, modeTransitionEvent } from './agentHarness.js';
 import { threadSnapshot } from './domSnapshot.js';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -166,6 +166,48 @@ test('react mode app: a permission click posts the byte-identical response and r
     app.handle({ type: 'permission_resolved', workspaceId: WS, requestId: 'p1', optionId: 'allow', optionName: 'Allow' });
   });
   assert.deepEqual(threadSnapshot(thread()), legacyResolved);
+  await drain(app);
+});
+
+test('react mode app: an active mode transition occupies the composer and resolves like legacy', async () => {
+  let legacyCommand;
+  let legacyResolved;
+  {
+    const { app, panelFor, runtime } = await mountAgentApp();
+    createAgentWorkspace(app, WS);
+    const panel = panelFor(WS);
+    app.handle(modeTransitionEvent({ workspaceId: WS }));
+    const prompt = panel.querySelector('[data-role="mode-transition-prompt"]');
+    assert.equal(prompt.hidden, false);
+    assert.equal(panel.querySelector('[data-role="input-row"]').hidden, true);
+    [...prompt.querySelectorAll('button')].find((b) => b.dataset.optionId === 'approve').click();
+    legacyCommand = runtime.postedMessages.at(-1);
+    app.handle({ type: 'permission_resolved', workspaceId: WS, requestId: 'request-1', optionId: 'approve', optionName: 'Approve' });
+    assert.equal(prompt.hidden, true);
+    legacyResolved = threadSnapshot(panel.querySelector('[data-role="thread"]'));
+  }
+
+  const { app, panelFor, runtime } = await mountAgentApp({ uiMode: 'react' });
+  await act(async () => {
+    createAgentWorkspace(app, WS);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+  const panel = panelFor(WS);
+  await act(async () => {
+    app.handle(modeTransitionEvent({ workspaceId: WS }));
+  });
+  const prompt = panel.querySelector('[data-role="mode-transition-prompt"]');
+  assert.equal(prompt.hidden, false, 'the composer prompt takes over in react mode too');
+  assert.equal(panel.querySelector('[data-role="input-row"]').hidden, true);
+  await act(async () => {
+    [...prompt.querySelectorAll('button')].find((b) => b.dataset.optionId === 'approve').click();
+  });
+  assert.deepEqual(runtime.postedMessages.at(-1), legacyCommand, 'react posts the byte-identical mode transition response');
+  await act(async () => {
+    app.handle({ type: 'permission_resolved', workspaceId: WS, requestId: 'request-1', optionId: 'approve', optionName: 'Approve' });
+  });
+  assert.equal(prompt.hidden, true, 'the prompt clears once the transition resolves');
+  assert.deepEqual(threadSnapshot(panel.querySelector('[data-role="thread"]')), legacyResolved);
   await drain(app);
 });
 
