@@ -90,6 +90,8 @@ describe('flag-off React zero-load guard', () => {
   const island = [
     'workspace/runtimeIsland.js',
     'workspace/SessionRuntimeCard.js',
+    'workspace/sessionIsland.js',
+    'workspace/SessionToolbar.js',
     'plan/planIsland.js',
     'plan/PlanCard.js',
     'history/historyIsland.js',
@@ -117,6 +119,7 @@ describe('flag-off React zero-load guard', () => {
   it('reaches the island only through a dynamic import', () => {
     const controllers = [
       ['workspace/SessionRuntimeController.js', 'runtimeIsland'],
+      ['workspace/SessionRuntimeController.js', 'sessionIsland'],
       ['plan/PlanController.js', 'planIsland'],
       ['history/HistoryDockController.js', 'historyIsland']
     ];
