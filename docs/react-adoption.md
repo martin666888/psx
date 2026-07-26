@@ -132,6 +132,10 @@ The earlier WebView2-oriented smoke (Chromium via import map) confirmed all
 six requests stay on localhost and `react-core.js` loads exactly once
 (single instance).
 
+In-app manual verification (WPF + WebView2, 2026-07-27): the user ran PSX
+through normal Agent usage in the default flag-off mode and observed no
+behavior change. The flag-on in-app pass stays on the pre-merge checklist.
+
 ### Gate-by-gate verdict
 
 - Flag off — zero React loading, zero behavior change: PASS (static guard
