@@ -91,7 +91,9 @@ describe('flag-off React zero-load guard', () => {
     'workspace/runtimeIsland.js',
     'workspace/SessionRuntimeCard.js',
     'plan/planIsland.js',
-    'plan/PlanCard.js'
+    'plan/PlanCard.js',
+    'history/historyIsland.js',
+    'history/HistoryList.js'
   ];
 
   it('keeps static React imports confined to the island modules', () => {
@@ -115,7 +117,8 @@ describe('flag-off React zero-load guard', () => {
   it('reaches the island only through a dynamic import', () => {
     const controllers = [
       ['workspace/SessionRuntimeController.js', 'runtimeIsland'],
-      ['plan/PlanController.js', 'planIsland']
+      ['plan/PlanController.js', 'planIsland'],
+      ['history/HistoryDockController.js', 'historyIsland']
     ];
     for (const [controller, islandModule] of controllers) {
       const source = fs.readFileSync(path.join(agentApp, controller.replaceAll('/', path.sep)), 'utf8');

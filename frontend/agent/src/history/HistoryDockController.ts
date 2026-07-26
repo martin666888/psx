@@ -24,6 +24,9 @@ import {
   formatHistoryTime,
   providerFilterOptions
 } from './historyModel.js';
+import { isReactUiEnabled } from '../core/flags.js';
+import { createIslandLoader, type IslandLoader } from '../core/islandHost.js';
+import type { HistoryListProps } from './HistoryList.js';
 
 /** Everything the dock needs from the registry (store + broker + the live
  * workspace set). Provided as one seam so the controller stays testable. */
@@ -80,6 +83,12 @@ export class HistoryDockController {
   private readonly expandedGroups = new Set<string>();
   private readonly openListeners = new Set<(open: boolean) => void>();
   private readonly widthListeners = new Set<(width: number) => void>();
+
+  // React migration: the dock content subtree is React-owned in react mode;
+  // the dock frame, top bar, resizer, open/width persistence and the fold /
+  // expand interaction state stay with this controller.
+  private reactHistoryEnabled = false;
+  private historyIsland: IslandLoader<HistoryListProps> | null = null;
 
   private readonly cleanup: Array<() => void> = [];
 
@@ -152,6 +161,7 @@ export class HistoryDockController {
     this.width = this.readWidth();
     this.applyWidth(this.width);
     this.preferredOpen = this.readOpen();
+    this.reactHistoryEnabled = isReactUiEnabled();
     this.unsubscribeStore = this.host.subscribe(() => this.render());
     this.wire(search, providerSelect, refresh, resizer);
     // The open/close control is the history-toggle button in every workspace
@@ -233,6 +243,8 @@ export class HistoryDockController {
       this.unsubscribeStore = null;
     }
     for (const off of this.cleanup.splice(0)) off();
+    this.historyIsland?.dispose();
+    this.historyIsland = null;
     this.dock?.remove();
     this.container?.style.removeProperty('--agent-history-width');
     this.dock = null;
@@ -430,12 +442,68 @@ export class HistoryDockController {
 
   private render(options?: { resetScroll?: boolean }): void {
     if (!this.content) return;
+    if (this.reactHistoryEnabled && !this.historyIsland?.hasFailed()) {
+      this.renderReact();
+      // React updates children in place, so the scroll position survives
+      // store-driven renders naturally; only filter changes reset it.
+      if (options?.resetScroll) this.content.scrollTop = 0;
+      return;
+    }
     // Rebuilds wipe the list; keep the user's place across store-driven
     // renders (open-marker refreshes, invalidation waves) and only reset when
     // the search box or provider filter changed the result set.
     const scrollTop = options?.resetScroll ? 0 : this.content.scrollTop;
     this.renderContent();
     this.content.scrollTop = scrollTop;
+  }
+
+  private renderReact(): void {
+    const state = this.host.getState();
+    this.syncProviderOptions(state);
+    this.historyIsland ??= createIslandLoader<HistoryListProps>({
+      name: 'history-list',
+      load: async () => {
+        const mod = await import('./historyIsland.js');
+        return (host) => mod.mountHistoryIsland(host);
+      },
+      createHost: () => this.content,
+      onLoadFailed: () => {
+        if (this.content) this.render();
+      }
+    });
+
+    const activeWorkspaceId = this.host.activeWorkspaceId();
+    const openThreads = this.host.openWorkspaceThreadIds();
+    const activeThreadId = activeWorkspaceId ? openThreads.get(activeWorkspaceId) ?? '' : '';
+    const openedElsewhere = new Set<string>();
+    for (const [workspaceId, threadId] of openThreads) {
+      if (threadId && workspaceId !== activeWorkspaceId) openedElsewhere.add(threadId);
+    }
+
+    this.historyIsland.render({
+      hasWorkspaces: this.host.hasAgentWorkspaces(),
+      state,
+      query: this.searchInput?.value ?? '',
+      providerFilter: this.providerFilterValue,
+      activeThreadId,
+      openedElsewhere,
+      foldedGroups: this.foldedGroups,
+      expandedGroups: this.expandedGroups,
+      onToggleFold: (key) => {
+        if (this.foldedGroups.has(key)) this.foldedGroups.delete(key);
+        else this.foldedGroups.add(key);
+        this.render();
+      },
+      onExpandGroup: (key) => {
+        this.expandedGroups.add(key);
+        this.render();
+      },
+      onOpenThread: (threadId) => {
+        this.host.openThread(threadId);
+      },
+      onDismissOpenError: () => this.host.dismissThreadOpenError(),
+      onRetryRefresh: () => this.host.requestRefresh('')
+    });
   }
 
   private renderContent(): void {
