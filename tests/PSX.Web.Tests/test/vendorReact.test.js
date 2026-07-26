@@ -82,6 +82,26 @@ describe('vendored React bundles', () => {
     assert.equal(typeof reactDom.flushSync, 'function');
     assert.equal(typeof reactDomClient.createRoot, 'function');
   });
+
+  it('keeps the index.html import map valid and pointed at the committed bundles', () => {
+    // Import-map addresses without a '/', './' or '../' prefix are silently
+    // ignored by every browser ("Bare specifier" warning) — the islands would
+    // permanently fall back to legacy. Caught by the Station 7 ZIP smoke.
+    const html = fs.readFileSync(path.join(repositoryRoot, 'wwwroot', 'index.html'), 'utf8');
+    const match = html.match(/<script type="importmap">\s*([\s\S]*?)\s*<\/script>/);
+    assert.ok(match, 'index.html must declare the React import map');
+    const imports = JSON.parse(match[1]).imports;
+    assert.deepEqual(Object.keys(imports).sort(), ['react', 'react-dom', 'react-dom/client', 'react/jsx-runtime']);
+    for (const [specifier, address] of Object.entries(imports)) {
+      assert.match(
+        address,
+        /^(\.\/|\.\.\/|\/)/,
+        specifier + ': import map address "' + address + '" would be ignored as a bare specifier'
+      );
+      const target = path.join(repositoryRoot, 'wwwroot', address.replace(/^\.\//, '').replaceAll('/', path.sep));
+      assert.ok(fs.existsSync(target), specifier + ': mapped file missing: ' + address);
+    }
+  });
 });
 
 describe('flag-off React zero-load guard', () => {
