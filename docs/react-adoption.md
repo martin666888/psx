@@ -189,8 +189,8 @@ on `document.body.dataset.agentUiMode`.
 
 ### Verdict: `READY_FOR_DOGFOOD`
 
-Stations 0–5 are complete and **wired in React mode** (S6 optional,
-skipped), the Release ZIP was rebuilt after the Timeline switch and its
+Stations 0–6 are complete and **wired in React mode**, the Release ZIP
+was rebuilt after the Timeline switch and the Psx layer and its
 browser smoke is fully green, and all three test groups plus the Fast
 suite pass. The Timeline + Decision thread subtree — the largest and last
 holdout — now renders through a single React root in react mode
@@ -210,7 +210,7 @@ mainline merge.
 | S3 Timeline + Decision | DONE, wired: `timelineViewModel.ts` projection (TimelineItem types: message/thinking/tool/system/decision — no plan) + `TimelineView`/`TimelineDecisions` React tree (incl. full elicitation forms) + one-shot routing switch; DecisionController keeps only the composer-region prompt in react mode | `c00b130`, `af6e087`, `3ad9f18`, `15b8bdf`, `8afd9ea`, `ca1e71b` |
 | S4 Composer attachments strip + actions row + command hint islands | DONE, wired (textarea/IME/MenuSelect are planned legacy exclusions) | `d8e7ed1` |
 | S5 session toolbar meta line + Context ring islands | DONE, wired | `6ebe3b2` |
-| S6 Psx base components + tokens (optional) | NOT STARTED (does not affect readiness) | — |
+| S6 Psx base components + tokens (optional) | DONE — `ui/Psx.tsx` (`PsxButton`/`PsxCard`/`PsxTag`/`PsxPill`) emit the existing agent-* classes verbatim and are adopted by the migrated islands; the token seam stays `wwwroot/css/agent/tokens.css` (values untouched); all DOM-equivalence suites pass unchanged | `369b425` |
 | S7 Release ZIP + HTTP smoke | DONE — and it caught a real production bug (below) | `6a2dd5b` |
 | S8 verdict + report | DONE (this section) | — |
 
@@ -272,16 +272,16 @@ existence, and re-verified in a real browser against the rebuilt ZIP.
   byte-clean, `typecheck` clean, no unhandled console errors/rejections
   (act-environment enforced).
 
-### Release ZIP (S7, rebuilt after the Timeline switch)
+### Release ZIP (S7, rebuilt after the Timeline switch and Psx layer)
 
 - `PSX-1.1.2-win-x64-portable.zip`, 123.1 MB, SHA-256
-  `eafc138eb2fae617f5f0846fdd2c6d2d7581ea7a8c6f70710163393960f29513`.
+  `2e5735ed89cffc9c477544e00df6c86f0364282d1f5564ed69ad31154890ef07`.
 - Browser smoke over local HTTP against the unpacked ZIP (base href
   rewritten to `/` by `tools/smoke-server.mjs` only for the smoke; all
   other bytes served as packaged): `agentUiMode === 'react'`;
-  `import('react')` → 19.2.8 via the import map; planIsland mounts and
-  renders real DOM; **zero console errors, zero warnings, zero 404s
-  across 64 requests**.
+  `import('react')` → 19.2.8 via the import map; `ui/Psx.js` exports the
+  four base components; planIsland mounts and renders real DOM; **zero
+  console errors, zero warnings, zero 404s across 65 requests**.
 - Unpacked `PSX.exe` starts and stays alive (6 s liveness check); deep GUI
   verification is on the manual checklist.
 
