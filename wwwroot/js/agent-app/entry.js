@@ -9,7 +9,14 @@ import { WorkspaceHost } from './workspace/WorkspaceHost.js';
 import { AgentWorkspaceRegistry } from './workspace/AgentWorkspaceRegistry.js';
 import { HistoryDockController } from './history/HistoryDockController.js';
 import { AgentShellLayoutController } from './shell/AgentShellLayoutController.js';
+import { reactUiMode } from './core/flags.js';
 export function createAgentApp(options) {
+    // Surface the UI mode once per app start: visible in DevTools and on the
+    // <body> for tests and diagnostics ("React" unless the emergency fallback
+    // key disables it).
+    const uiMode = reactUiMode();
+    console.info('[agent] UI mode: ' + (uiMode === 'react' ? 'React' : 'Legacy'));
+    document.body.dataset.agentUiMode = uiMode;
     const host = new WorkspaceHost(options.terminalManager, options.container, options.template);
     const registry = new AgentWorkspaceRegistry(host, {
         onIgnored(reason) {

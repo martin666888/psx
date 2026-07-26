@@ -14,7 +14,6 @@ import { mountAgentApp, createAgentWorkspace } from './agentHarness.js';
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const WS = '33333333-3333-4333-8333-333333333333';
-const FLAG = 'psx.agent.experimental.react';
 
 // One representative runtime_status payload per runtime state.
 const RUNTIME_EVENTS = [
@@ -25,15 +24,12 @@ const RUNTIME_EVENTS = [
   { state: 'ready', message: 'Ready', canInstall: false, canCancel: false }
 ].map((runtime) => ({ type: 'runtime_status', workspaceId: WS, ...runtime }));
 
-function setFlag(enabled) {
-  // The harness jsdom owns localStorage; the flag reader goes through
-  // globalThis, mirroring how the compiled app sees the WebView2 global.
-  Object.defineProperty(globalThis, 'localStorage', {
-    configurable: true,
-    value: window.localStorage
-  });
-  if (enabled) window.localStorage.setItem(FLAG, '1');
-  else window.localStorage.removeItem(FLAG);
+async function mountWithFlag(enabled) {
+  // uiMode pins the migration flag through the harness: 'react' is the
+  // shipped default on this branch, 'legacy' the emergency fallback.
+  const { app, panelFor, runtime } = await mountAgentApp({ uiMode: enabled ? 'react' : 'legacy' });
+  createAgentWorkspace(app, WS, { ready: false });
+  return { app, panel: panelFor(WS), posted: runtime.postedMessages };
 }
 
 // Snapshot of every DOM fact renderRuntime writes, taken from whichever
@@ -76,13 +72,6 @@ async function actFirstRuntimeEvent(app, panel, event) {
   });
   assert.ok(reactHost(panel), 'island did not mount in time');
   assert.ok(panel.querySelector('[data-role="runtime-card-legacy"]'), 'island commit did not retire the legacy card');
-}
-
-async function mountWithFlag(enabled) {
-  const { app, panelFor, runtime } = await mountAgentApp();
-  setFlag(enabled);
-  createAgentWorkspace(app, WS, { ready: false });
-  return { app, panel: panelFor(WS), posted: runtime.postedMessages };
 }
 
 test('React runtime card renders DOM equivalent to the legacy card for all five states', async () => {

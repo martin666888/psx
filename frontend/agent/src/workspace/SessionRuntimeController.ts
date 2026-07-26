@@ -15,7 +15,7 @@ import type { AgentBridgePort } from '../contracts/bridge-port.js';
 import type { FeatureController } from '../contracts/feature-controller.js';
 import type { AgentWorkspaceEvent } from '../contracts/host-events.js';
 import type { AgentWorkspaceState, WorkspaceRuntimeState } from '../contracts/workspace-state.js';
-import { isReactRuntimeCardEnabled } from '../core/flags.js';
+import { isReactUiEnabled } from '../core/flags.js';
 import { createIslandLoader, type IslandLoader } from '../core/islandHost.js';
 
 /** The strangler seam the controller needs from the legacy adapter. */
@@ -119,7 +119,7 @@ export class SessionRuntimeController implements FeatureController {
     this.on(this.runtimeInstall, 'click', () => this.requestInstall());
     this.on(this.runtimeCancel, 'click', () => this.requestCancelInstall());
 
-    this.reactRuntimeEnabled = isReactRuntimeCardEnabled();
+    this.reactRuntimeEnabled = isReactUiEnabled();
   }
 
   update(event: AgentWorkspaceEvent, state: AgentWorkspaceState): void {

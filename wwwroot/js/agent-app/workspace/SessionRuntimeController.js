@@ -10,7 +10,7 @@
 //   _updateState toolbar block + _setContextUsed (wwwroot/js/agent/thread.js)
 //   _updateRuntimeStatus + _wireRuntimeControls (wwwroot/js/agent/runtime.js)
 // Rendering is triggered on the same events legacy reacted to.
-import { isReactRuntimeCardEnabled } from '../core/flags.js';
+import { isReactUiEnabled } from '../core/flags.js';
 import { createIslandLoader } from '../core/islandHost.js';
 const RUNTIME_TITLES = {
     missing: 'Agent runtime required',
@@ -95,7 +95,7 @@ export class SessionRuntimeController {
         });
         this.on(this.runtimeInstall, 'click', () => this.requestInstall());
         this.on(this.runtimeCancel, 'click', () => this.requestCancelInstall());
-        this.reactRuntimeEnabled = isReactRuntimeCardEnabled();
+        this.reactRuntimeEnabled = isReactUiEnabled();
     }
     update(event, state) {
         if (!this.panel)
