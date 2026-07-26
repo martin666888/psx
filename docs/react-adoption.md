@@ -187,15 +187,18 @@ Overnight execution of the approved "PSX Agent React 全面迁移" plan
 legacy fallback. Startup logs `[agent] UI mode: React|Legacy` and mirrors it
 on `document.body.dataset.agentUiMode`.
 
-### Verdict: `PARTIAL_NOT_READY`
+### Verdict: `READY_FOR_DOGFOOD`
 
-The branch is fully green (all three test groups, Fast suite, Release ZIP
-smoke), React is default-on, and every migrated island is wired — but the
-**Timeline + Decision thread subtree still renders through the legacy
-engine in React mode** (Station 3 shipped its projection layer tested but
-unwired). Per the plan's hard criteria, any Timeline fallback caps the
-verdict at `PARTIAL_NOT_READY`. The branch is safe to keep using; it is
-not yet a mainline merge candidate.
+Stations 0–5 are complete and **wired in React mode** (S6 optional,
+skipped), the Release ZIP was rebuilt after the Timeline switch and its
+browser smoke is fully green, and all three test groups plus the Fast
+suite pass. The Timeline + Decision thread subtree — the largest and last
+holdout — now renders through a single React root in react mode
+(`15b8bdf`), with the legacy engine kept only as the emergency fallback
+path. The planned Composer exclusions (textarea/IME/MenuSelect) remain
+legacy by design and are listed below. Run the manual checklist before
+trusting the branch daily; run `tools/test.ps1 -Suite Full` before any
+mainline merge.
 
 ### Station outcomes
 
@@ -204,7 +207,7 @@ not yet a mainline merge candidate.
 | S0 flag inversion + shared island loader + test matrix | DONE | `cde927f`, `b84ab81`, `d80c3c5` |
 | S1 PlanCard island (plan-panel children) | DONE, wired | `a43eab4` |
 | S2 History list island (history-content children) | DONE, wired | `3c918fc` |
-| S3 Timeline + Decision | **PARTIAL**: `timeline/timelineViewModel.ts` projection (TimelineItem types: message/thinking/tool/system/decision — no plan) committed with 11 unit tests, **not wired**; Timeline routing is 100% legacy in both modes (no mixed ownership) | `c00b130` |
+| S3 Timeline + Decision | DONE, wired: `timelineViewModel.ts` projection (TimelineItem types: message/thinking/tool/system/decision — no plan) + `TimelineView`/`TimelineDecisions` React tree (incl. full elicitation forms) + one-shot routing switch; DecisionController keeps only the composer-region prompt in react mode | `c00b130`, `af6e087`, `3ad9f18`, `15b8bdf`, `8afd9ea`, `ca1e71b` |
 | S4 Composer attachments strip + actions row + command hint islands | DONE, wired (textarea/IME/MenuSelect are planned legacy exclusions) | `d8e7ed1` |
 | S5 session toolbar meta line + Context ring islands | DONE, wired | `6ebe3b2` |
 | S6 Psx base components + tokens (optional) | NOT STARTED (does not affect readiness) | — |
@@ -233,64 +236,80 @@ existence, and re-verified in a real browser against the rebuilt ZIP.
   roots)
 - Composer attachment pills, attach action row, command hint
   (`composerIsland`, three roots)
+- **Timeline thread + Decision/Permission/Question/Mode-Transition/
+  Elicitation cards** (`timelineIsland`, one root owning the whole
+  `data-role="thread"` subtree; events fold into the controller-local
+  `TimelineProjection`)
 
 ### Not migrated (legacy-rendered in react mode)
 
-- **Timeline thread + Decision cards** (largest subtree; projection layer
-  ready at `timeline/timelineViewModel.ts`, React tree + one-shot switch
-  pending)
 - Composer textarea + keyboard/IME + slash command menu + MenuSelect
-  popups (planned permanent exclusions for this phase)
-- Mode-transition composer prompt (decisions-owned composer region)
-- Workspace shell/chrome, terminal UI (out of scope by contract)
+  popups (planned permanent exclusions for this phase; do not affect
+  readiness per plan)
+- Mode-transition composer prompt region (Decision-owned prompt buttons in
+  the composer area; the Timeline card itself is React)
+- Workspace shell/chrome, narrow-mode visibility rules (controller-owned,
+  identical code path in both modes), terminal UI (out of scope by
+  contract)
 
 ### Test matrix results (all green)
 
 - Group A (legacy pinned): harness defaults every test to flag-off; legacy
   path fully protected.
 - Group B (React mode): `reactRuntimeCard`, `reactPlanCard` (node-reuse
-  evidence), `reactHistoryDock`, `reactSessionToolbar`,
-  `reactComposer`, `timelineViewModel` (projection).
+  evidence), `reactHistoryDock`, `reactSessionToolbar`, `reactComposer`,
+  `timelineViewModel` (projection), `timelineReactTree` (structural DOM
+  equivalence vs legacy: streaming, replay, run_failed,
+  permission/question states, elicitation forms + validation, node
+  identity), `reactTimelineApp` (full-app react mode: streaming/replay
+  thread equivalence, agent_cleared, byte-identical permission and
+  mode-transition responses, workspace switch/hide/restore with node
+  identity, mid-stream close teardown).
 - Group C (fallback): `reactUiMode` — injected import failure ⇒ permanent
   legacy fallback, buffered-props rendering, single warning, clean close.
-- Totals: **268/268 web tests**, `tools/test.ps1 -Suite Fast` green
-  (182 C# + web), `verify:agent` byte-clean (41 files), `typecheck` clean.
+- Totals: **284/284 web tests**, `tools/test.ps1 -Suite Fast` green
+  (182 C# + web) re-run after the Timeline switch, `verify:agent`
+  byte-clean, `typecheck` clean, no unhandled console errors/rejections
+  (act-environment enforced).
 
-### Release ZIP (S7)
+### Release ZIP (S7, rebuilt after the Timeline switch)
 
 - `PSX-1.1.2-win-x64-portable.zip`, 123.1 MB, SHA-256
-  `91143a02c0edc5f76b52b528ce585d4928742283e581f35e311faa3779fc0103`.
+  `eafc138eb2fae617f5f0846fdd2c6d2d7581ea7a8c6f70710163393960f29513`.
 - Browser smoke over local HTTP against the unpacked ZIP (base href
   rewritten to `/` by `tools/smoke-server.mjs` only for the smoke; all
   other bytes served as packaged): `agentUiMode === 'react'`;
-  `import('react')` → 19.2.8 via the import map; `createRoot` available;
-  planIsland mounts and renders real DOM; **zero console errors, zero
-  warnings, zero 404s across 65 requests**.
+  `import('react')` → 19.2.8 via the import map; planIsland mounts and
+  renders real DOM; **zero console errors, zero warnings, zero 404s
+  across 64 requests**.
 - Unpacked `PSX.exe` starts and stays alive (6 s liveness check); deep GUI
   verification is on the manual checklist.
 
 ### Known risks / follow-ups
 
-1. S3 wiring is the remaining big rock: TimelineView React tree +
-   Decision/elicitation/mode-transition cards + the one-shot routing
-   switch, driven by the committed projection. No mixed ownership exists
-   today — Timeline is all-legacy until that switch lands.
-2. The composer prompt / Decision coordination must move with S3 (the
-   active mode-transition prompt occupies the composer region; historical
-   snapshots enter the Timeline).
+1. If the timeline island's dynamic import fails at runtime, events that
+   already folded into the projection cannot be replayed by the legacy
+   engine — only subsequent events render legacy. The island is preheated
+   at mount so the failure window is effectively an empty thread; Group C
+   covers the loader contract on the runtime card path.
+2. Known cosmetic deviation: after clicking an option in the composer
+   mode-transition prompt, the React Timeline card shows the sending
+   state only when `permission_resolved` arrives (legacy flipped its card
+   to `sending` immediately). Command payloads are byte-identical.
 3. `tools/smoke-server.mjs` rewrites the base href for browser smokes;
    WebView2 continues to use `https://psx.local/` unchanged.
 4. Mainline merge strategy (unchanged): merge with React default-on, keep
    legacy renderers one release cycle as the emergency fallback, then
-   delete legacy + flag.
+   delete legacy + flag. Run `tools/test.ps1 -Suite Full` before merging.
 
 ### Manual acceptance checklist (run before trusting the branch daily)
 
 1. Unpack the Release ZIP, start `PSX.exe`; DevTools console must show
    `[agent] UI mode: React` and no import-map warnings.
 2. Create several Agent workspaces; switch, hide, restore, close.
-3. Run a long streaming turn (Timeline is legacy-rendered — verify no
-   regressions).
+3. Run a long streaming turn (Timeline is **React-rendered** now — watch
+   thinking rows, tool groups, markdown, auto-scroll and the copy
+   buttons).
 4. Exercise tools, stop, a permission decision, and an error recovery.
 5. Continue an old thread from History (React list → full open flow).
 6. Toggle narrow-window responsive layout; check the Plan card + unread
@@ -300,6 +319,6 @@ existence, and re-verified in a real browser against the rebuilt ZIP.
 8. Restart PSX; verify persisted threads and workspace state.
 9. Flip the emergency fallback (`localStorage['psx.agent.experimental.react']='0'`,
    reload): app must run fully legacy; clear it to return to React.
-10. Use the branch for a day or two before proposing the S3 switch or any
-    mainline merge; run `tools/test.ps1 -Suite Full` before merging.
+10. Use the branch for a day or two; run `tools/test.ps1 -Suite Full`
+    before proposing any mainline merge.
 
