@@ -75,7 +75,9 @@ function Invoke-FrontendTests {
 
     New-Item -ItemType Directory -Path $npmCache -Force | Out-Null
     Invoke-Checked "Restore pinned frontend test dependencies" {
-        npm.cmd ci --prefix $webProject --cache $npmCache --no-audit --no-fund
+        # Root-level install: the repo-root npm workspace owns the single
+        # lockfile and hoists shared dependencies (React, esbuild, types).
+        npm.cmd ci --prefix $repoRoot --cache $npmCache --no-audit --no-fund
     }
     Invoke-Checked "Type-check frontend bridge contract" {
         npm.cmd run typecheck --prefix $webProject

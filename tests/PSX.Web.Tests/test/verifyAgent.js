@@ -7,15 +7,18 @@
 // Usage: node test/verifyAgent.js
 
 import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../../..');
-const pkgRoot = path.resolve(here, '..');
 
-const tsc = path.join(pkgRoot, 'node_modules', 'typescript', 'bin', 'tsc');
+// Resolve tsc through standard module resolution so it is found whether npm
+// hoists TypeScript to the repo-root workspace node_modules or keeps it here.
+const require = createRequire(import.meta.url);
+const tsc = require.resolve('typescript/bin/tsc');
 const tsconfig = path.join(repoRoot, 'frontend', 'agent', 'tsconfig.verify.json');
 const verifyDir = path.join(repoRoot, 'TestResults', 'web', 'agent-verify');
 const targetDir = path.join(repoRoot, 'wwwroot', 'js', 'agent-app');
