@@ -458,9 +458,17 @@
     display: block;
 }
 
-.agent-attachments-strip,
 .agent-composer-mode-transition {
     margin: var(--agent-space-3) var(--agent-space-3) 0;
+}
+
+/* Match .agent-input-row's horizontal padding so pills align with the text.
+ * The top gap must be padding, not margin: the composer card is borderless
+ * with overflow: visible, so a strip margin-top collapses through the card
+ * and leaves the pills flush against the card's top edge. */
+.agent-attachments-strip {
+    margin: 0 18px;
+    padding-top: var(--agent-space-3);
 }
 
 .agent-visually-hidden {

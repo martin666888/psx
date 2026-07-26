@@ -876,16 +876,39 @@ export class ComposerController {
         tile.title = attachment.fileName || 'Image attachment';
         tile.setAttribute('aria-label', 'Preview ' + (attachment.fileName || 'image attachment'));
         const image = document.createElement('img');
-        image.src = attachment.url;
+        // History-loaded attachments keep their original URL, but the backing file
+        // may be long gone (cleaned .psx data, portable moves, provider transcript
+        // replays). Swap in a neutral glyph and disable the preview instead of
+        // showing the browser's broken-image icon.
         image.alt = attachment.fileName || 'Image attachment';
-        tile.appendChild(image);
+        image.addEventListener('error', () => {
+            tile.classList.add('agent-attachment-broken');
+            tile.title = (attachment.fileName || 'Image attachment') + ' (image unavailable)';
+            image.replaceWith(ComposerController.createAttachmentGlyph());
+        });
+        if (attachment.url) {
+            image.src = attachment.url;
+            tile.appendChild(image);
+        }
+        else {
+            tile.classList.add('agent-attachment-broken');
+            tile.title = (attachment.fileName || 'Image attachment') + ' (image unavailable)';
+            tile.appendChild(ComposerController.createAttachmentGlyph());
+        }
+        const name = document.createElement('span');
+        name.className = 'agent-attachment-name';
+        name.textContent = attachment.fileName || 'Image';
+        tile.appendChild(name);
         if (attachment.status === 'uploading') {
             const status = document.createElement('span');
             status.className = 'agent-attachment-status';
             status.textContent = '...';
             tile.appendChild(status);
         }
-        tile.addEventListener('click', () => this.showImagePreview(attachment.url));
+        tile.addEventListener('click', () => {
+            if (!tile.classList.contains('agent-attachment-broken'))
+                this.showImagePreview(attachment.url);
+        });
         shell.appendChild(tile);
         if (removable) {
             const remove = document.createElement('button');
@@ -900,6 +923,16 @@ export class ComposerController {
             shell.appendChild(remove);
         }
         return shell;
+    }
+    static createAttachmentGlyph() {
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('viewBox', '0 0 24 24');
+        svg.setAttribute('aria-hidden', 'true');
+        svg.classList.add('agent-attachment-glyph');
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', 'M19 5v14H5V5h14zm0-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-4.86 8.86-3 3.87L9 13.14 6 17h12l-3.86-5.14z');
+        svg.appendChild(path);
+        return svg;
     }
     removePendingAttachment(clientId) {
         const index = this.pendingAttachments.findIndex((attachment) => attachment.clientId === clientId);
