@@ -10,6 +10,7 @@
 //   _updateState toolbar block + _setContextUsed (wwwroot/js/agent/thread.js)
 //   _updateRuntimeStatus + _wireRuntimeControls (wwwroot/js/agent/runtime.js)
 // Rendering is triggered on the same events legacy reacted to.
+import { isReactRuntimeCardEnabled } from '../core/flags.js';
 const RUNTIME_TITLES = {
     missing: 'Agent runtime required',
     installing: 'Installing Agent runtime',
@@ -60,6 +61,12 @@ export class SessionRuntimeController {
     // Tracked so the install/cancel guards match legacy exactly.
     runtimeState = 'missing';
     cleanup = [];
+    // Experimental React island state (flag: psx.agent.experimental.react).
+    reactRuntimeEnabled = false;
+    reactRuntimeFailed = false;
+    reactIslandLoading = false;
+    reactRuntimeIsland = null;
+    pendingRuntime = null;
     constructor(workspaceId, host) {
         this.workspaceId = workspaceId;
         this.host = host;
@@ -88,16 +95,9 @@ export class SessionRuntimeController {
         this.on(this.changeCwd, 'click', () => {
             this.host.bridgeFor(this.workspaceId)?.sendAgentCommand('pick_cwd');
         });
-        this.on(this.runtimeInstall, 'click', () => {
-            if (this.runtimeState === 'installing' || this.runtimeState === 'ready')
-                return;
-            this.host.bridgeFor(this.workspaceId)?.sendAgentCommand('install_runtime');
-        });
-        this.on(this.runtimeCancel, 'click', () => {
-            if (this.runtimeState !== 'installing')
-                return;
-            this.host.bridgeFor(this.workspaceId)?.sendAgentCommand('cancel_runtime_install');
-        });
+        this.on(this.runtimeInstall, 'click', () => this.requestInstall());
+        this.on(this.runtimeCancel, 'click', () => this.requestCancelInstall());
+        this.reactRuntimeEnabled = isReactRuntimeCardEnabled();
     }
     update(event, state) {
         if (!this.panel)
@@ -109,7 +109,12 @@ export class SessionRuntimeController {
                 this.renderSession(state);
                 break;
             case 'runtime_status':
-                this.renderRuntime(state);
+                if (this.reactRuntimeEnabled && !this.reactRuntimeFailed) {
+                    this.renderRuntimeReact(state.runtime);
+                }
+                else {
+                    this.renderRuntime(state.runtime);
+                }
                 break;
             default:
                 break;
@@ -118,6 +123,11 @@ export class SessionRuntimeController {
     dispose() {
         for (const off of this.cleanup.splice(0))
             off();
+        // Unmount the React root and drop its host node; a pending island import
+        // resolving after this point sees panel === null and discards the mount.
+        this.reactRuntimeIsland?.dispose();
+        this.reactRuntimeIsland = null;
+        this.pendingRuntime = null;
         this.panel = null;
     }
     renderSession(state) {
@@ -172,8 +182,7 @@ export class SessionRuntimeController {
             this.contextTooltipCost.textContent = hasCost ? 'Cost · ' + formatCost(costAmount, costCurrency) : '';
         }
     }
-    renderRuntime(state) {
-        const r = state.runtime;
+    renderRuntime(r) {
         this.runtimeState = r.state;
         if (this.runtimeCard) {
             this.runtimeCard.hidden = r.state === 'ready';
@@ -193,6 +202,76 @@ export class SessionRuntimeController {
             this.runtimeCancel.hidden = !r.canCancel;
             this.runtimeCancel.disabled = !r.canCancel;
         }
+    }
+    // ----- Experimental React runtime-card island -----------------------------
+    //
+    // Props-driven: every runtime_status re-renders the island from the reduced
+    // state. Until the island's first commit reaches the DOM the legacy card
+    // stays untouched, then retireLegacyRuntimeCard swaps ownership atomically
+    // (before paint, via useLayoutEffect in SessionRuntimeCard).
+    renderRuntimeReact(r) {
+        this.runtimeState = r.state; // keep the install/cancel guards in sync
+        this.pendingRuntime = r;
+        if (this.reactRuntimeIsland) {
+            this.reactRuntimeIsland.render(r);
+            return;
+        }
+        if (!this.reactIslandLoading) {
+            this.reactIslandLoading = true;
+            void this.loadRuntimeIsland();
+        }
+    }
+    async loadRuntimeIsland() {
+        try {
+            const mod = await import('./runtimeIsland.js');
+            // Workspace closed while the import was in flight: discard the mount.
+            if (!this.panel || !this.pendingRuntime)
+                return;
+            const legacy = this.runtimeCard;
+            const host = document.createElement('div');
+            host.className = 'agent-runtime-react-host';
+            if (legacy && legacy.parentElement) {
+                legacy.insertAdjacentElement('afterend', host);
+            }
+            else {
+                this.panel.appendChild(host);
+            }
+            this.reactRuntimeIsland = mod.mountRuntimeIsland(host, {
+                onInstall: () => this.requestInstall(),
+                onCancel: () => this.requestCancelInstall(),
+                onCommitted: () => this.retireLegacyRuntimeCard()
+            });
+            // Replay the latest runtime_status buffered while the import ran.
+            this.reactRuntimeIsland.render(this.pendingRuntime);
+        }
+        catch (err) {
+            // Record and permanently fall back to the legacy card for this session.
+            this.reactRuntimeFailed = true;
+            console.warn('[agent] React runtime-card island failed to load; keeping the legacy card.', err);
+            if (this.panel && this.pendingRuntime)
+                this.renderRuntime(this.pendingRuntime);
+        }
+    }
+    /**
+     * First React commit is in the DOM: hide the legacy section and rename its
+     * data-role so the React section is the only `[data-role="runtime-card"]`.
+     */
+    retireLegacyRuntimeCard() {
+        const legacy = this.runtimeCard;
+        if (!legacy || legacy.dataset.role !== 'runtime-card')
+            return;
+        legacy.hidden = true;
+        legacy.dataset.role = 'runtime-card-legacy';
+    }
+    requestInstall() {
+        if (this.runtimeState === 'installing' || this.runtimeState === 'ready')
+            return;
+        this.host.bridgeFor(this.workspaceId)?.sendAgentCommand('install_runtime');
+    }
+    requestCancelInstall() {
+        if (this.runtimeState !== 'installing')
+            return;
+        this.host.bridgeFor(this.workspaceId)?.sendAgentCommand('cancel_runtime_install');
     }
     on(node, type, handler) {
         if (!node)

@@ -21,6 +21,14 @@
     display: none;
 }
 
+/* Sibling host for the experimental React runtime-card island. It replaces
+ * the legacy section as the direct grid item in the `runtime` area; the card
+ * rendered inside keeps the .agent-runtime-card styles above. */
+.agent-runtime-react-host {
+    grid-area: runtime;
+    min-width: 0;
+}
+
 .agent-runtime-card[data-state="failed"],
 .agent-runtime-card[data-state="cancelled"] {
     border-color: var(--agent-error);
