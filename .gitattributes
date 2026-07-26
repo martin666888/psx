@@ -12,6 +12,16 @@
 ###############################################################################
 wwwroot/js/agent-app/** text eol=lf
 frontend/agent/src/**/*.ts text eol=lf
+frontend/agent/src/**/*.tsx text eol=lf
+
+###############################################################################
+# Deterministic LF for the vendored React ESM bundles.
+#
+# vendor-manifest.json records SHA-256 hashes of the exact bytes written by
+# tools/vendor-react.mjs (LF). The static guard test re-hashes the working
+# copy, so CRLF conversion on checkout must never touch these files.
+###############################################################################
+wwwroot/vendor/react/** text eol=lf
 
 ###############################################################################
 # Set default behavior for command prompt diff.
