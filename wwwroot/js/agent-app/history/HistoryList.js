@@ -1,5 +1,6 @@
 import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
 import { buildHistoryGroups, filterHistoryGroups, formatHistoryTime } from './historyModel.js';
+import { PsxTag } from '../ui/Psx.js';
 const PREVIEW_LIMIT = 5;
 function StateBox({ name, text }) {
     const live = name === 'loading' ? { role: 'status', 'aria-live': 'polite' } : {};
@@ -23,7 +24,7 @@ function ThreadRow({ thread, activeThreadId, openedElsewhere, onOpenThread }) {
     return (_jsx("button", { type: "button", className: "agent-history-item", "data-thread-id": thread.threadId || '', "aria-current": isActive ? 'true' : 'false', title: fullDescription || undefined, "aria-label": [titleText, badgeText, fullDescription].filter((part) => part).join(', '), onClick: () => {
             if (thread.threadId)
                 onOpenThread(thread.threadId);
-        }, children: _jsxs("span", { className: "agent-history-heading", children: [_jsx("strong", { children: titleText }), isActive && _jsx("span", { className: "agent-history-current", children: "Current" }), isOpenElsewhere && _jsx("span", { className: "agent-history-open", children: "Open" }), _jsx("small", { children: timeLabel || thread.providerDisplay || '' })] }) }));
+        }, children: _jsxs("span", { className: "agent-history-heading", children: [_jsx("strong", { children: titleText }), isActive && _jsx(PsxTag, { className: "agent-history-current", children: "Current" }), isOpenElsewhere && _jsx(PsxTag, { className: "agent-history-open", children: "Open" }), _jsx("small", { children: timeLabel || thread.providerDisplay || '' })] }) }));
 }
 function HistoryGroup({ group, isSearching, props }) {
     const allThreads = group.threads;

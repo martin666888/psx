@@ -120,7 +120,8 @@ describe('flag-off React zero-load guard', () => {
     'composer/ComposerBits.js',
     'timeline/timelineIsland.js',
     'timeline/TimelineView.js',
-    'timeline/TimelineDecisions.js'
+    'timeline/TimelineDecisions.js',
+    'ui/Psx.js'
   ];
 
   it('keeps static React imports confined to the island modules', () => {

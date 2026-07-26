@@ -15,6 +15,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import { renderMarkdown } from '../core/markdown.js';
 import { TOOL_STATE_LABELS } from './timelineViewModel.js';
 import { DecisionCard } from './TimelineDecisions.js';
+import { PsxButton, PsxCard } from '../ui/Psx.js';
 const COPY_ICON = (_jsxs("svg", { viewBox: "0 0 24 24", width: "14", height: "14", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", children: [_jsx("rect", { x: "9", y: "9", width: "13", height: "13", rx: "2", ry: "2" }), _jsx("path", { d: "M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" })] }));
 const CHECK_ICON = (_jsx("svg", { viewBox: "0 0 24 24", width: "14", height: "14", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", children: _jsx("polyline", { points: "20 6 9 17 4 12" }) }));
 /** React twin of createCopyButton + showCopyFeedback (icon swap + classes). */
@@ -57,7 +58,7 @@ function SystemRow({ item }) {
     return _jsx("div", { className: "agent-system", children: item.text });
 }
 function RecoveryCard({ item, callbacks }) {
-    return (_jsxs("section", { className: "agent-recovery", role: "status", "aria-live": "polite", "aria-atomic": "true", children: [_jsxs("div", { className: "agent-recovery-content", children: [_jsx("div", { className: "agent-recovery-title", children: "Session could not be resumed" }), _jsx("p", { className: "agent-recovery-message", children: item.message }), _jsxs("details", { className: "agent-recovery-details", hidden: !item.detail, children: [_jsx("summary", { children: "Technical details" }), _jsx("pre", { className: "agent-recovery-technical", children: item.detail })] })] }), _jsx("div", { className: "agent-recovery-actions", children: _jsx("button", { type: "button", className: "agent-btn-subtle", onClick: () => callbacks.onOpenTerminal(), children: "Open terminal" }) })] }));
+    return (_jsxs(PsxCard, { className: "agent-recovery", role: "status", "aria-live": "polite", "aria-atomic": "true", children: [_jsxs("div", { className: "agent-recovery-content", children: [_jsx("div", { className: "agent-recovery-title", children: "Session could not be resumed" }), _jsx("p", { className: "agent-recovery-message", children: item.message }), _jsxs("details", { className: "agent-recovery-details", hidden: !item.detail, children: [_jsx("summary", { children: "Technical details" }), _jsx("pre", { className: "agent-recovery-technical", children: item.detail })] })] }), _jsx("div", { className: "agent-recovery-actions", children: _jsx(PsxButton, { variant: "subtle", onClick: () => callbacks.onOpenTerminal(), children: "Open terminal" }) })] }));
 }
 function ThinkingRowView({ item }) {
     if (item.variant === 'row') {

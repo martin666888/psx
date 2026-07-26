@@ -11,6 +11,7 @@
 import { useLayoutEffect } from 'react';
 import type { JSX } from 'react';
 import type { WorkspaceRuntimeState } from '../contracts/workspace-state.js';
+import { PsxButton, PsxCard } from '../ui/Psx.js';
 
 const RUNTIME_TITLES: Readonly<Record<string, string>> = {
   missing: 'Agent runtime required',
@@ -36,7 +37,7 @@ export function SessionRuntimeCard({ runtime, onInstall, onCancel, onCommitted }
   }, [onCommitted]);
 
   return (
-    <section
+    <PsxCard
       data-role="runtime-card"
       className="agent-runtime-card"
       aria-live="polite"
@@ -54,25 +55,23 @@ export function SessionRuntimeCard({ runtime, onInstall, onCancel, onCommitted }
         </p>
       </div>
       <div className="agent-runtime-actions">
-        <button
+        <PsxButton
           data-role="runtime-install"
-          type="button"
           hidden={!runtime.canInstall}
           disabled={!runtime.canInstall}
           onClick={onInstall}
         >
           {runtime.state === 'missing' ? 'Install runtime' : 'Retry installation'}
-        </button>
-        <button
+        </PsxButton>
+        <PsxButton
           data-role="runtime-cancel"
-          type="button"
           hidden={!runtime.canCancel}
           disabled={!runtime.canCancel}
           onClick={onCancel}
         >
           Cancel
-        </button>
+        </PsxButton>
       </div>
-    </section>
+    </PsxCard>
   );
 }

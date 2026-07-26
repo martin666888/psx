@@ -15,6 +15,7 @@ import { renderMarkdown, safeHref } from '../core/markdown.js';
 import { decisionOptionClass } from '../decisions/DecisionController.js';
 import type { DecisionItem, DecisionOptionVM } from './timelineViewModel.js';
 import { CopyButton, useDetailsOpen } from './TimelineView.js';
+import { PsxButton } from '../ui/Psx.js';
 
 export interface DecisionCallbacks {
   /** Permission/question option chosen (posts the bridge response). */
@@ -497,29 +498,27 @@ function ElicitationCard({
         ) : null}
       </form>
       <div className="agent-decision-actions agent-elicitation-actions">
-        <button type="button" className="agent-btn-primary" disabled={disabled} onClick={() => act(submit)}>
+        <PsxButton variant="primary" disabled={disabled} onClick={() => act(submit)}>
           Continue
-        </button>
-        <button
-          type="button"
-          className="agent-btn-subtle"
+        </PsxButton>
+        <PsxButton
+          variant="subtle"
           disabled={disabled}
           onClick={() =>
             act(() => callbacks.onElicitationAction(item, JSON.stringify({ action: 'decline' }), 'Declined.'))
           }
         >
           Decline
-        </button>
-        <button
-          type="button"
-          className="agent-btn-subtle"
+        </PsxButton>
+        <PsxButton
+          variant="subtle"
           disabled={disabled}
           onClick={() =>
             act(() => callbacks.onElicitationAction(item, JSON.stringify({ action: 'cancel' }), 'Cancelled.'))
           }
         >
           Cancel
-        </button>
+        </PsxButton>
       </div>
       {disabled && item.statusText ? <div className="agent-decision-status">{item.statusText}</div> : null}
     </section>

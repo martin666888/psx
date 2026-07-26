@@ -25,6 +25,7 @@ import {
   type ToolGroupItem
 } from './timelineViewModel.js';
 import { DecisionCard, type DecisionCallbacks } from './TimelineDecisions.js';
+import { PsxButton, PsxCard } from '../ui/Psx.js';
 
 export interface TimelineCallbacks extends DecisionCallbacks {
   /** Clipboard write with the legacy execCommand fallback; resolves ok. */
@@ -109,7 +110,7 @@ function SystemRow({ item }: { item: SystemItem }): JSX.Element {
 
 function RecoveryCard({ item, callbacks }: { item: RecoveryItem; callbacks: TimelineCallbacks }): JSX.Element {
   return (
-    <section className="agent-recovery" role="status" aria-live="polite" aria-atomic="true">
+    <PsxCard className="agent-recovery" role="status" aria-live="polite" aria-atomic="true">
       <div className="agent-recovery-content">
         <div className="agent-recovery-title">Session could not be resumed</div>
         <p className="agent-recovery-message">{item.message}</p>
@@ -119,11 +120,11 @@ function RecoveryCard({ item, callbacks }: { item: RecoveryItem; callbacks: Time
         </details>
       </div>
       <div className="agent-recovery-actions">
-        <button type="button" className="agent-btn-subtle" onClick={() => callbacks.onOpenTerminal()}>
+        <PsxButton variant="subtle" onClick={() => callbacks.onOpenTerminal()}>
           Open terminal
-        </button>
+        </PsxButton>
       </div>
-    </section>
+    </PsxCard>
   );
 }
 

@@ -14,6 +14,7 @@ import {
   filterHistoryGroups,
   formatHistoryTime
 } from './historyModel.js';
+import { PsxTag } from '../ui/Psx.js';
 
 interface HistoryThreadView {
   threadId: string;
@@ -103,8 +104,8 @@ function ThreadRow(
     >
       <span className="agent-history-heading">
         <strong>{titleText}</strong>
-        {isActive && <span className="agent-history-current">Current</span>}
-        {isOpenElsewhere && <span className="agent-history-open">Open</span>}
+        {isActive && <PsxTag className="agent-history-current">Current</PsxTag>}
+        {isOpenElsewhere && <PsxTag className="agent-history-open">Open</PsxTag>}
         <small>{timeLabel || thread.providerDisplay || ''}</small>
       </span>
     </button>

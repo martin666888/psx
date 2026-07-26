@@ -6,6 +6,7 @@ import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-run
 // DOM mirrors renderPendingAttachments/createAttachmentTile,
 // the attach button + hidden file input template row, and showCommandHint.
 import { useRef, useState } from 'react';
+import { PsxPill } from '../ui/Psx.js';
 const GLYPH_PATH = 'M19 5v14H5V5h14zm0-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-4.86 8.86-3 3.87L9 13.14 6 17h12l-3.86-5.14z';
 function AttachmentGlyph() {
     return (_jsx("svg", { viewBox: "0 0 24 24", "aria-hidden": "true", className: "agent-attachment-glyph", children: _jsx("path", { d: GLYPH_PATH }) }));
@@ -16,7 +17,7 @@ function AttachmentTile(props) {
     // neutral glyph and disable the preview (legacy image error listener).
     const [broken, setBroken] = useState(!attachment.url);
     const name = attachment.fileName || 'Image attachment';
-    return (_jsxs("div", { className: "agent-attachment-shell", children: [_jsxs("button", { type: "button", className: 'agent-attachment-tile agent-attachment-' +
+    return (_jsxs(PsxPill, { className: "agent-attachment-shell", children: [_jsxs("button", { type: "button", className: 'agent-attachment-tile agent-attachment-' +
                     (attachment.status || 'ready') +
                     (broken ? ' agent-attachment-broken' : ''), title: broken ? name + ' (image unavailable)' : name, "aria-label": 'Preview ' + name, onClick: () => {
                     if (!broken)
