@@ -211,6 +211,47 @@ test('react mode app: an active mode transition occupies the composer and resolv
   await drain(app);
 });
 
+test('react mode app: switching workspaces hides and restores each React thread intact', async () => {
+  const OTHER = '99999999-9999-4999-8999-999999999999';
+  const { app, panelFor } = await mountAgentApp({ uiMode: 'react' });
+  await act(async () => {
+    createAgentWorkspace(app, WS);
+    createAgentWorkspace(app, OTHER);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+  await act(async () => {
+    app.handle({ type: 'user_message', workspaceId: WS, text: 'first thread' });
+    app.handle({ type: 'user_message', workspaceId: OTHER, text: 'second thread' });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+  const first = panelFor(WS);
+  const second = panelFor(OTHER);
+  const firstBody = () => first.querySelector('[data-role="thread"] .agent-message-body');
+  assert.match(firstBody().textContent, /first thread/);
+  assert.match(second.querySelector('[data-role="thread"] .agent-message-body').textContent, /second thread/);
+  const firstNode = firstBody();
+
+  await act(async () => {
+    app.handle({ type: 'workspace_activated', workspaceId: OTHER, kind: 'agent' });
+  });
+  assert.equal(first.hidden, true, 'the inactive workspace hides');
+  // Streaming continues into the hidden workspace's React tree.
+  await act(async () => {
+    app.handle({ type: 'assistant_delta', workspaceId: WS, text: 'still streaming' });
+  });
+  await act(async () => {
+    app.handle({ type: 'workspace_activated', workspaceId: WS, kind: 'agent' });
+  });
+  assert.equal(first.hidden, false, 'restore shows the workspace again');
+  assert.equal(firstBody(), firstNode, 'hide/restore keeps the React node identity');
+  assert.match(first.querySelector('[data-role="thread"]').textContent, /still streaming/);
+  await act(async () => {
+    app.handle({ type: 'agent_workspace_closed', workspaceId: OTHER });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  });
+  await drain(app);
+});
+
 test('react mode app: closing the workspace mid-stream tears down cleanly', async () => {
   const midStream = STREAMING.slice(0, 6); // tool still running
   const { app, thread } = await reactApp(midStream, (t) => t.querySelector('.agent-message-user'));
