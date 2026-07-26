@@ -1,0 +1,197 @@
+// timelineReactTree.test.js — Station 3 React Timeline tree equivalence
+// (Group B, unwired). The tree is not routed yet: these tests drive the
+// TimelineProjection + TimelineView directly and assert structural DOM
+// equivalence against the legacy TimelineController/DecisionController
+// output for the same event stream.
+
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { act } from 'react';
+import { mountAgentApp, createAgentWorkspace, appModule } from './agentHarness.js';
+
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+const WS = '66666666-6666-4666-8666-666666666666';
+const NAME = 'Agent'; // createInitialWorkspaceState default identity
+
+const { TimelineProjection } = await appModule('timeline/timelineViewModel.js');
+const { mountTimelineIsland } = await appModule('timeline/timelineIsland.js');
+
+// Structural snapshot: tag, class, high-signal attributes, children (svg
+// subtrees collapse to their tag — icon markup formatting differs between
+// innerHTML strings and JSX but is visually identical).
+const ATTRS = [
+  'data-state', 'data-run-id', 'data-tool-id', 'data-request-id', 'data-option-id',
+  'data-option-kind', 'data-raw', 'data-decision-state', 'aria-label', 'aria-live',
+  'aria-busy', 'aria-pressed', 'aria-atomic', 'role', 'title', 'type'
+];
+
+function snap(node) {
+  if (node.nodeType === 3) {
+    return node.textContent;
+  }
+  const tag = node.tagName.toLowerCase();
+  if (tag === 'svg') return { tag };
+  const out = { tag };
+  const cls = node.getAttribute('class');
+  if (cls) out.class = cls;
+  for (const name of ATTRS) {
+    const value = node.getAttribute(name);
+    if (value !== null) out[name] = value;
+  }
+  if (node.hasAttribute('open')) out.open = true;
+  if (node.hasAttribute('hidden')) out.hidden = true;
+  if (node.disabled) out.disabled = true;
+  const style = node.getAttribute('style');
+  if (style) out.style = style.replace(/\s/g, '');
+  const children = [];
+  for (const child of node.childNodes) {
+    if (child.nodeType === 3) {
+      if (child.textContent) children.push(child.textContent);
+    } else if (child.nodeType === 1) {
+      children.push(snap(child));
+    }
+  }
+  if (children.length) out.children = children;
+  return out;
+}
+
+function threadSnapshot(container) {
+  return [...container.children].map((child) => snap(child));
+}
+
+async function legacyThread(events) {
+  const { app, panelFor } = await mountAgentApp(); // legacy pinned
+  createAgentWorkspace(app, WS);
+  for (const [type, raw] of events) {
+    app.handle({ type, workspaceId: WS, ...raw });
+  }
+  return threadSnapshot(panelFor(WS).querySelector('[data-role="thread"]'));
+}
+
+const CALLBACKS = {
+  copyText: async () => true,
+  onOpenTerminal: () => {},
+  onDecisionOption: () => {},
+  createAttachmentTile: () => document.createElement('div')
+};
+
+async function reactThread(events) {
+  const projection = new TimelineProjection();
+  for (const [type, raw] of events) {
+    projection.apply(type, raw ?? {}, NAME);
+  }
+  const host = document.createElement('div');
+  document.body.appendChild(host);
+  const island = mountTimelineIsland(host);
+  await act(async () => {
+    island.render({ rows: projection.snapshot().rows, assistantName: NAME, callbacks: CALLBACKS });
+  });
+  const snapshot = threadSnapshot(host);
+  island.dispose();
+  host.remove();
+  return snapshot;
+}
+
+const STREAMING = [
+  ['user_message', { text: 'hello **md**' }],
+  ['thinking_started', {}],
+  ['thinking_delta', { text: 'pondering' }],
+  ['thinking_finished', {}],
+  ['tool_started', { runId: 'r1', toolCallId: 't1', name: 'Bash', summary: 'run ls', input: 'ls' }],
+  ['tool_delta', { toolCallId: 't1', text: '\nout' }],
+  ['tool_finished', { toolCallId: 't1', status: 'completed' }],
+  ['assistant_delta', { text: 'Hi ' }],
+  ['assistant_delta', { text: '**there**' }],
+  ['run_finished', {}],
+  ['command_result', { text: 'done' }]
+];
+
+test('React timeline renders a full streaming turn structurally equivalent to legacy', async () => {
+  const legacy = await legacyThread(STREAMING);
+  const react = await reactThread(STREAMING);
+  assert.deepEqual(react, legacy);
+});
+
+const REPLAY = [
+  [
+    'agent_thread_loaded',
+    {
+      clear: true,
+      messages: [
+        { role: 'user', text: 'hi' },
+        { role: 'thinking', text: 'hmm' },
+        { role: 'tool', runId: 'r1', toolCallId: 't1', summary: 'call 1', toolOutput: 'out', toolStatus: 'completed' },
+        { role: 'tool', runId: 'r1', toolCallId: 't2', summary: 'call 2', text: 'second', toolStatus: 'failed' },
+        { role: 'assistant', text: 'answer **bold**' },
+        { role: 'system', text: 'note' }
+      ]
+    }
+  ]
+];
+
+test('React timeline renders a history replay structurally equivalent to legacy', async () => {
+  const legacy = await legacyThread(REPLAY);
+  const react = await reactThread(REPLAY);
+  assert.deepEqual(react, legacy);
+});
+
+test('React timeline renders the empty-thread ready row and agent_cleared like legacy', async () => {
+  const events = [
+    ['agent_thread_loaded', { clear: true, messages: [] }],
+    ['agent_cleared', {}]
+  ];
+  const legacy = await legacyThread(events);
+  const react = await reactThread(events);
+  assert.deepEqual(react, legacy);
+});
+
+test('React timeline renders run_failed error surfaces like legacy', async () => {
+  const events = [
+    ['user_message', { text: 'go' }],
+    ['tool_started', { runId: 'r1', toolCallId: 't1', name: 'Bash', input: 'x' }],
+    ['run_failed', { text: 'boom' }]
+  ];
+  const legacy = await legacyThread(events);
+  const react = await reactThread(events);
+  assert.deepEqual(react, legacy);
+});
+
+test('React permission/question cards match legacy for active, resolved and cancelled states', async () => {
+  const events = [
+    ['user_message', { text: 'q' }],
+    ['permission_request', { requestId: 'p1', title: 'Run tool?', text: '{"cmd":"ls"}', options: [
+      { optionId: 'allow', name: 'Allow', kind: 'allow_once' },
+      { optionId: 'reject', name: 'Reject', kind: 'reject_once' }
+    ] }],
+    ['question_request', { requestId: 'q1' }],
+    ['permission_resolved', { requestId: 'p1', optionId: 'allow', optionName: 'Allow' }],
+    ['permission_cancelled', { requestId: 'q1', text: 'Too late.' }]
+  ];
+  const legacy = await legacyThread(events);
+  const react = await reactThread(events);
+  assert.deepEqual(react, legacy);
+});
+
+test('assistant delta re-renders keep node identity (no remount churn)', async () => {
+  const projection = new TimelineProjection();
+  projection.apply('user_message', { text: 'q' }, NAME);
+  projection.apply('assistant_delta', { text: 'a' }, NAME);
+  const host = document.createElement('div');
+  document.body.appendChild(host);
+  const island = mountTimelineIsland(host);
+  const render = async () => {
+    await act(async () => {
+      island.render({ rows: projection.snapshot().rows, assistantName: NAME, callbacks: CALLBACKS });
+    });
+  };
+  await render();
+  const body = host.querySelector('.agent-message-assistant .agent-message-body');
+  assert.ok(body);
+  projection.apply('assistant_delta', { text: 'b' }, NAME);
+  await render();
+  assert.equal(host.querySelector('.agent-message-assistant .agent-message-body'), body);
+  assert.equal(body.dataset.raw, 'ab');
+  island.dispose();
+  host.remove();
+});

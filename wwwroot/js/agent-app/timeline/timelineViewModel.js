@@ -177,6 +177,7 @@ export class TimelineProjection {
         if (!item || item.decisionState !== 'active')
             return;
         item.decisionState = 'disabled';
+        item.collapsed = true;
         item.selectedOptionId = optionId;
         item.selectedOptionName = optionName;
         if (item.kind === 'mode_transition')
@@ -451,6 +452,7 @@ export class TimelineProjection {
             text: asString(raw.text) || '{}',
             options,
             decisionState: 'active',
+            collapsed: false,
             selectedOptionId: '',
             selectedOptionName: '',
             statusText: '',
@@ -470,6 +472,7 @@ export class TimelineProjection {
             text: '',
             options: [],
             decisionState: 'active',
+            collapsed: false,
             selectedOptionId: '',
             selectedOptionName: '',
             statusText: '',
@@ -498,6 +501,7 @@ export class TimelineProjection {
                 kind: asString(option.kind)
             })),
             decisionState: historical ? 'disabled' : 'active',
+            collapsed: false,
             selectedOptionId: historical ? asString(raw.selectedOptionId) : '',
             selectedOptionName: '',
             statusText: '',

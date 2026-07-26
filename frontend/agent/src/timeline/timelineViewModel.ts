@@ -122,6 +122,8 @@ export interface DecisionItem {
   options: DecisionOptionVM[];
   /** active | disabled */
   decisionState: 'active' | 'disabled';
+  /** True only after a local option click (legacy closes the details then). */
+  collapsed: boolean;
   selectedOptionId: string;
   selectedOptionName: string;
   /** Status line for cancelled/interrupted cards ('' hides it). */
@@ -322,6 +324,7 @@ export class TimelineProjection {
     const item = this.findDecision(requestId);
     if (!item || item.decisionState !== 'active') return;
     item.decisionState = 'disabled';
+    item.collapsed = true;
     item.selectedOptionId = optionId;
     item.selectedOptionName = optionName;
     if (item.kind === 'mode_transition') item.headerState = 'Sending';
@@ -612,6 +615,7 @@ export class TimelineProjection {
       text: asString(raw.text) || '{}',
       options,
       decisionState: 'active',
+      collapsed: false,
       selectedOptionId: '',
       selectedOptionName: '',
       statusText: '',
@@ -632,6 +636,7 @@ export class TimelineProjection {
       text: '',
       options: [],
       decisionState: 'active',
+      collapsed: false,
       selectedOptionId: '',
       selectedOptionName: '',
       statusText: '',
@@ -660,6 +665,7 @@ export class TimelineProjection {
         kind: asString(option.kind)
       })),
       decisionState: historical ? 'disabled' : 'active',
+      collapsed: false,
       selectedOptionId: historical ? asString(raw.selectedOptionId) : '',
       selectedOptionName: '',
       statusText: '',
