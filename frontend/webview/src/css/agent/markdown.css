@@ -1,3 +1,8 @@
+/* Markdown output of the sanitized renderMarkdown() pipeline (CP4 area 2):
+   AI Elements-style typography on shadcn variables. Fenced code stays on the
+   HTML `pre > code` pipeline; these rules give it the AI Elements CodeBlock
+   look without Shiki. */
+
 .agent-message-body p {
     margin: 0 0 12px;
 }
@@ -13,9 +18,8 @@
 .agent-message-body h5,
 .agent-message-body h6 {
     margin: 18px 0 8px;
-    color: var(--agent-text);
-    font-weight: 700;
-    letter-spacing: 0;
+    font-weight: 600;
+    letter-spacing: -0.01em;
     line-height: 1.35;
 }
 
@@ -44,8 +48,8 @@
 .agent-message-body blockquote {
     margin: 10px 0 12px;
     padding: 6px 0 6px 12px;
-    border-left: 3px solid var(--agent-border-strong);
-    color: var(--agent-text-muted);
+    border-left: 3px solid var(--border);
+    color: var(--muted-foreground);
 }
 
 .agent-table-scroll {
@@ -64,61 +68,54 @@
 .agent-message-body th,
 .agent-message-body td {
     padding: 7px 9px;
-    border: 1px solid var(--agent-border);
+    border: 1px solid var(--border);
     text-align: left;
     vertical-align: top;
 }
 
 .agent-message-body th {
-    background: var(--agent-surface-raised);
-    color: var(--agent-text);
-    font-weight: 700;
+    background: var(--muted);
+    font-weight: 600;
 }
 
 .agent-message-body hr {
     height: 1px;
     margin: 18px 0;
     border: 0;
-    background: var(--agent-border);
+    background: var(--border);
 }
 
 .agent-message-body a {
-    color: var(--agent-accent-hover);
+    color: var(--primary);
     text-decoration: underline;
+    text-underline-offset: 2px;
 }
 
 .agent-message-body code {
     padding: 1px 4px;
-    border-radius: var(--agent-radius-control);
-    background: var(--agent-surface-muted);
-    color: var(--agent-text);
+    border-radius: calc(var(--radius) - 4px);
+    background: var(--muted);
     font-family: var(--agent-font-mono);
     font-size: 0.92em;
 }
 
-.agent-message-user .agent-message-body {
-    padding: var(--agent-space-3) var(--agent-space-4);
-    border: 1px solid var(--agent-border);
-    border-radius: var(--agent-radius-card);
-    background: var(--agent-surface);
-    color: var(--agent-text);
-}
-
-.agent-message-assistant .agent-message-body {
-    color: var(--agent-text);
-}
-
 .agent-message-body pre,
-.agent-tool pre,
 .agent-decision pre {
     overflow: auto;
     margin: 8px 0 0;
     padding: 10px 12px;
-    border-radius: var(--agent-radius-card);
-    background: var(--agent-surface-muted);
-    color: var(--agent-text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--muted);
     font-family: var(--agent-font-mono);
     font-size: clamp(11px, calc(var(--agent-font-size) * 0.8), 18px);
     line-height: 1.5;
     white-space: pre-wrap;
+}
+
+.agent-message-body pre code {
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    font-size: inherit;
 }

@@ -10,6 +10,11 @@
  */
 @import "tailwindcss";
 
+/* The Agent React sources live OUTSIDE the Vite root (frontend/webview), so
+   Tailwind's automatic content detection misses them; register them
+   explicitly or every utility class used by agent/src silently vanishes. */
+@source "../../../agent/src";
+
 /* ---- xterm compatibility overrides under global Preflight (CP0) ----
    1) Preflight's `img,video,canvas { max-width:100% }` must not clamp the
       xterm renderer canvases.

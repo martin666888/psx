@@ -11,7 +11,6 @@
 // TimelineDecisions.tsx and render inside the same tree.
 
 import { useLayoutEffect, useRef, useState, type JSX, type ReactNode } from 'react';
-import { renderMarkdown } from '../core/markdown.js';
 import {
   TOOL_STATE_LABELS,
   type DecisionItem,
@@ -38,8 +37,15 @@ import {
 } from '../components/ai-elements/tool.js';
 import { Task, TaskContent, TaskTrigger } from '../components/ai-elements/task.js';
 import { Shimmer } from '../components/ai-elements/shimmer.js';
+import {
+  Message,
+  MessageAction,
+  MessageActions,
+  MessageContent,
+  PsxMessageResponse
+} from '../components/ai-elements/message.js';
 import { Badge } from '../components/ui/badge.js';
-import { ChevronDownIcon, WrenchIcon } from 'lucide-react';
+import { CheckIcon, ChevronDownIcon, CopyIcon, WrenchIcon } from 'lucide-react';
 
 export interface TimelineCallbacks extends DecisionCallbacks {
   /** Clipboard write with the legacy execCommand fallback; resolves ok. */
@@ -62,19 +68,8 @@ export interface TimelineViewProps {
   onCommitted?: () => void;
 }
 
-const COPY_ICON = (
-  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-  </svg>
-);
-const CHECK_ICON = (
-  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <polyline points="20 6 9 17 4 12"></polyline>
-  </svg>
-);
-
-/** React twin of createCopyButton + showCopyFeedback (icon swap + classes). */
+/** React twin of createCopyButton + showCopyFeedback, restyled onto the AI
+ * Elements MessageAction (ghost icon button + tooltip). */
 export function CopyButton(props: { getText(): string; copyText(text: string): Promise<boolean> }): JSX.Element {
   const [feedback, setFeedback] = useState<'idle' | 'success' | 'fail'>('idle');
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -86,14 +81,18 @@ export function CopyButton(props: { getText(): string; copyText(text: string): P
   );
   const label = feedback === 'success' ? '已复制' : feedback === 'fail' ? '复制失败' : '复制';
   return (
-    <button
-      type="button"
-      className={
-        'agent-copy-button' +
-        (feedback === 'success' ? ' agent-copy-success' : feedback === 'fail' ? ' agent-copy-fail' : '')
-      }
+    <MessageAction
+      tooltip={label}
+      label={label}
       aria-label={label}
-      title={label}
+      className={
+        'agent-copy-button size-7 text-muted-foreground' +
+        (feedback === 'success'
+          ? ' agent-copy-success text-emerald-600'
+          : feedback === 'fail'
+            ? ' agent-copy-fail text-destructive'
+            : '')
+      }
       onClick={() => {
         void props.copyText(props.getText()).then((ok) => {
           if (timer.current) clearTimeout(timer.current);
@@ -105,8 +104,8 @@ export function CopyButton(props: { getText(): string; copyText(text: string): P
         });
       }}
     >
-      {feedback === 'success' ? CHECK_ICON : COPY_ICON}
-    </button>
+      {feedback === 'success' ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
+    </MessageAction>
   );
 }
 
@@ -142,7 +141,7 @@ export function useProjectionOpen(
 }
 
 function SystemRow({ item }: { item: SystemItem }): JSX.Element {
-  return <div className="agent-system">{item.text}</div>;
+  return <div className="agent-system mb-4 text-muted-foreground text-xs">{item.text}</div>;
 }
 
 function RecoveryCard({ item, callbacks }: { item: RecoveryItem; callbacks: TimelineCallbacks }): JSX.Element {
@@ -412,7 +411,7 @@ function UserMessageBody({
     <div
       ref={body}
       className={
-        'agent-message-body' +
+        'agent-message-body w-full' +
         (collapsible ? ' agent-message-collapsible' : '') +
         (collapsible && collapsed ? ' agent-message-collapsed' : '')
       }
@@ -420,11 +419,13 @@ function UserMessageBody({
       {item.attachments.length > 0 ? (
         <AttachmentGrid attachments={item.attachments} callbacks={callbacks} />
       ) : null}
-      <div
-        ref={content}
-        className="agent-message-content"
-        dangerouslySetInnerHTML={{ __html: renderMarkdown(cleanUserText(item.raw)) }}
-      ></div>
+      <MessageContent>
+        <PsxMessageResponse
+          ref={content}
+          className="agent-message-content"
+          markdown={cleanUserText(item.raw)}
+        />
+      </MessageContent>
       {toggle}
     </div>
   );
@@ -445,28 +446,30 @@ const MessageRow = function MessageRow({
   const ariaLabel = isUser ? 'You' : assistantName;
   const showActions = !isUser && item.finalized && !!item.raw.trim();
   return (
-    <article
+    <Message
+      from={isUser ? 'user' : 'assistant'}
       className={
-        'agent-message agent-message-' + item.role + (showLabel ? '' : ' agent-message-continuation')
+        'agent-message agent-message-' + item.role + (showLabel ? ' mb-5' : ' agent-message-continuation mb-5 -mt-2')
       }
       aria-label={ariaLabel}
+      role="article"
     >
-      {showLabel ? <div className="agent-message-label">{ariaLabel}</div> : null}
+      {showLabel ? (
+        <div className="agent-message-label font-semibold text-[13px] text-muted-foreground">{ariaLabel}</div>
+      ) : null}
       {isUser ? (
         <UserMessageBody item={item} callbacks={callbacks} />
       ) : (
-        <div
-          className="agent-message-body"
-          data-raw={item.raw}
-          dangerouslySetInnerHTML={{ __html: renderMarkdown(item.raw) }}
-        ></div>
+        <MessageContent className="agent-message-body w-full" data-raw={item.raw}>
+          <PsxMessageResponse markdown={item.raw} />
+        </MessageContent>
       )}
       {showActions ? (
-        <div className="agent-message-actions">
+        <MessageActions className="agent-message-actions">
           <CopyButton getText={() => item.raw} copyText={callbacks.copyText} />
-        </div>
+        </MessageActions>
       ) : null}
-    </article>
+    </Message>
   );
 };
 

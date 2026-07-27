@@ -11,6 +11,8 @@
 //   installed). This also drops the button-group dependency.
 // - `ai` package types (UIMessage, FileUIPart) are replaced with local
 //   equivalents carrying the same shape.
+// - CP4: MessageContent/PsxMessageResponse type against ComponentProps<"div">
+//   so callers can attach refs (React 19 ref-as-prop).
 
 import { Button } from "@/components/ui/button";
 import {
@@ -20,6 +22,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { renderMarkdown } from "@/core/markdown.js";
 import { PaperclipIcon, XIcon } from "lucide-react";
 import type { ComponentProps, HTMLAttributes } from "react";
 
@@ -48,7 +51,7 @@ export const Message = ({ className, from, ...props }: MessageProps) => (
   />
 );
 
-export type MessageContentProps = HTMLAttributes<HTMLDivElement>;
+export type MessageContentProps = ComponentProps<"div">;
 
 export const MessageContent = ({
   children,
@@ -66,6 +69,26 @@ export const MessageContent = ({
   >
     {children}
   </div>
+);
+
+export type PsxMessageResponseProps = Omit<ComponentProps<"div">, "children"> & {
+  /** Raw markdown; rendered through the existing sanitized pipeline. */
+  markdown: string;
+};
+
+/** PSX counterpart of the upstream Streamdown MessageResponse: the sanitized
+ * renderMarkdown() HTML pipeline (sanitize/safeHref/fenced `pre > code`
+ * untouched) inside the AI Elements message layout. */
+export const PsxMessageResponse = ({
+  className,
+  markdown,
+  ...props
+}: PsxMessageResponseProps) => (
+  <div
+    className={cn("size-full", className)}
+    dangerouslySetInnerHTML={{ __html: renderMarkdown(markdown) }}
+    {...props}
+  />
 );
 
 export type MessageActionsProps = ComponentProps<"div">;

@@ -65,6 +65,10 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
     this.terminalManager = terminalManager;
     this.container = container;
     this.template = template;
+    // The shadcn variable boundary must exist from the first mounted frame;
+    // applyShadcnTheme re-applies it (idempotent) with themed values once the
+    // first settings event arrives.
+    this.container.classList.add('agent-ui');
   }
 
   createWorkspace(workspaceId: string): void {

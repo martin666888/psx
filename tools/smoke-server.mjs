@@ -64,6 +64,13 @@ const REACT_SMOKE_BOOTSTRAP = String.raw`
 
   addEventListener('load', async () => {
     const workspaceId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    emit({
+      type: 'appearance_settings',
+      settings: {
+        agentFontSize: 15,
+        themeColors: { background: '#ffffff', text: '#171717', border: '#e5e5e5' }
+      }
+    });
     emit({ type: 'agent_workspace_created', workspaceId });
     emit({ type: 'workspace_activated', workspaceId, kind: 'agent' });
     emit({

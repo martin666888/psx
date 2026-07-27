@@ -1,46 +1,24 @@
-.agent-system {
-    color: var(--agent-text-muted);
-    font-size: 12px;
-    margin: 0 0 14px;
-}
-
-.agent-message {
-    width: 100%;
-    box-sizing: border-box;
-    margin: 0 0 var(--agent-space-5);
-}
+/* Message region (CP4 area 2): layout/visuals live on the AI Elements
+   Message/MessageContent Tailwind classes. This file keeps only what those
+   cannot express: the appearance-settings font contract and the PSX
+   collapsible user-message machinery. */
 
 .agent-turn {
     width: 100%;
     box-sizing: border-box;
 }
 
-.agent-message-label {
-    margin-bottom: var(--agent-space-2);
-    color: var(--agent-text-muted);
-    font-size: 13px;
-    font-weight: 600;
-}
-
+/* appearance_settings drives the Agent font size; unlayered CSS outranks
+   Tailwind's layered utilities, so this wins over text-sm. */
 .agent-message-body {
-    width: 100%;
-    box-sizing: border-box;
     color: var(--agent-text);
     font-size: var(--agent-font-size);
     line-height: 1.65;
     white-space: normal;
 }
 
-.agent-message-continuation {
-    margin-top: calc(var(--agent-space-2) * -1);
-}
-
-.agent-message-content {
-    position: relative;
-    box-sizing: border-box;
-}
-
 .agent-message-collapsed .agent-message-content {
+    position: relative;
     max-height: var(--agent-user-message-collapsed-height);
     overflow: hidden;
     padding-bottom: 34px;
@@ -54,8 +32,8 @@
     bottom: 0;
     height: 48px;
     pointer-events: none;
-    border-top: 1px solid var(--agent-border);
-    background: var(--agent-surface);
+    border-top: 1px solid var(--border);
+    background: var(--secondary);
 }
 
 .agent-message-collapse-toggle {
@@ -65,9 +43,9 @@
     margin: 2px 0 0;
     padding: 3px 6px;
     border: 0;
-    border-radius: var(--agent-radius-control);
-    background: var(--agent-surface-raised);
-    color: var(--agent-accent-hover);
+    border-radius: calc(var(--radius) - 4px);
+    background: var(--card);
+    color: var(--primary);
     cursor: pointer;
     font: inherit;
     font-size: 0.86em;
@@ -81,54 +59,11 @@
 }
 
 .agent-message-collapse-toggle:hover {
-    color: var(--agent-text);
-    background: color-mix(in srgb, var(--agent-hover) 96%, transparent);
-}
-
-.agent-message-actions {
-    display: flex;
-    gap: 8px;
-    margin-top: 6px;
-}
-
-.agent-copy-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    padding: 0;
-    border: 0;
-    border-radius: var(--agent-radius-control);
-    background: transparent;
-    color: var(--agent-text-dim);
-    cursor: pointer;
-}
-
-.agent-copy-button:hover {
-    color: var(--agent-text-muted);
-    background: var(--agent-hover);
-}
-
-.agent-copy-button:focus-visible {
-    outline: 2px solid var(--agent-focus-ring);
-    outline-offset: 1px;
-}
-
-.agent-copy-button.agent-copy-success {
-    color: var(--agent-allow-color);
-}
-
-.agent-copy-button.agent-copy-fail {
-    color: var(--agent-error);
+    color: var(--foreground);
+    background: var(--accent);
 }
 
 .agent-message-collapse-toggle:focus-visible {
-    outline: 2px solid var(--agent-focus-ring);
+    outline: 2px solid var(--ring);
     outline-offset: 2px;
-}
-
-.agent-copy-button svg {
-    pointer-events: none;
-    display: block;
 }
