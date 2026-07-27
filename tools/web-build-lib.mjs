@@ -90,10 +90,7 @@ export function validateOutput(outDir, label) {
     if (file === '.vite/manifest.json') continue;
     if (/(^|\/)node_modules\//.test(file)) problems.push(`forbidden node_modules path: ${file}`);
     if (file.endsWith('.ts') || file.endsWith('.tsx')) problems.push(`forbidden TypeScript source: ${file}`);
-    // Vendored passthrough files under vendor/ may legitimately ship their
-    // upstream source map (parity with the previous release rule, which only
-    // forbade maps for the generated Agent output).
-    if (file.endsWith('.map') && !file.startsWith('vendor/')) problems.push(`forbidden source map: ${file}`);
+    if (file.endsWith('.map')) problems.push(`forbidden source map: ${file}`);
     if (/component-lab|componentlab/i.test(file)) problems.push(`forbidden Component Lab artifact: ${file}`);
     if (/fixture/i.test(file)) problems.push(`forbidden fixture artifact: ${file}`);
   }

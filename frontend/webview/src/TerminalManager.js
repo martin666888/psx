@@ -1,9 +1,14 @@
 // TerminalManager.js — Manages multiple xterm.js Terminal instances
 
-// xterm and its addons are still loaded as classic scripts from
-// public/vendor/xterm (CP0-verified byte-identical to the npm packages);
-// they publish these globals. The npm import switch lands as its own commit.
-/* global Terminal, FitAddon, Unicode11Addon */
+// npm xterm packages (CP0 provenance: the previously vendored classic files
+// were byte-identical to these exact versions). WebGL stays out on purpose:
+// the old vendored addon-webgl.js was shipped but never activated (the load
+// call was commented out), so terminal behavior is unchanged; a future
+// renderer decision would add @xterm/addon-webgl explicitly.
+import { Terminal } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import { Unicode11Addon } from '@xterm/addon-unicode11';
+import '@xterm/xterm/css/xterm.css';
 
 import { Bridge } from './Bridge.js';
 
@@ -176,9 +181,7 @@ export class TerminalManager {
         });
 
         // Create and load fit addon (must be before open())
-        // addon-fit.js uses UMD format: globalThis.FitAddon = { FitAddon: class, __esModule: true }
-        const FitAddonClass = FitAddon.FitAddon ?? FitAddon;
-        const fitAddon = new FitAddonClass();
+        const fitAddon = new FitAddon();
         terminal.loadAddon(fitAddon);
         const decoder = new TextDecoder('utf-8');
 
@@ -356,20 +359,20 @@ export class TerminalManager {
     _loadAddons(terminal) {
         // Fit addon — already loaded inline, this handles the rest
 
-        // Unicode11 addon (xterm 5.x global: Unicode11Addon)
-        if (window.Unicode11Addon) {
-            try {
-                const Unicode11AddonClass = Unicode11Addon.Unicode11Addon ?? Unicode11Addon;
-                terminal.loadAddon(new Unicode11AddonClass());
-                terminal.unicode.activeVersion = '11';
-            } catch (e) {
-                console.warn('Failed to load Unicode11 addon', e);
-            }
+        // Unicode11 addon
+        try {
+            terminal.loadAddon(new Unicode11Addon());
+            terminal.unicode.activeVersion = '11';
+        } catch (e) {
+            console.warn('Failed to load Unicode11 addon', e);
         }
 
-        // WebGL addon (xterm 5.x global: WebglAddon) — load after open()
-        // TODO: enable after testing basic functionality; WebGL requires open() first
-        // if (window.WebglAddon) {
+        // WebGL renderer: intentionally not loaded. The vendored addon-webgl
+        // script was shipped but never activated here (see the commented-out
+        // load below, unchanged since the classic-script era), so the npm
+        // switch keeps the DOM renderer. Enabling WebGL is a separate
+        // decision: add @xterm/addon-webgl and load it after open().
+        // if (webglEnabled) {
         //     try {
         //         terminal.loadAddon(new WebglAddon());
         //     } catch (e) {
