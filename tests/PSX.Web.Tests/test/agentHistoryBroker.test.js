@@ -16,7 +16,10 @@ const { AgentHistoryRequestBroker } = await appModule('history/AgentHistoryReque
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function makeRig({ timeoutMs = 30 } = {}) {
+// Non-timeout tests get a generous timeout so a slow (coverage-instrumented)
+// run never trips the in-flight retry mid-test; the timeout/retry tests pass
+// their own tight timeoutMs explicitly.
+function makeRig({ timeoutMs = 5000 } = {}) {
   const store = new AgentHistoryStore();
   const commands = [];
   const host = {
