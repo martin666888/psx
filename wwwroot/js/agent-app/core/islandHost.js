@@ -51,8 +51,7 @@ function renderFailure(host, name, phase, error, retry) {
     console.error('[agent] React island "' + name + '" failed during ' + phase + ': ' + errorMessage(error), error);
 }
 export function createIslandLoader(options) {
-    const legacyOptions = 'createHost' in options ? options : null;
-    const stableHost = 'host' in options ? options.host : null;
+    const host = options.host;
     let handle = null;
     let latestProps;
     let hasProps = false;
@@ -78,13 +77,7 @@ export function createIslandLoader(options) {
         failurePhase = phase;
         generation += 1;
         disposeHandle();
-        if (legacyOptions) {
-            console.warn('[agent] React island "' + options.name + '" failed to load; keeping the legacy renderer.', error);
-            if (hasProps)
-                legacyOptions.onLoadFailed(latestProps);
-            return;
-        }
-        renderFailure(stableHost, options.name, phase, error, phase === 'import' ? null : () => loader.retry());
+        renderFailure(host, options.name, phase, error, phase === 'import' ? null : () => loader.retry());
     };
     const reportFailure = (error, phase) => {
         // React may report during its commit. Defer unmounting until that commit
@@ -97,42 +90,20 @@ export function createIslandLoader(options) {
         const currentGeneration = ++generation;
         state = 'loading';
         failurePhase = null;
-        if (stableHost) {
-            stableHost.dataset.islandState = 'loading';
-            stableHost.setAttribute('aria-busy', 'true');
-            stableHost.replaceChildren();
-        }
+        host.dataset.islandState = 'loading';
+        host.setAttribute('aria-busy', 'true');
+        host.replaceChildren();
         let mount;
         try {
             mount = await interceptedLoad(options);
         }
         catch (error) {
-            if (generation === currentGeneration) {
+            if (generation === currentGeneration)
                 fail('import', error);
-            }
-            else if (legacyOptions) {
-                // Preserve the old diagnostic contract for an import that settles
-                // after its workspace has already closed, without reviving fallback.
-                console.warn('[agent] React island "' + options.name + '" failed to load; keeping the legacy renderer.', error);
-            }
             return;
         }
         if (generation !== currentGeneration)
             return;
-        const host = stableHost ?? legacyOptions?.createHost() ?? null;
-        if (!host) {
-            if (legacyOptions) {
-                state = 'failed';
-                failurePhase = 'mount';
-                console.warn('[agent] React island "' + options.name + '" has no host element; keeping the legacy renderer.');
-                if (hasProps)
-                    legacyOptions.onLoadFailed(latestProps);
-            }
-            else {
-                fail('mount', new Error('Island host is unavailable.'));
-            }
-            return;
-        }
         try {
             handle = mount(host, reportFailure);
             state = 'mounted';
@@ -173,8 +144,8 @@ export function createIslandLoader(options) {
                 return;
             state = 'idle';
             failurePhase = null;
-            stableHost.replaceChildren();
-            delete stableHost.dataset.islandState;
+            host.replaceChildren();
+            delete host.dataset.islandState;
             if (hasProps)
                 void loadIsland();
         },
@@ -184,14 +155,9 @@ export function createIslandLoader(options) {
             state = 'disposed';
             generation += 1;
             disposeHandle();
-            if (stableHost) {
-                stableHost.replaceChildren();
-                delete stableHost.dataset.islandState;
-                stableHost.removeAttribute('aria-busy');
-            }
-        },
-        hasFailed() {
-            return state === 'failed';
+            host.replaceChildren();
+            delete host.dataset.islandState;
+            host.removeAttribute('aria-busy');
         }
     };
     return loader;

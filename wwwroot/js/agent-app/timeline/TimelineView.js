@@ -108,11 +108,66 @@ function AttachmentGrid({ attachments, callbacks }) {
     }, [attachments, callbacks]);
     return _jsx("div", { className: "agent-message-attachments", ref: host });
 }
+function UserMessageBody({ item, callbacks }) {
+    const body = useRef(null);
+    const content = useRef(null);
+    const [collapsible, setCollapsible] = useState(false);
+    const [collapsed, setCollapsed] = useState(true);
+    useLayoutEffect(() => {
+        const contentNode = content.current;
+        if (!contentNode || !contentNode.textContent?.trim())
+            return;
+        let firstFrame = 0;
+        let secondFrame = 0;
+        firstFrame = requestAnimationFrame(() => {
+            firstFrame = 0;
+            secondFrame = requestAnimationFrame(() => {
+                secondFrame = 0;
+                const style = window.getComputedStyle(contentNode);
+                const fontSize = parseFloat(style.fontSize) || 15;
+                const parsedLineHeight = parseFloat(style.lineHeight);
+                const lineHeight = Number.isFinite(parsedLineHeight) ? parsedLineHeight : fontSize * 1.65;
+                if (Math.ceil(contentNode.scrollHeight / lineHeight) < 17)
+                    return;
+                contentNode.style.setProperty('--agent-user-message-collapsed-height', lineHeight * 16 + 'px');
+                setCollapsible(true);
+                setCollapsed(true);
+            });
+        });
+        return () => {
+            if (firstFrame)
+                cancelAnimationFrame(firstFrame);
+            if (secondFrame)
+                cancelAnimationFrame(secondFrame);
+        };
+    }, [item.raw]);
+    const toggle = collapsible
+        ? (_jsx("button", { type: "button", className: "agent-message-collapse-toggle", "aria-expanded": !collapsed, onClick: () => {
+                const nextCollapsed = !collapsed;
+                setCollapsed(nextCollapsed);
+                if (!nextCollapsed) {
+                    requestAnimationFrame(() => {
+                        const node = body.current;
+                        if (!node || node.getBoundingClientRect().bottom <= window.innerHeight)
+                            return;
+                        const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                        node.scrollIntoView({
+                            block: 'nearest',
+                            behavior: reduceMotion ? 'auto' : 'smooth'
+                        });
+                    });
+                }
+            }, children: collapsed ? '展开' : '收起' }))
+        : null;
+    return (_jsxs("div", { ref: body, className: 'agent-message-body' +
+            (collapsible ? ' agent-message-collapsible' : '') +
+            (collapsible && collapsed ? ' agent-message-collapsed' : ''), children: [item.attachments.length > 0 ? (_jsx(AttachmentGrid, { attachments: item.attachments, callbacks: callbacks })) : null, _jsx("div", { ref: content, className: "agent-message-content", dangerouslySetInnerHTML: { __html: renderMarkdown(cleanUserText(item.raw)) } }), toggle] }));
+}
 const MessageRow = function MessageRow({ item, showLabel, assistantName, callbacks }) {
     const isUser = item.role === 'user';
     const ariaLabel = isUser ? 'You' : assistantName;
     const showActions = !isUser && item.finalized && !!item.raw.trim();
-    return (_jsxs("article", { className: 'agent-message agent-message-' + item.role + (showLabel ? '' : ' agent-message-continuation'), "aria-label": ariaLabel, children: [showLabel ? _jsx("div", { className: "agent-message-label", children: ariaLabel }) : null, isUser ? (_jsxs("div", { className: "agent-message-body", children: [item.attachments.length > 0 ? (_jsx(AttachmentGrid, { attachments: item.attachments, callbacks: callbacks })) : null, _jsx("div", { className: "agent-message-content", dangerouslySetInnerHTML: { __html: renderMarkdown(cleanUserText(item.raw)) } })] })) : (_jsx("div", { className: "agent-message-body", "data-raw": item.raw, dangerouslySetInnerHTML: { __html: renderMarkdown(item.raw) } })), showActions ? (_jsx("div", { className: "agent-message-actions", children: _jsx(CopyButton, { getText: () => item.raw, copyText: callbacks.copyText }) })) : null] }));
+    return (_jsxs("article", { className: 'agent-message agent-message-' + item.role + (showLabel ? '' : ' agent-message-continuation'), "aria-label": ariaLabel, children: [showLabel ? _jsx("div", { className: "agent-message-label", children: ariaLabel }) : null, isUser ? (_jsx(UserMessageBody, { item: item, callbacks: callbacks })) : (_jsx("div", { className: "agent-message-body", "data-raw": item.raw, dangerouslySetInnerHTML: { __html: renderMarkdown(item.raw) } })), showActions ? (_jsx("div", { className: "agent-message-actions", children: _jsx(CopyButton, { getText: () => item.raw, copyText: callbacks.copyText }) })) : null] }));
 };
 function renderItem(row, rowsInTurn, assistantName, callbacks) {
     const item = row.item;

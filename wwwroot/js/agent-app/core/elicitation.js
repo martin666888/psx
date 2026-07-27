@@ -3,8 +3,7 @@
 // Faithful port of the pure helpers in wwwroot/js/agent/elicitation.js
 // (_readElicitationOptions, _normalizeElicitationOption, _defaultOptionValue,
 // _isSupplementalElicitationField, and the field-ordering rule). The form
-// widgets stay in the legacy engine for Phase 3; only the schema shaping moves
-// here so DecisionController can reuse it in Phase 4.
+// Schema shaping is shared by the timeline elicitation presentation.
 const SUPPLEMENT_PATTERN = /\b(other|custom|response|answer|comment|note|details?)\b/;
 function isRecord(value) {
     return !!value && typeof value === 'object';

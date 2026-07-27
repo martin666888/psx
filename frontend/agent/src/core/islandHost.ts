@@ -19,36 +19,18 @@ export type IslandMount<TProps> = (
   reportFailure: IslandFailureReporter
 ) => IslandHandle<TProps>;
 
-export interface ReactOnlyIslandLoaderOptions<TProps> {
+export interface IslandLoaderOptions<TProps> {
   name: string;
   load: () => Promise<IslandMount<TProps>>;
   /** Stable, controller-owned host for the lifetime of this loader. */
   host: HTMLElement;
 }
 
-/**
- * Transitional shape retained only for the first migration checkpoint.
- * It lets not-yet-retired controllers keep their existing fallback while the
- * React-only loader contract is established underneath them.
- */
-export interface LegacyIslandLoaderOptions<TProps> {
-  name: string;
-  load: () => Promise<IslandMount<TProps>>;
-  createHost: () => HTMLElement | null;
-  onLoadFailed: (props: TProps) => void;
-}
-
-export type IslandLoaderOptions<TProps> =
-  | ReactOnlyIslandLoaderOptions<TProps>
-  | LegacyIslandLoaderOptions<TProps>;
-
 export interface IslandLoader<TProps> {
   render(props: TProps): void;
   /** Retries mount/render failures. Import failures require a new Document. */
   retry(): void;
   dispose(): void;
-  /** Transitional query for controllers removed at the next checkpoints. */
-  hasFailed(): boolean;
 }
 
 // Tests simulate import failures here without changing production specifiers.
@@ -119,10 +101,7 @@ function renderFailure(
 }
 
 export function createIslandLoader<TProps>(options: IslandLoaderOptions<TProps>): IslandLoader<TProps> {
-  const legacyOptions =
-    'createHost' in options ? options as LegacyIslandLoaderOptions<TProps> : null;
-  const stableHost =
-    'host' in options ? options.host : null;
+  const host = options.host;
   let handle: IslandHandle<TProps> | null = null;
   let latestProps!: TProps;
   let hasProps = false;
@@ -147,16 +126,8 @@ export function createIslandLoader<TProps>(options: IslandLoaderOptions<TProps>)
     failurePhase = phase;
     generation += 1;
     disposeHandle();
-    if (legacyOptions) {
-      console.warn(
-        '[agent] React island "' + options.name + '" failed to load; keeping the legacy renderer.',
-        error
-      );
-      if (hasProps) legacyOptions.onLoadFailed(latestProps);
-      return;
-    }
     renderFailure(
-      stableHost!,
+      host,
       options.name,
       phase,
       error,
@@ -175,44 +146,18 @@ export function createIslandLoader<TProps>(options: IslandLoaderOptions<TProps>)
     const currentGeneration = ++generation;
     state = 'loading';
     failurePhase = null;
-    if (stableHost) {
-      stableHost.dataset.islandState = 'loading';
-      stableHost.setAttribute('aria-busy', 'true');
-      stableHost.replaceChildren();
-    }
+    host.dataset.islandState = 'loading';
+    host.setAttribute('aria-busy', 'true');
+    host.replaceChildren();
 
     let mount: IslandMount<TProps>;
     try {
       mount = await interceptedLoad(options);
     } catch (error) {
-      if (generation === currentGeneration) {
-        fail('import', error);
-      } else if (legacyOptions) {
-        // Preserve the old diagnostic contract for an import that settles
-        // after its workspace has already closed, without reviving fallback.
-        console.warn(
-          '[agent] React island "' + options.name + '" failed to load; keeping the legacy renderer.',
-          error
-        );
-      }
+      if (generation === currentGeneration) fail('import', error);
       return;
     }
     if (generation !== currentGeneration) return;
-
-    const host = stableHost ?? legacyOptions?.createHost() ?? null;
-    if (!host) {
-      if (legacyOptions) {
-        state = 'failed';
-        failurePhase = 'mount';
-        console.warn(
-          '[agent] React island "' + options.name + '" has no host element; keeping the legacy renderer.'
-        );
-        if (hasProps) legacyOptions.onLoadFailed(latestProps);
-      } else {
-        fail('mount', new Error('Island host is unavailable.'));
-      }
-      return;
-    }
 
     try {
       handle = mount(host, reportFailure);
@@ -250,8 +195,8 @@ export function createIslandLoader<TProps>(options: IslandLoaderOptions<TProps>)
       if (state !== 'failed' || failurePhase === 'import') return;
       state = 'idle';
       failurePhase = null;
-      stableHost!.replaceChildren();
-      delete stableHost!.dataset.islandState;
+      host.replaceChildren();
+      delete host.dataset.islandState;
       if (hasProps) void loadIsland();
     },
 
@@ -260,15 +205,9 @@ export function createIslandLoader<TProps>(options: IslandLoaderOptions<TProps>)
       state = 'disposed';
       generation += 1;
       disposeHandle();
-      if (stableHost) {
-        stableHost.replaceChildren();
-        delete stableHost.dataset.islandState;
-        stableHost.removeAttribute('aria-busy');
-      }
-    },
-
-    hasFailed(): boolean {
-      return state === 'failed';
+      host.replaceChildren();
+      delete host.dataset.islandState;
+      host.removeAttribute('aria-busy');
     }
   };
 

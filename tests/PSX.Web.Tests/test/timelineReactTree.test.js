@@ -1,60 +1,64 @@
-// timelineReactTree.test.js — Station 3 React Timeline tree equivalence
-// (Group B, unwired). The tree is not routed yet: these tests drive the
-// TimelineProjection + TimelineView directly and assert structural DOM
-// equivalence against the legacy TimelineController/DecisionController
-// output for the same event stream.
+// timelineReactTree.test.js — semantic contracts for the React timeline.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { act } from 'react';
-import { mountAgentApp, createAgentWorkspace, appModule } from './agentHarness.js';
-import { threadSnapshot } from './domSnapshot.js';
+import { appModule, installAgentRuntime } from './agentHarness.js';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
-const WS = '66666666-6666-4666-8666-666666666666';
-const NAME = 'Agent'; // createInitialWorkspaceState default identity
-
+const NAME = 'Agent';
 const { TimelineProjection } = await appModule('timeline/timelineViewModel.js');
 const { mountTimelineIsland } = await appModule('timeline/timelineIsland.js');
 
-async function legacyThread(events) {
-  const { app, panelFor } = await mountAgentApp(); // legacy pinned
-  createAgentWorkspace(app, WS);
-  for (const [type, raw] of events) {
-    app.handle({ type, workspaceId: WS, ...raw });
-  }
-  return threadSnapshot(panelFor(WS).querySelector('[data-role="thread"]'));
-}
-
-const CALLBACKS = {
+const BASE_CALLBACKS = {
   copyText: async () => true,
   onOpenTerminal: () => {},
   onDecisionOption: () => {},
-  createAttachmentTile: () => document.createElement('div')
+  onElicitationAction: () => {},
+  createAttachmentTile: (attachment) => {
+    const tile = document.createElement('div');
+    tile.className = 'message-attachment-tile';
+    tile.textContent = attachment.fileName || '';
+    return tile;
+  }
 };
 
-async function reactThread(events) {
+async function renderEvents(events, callbackOverrides = {}) {
+  installAgentRuntime();
   const projection = new TimelineProjection();
-  for (const [type, raw] of events) {
-    projection.apply(type, raw ?? {}, NAME);
-  }
+  for (const [type, raw] of events) projection.apply(type, raw ?? {}, NAME);
   const host = document.createElement('div');
   document.body.appendChild(host);
-  const island = mountTimelineIsland(host);
-  await act(async () => {
-    island.render({ rows: projection.snapshot().rows, assistantName: NAME, callbacks: CALLBACKS });
-  });
-  const snapshot = threadSnapshot(host);
-  await act(async () => {
-    island.dispose();
-  });
-  host.remove();
-  return snapshot;
+  const failures = [];
+  const island = mountTimelineIsland(host, (error, phase) => failures.push({ error, phase }));
+  const callbacks = { ...BASE_CALLBACKS, ...callbackOverrides };
+  const render = async () => {
+    await act(async () => {
+      island.render({
+        rows: projection.snapshot().rows,
+        assistantName: NAME,
+        callbacks
+      });
+    });
+  };
+  await render();
+  return {
+    host,
+    island,
+    projection,
+    callbacks,
+    failures,
+    render,
+    async dispose() {
+      await act(async () => island.dispose());
+      host.remove();
+    }
+  };
 }
 
 const STREAMING = [
-  ['user_message', { text: 'hello **md**' }],
+  ['user_message', { text: 'hello **md**', attachments: [{ fileName: 'shot.png' }] }],
   ['thinking_started', {}],
   ['thinking_delta', { text: 'pondering' }],
   ['thinking_finished', {}],
@@ -67,271 +71,251 @@ const STREAMING = [
   ['command_result', { text: 'done' }]
 ];
 
-test('React timeline renders a full streaming turn structurally equivalent to legacy', async () => {
-  const legacy = await legacyThread(STREAMING);
-  const react = await reactThread(STREAMING);
-  assert.deepEqual(react, legacy);
+test('streaming renders messages, thinking, tools, attachments and completion state', async () => {
+  const view = await renderEvents(STREAMING);
+  assert.equal(view.failures.length, 0);
+  assert.equal(view.host.querySelectorAll('.agent-turn').length, 1);
+  assert.match(view.host.querySelector('.agent-message-user').textContent, /hello md/);
+  assert.equal(view.host.querySelector('.message-attachment-tile').textContent, 'shot.png');
+  assert.equal(view.host.querySelector('.agent-thinking-block').getAttribute('aria-busy'), 'false');
+  assert.equal(view.host.querySelector('.agent-tool-card').dataset.state, 'done');
+  assert.equal(view.host.querySelector('.agent-message-assistant .agent-message-body').dataset.raw, 'Hi **there**');
+  assert.ok(view.host.querySelector('.agent-copy-button'));
+  assert.match(view.host.textContent, /done/);
+  await view.dispose();
 });
 
-const REPLAY = [
-  [
-    'agent_thread_loaded',
-    {
+test('history replay restores every persisted row kind', async () => {
+  const view = await renderEvents([
+    ['agent_thread_loaded', {
       clear: true,
       messages: [
         { role: 'user', text: 'hi' },
         { role: 'thinking', text: 'hmm' },
-        { role: 'tool', runId: 'r1', toolCallId: 't1', summary: 'call 1', toolOutput: 'out', toolStatus: 'completed' },
-        { role: 'tool', runId: 'r1', toolCallId: 't2', summary: 'call 2', text: 'second', toolStatus: 'failed' },
-        { role: 'assistant', text: 'answer **bold**' },
+        { role: 'tool', runId: 'r1', toolCallId: 't1', summary: 'call', toolOutput: 'out', toolStatus: 'completed' },
+        { role: 'assistant', text: 'answer' },
         { role: 'system', text: 'note' }
       ]
-    }
-  ]
-];
-
-test('React timeline renders a history replay structurally equivalent to legacy', async () => {
-  const legacy = await legacyThread(REPLAY);
-  const react = await reactThread(REPLAY);
-  assert.deepEqual(react, legacy);
+    }]
+  ]);
+  assert.match(view.host.textContent, /hi/);
+  assert.match(view.host.textContent, /hmm/);
+  assert.equal(view.host.querySelector('.agent-tool-card').dataset.state, 'done');
+  assert.match(view.host.querySelector('.agent-message-assistant').textContent, /answer/);
+  assert.match(view.host.querySelector('.agent-system').textContent, /note/);
+  await view.dispose();
 });
 
-// Historical mode-transition cards must map the real persisted C# states
-// (selected / cancelled / interrupted — never "resolved").
-const MODE_TRANSITION_REPLAY = [
-  [
-    'agent_thread_loaded',
-    {
-      clear: true,
-      messages: [
-        { role: 'user', text: 'go' },
-        {
-          role: 'mode_transition',
-          requestId: 'mt-selected',
-          toolCallId: 'tc-1',
-          name: 'Plan',
-          text: '# Proposal A',
-          decisionOptions: [
-            { optionId: 'approve', name: 'Approve', kind: 'allow_once' },
-            { optionId: 'reject', name: 'Reject', kind: 'reject_once' }
-          ],
-          selectedOptionId: 'approve',
-          decisionState: 'selected'
-        },
-        {
-          role: 'mode_transition',
-          requestId: 'mt-cancelled',
-          name: 'Plan',
-          text: '# Proposal B',
-          decisionOptions: [{ optionId: 'approve', name: 'Approve', kind: 'allow_once' }],
-          selectedOptionId: '',
-          decisionState: 'cancelled'
-        },
-        {
-          role: 'mode_transition',
-          requestId: 'mt-interrupted',
-          name: 'Plan',
-          text: '# Proposal C',
-          decisionOptions: [{ optionId: 'approve', name: 'Approve', kind: 'allow_once' }],
-          selectedOptionId: '',
-          decisionState: 'interrupted'
-        }
-      ]
-    }
-  ]
-];
-
-test('React historical mode transitions render selected/cancelled/interrupted like legacy', async () => {
-  const legacy = await legacyThread(MODE_TRANSITION_REPLAY);
-  const react = await reactThread(MODE_TRANSITION_REPLAY);
-  assert.deepEqual(react, legacy);
-  // Belt and braces: the header labels must be the real-state mapping, not
-  // the removed 'resolved' check.
-  const states = JSON.stringify(legacy);
-  for (const label of ['Selected', 'Cancelled', 'Interrupted']) {
-    assert.ok(states.includes(label), 'legacy snapshot contains the ' + label + ' header');
-  }
+test('historical mode transitions map selected, cancelled and interrupted states', async () => {
+  const messages = ['selected', 'cancelled', 'interrupted'].map((decisionState, index) => ({
+    role: 'mode_transition',
+    requestId: 'mt-' + decisionState,
+    toolCallId: 'tc-' + index,
+    name: 'Plan',
+    text: '# Proposal',
+    decisionOptions: [{ optionId: 'approve', name: 'Approve', kind: 'allow_once' }],
+    selectedOptionId: decisionState === 'selected' ? 'approve' : '',
+    decisionState
+  }));
+  const view = await renderEvents([
+    ['agent_thread_loaded', { clear: true, messages }]
+  ]);
+  const cards = [...view.host.querySelectorAll('.agent-mode-transition')];
+  assert.equal(cards.length, 3);
+  assert.deepEqual(
+    cards.map((card) => card.querySelector('.agent-mode-transition-header-state').textContent),
+    ['Selected', 'Cancelled', 'Interrupted']
+  );
+  assert.equal(cards[0].querySelector('[data-option-id="approve"]').getAttribute('aria-pressed'), 'true');
+  await view.dispose();
 });
 
-test('React timeline renders the empty-thread ready row and agent_cleared like legacy', async () => {
-  const events = [
-    ['agent_thread_loaded', { clear: true, messages: [] }],
-    ['agent_cleared', {}]
-  ];
-  const legacy = await legacyThread(events);
-  const react = await reactThread(events);
-  assert.deepEqual(react, legacy);
-});
-
-test('a mid-turn recovery card keeps one turn block and unique React keys', async () => {
-  // legacy: the recovery card lands at the thread root while the open turn
-  // section keeps collecting later rows. The React grouping must not split
-  // the turn into two blocks sharing one key.
-  const events = [
-    ['user_message', { text: 'go' }],
-    ['assistant_delta', { text: 'partial ' }],
-    ['resume_failed', { message: 'Session could not be resumed.', detail: 'boom' }],
-    ['thinking_started', {}],
-    ['thinking_delta', { text: 'recovering' }],
-    ['run_finished', {}]
-  ];
+test('recovery and later events stay in one turn without duplicate-key warnings', async () => {
   const errors = [];
   const originalError = console.error;
-  console.error = (...args) => {
-    errors.push(args.map(String).join(' '));
-  };
+  console.error = (...args) => errors.push(args.map(String).join(' '));
   try {
-    const legacy = await legacyThread(events);
-    const react = await reactThread(events);
-    assert.deepEqual(react, legacy);
+    const view = await renderEvents([
+      ['user_message', { text: 'go' }],
+      ['assistant_delta', { text: 'partial' }],
+      ['resume_failed', { message: 'Could not resume', detail: 'boom' }],
+      ['thinking_started', {}],
+      ['thinking_delta', { text: 'recovering' }],
+      ['run_finished', {}]
+    ]);
+    assert.equal(view.host.querySelectorAll('.agent-turn').length, 1);
+    assert.ok(view.host.querySelector('.agent-recovery'));
+    assert.match(view.host.textContent, /recovering/);
+    await view.dispose();
   } finally {
     console.error = originalError;
   }
-  const keyErrors = errors.filter((line) => /same key|unique/i.test(line));
-  assert.deepEqual(keyErrors, [], 'no duplicate React key warnings');
+  assert.deepEqual(errors.filter((line) => /same key|unique/i.test(line)), []);
 });
 
-test('React timeline renders run_failed error surfaces like legacy', async () => {
-  const events = [
-    ['user_message', { text: 'go' }],
-    ['tool_started', { runId: 'r1', toolCallId: 't1', name: 'Bash', input: 'x' }],
-    ['run_failed', { text: 'boom' }]
-  ];
-  const legacy = await legacyThread(events);
-  const react = await reactThread(events);
-  assert.deepEqual(react, legacy);
-});
-
-test('React permission/question cards match legacy for active, resolved and cancelled states', async () => {
-  const events = [
+test('permission and question actions expose semantic state and callbacks', async () => {
+  const chosen = [];
+  const view = await renderEvents([
     ['user_message', { text: 'q' }],
-    ['permission_request', { requestId: 'p1', title: 'Run tool?', text: '{"cmd":"ls"}', options: [
-      { optionId: 'allow', name: 'Allow', kind: 'allow_once' },
-      { optionId: 'reject', name: 'Reject', kind: 'reject_once' }
-    ] }],
-    ['question_request', { requestId: 'q1' }],
-    ['permission_resolved', { requestId: 'p1', optionId: 'allow', optionName: 'Allow' }],
-    ['permission_cancelled', { requestId: 'q1', text: 'Too late.' }]
-  ];
-  const legacy = await legacyThread(events);
-  const react = await reactThread(events);
-  assert.deepEqual(react, legacy);
+    ['permission_request', {
+      requestId: 'p1',
+      title: 'Run tool?',
+      options: [
+        { optionId: 'allow', name: 'Allow', kind: 'allow_once' },
+        { optionId: 'reject', name: 'Reject', kind: 'reject_once' }
+      ]
+    }],
+    ['question_request', {
+      requestId: 'q1',
+      options: [{ optionId: 'yes', name: 'Yes' }]
+    }]
+  ], {
+    onDecisionOption: (item, option) => chosen.push([item.requestId, option.optionId])
+  });
+  await act(async () => view.host.querySelector('[data-request-id="p1"] [data-option-id="allow"]').click());
+  await act(async () => view.host.querySelector('[data-request-id="q1"] [data-option-id="yes"]').click());
+  assert.deepEqual(chosen, [['p1', 'allow'], ['q1', 'yes']]);
+
+  view.projection.selectDecisionOption('p1', 'allow', 'Allow');
+  view.projection.disableDecision('q1', 'Too late.');
+  await view.render();
+  assert.equal(view.host.querySelector('[data-request-id="p1"]').dataset.decisionState, 'disabled');
+  assert.equal(view.host.querySelector('[data-request-id="p1"] [data-option-id="allow"]').getAttribute('aria-pressed'), 'true');
+  assert.match(view.host.querySelector('[data-request-id="q1"]').textContent, /Too late/);
+  await view.dispose();
 });
 
-const ELICITATION = [
-  ['user_message', { text: 'q' }],
-  [
-    'elicitation_request',
-    {
-      requestId: 'e1',
-      message: 'Pick your options.',
-      schema: {
-        properties: {
-          choice: { type: 'string', title: 'Choice', enum: ['a', 'b'] },
-          count: { type: 'integer', title: 'Count', default: 3 },
-          flags: { type: 'array', title: 'Flags', items: { enum: ['x', 'y'] }, default: ['x'] },
-          ok: { type: 'boolean', title: 'OK', default: true },
-          reason: { type: 'string', title: 'Reason' }
-        },
-        required: ['choice', 'reason']
-      }
-    }
-  ],
-  ['elicitation_request', { requestId: 'e2', mode: 'url', url: 'https://example.com/verify' }]
-];
-
-test('React elicitation forms render structurally equivalent to legacy', async () => {
-  const legacy = await legacyThread(ELICITATION);
-  const react = await reactThread(ELICITATION);
-  assert.deepEqual(react, legacy);
-});
-
-test('React elicitation validation errors match legacy on an empty required submit', async () => {
-  const events = ELICITATION.slice(0, 2);
-  let legacy;
-  {
-    const { app, panelFor } = await mountAgentApp();
-    createAgentWorkspace(app, WS);
-    for (const [type, raw] of events) app.handle({ type, workspaceId: WS, ...raw });
-    const thread = panelFor(WS).querySelector('[data-role="thread"]');
-    // Continue with the required 'reason' textarea empty: the error renders,
-    // nothing is posted (validation fails before the bridge call).
-    [...thread.querySelectorAll('button')].find((b) => b.textContent === 'Continue').click();
-    legacy = threadSnapshot(thread);
+const ELICITATION = ['elicitation_request', {
+  requestId: 'e1',
+  message: 'Pick your options.',
+  schema: {
+    properties: {
+      choice: { type: 'string', title: 'Choice', enum: ['a', 'b'] },
+      count: { type: 'integer', title: 'Count', default: 3 },
+      flags: { type: 'array', title: 'Flags', items: { enum: ['x', 'y'] }, default: ['x'] },
+      ok: { type: 'boolean', title: 'OK', default: true },
+      reason: { type: 'string', title: 'Reason' }
+    },
+    required: ['choice', 'reason']
   }
+}];
 
-  const projection = new TimelineProjection();
-  for (const [type, raw] of events) projection.apply(type, raw ?? {}, NAME);
-  const host = document.createElement('div');
-  document.body.appendChild(host);
-  const island = mountTimelineIsland(host);
-  await act(async () => {
-    island.render({ rows: projection.snapshot().rows, assistantName: NAME, callbacks: CALLBACKS });
+test('elicitation blocks an invalid required-field submission', async () => {
+  const actions = [];
+  const view = await renderEvents([ELICITATION], {
+    onElicitationAction: (item, payload, statusText) =>
+      actions.push({ requestId: item.requestId, payload, statusText })
   });
-  await act(async () => {
-    [...host.querySelectorAll('button')].find((b) => b.textContent === 'Continue').click();
-  });
-  const react = threadSnapshot(host);
-  await act(async () => {
-    island.dispose();
-  });
-  host.remove();
-  assert.deepEqual(react, legacy);
+  const continueButton = [...view.host.querySelectorAll('button')].find((button) => button.textContent === 'Continue');
+  await act(async () => continueButton.click());
+  assert.equal(actions.length, 0);
+  assert.match(view.host.querySelector('.agent-elicitation-field-error').textContent, /Enter a response/);
+  await view.dispose();
 });
 
-test('onCommitted fires after the DOM commit so auto-scroll reads fresh layout', async () => {
-  const projection = new TimelineProjection();
-  projection.apply('user_message', { text: 'q' }, NAME);
-  const host = document.createElement('div');
-  document.body.appendChild(host);
-  const island = mountTimelineIsland(host);
-  const seen = [];
-  await act(async () => {
-    island.render({
-      rows: projection.snapshot().rows,
-      assistantName: NAME,
-      callbacks: CALLBACKS,
-      onCommitted: () => seen.push(host.querySelectorAll('.agent-message-user').length)
-    });
+test('a valid elicitation emits the exact accepted payload', async () => {
+  const actions = [];
+  const valid = structuredClone(ELICITATION);
+  valid[1].schema.properties.reason.default = 'Because it is safe';
+  const view = await renderEvents([valid], {
+    onElicitationAction: (item, payload, statusText) =>
+      actions.push({ requestId: item.requestId, payload, statusText })
   });
-  assert.deepEqual(seen, [1], 'the commit callback observed the committed row');
-  projection.apply('assistant_delta', { text: 'a' }, NAME);
-  await act(async () => {
-    island.render({
-      rows: projection.snapshot().rows,
-      assistantName: NAME,
-      callbacks: CALLBACKS,
-      onCommitted: () => seen.push(host.querySelectorAll('.agent-message-assistant').length)
-    });
-  });
-  assert.deepEqual(seen, [1, 1], 'every commit reports against the fresh DOM');
-  await act(async () => {
-    island.dispose();
-  });
-  host.remove();
+  const continueButton = [...view.host.querySelectorAll('button')].find(
+    (button) => button.textContent === 'Continue'
+  );
+  await act(async () => continueButton.click());
+  assert.deepEqual(actions, [{
+    requestId: 'e1',
+    payload: JSON.stringify({
+      action: 'accept',
+      content: { choice: 'a', count: 3, flags: ['x'], ok: true, reason: 'Because it is safe' }
+    }),
+    statusText: 'Response sent.'
+  }]);
+  await view.dispose();
 });
 
-test('assistant delta re-renders keep node identity (no remount churn)', async () => {
+test('unsafe elicitation URLs remain plain text', async () => {
+  const view = await renderEvents([
+    ['elicitation_request', { requestId: 'e2', mode: 'url', url: 'javascript:alert(1)' }]
+  ]);
+  const url = view.host.querySelector('.agent-elicitation-url');
+  assert.match(url.textContent, /javascript:alert/);
+  assert.equal(url.querySelector('a'), null);
+  await view.dispose();
+});
+
+test('commit callback runs against the fresh DOM and updates preserve node identity', async () => {
+  installAgentRuntime();
   const projection = new TimelineProjection();
   projection.apply('user_message', { text: 'q' }, NAME);
   projection.apply('assistant_delta', { text: 'a' }, NAME);
   const host = document.createElement('div');
   document.body.appendChild(host);
-  const island = mountTimelineIsland(host);
+  const island = mountTimelineIsland(host, (error) => {
+    throw error;
+  });
+  const committed = [];
   const render = async () => {
     await act(async () => {
-      island.render({ rows: projection.snapshot().rows, assistantName: NAME, callbacks: CALLBACKS });
+      island.render({
+        rows: projection.snapshot().rows,
+        assistantName: NAME,
+        callbacks: BASE_CALLBACKS,
+        onCommitted: () => committed.push(host.querySelectorAll('.agent-message-assistant').length)
+      });
     });
   };
   await render();
   const body = host.querySelector('.agent-message-assistant .agent-message-body');
-  assert.ok(body);
   projection.apply('assistant_delta', { text: 'b' }, NAME);
   await render();
+  assert.deepEqual(committed, [1, 1]);
   assert.equal(host.querySelector('.agent-message-assistant .agent-message-body'), body);
   assert.equal(body.dataset.raw, 'ab');
-  await act(async () => {
-    island.dispose();
+  await act(async () => island.dispose());
+});
+
+test('user messages over sixteen lines can be expanded and collapsed accessibly', async () => {
+  installAgentRuntime();
+  const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollHeight');
+  Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
+    configurable: true,
+    get() {
+      return this.classList?.contains('agent-message-content') ? 400 : 0;
+    }
   });
-  host.remove();
+  try {
+    const projection = new TimelineProjection();
+    projection.apply(
+      'user_message',
+      { text: Array.from({ length: 17 }, (_, i) => 'line ' + i).join('\n') },
+      NAME
+    );
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const island = mountTimelineIsland(host, (error) => {
+      throw error;
+    });
+    await act(async () => {
+      island.render({
+        rows: projection.snapshot().rows,
+        assistantName: NAME,
+        callbacks: BASE_CALLBACKS
+      });
+    });
+    const button = host.querySelector('.agent-message-collapse-toggle');
+    const body = host.querySelector('.agent-message-body');
+    assert.ok(button);
+    assert.equal(button.getAttribute('aria-expanded'), 'false');
+    assert.ok(body.classList.contains('agent-message-collapsed'));
+    await act(async () => button.click());
+    assert.equal(button.getAttribute('aria-expanded'), 'true');
+    assert.ok(!body.classList.contains('agent-message-collapsed'));
+    await act(async () => island.dispose());
+  } finally {
+    if (original) Object.defineProperty(HTMLElement.prototype, 'scrollHeight', original);
+    else delete HTMLElement.prototype.scrollHeight;
+  }
 });
