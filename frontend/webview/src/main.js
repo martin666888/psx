@@ -1,13 +1,15 @@
 // main.js — WebView entry point.
 //
-// Startup timing (plan Phase 2): synchronously create the TerminalManager,
-// register the host listener (terminal events handled inline, Agent events
-// buffered into a staging queue), send `ready` IMMEDIATELY, then dynamically
-// import the Agent ESM app. The C# host calls PublishStateAsync before it sees
-// `ready` (MainWindow.xaml.cs), so Agent events such as agent_providers can
-// arrive before the Agent chunk finishes importing — the staging queue is
-// mandatory, not a fallback. If the Agent module fails to load, the terminal
-// is already live and only the Agent panel is disabled.
+// Startup timing (plan Phase 2 + CP3b lazy loading): synchronously create the
+// TerminalManager, register the host listener (terminal events handled
+// inline, Agent events staged), and send `ready` IMMEDIATELY. The Agent chunk
+// is imported only when the FIRST `agent_workspace_created` event arrives —
+// a terminal-only session never loads React or the Agent app. The C# host
+// calls PublishStateAsync before it sees `ready` (MainWindow.xaml.cs), so
+// app-scope events such as agent_providers arrive before any Agent workspace
+// exists — the staging store is mandatory, not a fallback. If the Agent
+// module fails to load, the terminal is already live and only the Agent
+// panel is disabled.
 
 import './css/tailwind.css';
 import './css/terminal.css';
@@ -21,7 +23,69 @@ import { TerminalManager } from './TerminalManager.js';
 
     let agentApp = null;
     let agentDisabled = false;
+    let agentLoadStarted = false;
+
+    // Pre-load staging (CP3b). Config/state events only need their most
+    // recent value, so they collapse instead of queueing; History
+    // invalidations merge into one dirty marker; every workspace lifecycle /
+    // content event is buffered losslessly in arrival order. The queue cap is
+    // a diagnostic tripwire, not a drop threshold — content is never
+    // silently discarded.
+    const latestByType = new Map();
+    let latestActivation = null;
+    let historyInvalidation = null;
     const agentQueue = [];
+    const AGENT_QUEUE_DIAGNOSTIC_LIMIT = 4096;
+    let queueLimitReported = false;
+
+    function stageAgentEvent(message) {
+        switch (message.type) {
+            case BridgeEventType.Settings:
+            case BridgeEventType.AppearanceSettings:
+            case BridgeEventType.AgentProviders:
+                latestByType.set(message.type, message);
+                return;
+            case BridgeEventType.WorkspaceActivated:
+                // Only the final activation describes the current state; no
+                // Agent workspace events can precede agent_workspace_created,
+                // so collapsing never reorders a workspace lifecycle.
+                latestActivation = message;
+                return;
+            case BridgeEventType.AgentHistoryInvalidated:
+                historyInvalidation = message;
+                return;
+            default:
+                agentQueue.push(message);
+                if (agentQueue.length > AGENT_QUEUE_DIAGNOSTIC_LIMIT && !queueLimitReported) {
+                    queueLimitReported = true;
+                    console.error(
+                        '[agent] staged event queue exceeded ' + AGENT_QUEUE_DIAGNOSTIC_LIMIT
+                        + ' entries while the Agent module was loading; buffering continues losslessly.'
+                    );
+                }
+                return;
+        }
+    }
+
+    function drainStagedEvents(deliver) {
+        // Config first, then the ordered lifecycle/content stream (which
+        // starts with the triggering agent_workspace_created), then the
+        // current activation, then the merged History dirty marker.
+        for (const type of [BridgeEventType.Settings, BridgeEventType.AppearanceSettings, BridgeEventType.AgentProviders]) {
+            const staged = latestByType.get(type);
+            if (staged) deliver(staged);
+        }
+        latestByType.clear();
+        for (const queued of agentQueue.splice(0)) deliver(queued);
+        if (latestActivation) {
+            deliver(latestActivation);
+            latestActivation = null;
+        }
+        if (historyInvalidation) {
+            deliver(historyInvalidation);
+            historyInvalidation = null;
+        }
+    }
 
     function showAgentLoadFailure() {
         const workspace = document.getElementById('agent-workspace-container');
@@ -74,9 +138,37 @@ import { TerminalManager } from './TerminalManager.js';
         }
         if (agentApp) {
             agentApp.handle(message);
-        } else {
-            agentQueue.push(message);
+            return;
         }
+        stageAgentEvent(message);
+        // Lazy trigger (CP3b): only the first Agent workspace pulls in the
+        // Agent chunk. A terminal-only session never reaches this import.
+        if (message.type === BridgeEventType.AgentWorkspaceCreated) loadAgentApp();
+    }
+
+    // Load the Agent ESM app on demand. Success: drain the staged events and
+    // route every later Agent event through it. Failure: disable the Agent
+    // panel; the terminal is already live and unaffected, and the error card
+    // becomes visible only while an Agent workspace is active.
+    function loadAgentApp() {
+        if (agentLoadStarted) return;
+        agentLoadStarted = true;
+        import('../../agent/src/entry.ts')
+            .then((module) => {
+                const app = module.createAgentApp({
+                    terminalManager,
+                    container: document.getElementById('agent-workspace-container'),
+                    template: document.getElementById('agent-workspace-template')
+                });
+                agentApp = app;
+                drainStagedEvents((staged) => app.handle(staged));
+            })
+            .catch((error) => {
+                agentDisabled = true;
+                console.error('[agent] failed to load Agent app; terminal remains available.', error);
+                showAgentLoadFailure();
+                drainStagedEvents((staged) => handleAgentFallback(staged));
+            });
     }
 
     Bridge.onHostMessage((message) => {
@@ -127,30 +219,7 @@ import { TerminalManager } from './TerminalManager.js';
     });
 
     // Send ready IMMEDIATELY so the host creates the initial terminal without
-    // waiting for the Agent module to import (or even if it fails to).
+    // waiting for anything Agent-related; the Agent chunk is only imported
+    // once the host announces the first Agent workspace (loadAgentApp above).
     Bridge.sendReady();
-
-    // Load the Agent ESM app. Success: drain the staging queue and route every
-    // later Agent event through it. Failure: disable the Agent panel; the
-    // terminal is already live and unaffected.
-    import('../../agent/src/entry.ts')
-        .then((module) => {
-            const app = module.createAgentApp({
-                terminalManager,
-                container: document.getElementById('agent-workspace-container'),
-                template: document.getElementById('agent-workspace-template')
-            });
-            agentApp = app;
-            for (const queued of agentQueue.splice(0)) {
-                app.handle(queued);
-            }
-        })
-        .catch((error) => {
-            agentDisabled = true;
-            console.error('[agent] failed to load Agent app; terminal remains available.', error);
-            showAgentLoadFailure();
-            for (const queued of agentQueue.splice(0)) {
-                handleAgentFallback(queued);
-            }
-        });
 })();
