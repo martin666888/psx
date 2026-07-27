@@ -31,8 +31,14 @@ export function createIslandLoader(options) {
             if (disposed || pending === null)
                 return;
             const host = options.createHost();
-            if (!host)
+            if (!host) {
+                // A live loader without a host element must not park in loading
+                // forever: fail fast so the legacy renderer takes over permanently.
+                failed = true;
+                console.warn('[agent] React island "' + options.name + '" has no host element; keeping the legacy renderer.');
+                options.onLoadFailed(pending);
                 return;
+            }
             handle = mount(host);
             // Replay the latest props buffered while the import ran.
             handle.render(pending);

@@ -169,3 +169,71 @@ test('closing the workspace during a failing import leaves the app clean', async
     setIslandLoadInterceptorForTests(null);
   }
 });
+
+test('a null island host fails fast instead of parking in loading forever', async () => {
+  const { createIslandLoader } = await appModule('core/islandHost.js');
+  const fallbacks = [];
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => {
+    warnings.push(args[0]);
+  };
+  try {
+    const loader = createIslandLoader({
+      name: 'null-host',
+      load: async () => () => ({ render() {}, dispose() {} }),
+      createHost: () => null,
+      onLoadFailed: (props) => fallbacks.push(props)
+    });
+    loader.render({ v: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(loader.hasFailed(), true, 'a missing host is a failure, not an eternal loading state');
+    assert.deepEqual(fallbacks, [{ v: 1 }], 'the buffered props reach the legacy fallback');
+    assert.equal(
+      warnings.filter((w) => /island "null-host"/.test(String(w))).length,
+      1,
+      'the missing host is reported once'
+    );
+    // Later renders stay silent no-ops; the controller reads hasFailed().
+    loader.render({ v: 2 });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.deepEqual(fallbacks, [{ v: 1 }]);
+    assert.equal(warnings.filter((w) => /island "null-host"/.test(String(w))).length, 1);
+  } finally {
+    console.warn = originalWarn;
+  }
+});
+
+test('a disposed loader with a vanished host ends quietly', async () => {
+  const { createIslandLoader } = await appModule('core/islandHost.js');
+  const fallbacks = [];
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => {
+    warnings.push(args[0]);
+  };
+  try {
+    let release;
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    const loader = createIslandLoader({
+      name: 'disposed-host',
+      load: async () => {
+        await gate;
+        return () => ({ render() {}, dispose() {} });
+      },
+      createHost: () => null,
+      onLoadFailed: (props) => fallbacks.push(props)
+    });
+    loader.render({ v: 1 });
+    loader.dispose();
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(loader.hasFailed(), false, 'disposal is not a failure');
+    assert.deepEqual(fallbacks, [], 'no fallback fires for a closed workspace');
+    assert.deepEqual(warnings, [], 'no warning fires for a closed workspace');
+  } finally {
+    console.warn = originalWarn;
+  }
+});
