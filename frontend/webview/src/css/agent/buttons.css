@@ -31,13 +31,13 @@
  * selector .agent-send.agent-send-stop (0,2,0) to actually turn red. */
 :where(.agent-composer-decision-stop),
 .agent-send.agent-send-stop {
-    border-color: var(--agent-stop-btn);
-    background: var(--agent-stop-btn);
-    color: var(--agent-send-btn-text);
+    border-color: var(--destructive);
+    background: var(--destructive);
+    color: var(--primary-foreground);
 }
 
 :where(.agent-composer-decision-stop):hover:not(:disabled),
 .agent-send.agent-send-stop:hover:not(:disabled) {
-    border-color: var(--agent-stop-btn-hover);
-    background: var(--agent-stop-btn-hover);
+    border-color: color-mix(in oklab, var(--destructive) 88%, black);
+    background: color-mix(in oklab, var(--destructive) 88%, black);
 }

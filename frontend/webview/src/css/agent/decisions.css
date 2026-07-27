@@ -10,35 +10,35 @@
 
 .agent-btn-allow {
     background: color-mix(in srgb, var(--agent-allow-color) 15%, transparent);
-    border-color: var(--agent-border-strong);
-    color: var(--agent-text);
+    border-color: var(--border);
+    color: var(--foreground);
 }
 
 .agent-btn-allow:hover {
     background: color-mix(in srgb, var(--agent-allow-color) 25%, transparent);
-    border-color: var(--agent-border-strong);
+    border-color: var(--border);
 }
 
 .agent-btn-reject {
     background: color-mix(in srgb, var(--agent-deny-color) 15%, transparent);
-    border-color: var(--agent-border-strong);
-    color: var(--agent-text);
+    border-color: var(--border);
+    color: var(--foreground);
 }
 
 .agent-btn-reject:hover {
     background: color-mix(in srgb, var(--agent-deny-color) 25%, transparent);
-    border-color: var(--agent-border-strong);
+    border-color: var(--border);
 }
 
 .agent-btn-always-allow {
     background: color-mix(in srgb, var(--agent-caution-color) 15%, transparent);
-    border-color: var(--agent-border-strong);
-    color: var(--agent-text);
+    border-color: var(--border);
+    color: var(--foreground);
 }
 
 .agent-btn-always-allow:hover {
     background: color-mix(in srgb, var(--agent-caution-color) 25%, transparent);
-    border-color: var(--agent-border-strong);
+    border-color: var(--border);
 }
 
 /* --- Composer-dock decision prompt (legacy skin until CP4 area 6) ------- */
@@ -46,10 +46,10 @@
 .agent-composer-mode-transition {
     box-sizing: border-box;
     padding: var(--agent-space-3);
-    border: 1px solid var(--agent-border-strong);
+    border: 1px solid var(--border);
     border-radius: var(--agent-radius-card);
-    background: var(--agent-surface-raised);
-    color: var(--agent-text);
+    background: var(--card);
+    color: var(--foreground);
 }
 
 .agent-composer-decision-header {
@@ -65,7 +65,7 @@
 }
 
 .agent-composer-decision-title {
-    color: var(--agent-text);
+    color: var(--foreground);
     font-size: 13px;
     font-weight: 700;
     line-height: 1.4;
@@ -74,7 +74,7 @@
 
 .agent-composer-decision-instruction {
     margin-top: 2px;
-    color: var(--agent-text-muted);
+    color: var(--muted-foreground);
     font-size: 12px;
     line-height: 1.4;
 }
@@ -100,10 +100,10 @@
     min-height: 36px;
     box-sizing: border-box;
     padding: var(--agent-space-2) var(--agent-space-3);
-    border: 1px solid var(--agent-border-strong);
+    border: 1px solid var(--border);
     border-radius: var(--agent-radius-control);
-    background: var(--agent-surface);
-    color: var(--agent-text);
+    background: var(--background);
+    color: var(--foreground);
     font-family: var(--agent-font-ui);
     font-size: 12px;
     font-weight: 600;
@@ -114,13 +114,13 @@
 }
 
 .agent-composer-decision-option:hover:not(:disabled) {
-    border-color: var(--agent-focus-ring);
-    background: var(--agent-hover);
+    border-color: var(--ring);
+    background: var(--accent);
 }
 
 .agent-composer-decision-option:focus-visible,
 .agent-composer-decision-stop:focus-visible {
-    outline: 2px solid var(--agent-focus-ring);
+    outline: 2px solid var(--ring);
     outline-offset: 1px;
 }
 
@@ -133,11 +133,11 @@
 .agent-composer-decision-status {
     min-height: 17px;
     margin-top: var(--agent-space-2);
-    color: var(--agent-text-muted);
+    color: var(--muted-foreground);
     font-size: 12px;
     line-height: 1.4;
 }
 
 .agent-composer-mode-transition[data-decision-state="sending"] .agent-composer-decision-status {
-    color: var(--agent-accent-hover);
+    color: var(--primary);
 }

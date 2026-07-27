@@ -1,6 +1,6 @@
 {
   "../agent/src/composer/composerIsland.ts": {
-    "file": "assets/composerIsland-Df88NKWo.js",
+    "file": "assets/composerIsland-DgueNaRH.js",
     "name": "composerIsland",
     "src": "../agent/src/composer/composerIsland.ts",
     "isDynamicEntry": true,
@@ -10,14 +10,14 @@
     ]
   },
   "../agent/src/history/historyIsland.ts": {
-    "file": "assets/historyIsland-CTjfoz6v.js",
+    "file": "assets/historyIsland-LI_wECiK.js",
     "name": "historyIsland",
     "src": "../agent/src/history/historyIsland.ts",
     "isDynamicEntry": true,
     "imports": [
       "_react-vendor-B6H9ACc3.js",
       "_reactIsland-BERmJKCj.js",
-      "_entry-Bw6P0foP.js",
+      "_entry-CBUSY1jG.js",
       "_badge-MsGFU24K.js",
       "_button-Sc7JzKnJ.js",
       "_createLucideIcon-DCYiVK4S.js",
@@ -25,28 +25,28 @@
     ]
   },
   "../agent/src/plan/planIsland.ts": {
-    "file": "assets/planIsland-DL_NCyHS.js",
+    "file": "assets/planIsland-C-PWNegy.js",
     "name": "planIsland",
     "src": "../agent/src/plan/planIsland.ts",
     "isDynamicEntry": true,
     "imports": [
       "_react-vendor-B6H9ACc3.js",
       "_reactIsland-BERmJKCj.js",
-      "_entry-Bw6P0foP.js",
+      "_entry-CBUSY1jG.js",
       "_createLucideIcon-DCYiVK4S.js",
       "_circle-BALYEv6v.js",
       "index.html"
     ]
   },
   "../agent/src/timeline/timelineIsland.ts": {
-    "file": "assets/timelineIsland-BqIQd26V.js",
+    "file": "assets/timelineIsland-CnaW6Nsz.js",
     "name": "timelineIsland",
     "src": "../agent/src/timeline/timelineIsland.ts",
     "isDynamicEntry": true,
     "imports": [
       "_react-vendor-B6H9ACc3.js",
       "_reactIsland-BERmJKCj.js",
-      "_entry-Bw6P0foP.js",
+      "_entry-CBUSY1jG.js",
       "_markdown-DF4o18JI.js",
       "_button-Sc7JzKnJ.js",
       "_createLucideIcon-DCYiVK4S.js",
@@ -116,8 +116,8 @@
       "_react-vendor-B6H9ACc3.js"
     ]
   },
-  "_entry-Bw6P0foP.js": {
-    "file": "assets/entry-Bw6P0foP.js",
+  "_entry-CBUSY1jG.js": {
+    "file": "assets/entry-CBUSY1jG.js",
     "name": "entry",
     "isDynamicEntry": true,
     "imports": [
@@ -151,15 +151,15 @@
     ]
   },
   "index.html": {
-    "file": "assets/index-DcJDSw0m.js",
+    "file": "assets/index-CcjitsfG.js",
     "name": "index",
     "src": "index.html",
     "isEntry": true,
     "dynamicImports": [
-      "_entry-Bw6P0foP.js"
+      "_entry-CBUSY1jG.js"
     ],
     "css": [
-      "assets/index-DatvSop5.css"
+      "assets/index-EfFRJM0Q.css"
     ]
   }
 }

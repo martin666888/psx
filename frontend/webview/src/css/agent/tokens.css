@@ -25,13 +25,6 @@
     --agent-code-block-bg: #25251f;
     --agent-code-block-text: #f3ead7;
     --agent-code-block-border: #514d3f;
-    /* 发送按钮 */
-    --agent-send-btn: #2e706c;
-    --agent-send-btn-hover: #36817c;
-    --agent-send-btn-text: #ffffff;
-    /* 停止按钮 */
-    --agent-stop-btn: #7b3835;
-    --agent-stop-btn-hover: #8d4642;
     /* 决策按钮 */
     --agent-allow-color: #4ade80;
     --agent-deny-color: #f87171;

@@ -107,7 +107,10 @@ export class MenuSelect {
     MenuSelect.openInstance?.close();
     MenuSelect.openInstance = this;
     this.popup = document.createElement('div');
-    this.popup.className = 'agent-menu-select-popup';
+    // The popup escapes the composer card onto document.body, which sits
+    // outside the .agent-ui variable boundary; carry the class along so the
+    // shadcn variables resolve.
+    this.popup.className = 'agent-menu-select-popup agent-ui';
     this.popup.setAttribute('role', 'listbox');
     this.popup.addEventListener('keydown', (event) => this.onPopupKeydown(event));
     document.body.appendChild(this.popup);

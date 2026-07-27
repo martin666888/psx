@@ -26,7 +26,7 @@
     overflow: visible;
     border: 0;
     border-radius: var(--agent-radius-composer);
-    background: var(--agent-surface-raised);
+    background: var(--card);
     box-shadow: var(--agent-shadow-composer);
     transition: box-shadow var(--agent-duration-fast) var(--agent-ease-standard);
 }
@@ -52,22 +52,22 @@
     outline: 0;
     overflow-y: hidden;
     background: transparent;
-    color: var(--agent-text);
+    color: var(--foreground);
     font-family: var(--agent-font-mono);
     font-size: 14px;
     line-height: 1.45;
-    scrollbar-color: var(--agent-scrollbar) var(--agent-surface);
+    scrollbar-color: var(--agent-scrollbar) var(--background);
     scrollbar-width: thin;
 }
 
 .agent-composer textarea::placeholder {
-    color: var(--agent-text-muted);
+    color: var(--muted-foreground);
     opacity: 1;
 }
 
 .agent-command-hint {
     padding: 0 var(--agent-space-3) var(--agent-space-2);
-    color: var(--agent-text-muted);
+    color: var(--muted-foreground);
     font-size: 12px;
     line-height: 1.45;
     white-space: pre-line;
@@ -107,7 +107,7 @@
     display: flex;
     flex: 0 0 auto;
     gap: var(--agent-space-2);
-    color: var(--agent-text-muted);
+    color: var(--muted-foreground);
     font-size: 11px;
     white-space: nowrap;
 }
@@ -118,7 +118,7 @@
     width: 20px;
     height: 20px;
     place-items: center;
-    color: var(--agent-accent);
+    color: var(--primary);
     cursor: help;
     outline: 0;
 }
@@ -142,7 +142,7 @@
 }
 
 .agent-context-ring-track {
-    stroke: var(--agent-border-strong);
+    stroke: var(--border);
 }
 
 .agent-context-ring-progress {
@@ -158,14 +158,14 @@
 }
 
 .agent-context-usage[data-context-state="error"] {
-    color: var(--agent-error);
+    color: var(--destructive);
 }
 
 .agent-context-usage[data-context-state="unknown"]::before {
     width: 9px;
     height: 9px;
     border-radius: 50%;
-    background: var(--agent-text-dim);
+    background: var(--muted-foreground);
     content: "";
 }
 
@@ -183,12 +183,12 @@
     max-width: 240px;
     gap: 2px;
     box-sizing: border-box;
-    border: 1px solid var(--agent-border-strong);
+    border: 1px solid var(--border);
     border-radius: var(--agent-radius-card);
     padding: var(--agent-space-2) var(--agent-space-3);
-    background: var(--agent-surface-raised);
+    background: var(--card);
     box-shadow: var(--agent-shadow-popover);
-    color: var(--agent-text);
+    color: var(--foreground);
     font-size: 12px;
     line-height: 1.35;
     opacity: 0;
@@ -203,7 +203,7 @@
 }
 
 .agent-context-tooltip span {
-    color: var(--agent-text-muted);
+    color: var(--muted-foreground);
 }
 
 .agent-context-tooltip [hidden] {
@@ -241,7 +241,7 @@
     min-width: 0;
     align-items: center;
     gap: var(--agent-space-1);
-    color: var(--agent-text-muted);
+    color: var(--muted-foreground);
     font-size: 12px;
     white-space: nowrap;
 }
@@ -257,10 +257,10 @@
     min-width: 28px;
     height: 16px;
     box-sizing: border-box;
-    border: 1px solid var(--agent-border-strong);
+    border: 1px solid var(--border);
     border-radius: 8px;
     padding: 0;
-    background: var(--agent-surface-muted);
+    background: var(--muted);
     color: transparent;
     cursor: pointer;
 }
@@ -272,28 +272,28 @@
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    background: var(--agent-text-muted);
+    background: var(--muted-foreground);
     content: "";
     transition: transform var(--agent-duration-fast) var(--agent-ease-standard),
         background-color var(--agent-duration-fast) var(--agent-ease-standard);
 }
 
 .agent-config-switch[aria-checked="true"] {
-    border-color: var(--agent-accent);
-    background: color-mix(in srgb, var(--agent-accent) 38%, var(--agent-surface-muted));
+    border-color: var(--primary);
+    background: color-mix(in srgb, var(--primary) 38%, var(--muted));
 }
 
 .agent-config-switch[aria-checked="true"]::after {
     transform: translateX(12px);
-    background: var(--agent-send-btn-text);
+    background: var(--primary-foreground);
 }
 
 .agent-config-switch:hover:not(:disabled) {
-    border-color: var(--agent-accent-hover);
+    border-color: var(--primary);
 }
 
 .agent-config-switch:focus-visible {
-    outline: 2px solid var(--agent-focus-ring);
+    outline: 2px solid var(--ring);
     outline-offset: 2px;
 }
 
@@ -315,22 +315,22 @@
     border: 0;
     border-radius: var(--agent-radius-input);
     background: transparent;
-    color: var(--agent-text);
+    color: var(--foreground);
     cursor: pointer;
     font: inherit;
 }
 
 .agent-menu-select:hover:not(:disabled) {
-    background: var(--agent-hover);
+    background: var(--accent);
 }
 
 .agent-menu-select:focus-visible {
-    outline: 2px solid var(--agent-focus-ring);
+    outline: 2px solid var(--ring);
     outline-offset: 1px;
 }
 
 .agent-menu-select:disabled {
-    color: var(--agent-text-dim);
+    color: var(--muted-foreground);
     cursor: default;
     opacity: 0.72;
 }
@@ -344,7 +344,7 @@
 
 .agent-menu-select-chevron {
     flex: 0 0 auto;
-    color: var(--agent-text-dim);
+    color: var(--muted-foreground);
 }
 
 .agent-menu-select[aria-expanded="true"] .agent-menu-select-chevron {
@@ -364,9 +364,9 @@
     box-sizing: border-box;
     overflow-y: auto;
     padding: var(--agent-space-1);
-    border: 1px solid var(--agent-border-strong);
+    border: 1px solid var(--border);
     border-radius: var(--agent-radius-card);
-    background: var(--agent-surface-raised);
+    background: var(--card);
     box-shadow: var(--agent-shadow-popover);
     font-family: var(--agent-font-ui);
 }
@@ -378,7 +378,7 @@
     gap: var(--agent-space-3);
     padding: 6px 8px;
     border-radius: var(--agent-radius-control);
-    color: var(--agent-text);
+    color: var(--foreground);
     cursor: pointer;
     font-size: 12px;
     white-space: nowrap;
@@ -386,20 +386,20 @@
 
 .agent-menu-select-option:hover,
 .agent-menu-select-option-active {
-    background: var(--agent-hover);
+    background: var(--accent);
 }
 
 .agent-menu-select-option:focus-visible {
-    outline: 2px solid var(--agent-focus-ring);
+    outline: 2px solid var(--ring);
     outline-offset: -2px;
 }
 
 .agent-menu-select-option[aria-selected="true"] {
-    color: var(--agent-accent);
+    color: var(--primary);
 }
 
 .agent-menu-select-option svg {
-    color: var(--agent-accent);
+    color: var(--primary);
 }
 
 .agent-menu-select[data-config-id="model"] {
@@ -420,8 +420,8 @@
     padding: 0;
     border: 0;
     border-radius: 50%;
-    background: var(--agent-send-btn);
-    color: var(--agent-send-btn-text);
+    background: var(--primary);
+    color: var(--primary-foreground);
     font-size: 0;
 }
 
@@ -437,16 +437,16 @@
 }
 
 .agent-send:hover:not(:disabled) {
-    background: var(--agent-send-btn-hover);
-    border-color: var(--agent-send-btn-hover);
-    color: var(--agent-send-btn-text);
+    background: color-mix(in oklab, var(--primary) 88%, black);
+    border-color: color-mix(in oklab, var(--primary) 88%, black);
+    color: var(--primary-foreground);
 }
 
 .agent-send:disabled {
     cursor: default;
-    border-color: var(--agent-border);
-    background: var(--agent-surface-muted);
-    color: var(--agent-text-dim);
+    border-color: var(--border);
+    background: var(--muted);
+    color: var(--muted-foreground);
     opacity: 1;
 }
 

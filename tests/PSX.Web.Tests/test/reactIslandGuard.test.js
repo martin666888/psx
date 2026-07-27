@@ -65,8 +65,7 @@ describe('lazy React-island loading guard', () => {
     'timeline/TimelineView.tsx',
     'timeline/TimelineDecisions.tsx',
     'core/reactIsland.tsx',
-    'core/AgentAppRoot.tsx',
-    'ui/Psx.tsx'
+    'core/AgentAppRoot.tsx'
   ];
 
   it('keeps runtime React imports confined to the island modules', () => {

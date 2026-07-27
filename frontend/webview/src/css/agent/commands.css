@@ -6,16 +6,16 @@
     max-width: 100%;
     max-height: 260px;
     overflow: auto;
-    border: 1px solid var(--agent-border-strong);
+    border: 1px solid var(--border);
     border-radius: var(--agent-radius-card);
-    background: var(--agent-surface-raised);
+    background: var(--card);
     box-shadow: var(--agent-shadow-popover);
     z-index: var(--agent-layer-menu);
 }
 
 .agent-command-group {
     padding: 8px 12px 5px;
-    color: var(--agent-text-muted);
+    color: var(--muted-foreground);
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 0;
@@ -31,7 +31,7 @@
     padding: 9px 12px;
     border: 0;
     background: transparent;
-    color: var(--agent-text);
+    color: var(--foreground);
     text-align: left;
     cursor: pointer;
     font: inherit;
@@ -43,20 +43,20 @@
 }
 
 .agent-command-item small {
-    color: var(--agent-text-muted);
+    color: var(--muted-foreground);
     font-size: 12px;
 }
 
 .agent-command-item:hover,
 .agent-command-item.is-active {
-    background: var(--agent-hover);
+    background: var(--accent);
 }
 
 .agent-command-item:focus-visible {
-    outline: 2px solid var(--agent-focus-ring);
+    outline: 2px solid var(--ring);
     outline-offset: -2px;
 }
 
 .agent-command-item:active {
-    background: var(--agent-surface-muted);
+    background: var(--muted);
 }

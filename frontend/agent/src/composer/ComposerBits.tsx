@@ -6,7 +6,6 @@
 // the attach button + hidden file input template row, and showCommandHint.
 
 import { useRef, useState, type JSX } from 'react';
-import { PsxPill } from '../ui/Psx.js';
 
 export interface AttachmentTileVM {
   clientId: string;
@@ -43,7 +42,7 @@ function AttachmentTile(props: {
   const [broken, setBroken] = useState(!attachment.url);
   const name = attachment.fileName || 'Image attachment';
   return (
-    <PsxPill className="agent-attachment-shell">
+    <div className="agent-attachment-shell">
       <button
         type="button"
         className={
@@ -76,7 +75,7 @@ function AttachmentTile(props: {
       >
         ×
       </button>
-    </PsxPill>
+    </div>
   );
 }
 
