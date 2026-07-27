@@ -13,7 +13,10 @@ import { renderMarkdown, safeHref } from '../core/markdown.js';
 import { decisionOptionClass } from '../decisions/decisionPresentation.js';
 import type { DecisionItem, DecisionOptionVM } from './timelineViewModel.js';
 import { CopyButton, useDetailsOpen } from './TimelineView.js';
-import { PsxButton } from '../ui/Psx.js';
+import { Button } from '../components/ui/button.js';
+import { Input } from '../components/ui/input.js';
+import { Textarea } from '../components/ui/textarea.js';
+import { ChevronRightIcon } from 'lucide-react';
 
 export interface DecisionCallbacks {
   /** Permission/question option chosen (posts the bridge response). */
@@ -52,30 +55,38 @@ function PermissionQuestionCard({
     <details
       ref={ref}
       className={
-        'agent-decision agent-decision-' + item.kind + (disabled ? ' agent-decision-disabled' : '')
+        'agent-decision agent-decision-' + item.kind +
+        ' group/decision mb-3.5 w-full rounded-lg border text-card-foreground' +
+        (item.kind === 'permission' ? ' border-amber-600/50 bg-amber-600/5' : ' bg-card') +
+        (disabled ? ' agent-decision-disabled opacity-80' : '')
       }
       data-decision-state={disabled ? 'disabled' : 'active'}
       data-request-id={item.requestId || undefined}
       data-selected-option-id={resolvedId || undefined}
       data-selected-option-name={resolvedName || undefined}
     >
-      <summary className="agent-decision-header">
-        <div className="agent-decision-header-content">
-          <div className="agent-decision-header-title-row">
-            <span className="agent-decision-chevron"></span>
-            <span className="agent-decision-header-title">{item.title}</span>
+      <summary className="agent-decision-header cursor-pointer select-none list-none p-3 [&::-webkit-details-marker]:hidden">
+        <div className="agent-decision-header-content flex flex-col gap-1">
+          <div className="agent-decision-header-title-row flex items-center gap-2">
+            <span className="agent-decision-chevron inline-flex shrink-0 text-muted-foreground" aria-hidden="true">
+              <ChevronRightIcon className="size-3 transition-transform group-open/decision:rotate-90" />
+            </span>
+            <span className="agent-decision-header-title text-[13px] font-bold">{item.title}</span>
           </div>
-          <span className="agent-decision-header-subtitle">{subtitle}</span>
+          <span className="agent-decision-header-subtitle text-xs text-muted-foreground">{subtitle}</span>
         </div>
       </summary>
-      <div className="agent-decision-body">
-        <details className="agent-decision-raw-input">
-          <summary className="agent-decision-raw-input-summary">Raw Input</summary>
-          <pre className="agent-decision-raw-input-content">{item.text}</pre>
+      <div className="agent-decision-body relative px-3 pb-3">
+        <details className="agent-decision-raw-input group/raw mt-2.5 border-y">
+          <summary className="agent-decision-raw-input-summary flex cursor-pointer select-none list-none items-center gap-2 px-3 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:bg-accent [&::-webkit-details-marker]:hidden">
+            <ChevronRightIcon className="size-2.5 shrink-0 transition-transform group-open/raw:rotate-90" aria-hidden="true" />
+            Raw Input
+          </summary>
+          <pre className="agent-decision-raw-input-content m-0 whitespace-pre-wrap break-words border-t bg-background p-3 font-mono text-xs leading-normal">{item.text}</pre>
         </details>
-        <div className="agent-decision-actions">
+        <div className="agent-decision-actions mt-2.5 flex flex-wrap gap-2">
           {item.options.length === 0 ? (
-            <div className="agent-decision-status agent-decision-options-error">
+            <div className="agent-decision-status agent-decision-options-error mt-0 flex-[1_1_100%] text-xs text-destructive">
               The Agent did not provide any response options.
             </div>
           ) : null}
@@ -89,9 +100,11 @@ function PermissionQuestionCard({
                 key={option.optionId || option.name}
                 type="button"
                 className={
-                  'agent-decision-option' +
+                  'agent-decision-option min-h-8 max-w-full cursor-pointer break-words rounded-full border bg-background px-4 py-1 text-xs leading-normal transition-colors hover:bg-accent disabled:cursor-default' +
                   (semantic ? ' ' + semantic : '') +
-                  (isSelected ? ' agent-decision-option-selected' : '')
+                  (isSelected
+                    ? ' agent-decision-option-selected border-border bg-muted text-muted-foreground'
+                    : ' disabled:opacity-70')
                 }
                 data-option-id={option.optionId}
                 aria-pressed={isSelected ? 'true' : 'false'}
@@ -108,7 +121,7 @@ function PermissionQuestionCard({
           })}
         </div>
         {disabled && !selected && item.statusText ? (
-          <div className="agent-decision-status">{item.statusText}</div>
+          <div className="agent-decision-status mt-2.5 text-xs text-muted-foreground">{item.statusText}</div>
         ) : null}
       </div>
     </details>
@@ -143,31 +156,34 @@ function ModeTransitionCard({
     : 'This request is no longer active.';
   return (
     <section
-      className="agent-mode-transition"
+      className="agent-mode-transition mb-5 w-full overflow-hidden rounded-lg border bg-card text-card-foreground"
       data-decision-state={pending ? 'active' : 'disabled'}
       data-request-id={item.requestId || undefined}
       data-tool-call-id={item.toolCallId || undefined}
     >
-      <header className="agent-mode-transition-header">
-        <div className="agent-mode-transition-title">{item.title}</div>
-        <span className="agent-mode-transition-header-state">
+      <header className="agent-mode-transition-header flex items-baseline justify-between gap-3 border-b px-4 py-3">
+        <div className="agent-mode-transition-title min-w-0 break-words text-[13px] font-bold leading-snug">{item.title}</div>
+        <span className="agent-mode-transition-header-state shrink-0 text-xs font-semibold text-muted-foreground">
           {pending ? 'Decision required' : item.headerState || 'Interrupted'}
         </span>
       </header>
-      <details ref={detailsRef} className="agent-mode-transition-details">
-        <summary className="agent-mode-transition-summary">Proposal details</summary>
+      <details ref={detailsRef} className="agent-mode-transition-details group/mt bg-background">
+        <summary className="agent-mode-transition-summary flex cursor-pointer select-none list-none items-center gap-2 px-4 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:bg-accent hover:text-foreground [&::-webkit-details-marker]:hidden">
+          <ChevronRightIcon className="size-2.5 shrink-0 transition-transform group-open/mt:rotate-90" aria-hidden="true" />
+          Proposal details
+        </summary>
         <div
-          className="agent-mode-transition-document agent-message-body"
+          className="agent-mode-transition-document agent-message-body border-t px-4 pt-3 pb-4"
           dangerouslySetInnerHTML={{ __html: renderMarkdown(item.text) }}
         ></div>
-        <div className="agent-message-actions agent-mode-transition-document-actions">
+        <div className="agent-message-actions agent-mode-transition-document-actions m-0 px-4 pb-3">
           <CopyButton getText={() => item.text} copyText={callbacks.copyText} />
         </div>
-        <div className="agent-mode-transition-decision" hidden={pending}>
-          <div className="agent-mode-transition-decision-label">Choose how to continue</div>
-          <div className="agent-mode-transition-options" role="group" aria-label="Choose how to continue">
+        <div className="agent-mode-transition-decision border-t px-4 pt-3 [&[hidden]]:hidden" hidden={pending}>
+          <div className="agent-mode-transition-decision-label mb-2 text-xs font-semibold text-muted-foreground">Choose how to continue</div>
+          <div className="agent-mode-transition-options grid gap-2" role="group" aria-label="Choose how to continue">
             {item.options.length === 0 ? (
-              <div className="agent-mode-transition-error">
+              <div className="agent-mode-transition-error rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs leading-normal text-destructive">
                 The ACP Agent did not provide any response options.
               </div>
             ) : (
@@ -176,9 +192,11 @@ function ModeTransitionCard({
                   key={option.optionId || option.name}
                   type="button"
                   className={
-                    'agent-mode-transition-option' +
+                    'agent-mode-transition-option min-h-10 w-full min-w-0 cursor-pointer break-words rounded-md border bg-background px-3 py-2 text-left text-xs font-semibold leading-snug disabled:cursor-default' +
                     (decisionOptionClass(option) ? ' ' + decisionOptionClass(option) : '') +
-                    (option.optionId === item.selectedOptionId ? ' agent-mode-transition-option-selected' : '')
+                    (option.optionId === item.selectedOptionId
+                      ? ' agent-mode-transition-option-selected border-ring bg-accent'
+                      : ' disabled:opacity-70')
                   }
                   data-option-id={option.optionId}
                   data-option-kind={option.kind}
@@ -191,7 +209,7 @@ function ModeTransitionCard({
             )}
           </div>
         </div>
-        <div className="agent-mode-transition-status" aria-live="polite">
+        <div className="agent-mode-transition-status min-h-[17px] px-4 pt-2 pb-3 text-xs leading-snug text-muted-foreground" aria-live="polite">
           {statusText}
         </div>
       </details>
@@ -315,16 +333,19 @@ function ElicitationOptionButton({
   return (
     <button
       type="button"
-      className={'agent-elicitation-option' + (selected ? ' agent-elicitation-option-selected' : '')}
+      className={
+        'agent-elicitation-option grid w-full min-w-0 cursor-pointer gap-0.5 rounded-lg border bg-background p-2.5 text-left transition-colors hover:bg-accent disabled:cursor-default disabled:opacity-70' +
+        (selected ? ' agent-elicitation-option-selected border-ring bg-accent' : '')
+      }
       role={multi ? 'button' : 'radio'}
       aria-checked={multi ? undefined : selected}
       aria-pressed={multi ? selected : undefined}
       disabled={disabled}
       onClick={onClick}
     >
-      <span className="agent-elicitation-option-title">{option.title}</span>
+      <span className="agent-elicitation-option-title break-words text-[13px] leading-normal">{option.title}</span>
       {option.description ? (
-        <small className="agent-elicitation-option-description">{option.description}</small>
+        <small className="agent-elicitation-option-description break-words text-xs leading-normal text-muted-foreground">{option.description}</small>
       ) : null}
     </button>
   );
@@ -391,13 +412,16 @@ function ElicitationCard({
   const safeUrl = url ? safeHref(url) : '';
   return (
     <section
-      className={'agent-decision agent-decision-elicitation' + (disabled ? ' agent-decision-disabled' : '')}
+      className={
+        'agent-decision agent-decision-elicitation mb-3.5 w-full rounded-lg border bg-card p-3 text-card-foreground' +
+        (disabled ? ' agent-decision-disabled opacity-80' : '')
+      }
       data-decision-state={disabled ? 'disabled' : 'active'}
       data-request-id={item.requestId || undefined}
     >
-      <div className="agent-decision-title">{item.title}</div>
-      <div className="agent-decision-subtitle">{item.elicitationMessage}</div>
-      <form className="agent-elicitation-form" noValidate>
+      <div className="agent-decision-title text-[13px] font-bold">{item.title}</div>
+      <div className="agent-decision-subtitle mt-1 break-words text-sm leading-normal">{item.elicitationMessage}</div>
+      <form className="agent-elicitation-form mt-3 grid gap-3" noValidate>
         {specs.map((spec) => {
           const error = errors[spec.name] || '';
           const label = (String(spec.property.title ?? '') || spec.name) + (spec.required ? ' *' : '');
@@ -405,14 +429,14 @@ function ElicitationCard({
             <div
               key={spec.name}
               className={
-                'agent-elicitation-field' +
-                (spec.isSupplement ? ' agent-elicitation-field-supplement' : '') +
+                'agent-elicitation-field grid gap-1.5 text-xs text-muted-foreground' +
+                (spec.isSupplement ? ' agent-elicitation-field-supplement opacity-90' : '') +
                 (error ? ' agent-elicitation-field-error' : '')
               }
             >
-              <div className="agent-elicitation-label">{label}</div>
+              <div className={'agent-elicitation-label font-semibold ' + (error ? 'text-destructive' : 'text-foreground')}>{label}</div>
               {spec.kind === 'boolean' ? (
-                <label className="agent-elicitation-checkbox">
+                <label className="agent-elicitation-checkbox justify-self-start">
                   <input
                     type="checkbox"
                     checked={!!values[spec.name]}
@@ -422,7 +446,10 @@ function ElicitationCard({
                 </label>
               ) : spec.kind === 'options' ? (
                 <div
-                  className="agent-elicitation-option-list"
+                  className={
+                    'agent-elicitation-option-list grid max-h-[280px] gap-1.5 overflow-auto p-0.5' +
+                    (error ? ' rounded-md outline outline-1 outline-offset-2 outline-destructive' : '')
+                  }
                   role="radiogroup"
                   aria-label={String(spec.property.title ?? '') || spec.name}
                 >
@@ -439,7 +466,10 @@ function ElicitationCard({
                 </div>
               ) : spec.kind === 'array' ? (
                 <div
-                  className="agent-elicitation-option-list"
+                  className={
+                    'agent-elicitation-option-list grid max-h-[280px] gap-1.5 overflow-auto p-0.5' +
+                    (error ? ' rounded-md outline outline-1 outline-offset-2 outline-destructive' : '')
+                  }
                   role="group"
                   aria-label={String(spec.property.title ?? '') || spec.name}
                 >
@@ -462,32 +492,36 @@ function ElicitationCard({
                   ))}
                 </div>
               ) : spec.kind === 'number' ? (
-                <input
+                <Input
                   type="number"
+                  className="h-8 text-[13px]"
                   step={spec.property.type === 'integer' ? '1' : undefined}
                   value={String(values[spec.name] ?? '')}
                   disabled={disabled}
+                  aria-invalid={error ? true : undefined}
                   onChange={(event) => setValue(spec.name, event.target.value)}
                 />
               ) : (
-                <textarea
+                <Textarea
+                  className="min-h-0 text-[13px]"
                   rows={spec.isSupplement ? 2 : 3}
                   value={String(values[spec.name] ?? '')}
                   disabled={disabled}
+                  aria-invalid={error ? true : undefined}
                   onChange={(event) => setValue(spec.name, event.target.value)}
-                ></textarea>
+                ></Textarea>
               )}
-              {spec.property.description ? <small>{String(spec.property.description)}</small> : null}
-              <div className="agent-elicitation-error" hidden={!error}>
+              {spec.property.description ? <small className="text-muted-foreground">{String(spec.property.description)}</small> : null}
+              <div className="agent-elicitation-error text-destructive [&[hidden]]:hidden" hidden={!error}>
                 {error}
               </div>
             </div>
           );
         })}
         {mode === 'url' && url ? (
-          <div className="agent-elicitation-url">
+          <div className="agent-elicitation-url break-all text-[13px]">
             {safeUrl ? (
-              <a href={safeUrl} target="_blank" rel="noreferrer">
+              <a className="text-primary underline underline-offset-2" href={safeUrl} target="_blank" rel="noreferrer">
                 {url}
               </a>
             ) : (
@@ -496,30 +530,34 @@ function ElicitationCard({
           </div>
         ) : null}
       </form>
-      <div className="agent-decision-actions agent-elicitation-actions">
-        <PsxButton variant="primary" disabled={disabled} onClick={() => act(submit)}>
+      <div className="agent-decision-actions agent-elicitation-actions mt-2.5 flex flex-wrap gap-2">
+        <Button type="button" size="sm" disabled={disabled} onClick={() => act(submit)}>
           Continue
-        </PsxButton>
-        <PsxButton
-          variant="subtle"
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
           disabled={disabled}
           onClick={() =>
             act(() => callbacks.onElicitationAction(item, JSON.stringify({ action: 'decline' }), 'Declined.'))
           }
         >
           Decline
-        </PsxButton>
-        <PsxButton
-          variant="subtle"
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
           disabled={disabled}
           onClick={() =>
             act(() => callbacks.onElicitationAction(item, JSON.stringify({ action: 'cancel' }), 'Cancelled.'))
           }
         >
           Cancel
-        </PsxButton>
+        </Button>
       </div>
-      {disabled && item.statusText ? <div className="agent-decision-status">{item.statusText}</div> : null}
+      {disabled && item.statusText ? <div className="agent-decision-status mt-2.5 text-xs text-muted-foreground">{item.statusText}</div> : null}
     </section>
   );
 }

@@ -6,7 +6,6 @@
  * these lists. Geometry never lives here. */
 
 :where(.agent-toolbar button:not([data-role="change-cwd"]),
-    .agent-decision-actions button,
     .agent-composer-decision-stop) {
     border: 1px solid var(--agent-border-strong);
     border-radius: var(--agent-radius-control);
@@ -17,41 +16,14 @@
 }
 
 :where(.agent-toolbar button:not([data-role="change-cwd"]),
-    .agent-decision-actions button,
     .agent-composer-decision-stop):hover:not(:disabled) {
     background: var(--agent-hover);
 }
 
 :where(.agent-toolbar button:not([data-role="change-cwd"]),
-    .agent-decision-actions button,
     .agent-composer-decision-stop):disabled {
     cursor: default;
     opacity: 0.56;
-}
-
-/* Subtle variants escape the hairline base entirely: no border, no fill. */
-:where(.agent-btn-subtle) {
-    border: 1px solid transparent;
-    background: transparent;
-    color: var(--agent-text-muted);
-}
-
-:where(.agent-btn-subtle):hover:not(:disabled) {
-    background: var(--agent-hover);
-    color: var(--agent-text);
-}
-
-/* Primary action: the one filled accent surface. */
-:where(.agent-btn-primary) {
-    border-color: var(--agent-decision-primary);
-    background: var(--agent-decision-primary);
-    color: var(--agent-decision-primary-text);
-    font-weight: 700;
-}
-
-:where(.agent-btn-primary):hover:not(:disabled) {
-    border-color: var(--agent-decision-primary-hover);
-    background: var(--agent-decision-primary-hover);
 }
 
 /* Destructive / stop action. The composer send button already carries a teal

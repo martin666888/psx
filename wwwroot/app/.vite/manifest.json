@@ -1,104 +1,95 @@
 {
   "../agent/src/composer/composerIsland.ts": {
-    "file": "assets/composerIsland-DZfZwLx1.js",
+    "file": "assets/composerIsland-Df88NKWo.js",
     "name": "composerIsland",
     "src": "../agent/src/composer/composerIsland.ts",
     "isDynamicEntry": true,
     "imports": [
       "_react-vendor-B6H9ACc3.js",
-      "_reactIsland-BERmJKCj.js",
-      "_Psx-DlPa4p2h.js"
+      "_reactIsland-BERmJKCj.js"
     ]
   },
   "../agent/src/history/historyIsland.ts": {
-    "file": "assets/historyIsland-D6zG2dWs.js",
+    "file": "assets/historyIsland-CTjfoz6v.js",
     "name": "historyIsland",
     "src": "../agent/src/history/historyIsland.ts",
     "isDynamicEntry": true,
     "imports": [
       "_react-vendor-B6H9ACc3.js",
       "_reactIsland-BERmJKCj.js",
-      "_entry-DXpHgm25.js",
-      "_badge-DSPfKqg_.js",
-      "_button-BLjdKWr4.js",
+      "_entry-Bw6P0foP.js",
+      "_badge-MsGFU24K.js",
+      "_button-Sc7JzKnJ.js",
       "_createLucideIcon-DCYiVK4S.js",
       "index.html"
     ]
   },
   "../agent/src/plan/planIsland.ts": {
-    "file": "assets/planIsland-B1UkrxO1.js",
+    "file": "assets/planIsland-DL_NCyHS.js",
     "name": "planIsland",
     "src": "../agent/src/plan/planIsland.ts",
     "isDynamicEntry": true,
     "imports": [
       "_react-vendor-B6H9ACc3.js",
       "_reactIsland-BERmJKCj.js",
-      "_entry-DXpHgm25.js",
+      "_entry-Bw6P0foP.js",
       "_createLucideIcon-DCYiVK4S.js",
       "_circle-BALYEv6v.js",
       "index.html"
     ]
   },
   "../agent/src/timeline/timelineIsland.ts": {
-    "file": "assets/timelineIsland-BOvLi0pl.js",
+    "file": "assets/timelineIsland-BqIQd26V.js",
     "name": "timelineIsland",
     "src": "../agent/src/timeline/timelineIsland.ts",
     "isDynamicEntry": true,
     "imports": [
       "_react-vendor-B6H9ACc3.js",
       "_reactIsland-BERmJKCj.js",
-      "_entry-DXpHgm25.js",
+      "_entry-Bw6P0foP.js",
       "_markdown-DF4o18JI.js",
-      "_Psx-DlPa4p2h.js",
-      "_button-BLjdKWr4.js",
+      "_button-Sc7JzKnJ.js",
       "_createLucideIcon-DCYiVK4S.js",
-      "_badge-DSPfKqg_.js",
+      "_badge-MsGFU24K.js",
       "_circle-x-BJIyslIS.js",
       "_circle-BALYEv6v.js",
       "index.html"
     ]
   },
   "../agent/src/workspace/runtimeIsland.ts": {
-    "file": "assets/runtimeIsland-C50R7OL1.js",
+    "file": "assets/runtimeIsland-CF8vwWlx.js",
     "name": "runtimeIsland",
     "src": "../agent/src/workspace/runtimeIsland.ts",
     "isDynamicEntry": true,
     "imports": [
       "_react-vendor-B6H9ACc3.js",
-      "_button-BLjdKWr4.js",
+      "_button-Sc7JzKnJ.js",
       "_createLucideIcon-DCYiVK4S.js",
       "_circle-x-BJIyslIS.js",
       "_reactIsland-BERmJKCj.js"
     ]
   },
   "../agent/src/workspace/sessionIsland.ts": {
-    "file": "assets/sessionIsland-BzGg9P-h.js",
+    "file": "assets/sessionIsland-IVG05itC.js",
     "name": "sessionIsland",
     "src": "../agent/src/workspace/sessionIsland.ts",
     "isDynamicEntry": true,
     "imports": [
       "_react-vendor-B6H9ACc3.js",
       "_reactIsland-BERmJKCj.js",
-      "_button-BLjdKWr4.js"
+      "_button-Sc7JzKnJ.js"
     ]
   },
-  "_Psx-DlPa4p2h.js": {
-    "file": "assets/Psx-DlPa4p2h.js",
-    "name": "Psx",
-    "imports": [
-      "_react-vendor-B6H9ACc3.js"
-    ]
-  },
-  "_badge-DSPfKqg_.js": {
-    "file": "assets/badge-DSPfKqg_.js",
+  "_badge-MsGFU24K.js": {
+    "file": "assets/badge-MsGFU24K.js",
     "name": "badge",
     "imports": [
       "_react-vendor-B6H9ACc3.js",
-      "_button-BLjdKWr4.js"
+      "_button-Sc7JzKnJ.js"
     ]
   },
-  "_button-BLjdKWr4.js": {
-    "file": "assets/button-BLjdKWr4.js",
+  "_button-Sc7JzKnJ.js": {
+    "file": "assets/button-Sc7JzKnJ.js",
     "name": "button",
     "imports": [
       "_react-vendor-B6H9ACc3.js"
@@ -125,8 +116,8 @@
       "_react-vendor-B6H9ACc3.js"
     ]
   },
-  "_entry-DXpHgm25.js": {
-    "file": "assets/entry-DXpHgm25.js",
+  "_entry-Bw6P0foP.js": {
+    "file": "assets/entry-Bw6P0foP.js",
     "name": "entry",
     "isDynamicEntry": true,
     "imports": [
@@ -160,15 +151,15 @@
     ]
   },
   "index.html": {
-    "file": "assets/index-D6oGUOk7.js",
+    "file": "assets/index-DcJDSw0m.js",
     "name": "index",
     "src": "index.html",
     "isEntry": true,
     "dynamicImports": [
-      "_entry-DXpHgm25.js"
+      "_entry-Bw6P0foP.js"
     ],
     "css": [
-      "assets/index-DpyDjnZs.css"
+      "assets/index-DatvSop5.css"
     ]
   }
 }

@@ -139,6 +139,17 @@ const REACT_SMOKE_BOOTSTRAP = String.raw`
       runId: 'smoke-run',
       entries: [{ content: 'Verify release', status: 'in_progress' }]
     });
+    emit({
+      type: 'permission_request',
+      workspaceId,
+      requestId: 'perm1',
+      title: 'Run tool?',
+      text: 'npm test',
+      options: [
+        { optionId: 'allow', name: 'Allow', kind: 'allow_once' },
+        { optionId: 'reject', name: 'Reject', kind: 'reject_once' }
+      ]
+    });
 
     const mounted = await waitFor(() => {
       const panel = document.querySelector('[data-workspace-id="' + workspaceId + '"]');
@@ -159,6 +170,9 @@ const REACT_SMOKE_BOOTSTRAP = String.raw`
       panel?.querySelector('.agent-thinking-block')?.textContent.includes('considering the release') === true;
     result.checks.realToolCard =
       panel?.querySelector('.agent-tool-card[data-tool-id="tc1"]')?.dataset.state === 'done';
+    result.checks.realDecisionCard =
+      panel?.querySelector('.agent-decision-permission[data-request-id="perm1"] [data-option-id="allow"]')
+        ?.disabled === false;
     // Narrow viewports responsively collapse the dock; the toggle re-opens it
     // exactly like a user would.
     const dock = document.querySelector('.agent-history-dock');

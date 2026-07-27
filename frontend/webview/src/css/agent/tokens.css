@@ -29,9 +29,6 @@
     --agent-send-btn: #2e706c;
     --agent-send-btn-hover: #36817c;
     --agent-send-btn-text: #ffffff;
-    --agent-decision-primary: #2e706c;
-    --agent-decision-primary-hover: #36817c;
-    --agent-decision-primary-text: #ffffff;
     /* 停止按钮 */
     --agent-stop-btn: #7b3835;
     --agent-stop-btn-hover: #8d4642;
@@ -39,11 +36,6 @@
     --agent-allow-color: #4ade80;
     --agent-deny-color: #f87171;
     --agent-caution-color: #facc15;
-    /* 权限/征求卡片 */
-    --agent-permission-bg: #272318;
-    --agent-permission-border: #6b5b36;
-    --agent-elicitation-bg: #1d2927;
-    --agent-elicitation-border: #45645f;
     /* 遮罩/阴影/focus */
     --agent-overlay: #000000;
     --agent-shadow: #000000;

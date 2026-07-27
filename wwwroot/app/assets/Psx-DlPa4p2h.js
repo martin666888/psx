@@ -1,1 +1,0 @@
-import{j as n}from"./react-vendor-B6H9ACc3.js";const a={primary:"agent-btn-primary",subtle:"agent-btn-subtle",unstyled:""};function i({variant:t="unstyled",className:s,type:e,...o}){const r=[a[t],s].filter(Boolean).join(" ");return n.jsx("button",{type:e??"button",className:r||void 0,...o})}function l(t){return n.jsx("div",{...t})}export{l as P,i as a};
