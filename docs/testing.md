@@ -43,12 +43,13 @@ Workspace 自动化重点验证 Agent 与 Terminal 上限口径、`workspaceId` 
 
 ## Agent React 前端门禁
 
-Agent 前端只有 React 渲染路径。源码位于 `frontend/agent/src/`，编译产物位于
-`wwwroot/js/agent-app/` 并随仓库提交。修改 `.ts`/`.tsx` 后必须依次运行
-`npm.cmd run build:agent`、`npm.cmd run verify:agent`、`npm.cmd run typecheck`
+Agent 前端只有 React 渲染路径。Web 前端源码位于 `frontend/webview/`（外壳）与
+`frontend/agent/src/`（Agent TS/TSX），Vite 构建产物位于 `wwwroot/app/` 并随仓库
+提交。修改前端源码后必须依次运行 `npm.cmd run build:web`、`npm.cmd run verify:web`、
+`npm.cmd run typecheck:web`、`npm.cmd run lint:web`
 和 Web 测试。测试直接验证 React 语义 DOM、状态变化和 Bridge payload，不再以
 已删除的命令式渲染器作为对照。Release smoke 以
-`data-island-state="mounted"`、真实 React DOM、vendor 模块请求和浏览器控制台
+`data-island-state="mounted"`、真实 React DOM、React vendor chunk 请求和浏览器控制台
 为证据。
 
 ## 仍需人工验收的真实 Agent 流程

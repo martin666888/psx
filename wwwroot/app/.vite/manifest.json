@@ -1,0 +1,126 @@
+{
+  "../agent/src/composer/composerIsland.ts": {
+    "file": "assets/composerIsland-D-wIgy_O.js",
+    "name": "composerIsland",
+    "src": "../agent/src/composer/composerIsland.ts",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-DNsyzzqn.js",
+      "_reactIsland-D9aRlq3D.js",
+      "_Psx-DmHa94-Q.js"
+    ]
+  },
+  "../agent/src/history/historyIsland.ts": {
+    "file": "assets/historyIsland-DglcFNGD.js",
+    "name": "historyIsland",
+    "src": "../agent/src/history/historyIsland.ts",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-DNsyzzqn.js",
+      "_reactIsland-D9aRlq3D.js",
+      "_entry-BDt-ho9M.js",
+      "_Psx-DmHa94-Q.js",
+      "index.html"
+    ]
+  },
+  "../agent/src/plan/planIsland.ts": {
+    "file": "assets/planIsland-CV1Vt30f.js",
+    "name": "planIsland",
+    "src": "../agent/src/plan/planIsland.ts",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-DNsyzzqn.js",
+      "_reactIsland-D9aRlq3D.js",
+      "_entry-BDt-ho9M.js",
+      "index.html"
+    ]
+  },
+  "../agent/src/timeline/timelineIsland.ts": {
+    "file": "assets/timelineIsland-CkJ4YONR.js",
+    "name": "timelineIsland",
+    "src": "../agent/src/timeline/timelineIsland.ts",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-DNsyzzqn.js",
+      "_reactIsland-D9aRlq3D.js",
+      "_markdown-DF4o18JI.js",
+      "_entry-BDt-ho9M.js",
+      "_Psx-DmHa94-Q.js",
+      "index.html"
+    ]
+  },
+  "../agent/src/workspace/runtimeIsland.ts": {
+    "file": "assets/runtimeIsland-D6W3K8dy.js",
+    "name": "runtimeIsland",
+    "src": "../agent/src/workspace/runtimeIsland.ts",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-DNsyzzqn.js",
+      "_Psx-DmHa94-Q.js",
+      "_reactIsland-D9aRlq3D.js"
+    ]
+  },
+  "../agent/src/workspace/sessionIsland.ts": {
+    "file": "assets/sessionIsland-DpiUk455.js",
+    "name": "sessionIsland",
+    "src": "../agent/src/workspace/sessionIsland.ts",
+    "isDynamicEntry": true,
+    "imports": [
+      "_react-vendor-DNsyzzqn.js",
+      "_reactIsland-D9aRlq3D.js"
+    ]
+  },
+  "_Psx-DmHa94-Q.js": {
+    "file": "assets/Psx-DmHa94-Q.js",
+    "name": "Psx",
+    "imports": [
+      "_react-vendor-DNsyzzqn.js"
+    ]
+  },
+  "_entry-BDt-ho9M.js": {
+    "file": "assets/entry-BDt-ho9M.js",
+    "name": "entry",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html"
+    ],
+    "dynamicImports": [
+      "../agent/src/plan/planIsland.ts",
+      "../agent/src/composer/composerIsland.ts",
+      "../agent/src/composer/composerIsland.ts",
+      "../agent/src/composer/composerIsland.ts",
+      "../agent/src/timeline/timelineIsland.ts",
+      "../agent/src/workspace/sessionIsland.ts",
+      "../agent/src/workspace/sessionIsland.ts",
+      "../agent/src/workspace/runtimeIsland.ts",
+      "../agent/src/history/historyIsland.ts"
+    ]
+  },
+  "_markdown-DF4o18JI.js": {
+    "file": "assets/markdown-DF4o18JI.js",
+    "name": "markdown"
+  },
+  "_react-vendor-DNsyzzqn.js": {
+    "file": "assets/react-vendor-DNsyzzqn.js",
+    "name": "react-vendor"
+  },
+  "_reactIsland-D9aRlq3D.js": {
+    "file": "assets/reactIsland-D9aRlq3D.js",
+    "name": "reactIsland",
+    "imports": [
+      "_react-vendor-DNsyzzqn.js"
+    ]
+  },
+  "index.html": {
+    "file": "assets/index-jnKiFE9H.js",
+    "name": "index",
+    "src": "index.html",
+    "isEntry": true,
+    "dynamicImports": [
+      "_entry-BDt-ho9M.js"
+    ],
+    "css": [
+      "assets/index-Chx1qmsv.css"
+    ]
+  }
+}

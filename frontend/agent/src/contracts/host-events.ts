@@ -1,6 +1,6 @@
 // host-events.ts — the AgentHostEvent discriminated union, split by scope.
 //
-// Wire `type` values mirror BridgeEventType in wwwroot/js/BridgeMessages.js and
+// Wire `type` values mirror BridgeEventType in frontend/webview/src/BridgeMessages.js and
 // the C# producers. This module never invents new wire values; it only groups
 // the existing ones by the scope that decides how they are dispatched.
 

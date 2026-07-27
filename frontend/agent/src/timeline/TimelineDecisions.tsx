@@ -129,7 +129,7 @@ function ModeTransitionCard({
     if (openedOnce.current || !detailsRef.current) return;
     openedOnce.current = true;
     detailsRef.current.open = !item.historical;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Runs once on mount by design: item.historical is intentionally omitted.
   }, []);
   const statusText = item.statusText
     ? item.statusText

@@ -52,7 +52,7 @@ function difference(a, b) {
 // Extract the `Key: 'value'` pairs from each Object.freeze({...}) body so both
 // the union of values and the name -> value map (used to resolve main.js case
 // labels) come straight from BridgeMessages.js.
-const bridgeMessagesSource = read('wwwroot/js/BridgeMessages.js');
+const bridgeMessagesSource = read('frontend/webview/src/BridgeMessages.js');
 
 function readFrozenTable(name) {
   const body = new RegExp(`const ${name} = Object\\.freeze\\(\\{([\\s\\S]*?)\\}\\)`).exec(bridgeMessagesSource);
@@ -121,7 +121,7 @@ const csharpEmitted = new Set(csharpEmittedRaw.filter((type) => !INTERNAL_HOST_E
 // Dispatcher 1 (terminal + shared): main.js names the types it handles inline
 // via `case BridgeEventType.X:`; resolve each constant name back to its value
 // through the declared table (an unresolved name is itself a contract break).
-const mainSource = read('wwwroot/js/main.js');
+const mainSource = read('frontend/webview/src/main.js');
 const mainDispatchNames = matchAll(mainSource, /case\s+BridgeEventType\.(\w+)\s*:/g);
 const unresolvedMainNames = mainDispatchNames.filter((name) => !eventTable.has(name));
 const mainDispatchTypes = mainDispatchNames
@@ -130,10 +130,11 @@ const mainDispatchTypes = mainDispatchNames
 
 // Dispatcher 2 (Agent decoder): AgentWorkspaceRegistry.handle routes through
 // HostEventDecoder, whose authoritative recognized-type sets live in
-// host-events.js. Pull the literals from inside each `new Set([...])` body so
-// the scopeOfType return strings ('app', 'lifecycle', ...) are not counted.
-const hostEventsSource = read('wwwroot/js/agent-app/contracts/host-events.js');
-const agentDispatchTypes = matchAll(hostEventsSource, /new Set\(\[([\s\S]*?)\]\)/g)
+// host-events.ts. Pull the literals from inside each `new Set([...])` body
+// (the TS source annotates the element type, e.g. `new Set<AppHostEventType>`)
+// so the scopeOfType return strings ('app', 'lifecycle', ...) are not counted.
+const hostEventsSource = read('frontend/agent/src/contracts/host-events.ts');
+const agentDispatchTypes = matchAll(hostEventsSource, /new Set(?:<[^>]*>)?\(\[([\s\S]*?)\]\)/g)
   .flatMap((setBody) => matchAll(setBody, /'([a-z0-9_]+)'/g));
 
 const frontendHandled = new Set([...mainDispatchTypes, ...agentDispatchTypes]);

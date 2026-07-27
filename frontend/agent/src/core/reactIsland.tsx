@@ -67,8 +67,7 @@ export function mountReactIsland<TProps>(
   renderElement: (props: TProps) => ReactNode
 ): IslandHandle<TProps> {
   let disposed = false;
-  let root: Root;
-  root = createRoot(host, {
+  const root: Root = createRoot(host, {
     onUncaughtError(error): void {
       reportFailure(error, 'render');
     },

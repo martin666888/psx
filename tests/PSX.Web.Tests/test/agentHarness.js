@@ -1,6 +1,5 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import vm from 'node:vm';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 
@@ -10,8 +9,8 @@ export const repositoryRoot = path.resolve(testDirectory, '..', '..', '..');
 // Tests exercise the Agent TypeScript sources under frontend/agent/src
 // directly; Vitest transforms .ts/.tsx on import. Callers keep addressing
 // modules by their compiled names ('core/reducer.js'), and this maps them to
-// the .ts or .tsx source. The committed tsc output under wwwroot/js/agent-app
-// remains the shipped asset, still guarded by verify:agent.
+// the .ts or .tsx source. The shipped bundle is produced by Vite into
+// wwwroot/app and guarded by verify:web.
 export function appModule(relative) {
   const base = path.join(repositoryRoot, 'frontend/agent/src', relative.replace(/\.js$/, ''));
   for (const extension of ['.ts', '.tsx']) {
@@ -22,29 +21,19 @@ export function appModule(relative) {
   throw new Error('agent source module not found for: ' + relative);
 }
 
-// The surviving classic scripts (BridgeMessages.js + Bridge.js) are not ES
-// modules; they declare `const Bridge/BridgeSendType/BridgeEventType` at the top
-// level. Concatenate them inside an IIFE and publish the three symbols onto
-// globalThis so the compiled agent-app modules (which reference the ambient
-// global Bridge, exactly like the shipped app) resolve them.
-let bridgeSource;
-function readBridgeSource() {
-  if (!bridgeSource) {
-    const files = ['wwwroot/js/BridgeMessages.js', 'wwwroot/js/Bridge.js'];
-    const body = files
-      .map((relativePath) => fs.readFileSync(path.join(repositoryRoot, relativePath), 'utf8'))
-      .join('\n;\n');
-    bridgeSource =
-      '(function () {\n' +
-      body +
-      '\n;globalThis.Bridge = Bridge; globalThis.BridgeSendType = BridgeSendType;' +
-      ' globalThis.BridgeEventType = BridgeEventType;\n})();\n';
-  }
-  return bridgeSource;
+// The bridge modules are ESM under frontend/webview/src and publish the
+// Bridge/BridgeSendType/BridgeEventType globals themselves (the shipped app
+// relies on the same globalThis mirror for the Agent ambient declarations).
+// They are stateless, so a single import is shared across installs; each
+// installAgentRuntime call swaps the jsdom window they read at call time.
+async function loadBridgeGlobals() {
+  await import(pathToFileURL(path.join(repositoryRoot, 'frontend/webview/src/Bridge.js')).href);
 }
+await loadBridgeGlobals();
 
 // Install a fresh jsdom document plus the browser globals the Agent modules
-// touch, and the Bridge classic globals. Returns the message-capture handles.
+// touch. The Bridge globals were published once at harness load; they read the
+// current jsdom window at call time. Returns the message-capture handles.
 export function installAgentRuntime() {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {
     url: 'https://psx.local/',
@@ -109,7 +98,6 @@ export function installAgentRuntime() {
     configurable: true,
     value: dom.window.localStorage
   });
-  vm.runInThisContext(readBridgeSource(), { filename: 'bridge-bundle.js' });
 
   return {
     Bridge: globalThis.Bridge,
@@ -168,12 +156,12 @@ export function installBreakpoint(wide = false) {
 
 let cachedTemplateMarkup;
 
-// Unified DOM fixture extracted from the real wwwroot/index.html
+// Unified DOM fixture extracted from the real frontend/webview/index.html
 // #agent-workspace-template, so tests exercise the same node structure
 // (data-role attributes, ARIA, CSS classes) the shipped app uses.
 export function agentTemplateMarkup() {
   if (!cachedTemplateMarkup) {
-    const index = fs.readFileSync(path.join(repositoryRoot, 'wwwroot/index.html'), 'utf8');
+    const index = fs.readFileSync(path.join(repositoryRoot, 'frontend/webview/index.html'), 'utf8');
     const match = index.match(/<template id="agent-workspace-template">[\s\S]*?<\/template>/);
     if (!match) throw new Error('agent-workspace-template not found in index.html');
     cachedTemplateMarkup = match[0];

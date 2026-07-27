@@ -1,7 +1,7 @@
 // runtimeIsland.ts — thin mount/unmount wrapper around the React runtime-card
 // island. This is the ONLY module that statically imports React: the
-// controller reaches it exclusively through a dynamic import guarded by the
-// experimental flag, so a flag-off session never loads any vendor/react code.
+// controller reaches it exclusively through a dynamic import, so a session
+// that never shows the runtime card never loads any React code.
 
 import { createElement } from 'react';
 import { SessionRuntimeCard } from './SessionRuntimeCard.js';

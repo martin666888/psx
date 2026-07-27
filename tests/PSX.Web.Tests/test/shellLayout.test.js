@@ -17,7 +17,7 @@ function role(panel, name) {
 }
 
 function readCss(name) {
-  return fs.readFileSync(path.join(repositoryRoot, 'wwwroot', 'css', 'agent', name), 'utf8');
+  return fs.readFileSync(path.join(repositoryRoot, 'frontend', 'webview', 'src', 'css', 'agent', name), 'utf8');
 }
 
 test('shell: the context-cards overlay sits outside the single-column workspace grid', async () => {
@@ -107,7 +107,7 @@ test('shell: the Plan card and the runtime card follow the new canvas rules', ()
 });
 
 test('shell: retired layout tokens are gone from every agent stylesheet', () => {
-  const dir = path.join(repositoryRoot, 'wwwroot', 'css', 'agent');
+  const dir = path.join(repositoryRoot, 'frontend', 'webview', 'src', 'css', 'agent');
   for (const file of fs.readdirSync(dir)) {
     if (!file.endsWith('.css')) continue;
     const css = fs.readFileSync(path.join(dir, file), 'utf8');

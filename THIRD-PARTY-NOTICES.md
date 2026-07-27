@@ -10,10 +10,9 @@ The portable release redistributes:
 - CommunityToolkit.Mvvm — MIT and accompanying third-party notices.
 - Microsoft.Extensions.DependencyInjection — MIT and accompanying third-party notices.
 - Node.js and npm — licenses are included inside `tools/node/` in the release.
-- xterm.js and its addons — MIT; see `wwwroot/vendor/xterm/LICENSE`.
-- React and React DOM — MIT; see `licenses/react/LICENSE.txt`. Bundled as
-  offline ESM under `wwwroot/vendor/react/` (provenance in
-  `wwwroot/vendor/react/vendor-manifest.json`).
+- xterm.js and its addons — MIT; see `wwwroot/app/vendor/xterm/LICENSE`.
+- React and React DOM — MIT; see `licenses/react/LICENSE.txt`. Bundled into the
+  Vite build output under `wwwroot/app/` (react-vendor chunk).
 - ACP seed manifests — the adapter is Apache-2.0; see `licenses/acp/LICENSE`.
 - Kimi Code ACP runtime — bundled under `tools/kimi/`; MIT. See
   `licenses/kimi/LICENSE` and `licenses/kimi/THIRD-PARTY-NOTICES.md` for the

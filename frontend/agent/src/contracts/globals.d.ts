@@ -1,12 +1,12 @@
-// globals.d.ts — ambient declarations for the classic-script globals.
+// globals.d.ts — ambient declarations for the Bridge global.
 //
-// BridgeMessages.js and Bridge.js are loaded as classic <script> tags before
-// entry.js is dynamically imported, so the Bridge singleton lives on the global
-// scope. These declarations let the Agent ESM modules reference it without
-// importing (Bridge.js is not an ES module).
+// Bridge.js is an ES module bundled into the Vite entry chunk, but it still
+// publishes the Bridge singleton on globalThis (the same mirror the shipped
+// app and the test harness rely on). These declarations let the Agent ESM
+// modules reference it without importing the webview module.
 
 declare global {
-  /** The global Bridge singleton defined in wwwroot/js/Bridge.js. */
+  /** The global Bridge singleton defined in frontend/webview/src/Bridge.js. */
   interface BridgeGlobal {
     sendToHost(message: BridgeOutboundMessage): void;
     onHostMessage(callback: (message: BridgeInboundMessage) => void): void;
@@ -16,7 +16,8 @@ declare global {
     ): import('./bridge-port.js').AgentBridgePort;
   }
 
-  const Bridge: BridgeGlobal;
+  // `var` (not `const`) so Bridge.js can assign the globalThis mirror.
+  var Bridge: BridgeGlobal;
 
   interface Window {
     Bridge: BridgeGlobal;

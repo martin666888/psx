@@ -1,7 +1,7 @@
 // SessionRuntimeCard.tsx — the React pilot component (dev-react validation).
 //
 // Renders the runtime install card as a faithful DOM equivalent of
-// SessionRuntimeController.renderRuntime + the wwwroot/index.html template
+// SessionRuntimeController.renderRuntime + the frontend/webview/index.html template
 // markup: same element structure, classes, data attributes, aria attributes,
 // button labels and hidden/disabled behavior. Pure props-driven — the island
 // re-renders it from the reduced state on every runtime_status event, and the

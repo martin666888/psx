@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="/app/vendor/xterm/xterm.css">
+    <link rel="icon" href="data:,">
+    <title>PSX Terminal</title>
+  <script type="module" crossorigin src="/app/assets/index-jnKiFE9H.js"></script>
+  <link rel="stylesheet" crossorigin href="/app/assets/index-Chx1qmsv.css">
+</head>
+<body>
+    <div id="terminal-container"></div>
+    <div id="agent-workspace-container"></div>
+    <template id="agent-workspace-template">
+    <section class="agent-panel" hidden>
+        <header class="agent-toolbar">
+            <button data-role="history-toggle" class="agent-icon-toggle agent-history-toggle" type="button" title="Agent history" aria-label="Toggle Agent history" aria-expanded="false">
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M2.5 3h11v10h-11z M6 3v10" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
+            </button>
+            <div data-role="session-meta-host" class="agent-meta"></div>
+            <div class="agent-toolbar-actions">
+                <button data-role="plan-toggle" class="agent-icon-toggle agent-plan-toggle" type="button" title="Toggle Plan card" aria-label="Toggle Plan card" aria-expanded="true">
+                    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M6.5 4h7M6.5 8h7M6.5 12h7" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="3" cy="4" r="1.1" fill="currentColor"/><circle cx="3" cy="8" r="1.1" fill="currentColor"/><circle cx="3" cy="12" r="1.1" fill="currentColor"/></svg>
+                    <span data-role="plan-toggle-unread" class="agent-plan-toggle-unread" aria-label="Plan updated" hidden></span>
+                </button>
+                <button data-role="clear" title="Clear thread">Clear</button>
+            </div>
+        </header>
+        <div data-role="runtime-host" class="agent-runtime-react-host"></div>
+        <div class="agent-workspace">
+            <main data-role="thread" class="agent-thread" role="log" aria-label="Agent conversation" aria-live="polite" aria-relevant="additions"></main>
+        </div>
+
+                <aside data-role="context-cards" class="agent-context-cards" aria-label="Agent context cards">
+            <section data-role="plan-card" class="agent-plan-card" aria-label="Agent plan">
+                <header class="agent-plan-card-header">
+                    <strong class="agent-plan-card-title">Plan</strong>
+                </header>
+                <div data-role="plan-panel" class="agent-plan-panel"></div>
+            </section>
+        </aside>
+        <footer class="agent-composer">
+            <div class="agent-composer-main">
+                <div class="agent-composer-card">
+                    <div data-role="attachments-strip" class="agent-attachments-strip" hidden></div>
+                    <section data-role="mode-transition-prompt"
+                             class="agent-composer-mode-transition"
+                             aria-label="Agent decision"
+                             hidden></section>
+                    <div data-role="input-row" class="agent-input-row">
+                        <textarea data-role="input"
+                                  rows="1"
+                                  spellcheck="false"
+                                  role="combobox"
+                                  aria-autocomplete="list"
+                                  aria-haspopup="listbox"
+                                  aria-expanded="false"
+                                  aria-label="Message Agent"
+                                  placeholder="Message Agent - / for commands"></textarea>
+                    </div>
+                    <div data-role="command-hint" class="agent-command-hint" role="status" aria-live="polite" hidden></div>
+                    <div class="agent-composer-footer">
+                        <div class="agent-composer-actions"></div>
+                        <div data-role="context-usage-host" class="agent-hints"></div>
+                        <div class="agent-composer-controls">
+                            <label class="agent-mode-control" title="Agent mode">
+                                <span>mode</span>
+                                <!-- The fallback mode MenuSelect trigger is mounted here by ComposerController. -->
+                            </label>
+                            <div data-role="config-options" class="agent-config-options"></div>
+                        </div>
+                        <button data-role="send" class="agent-send" type="button" title="Send message" aria-label="Send message">
+                            <svg class="agent-send-icon agent-send-icon-submit" viewBox="0 0 16 16" aria-hidden="true">
+                                <path d="M4.5 2.75 12 8l-7.5 5.25z"></path>
+                            </svg>
+                            <svg class="agent-send-icon agent-send-icon-stop" viewBox="0 0 16 16" aria-hidden="true">
+                                <rect x="3" y="3" width="10" height="10" rx="1"></rect>
+                            </svg>
+                            <span data-role="send-label" class="agent-visually-hidden">Send</span>
+                        </button>
+                    </div>
+                </div>
+                <div data-role="command-menu" class="agent-command-menu" role="listbox" aria-label="Available commands" hidden></div>
+            </div>
+        </footer>
+        <dialog data-role="image-preview" class="agent-image-preview" aria-label="Image preview">
+            <button data-role="image-preview-close" class="agent-image-preview-close" type="button" aria-label="Close image preview"><svg class="agent-image-preview-close-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg></button>
+            <img data-role="image-preview-img" alt="Image preview">
+        </dialog>
+    </section>
+    </template>
+
+    <script>
+        window.onerror = function(msg, src, line, col, err) {
+            var d = document.createElement('pre');
+            d.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#f38ba8;color:#1e1e2e;font-size:12px;padding:8px;z-index:9999;white-space:pre-wrap;max-height:40vh;overflow:auto';
+            d.textContent = '[JS ERROR] ' + msg + '\n  at ' + src + ':' + line + ':' + col + (err ? '\n' + err.stack : '');
+            document.body.appendChild(d);
+            return false;
+        };
+        window.addEventListener('unhandledrejection', function(e) {
+            window.onerror('Unhandled Promise: ' + e.reason, '', 0, 0, e.reason instanceof Error ? e.reason : null);
+        });
+    </script>
+    <script src="/app/vendor/xterm/xterm.js"></script>
+    <script src="/app/vendor/xterm/addon-fit.js"></script>
+    <script src="/app/vendor/xterm/addon-unicode11.js"></script>
+    <script src="/app/vendor/xterm/addon-webgl.js"></script>
+</body>
+</html>

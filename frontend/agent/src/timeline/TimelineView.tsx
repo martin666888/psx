@@ -231,7 +231,7 @@ function InlineTool({ item }: { item: InlineToolItem }): JSX.Element {
 
 /** legacy _appendMessage image-JSON cleanup for user messages. */
 function cleanUserText(text: string): string {
-  return (text || '').replace(/\{"type":"image"[^\}]*\}/g, '\n\n[image attachment]\n\n');
+  return (text || '').replace(/\{"type":"image"[^}]*\}/g, '\n\n[image attachment]\n\n');
 }
 
 /** Attachment grid host: tiles are composer-built DOM (legacy seam). */

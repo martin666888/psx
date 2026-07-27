@@ -72,10 +72,10 @@ Terminal view switching is a resume operation, not a new session. While `#termin
 
 - `wwwroot/` is mapped to `https://psx.local/` via `SetVirtualHostNameToFolderMapping` (`Services/TerminalBridgeService.cs:43-48`)
 - `~/.psx/agent/attachments/` is mapped to `https://psx-attachments.local/` (same file, lines 50-56)
-- The page base href is `https://psx.local/` in `wwwroot/index.html:6`
+- The shipped page is the Vite build output at `https://psx.local/app/index.html` (`wwwroot/app/`, built from `frontend/webview/`)
 - All cross-boundary binary IO is base64 strings (JS limitation of `PostWebMessageAsJson`)
 
-If you change the message contract, update **both** the C# dispatcher in the two bridges (`TerminalBridgeService.OnWebMessageReceived`, `AgentBridgeService.OnWebMessageReceived`) and the JS `switch` in `wwwroot/js/main.js` (the `handleEvent` / `switch (message.type)` block). Top-level message `type` values are centralized in `wwwroot/js/BridgeMessages.js` (`BridgeSendType` / `BridgeEventType`); `wwwroot/js/bridge-contract.d.ts` mirrors the payloads for `tsc --checkJs`. There is no schema validation between them beyond these gates.
+If you change the message contract, update **both** the C# dispatcher in the two bridges (`TerminalBridgeService.OnWebMessageReceived`, `AgentBridgeService.OnWebMessageReceived`) and the JS `switch` in `frontend/webview/src/main.js` (the `handleEvent` / `switch (message.type)` block). Top-level message `type` values are centralized in `frontend/webview/src/BridgeMessages.js` (`BridgeSendType` / `BridgeEventType`); `frontend/agent/src/contracts/bridge-contract.d.ts` mirrors the payloads for the TypeScript typecheck. There is no schema validation between them beyond these gates.
 
 ### 2. ConPTY is hand-rolled P/Invoke, not a library
 

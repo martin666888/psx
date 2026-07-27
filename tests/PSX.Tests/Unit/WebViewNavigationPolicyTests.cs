@@ -8,6 +8,7 @@ public sealed class WebViewNavigationPolicyTests
 {
     [TestMethod]
     [DataRow("https://psx.local/index.html")]
+    [DataRow("https://psx.local/app/index.html")]
     [DataRow("https://PSX.LOCAL/index.html?tab=agent#plan")]
     [DataRow("https://psx-attachments.local/thread/image.png")]
     public void Classify_ExactApplicationOrigins_AreInternal(string value)

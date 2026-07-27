@@ -21,7 +21,7 @@
     <SolidColorBrush x:Key="ScrollbarHoverBrush" Color="#4e4e57"/>
 
     <!-- Soft Workbench 形状 token：形状由代码拥有，颜色仍全部来自 psx.ini。
-         与 wwwroot/css/agent/tokens.css 的 agent-radius 阶梯一一对应。 -->
+         与 frontend/webview/src/css/agent/tokens.css 的 agent-radius 阶梯一一对应。 -->
     <CornerRadius x:Key="ControlCornerRadius">8</CornerRadius>
     <CornerRadius x:Key="InputCornerRadius">10</CornerRadius>
     <CornerRadius x:Key="CardCornerRadius">14</CornerRadius>

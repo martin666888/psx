@@ -26,6 +26,11 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
     private CoreWebView2? _coreWebView;
     private string _viewMode = "terminal";
     private bool _disposed;
+#if DEBUG
+    // Loopback-only Vite dev server origin accepted for this session; never
+    // set in Release builds (the env variable is not even read there).
+    private string? _debugDevServerOrigin;
+#endif
 
     public event EventHandler<TerminalInputEventArgs>? InputReceived;
     public event EventHandler<TerminalResizeEventArgs>? ResizeRequested;
@@ -80,8 +85,22 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
         _coreWebView.NavigationStarting += OnNavigationStarting;
         _coreWebView.PermissionRequested += OnPermissionRequested;
 
-        // Navigate to the terminal page
-        _coreWebView.Navigate("https://psx.local/index.html");
+        // Navigate to the packaged frontend under the /app/ virtual-host path.
+        // Debug builds may point at a loopback Vite dev server for HMR through
+        // PSX_WEB_DEV_SERVER; Release builds ignore the variable entirely.
+        var navigationUrl = "https://psx.local/app/index.html";
+#if DEBUG
+        var devServer = Environment.GetEnvironmentVariable("PSX_WEB_DEV_SERVER");
+        if (!string.IsNullOrWhiteSpace(devServer)
+            && Uri.TryCreate(devServer, UriKind.Absolute, out var devUri)
+            && devUri.IsLoopback
+            && (devUri.Scheme == Uri.UriSchemeHttp || devUri.Scheme == Uri.UriSchemeHttps))
+        {
+            _debugDevServerOrigin = devUri.GetLeftPart(UriPartial.Authority);
+            navigationUrl = devUri.ToString();
+        }
+#endif
+        _coreWebView.Navigate(navigationUrl);
     }
 
     private static void EnsureFixedRuntimePermissions(string? fixedRuntimePath)
@@ -243,6 +262,16 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
 
     private void OnNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
     {
+#if DEBUG
+        // Keep dev-server navigations (including HMR full reloads) inside the
+        // WebView when the loopback dev server was explicitly configured.
+        if (_debugDevServerOrigin != null
+            && Uri.TryCreate(e.Uri, UriKind.Absolute, out var navigationUri)
+            && string.Equals(navigationUri.GetLeftPart(UriPartial.Authority), _debugDevServerOrigin, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+#endif
         var target = WebViewNavigationPolicy.Classify(e.Uri);
         if (target == WebViewNavigationTarget.Internal)
             return;

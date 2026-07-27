@@ -3,14 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:agent": "node test/buildAgent.js",
-    "verify:agent": "node test/verifyAgent.js",
-    "pretest": "node test/verifyAgent.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "pretest:coverage": "node test/verifyAgent.js",
-    "test:coverage": "vitest run --coverage",
-    "typecheck": "tsc --project ../../jsconfig.json"
+    "test:coverage": "vitest run --coverage"
   },
   "devDependencies": {
     "jsdom": "29.1.1",

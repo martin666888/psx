@@ -3,7 +3,7 @@
 // Thin wrappers that emit the existing agent-* class vocabulary unchanged
 // (zero visual delta; the legacy DOM-equivalence suites are the proof). They
 // give the migrated islands one shared seam where a future design-system
-// reskin (tokens live in wwwroot/css/agent/tokens.css) plugs in without
+// reskin (tokens live in frontend/webview/src/css/agent/tokens.css) plugs in without
 // touching feature code.
 
 import type { ButtonHTMLAttributes, HTMLAttributes, JSX } from 'react';

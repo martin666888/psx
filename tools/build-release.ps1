@@ -242,15 +242,9 @@ $requiredFiles = @(
     "licenses\microsoft.extensions\LICENSE.TXT",
     "licenses\webview2\LICENSE.txt",
     "licenses\react\LICENSE.txt",
-    "wwwroot\index.html",
-    "wwwroot\js\agent-app\entry.js",
-    "wwwroot\vendor\xterm\LICENSE",
-    "wwwroot\vendor\react\react-core.js",
-    "wwwroot\vendor\react\react.js",
-    "wwwroot\vendor\react\react-jsx-runtime.js",
-    "wwwroot\vendor\react\react-dom.js",
-    "wwwroot\vendor\react\react-dom-client.js",
-    "wwwroot\vendor\react\vendor-manifest.json",
+    "wwwroot\app\index.html",
+    "wwwroot\app\.vite\manifest.json",
+    "wwwroot\app\vendor\xterm\LICENSE",
     "tools\node\node.exe",
     "tools\node\LICENSE",
     "tools\node\node_modules\npm\LICENSE",
@@ -278,9 +272,10 @@ if (Test-Path -LiteralPath $forbiddenAcpRuntime) {
 $forbiddenFiles = @(Get-ChildItem -LiteralPath $StagingDir -Recurse -File | Where-Object {
     $relative = $_.FullName.Substring($StagingDir.Length).TrimStart('\').Replace('\', '/')
     $strayNodeModules = ($relative -match '(^|/)node_modules/') -and (-not $relative.StartsWith('tools/node/node_modules/', [StringComparison]::OrdinalIgnoreCase)) -and (-not $relative.StartsWith('tools/kimi/node_modules/', [StringComparison]::OrdinalIgnoreCase))
-    # Source maps and TypeScript are forbidden only for the generated Agent
-    # frontend. Portable Node/npm and vendor assets legitimately contain maps.
-    $agentSourceArtifact = $relative.StartsWith('wwwroot/js/agent-app/', [StringComparison]::OrdinalIgnoreCase) -and $_.Extension -in @('.ts', '.map')
+    # Source maps and TypeScript are forbidden only for the generated Vite
+    # output (vendored passthrough files under wwwroot/app/vendor may ship
+    # upstream maps). Portable Node/npm legitimately contains maps.
+    $agentSourceArtifact = $relative.StartsWith('wwwroot/app/', [StringComparison]::OrdinalIgnoreCase) -and (-not $relative.StartsWith('wwwroot/app/vendor/', [StringComparison]::OrdinalIgnoreCase)) -and $_.Extension -in @('.ts', '.map')
     $_.Name -ieq "claude.exe" `
         -or $_.Extension -in @(".log", ".tmp", ".binlog") `
         -or $agentSourceArtifact `
@@ -341,9 +336,9 @@ try {
         $leaf = [IO.Path]::GetFileName($normalized)
         $extension = [IO.Path]::GetExtension($normalized)
         $strayNodeModules = ($normalized -match '(^|/)node_modules/') -and (-not $normalized.StartsWith('tools/node/node_modules/', [StringComparison]::OrdinalIgnoreCase)) -and (-not $normalized.StartsWith('tools/kimi/node_modules/', [StringComparison]::OrdinalIgnoreCase))
-        # Keep this scoped to Agent output for parity with the staging check;
-        # Node/npm and vendor files can legitimately ship source maps.
-        $agentSourceArtifact = $normalized.StartsWith('wwwroot/js/agent-app/', [StringComparison]::OrdinalIgnoreCase) -and $extension -in @('.ts', '.map')
+        # Keep this scoped to the Vite output for parity with the staging
+        # check; Node/npm and wwwroot/app/vendor files can ship source maps.
+        $agentSourceArtifact = $normalized.StartsWith('wwwroot/app/', [StringComparison]::OrdinalIgnoreCase) -and (-not $normalized.StartsWith('wwwroot/app/vendor/', [StringComparison]::OrdinalIgnoreCase)) -and $extension -in @('.ts', '.map')
         $normalized.StartsWith('runtime/acp-current/', [StringComparison]::OrdinalIgnoreCase) `
             -or $normalized.StartsWith('tests/', [StringComparison]::OrdinalIgnoreCase) `
             -or $normalized.StartsWith('TestResults/', [StringComparison]::OrdinalIgnoreCase) `

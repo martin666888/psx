@@ -9,9 +9,16 @@ const repoRoot = path.resolve(here, '..', '..');
 // installs a fresh jsdom window per test (same isolation contract as the old
 // node --test runner), so a shared per-file jsdom environment would fight the
 // harness. Tests import the Agent TS sources under frontend/agent/src directly;
-// the committed tsc output under wwwroot/js/agent-app stays the shipped asset
-// and is still guarded by verify:agent until the Vite entry point ships.
+// the shipped bundle is produced by Vite into wwwroot/app and guarded by
+// verify:web.
 export default defineConfig({
+  // frontend/agent has no local tsconfig anymore (typecheck:web owns types via
+  // frontend/webview/tsconfig.json), so pin the automatic JSX runtime here
+  // instead of relying on esbuild's tsconfig discovery.
+  esbuild: {
+    jsx: 'automatic',
+    jsxImportSource: 'react'
+  },
   resolve: {
     alias: {
       '@agent-src': path.join(repoRoot, 'frontend', 'agent', 'src')

@@ -1,7 +1,8 @@
 // smoke-server.mjs — serves an unpacked Release ZIP's wwwroot over local HTTP
-// for the Release browser smoke. The WebView2 virtual host base is rewritten
-// to "/" so a plain browser resolves packaged assets. `?smoke=react` also
-// injects an isolated host-bridge fixture and writes its result into the DOM.
+// for the Release browser smoke. The Vite output under wwwroot/app uses
+// absolute /app/ URLs, so a plain static server maps the WebView2 virtual-host
+// layout one-to-one. `?smoke=react` injects an isolated host-bridge fixture
+// into /app/index.html and writes its result into the DOM.
 //
 // Usage: node tools/smoke-server.mjs <wwwroot-dir> [port]
 
@@ -51,7 +52,6 @@ const REACT_SMOKE_BOOTSTRAP = String.raw`
       }
     }
   };
-  localStorage.setItem('psx.agent.experimental.react', '0');
   const emit = (data) => hostListeners.forEach((listener) => listener({ data }));
   const waitFor = async (predicate, timeout = 6000) => {
     const started = performance.now();
@@ -109,32 +109,17 @@ const REACT_SMOKE_BOOTSTRAP = String.raw`
       panel?.querySelector('.agent-message-user')?.textContent.includes('React release smoke') === true;
     result.checks.realRuntimeNode =
       panel?.querySelector('[data-role="runtime-card"]')?.dataset.state === 'missing';
-    result.checks.oldFlagIgnored = mounted;
 
-    const facades = [
-      '/vendor/react/react.js',
-      '/vendor/react/react-jsx-runtime.js',
-      '/vendor/react/react-dom.js',
-      '/vendor/react/react-dom-client.js'
-    ];
-    const responses = await Promise.all(facades.map(async (url) => {
-      try {
-        const response = await fetch(url, { cache: 'no-store' });
-        return { url, status: response.status, ok: response.ok };
-      } catch (error) {
-        return { url, status: 0, ok: false, error: text(error) };
-      }
-    }));
-    result.checks.facades = responses;
-    result.checks.facadesOk = responses.every((entry) => entry.ok && entry.status === 200);
-    result.checks.reactCoreLoaded = performance
-      .getEntriesByType('resource')
-      .some((entry) => /\/vendor\/react\/react-core\.js(?:$|\?)/.test(entry.name));
+    // The packaged Vite output must serve React and the Agent app as hashed
+    // dynamic chunks from /app/assets/.
+    const resources = performance.getEntriesByType('resource').map((entry) => entry.name);
+    result.checks.reactVendorChunkLoaded =
+      resources.some((name) => /\/app\/assets\/react-vendor-[-\w]+\.js(?:$|\?)/.test(name));
+    result.checks.agentChunkLoaded =
+      resources.some((name) => /\/app\/assets\/entry-[-\w]+\.js(?:$|\?)/.test(name));
 
     const passed =
-      Object.entries(result.checks)
-        .filter(([key]) => key !== 'facades')
-        .every(([, value]) => value === true)
+      Object.values(result.checks).every((value) => value === true)
       && result.errors.length === 0
       && result.warnings.length === 0
       && result.unhandled.length === 0;
@@ -148,8 +133,9 @@ const REACT_SMOKE_BOOTSTRAP = String.raw`
 </script>`;
 
 const server = http.createServer((req, res) => {
-  const urlPath = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
-  const relative = urlPath === '/' ? 'index.html' : urlPath.replace(/^\/+/, '');
+  const requestUrl = new URL(req.url, 'http://localhost');
+  const urlPath = decodeURIComponent(requestUrl.pathname);
+  const relative = urlPath === '/' ? 'app/index.html' : urlPath.replace(/^\/+/, '');
   const file = path.join(rootDir, relative);
   if (!file.startsWith(rootDir)) {
     res.writeHead(403).end();
@@ -162,14 +148,8 @@ const server = http.createServer((req, res) => {
     }
     const ext = path.extname(file).toLowerCase();
     let body = data;
-    if (relative === 'index.html') {
-      let html = data.toString('utf8').replace(
-        '<base href="https://psx.local/">',
-        '<base href="/">'
-      );
-      if (new URL(req.url, 'http://localhost').searchParams.get('smoke') === 'react') {
-        html = html.replace('</head>', REACT_SMOKE_BOOTSTRAP + '\n</head>');
-      }
+    if (relative === 'app/index.html' && requestUrl.searchParams.get('smoke') === 'react') {
+      const html = data.toString('utf8').replace('</head>', REACT_SMOKE_BOOTSTRAP + '\n</head>');
       body = Buffer.from(html);
     }
     res.writeHead(200, { 'content-type': MIME[ext] || 'application/octet-stream' }).end(body);
@@ -177,5 +157,5 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(port, () => {
-  console.log('[smoke] serving ' + rootDir + ' at http://localhost:' + port + '/');
+  console.log('[smoke] serving ' + rootDir + ' at http://localhost:' + port + '/app/index.html');
 });

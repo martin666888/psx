@@ -42,14 +42,11 @@ New-Item -ItemType Directory -Path $resultsRoot, $unpackRoot, $profileRoot -Forc
 Expand-Archive -LiteralPath $ArchivePath -DestinationPath $unpackRoot -Force
 
 $wwwroot = Join-Path $unpackRoot "wwwroot"
-if (-not (Test-Path -LiteralPath (Join-Path $wwwroot "index.html"))) {
-    throw "Release archive does not contain wwwroot/index.html."
+if (-not (Test-Path -LiteralPath (Join-Path $wwwroot "app\index.html"))) {
+    throw "Release archive does not contain wwwroot/app/index.html."
 }
-foreach ($facade in @("react.js", "react-jsx-runtime.js", "react-dom.js", "react-dom-client.js")) {
-    $candidate = Join-Path $wwwroot ("vendor\react\" + $facade)
-    if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
-        throw "Release archive is missing React facade: $candidate"
-    }
+if (-not (Test-Path -LiteralPath (Join-Path $wwwroot "app\.vite\manifest.json") -PathType Leaf)) {
+    throw "Release archive is missing wwwroot/app/.vite/manifest.json."
 }
 
 $server = Start-Process -FilePath "node.exe" `
@@ -95,7 +92,7 @@ try {
         ("--user-data-dir=" + $profileRoot),
         "--virtual-time-budget=10000",
         "--dump-dom",
-        ("http://127.0.0.1:" + $Port + "/?smoke=react")
+        ("http://127.0.0.1:" + $Port + "/app/index.html?smoke=react")
     )
     $edgeProcess = Start-Process -FilePath $edge `
         -ArgumentList $arguments `

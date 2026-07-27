@@ -74,6 +74,6 @@ test('guardrail: shared frontend never branches on a provider key literal', () =
 });
 
 test('template bootstrap copy stays provider-neutral', () => {
-  const index = fs.readFileSync(path.join(repositoryRoot, 'wwwroot', 'index.html'), 'utf8');
+  const index = fs.readFileSync(path.join(repositoryRoot, 'frontend', 'webview', 'index.html'), 'utf8');
   assert.doesNotMatch(index, /claude|anthropic|gemini|openai|chatgpt|codex|copilot|cursor|llama|qwen/iu);
 });
