@@ -27,7 +27,9 @@
     Streamdown.
   - `tool.tsx`: `ai` ToolUIPart types replaced with a local ToolState union;
     AI Elements CodeBlock (Shiki) replaced with plain `pre > code` (the PSX
-    fenced-code HTML pipeline styles it).
+    fenced-code HTML pipeline styles it); CP4 adds optional `badge` (PSX
+    ACP tool-state wording) and `titleClassName` (semantic anchor classes)
+    props to ToolHeader.
   - `prompt-input.tsx`: `ai` types (ChatStatus/FileUIPart) declared locally;
     `nanoid` replaced with `crypto.randomUUID`.
   - `shimmer.tsx`: motion/react animation reproduced as a CSS keyframe

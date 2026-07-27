@@ -7,6 +7,9 @@
 // - Upstream renders parameters/results through the AI Elements CodeBlock
 //   (Shiki); PSX keeps its existing HTML `pre > code` pipeline, so this port
 //   renders plain <pre><code> and CP4 styles it to match.
+// - CP4: ToolHeader accepts `badge` (overrides the default status label with
+//   PSX's ACP tool-state wording) and `titleClassName` (semantic anchor
+//   classes for tests/replay tooling).
 
 import { Badge } from "@/components/ui/badge";
 import {
@@ -50,9 +53,13 @@ export type ToolHeaderProps = {
   type: string;
   state: ToolState;
   className?: string;
+  /** PSX: overrides the default status-badge label (icon still follows state). */
+  badge?: ReactNode;
+  /** PSX: extra classes for the title span (semantic anchors). */
+  titleClassName?: string;
 };
 
-const getStatusBadge = (status: ToolState) => {
+const getStatusBadge = (status: ToolState, label?: ReactNode) => {
   const labels: Record<ToolState, string> = {
     "input-streaming": "Pending",
     "input-available": "Running",
@@ -76,7 +83,7 @@ const getStatusBadge = (status: ToolState) => {
   return (
     <Badge className="gap-1.5 rounded-full text-xs" variant="secondary">
       {icons[status]}
-      {labels[status]}
+      {label ?? labels[status]}
     </Badge>
   );
 };
@@ -86,6 +93,8 @@ export const ToolHeader = ({
   title,
   type,
   state,
+  badge,
+  titleClassName,
   ...props
 }: ToolHeaderProps) => (
   <CollapsibleTrigger
@@ -97,10 +106,10 @@ export const ToolHeader = ({
   >
     <div className="flex items-center gap-2">
       <WrenchIcon className="size-4 text-muted-foreground" />
-      <span className="font-medium text-sm">
+      <span className={cn("font-medium text-sm", titleClassName)}>
         {title ?? type.split("-").slice(1).join("-")}
       </span>
-      {getStatusBadge(state)}
+      {getStatusBadge(state, badge)}
     </div>
     <ChevronDownIcon className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
   </CollapsibleTrigger>

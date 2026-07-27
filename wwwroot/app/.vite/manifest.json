@@ -1,84 +1,84 @@
 {
   "../agent/src/composer/composerIsland.ts": {
-    "file": "assets/composerIsland-uoivun74.js",
+    "file": "assets/composerIsland-hC-_CtZP.js",
     "name": "composerIsland",
     "src": "../agent/src/composer/composerIsland.ts",
     "isDynamicEntry": true,
     "imports": [
-      "_react-vendor-D8bdUtAQ.js",
-      "_reactIsland-Pf6mX8p-.js",
-      "_Psx-DimS0Ou8.js"
+      "_react-vendor-B6H9ACc3.js",
+      "_reactIsland-BERmJKCj.js",
+      "_Psx-CnGX4wIo.js"
     ]
   },
   "../agent/src/history/historyIsland.ts": {
-    "file": "assets/historyIsland-J3lU8lKM.js",
+    "file": "assets/historyIsland-DLrhC7cq.js",
     "name": "historyIsland",
     "src": "../agent/src/history/historyIsland.ts",
     "isDynamicEntry": true,
     "imports": [
-      "_react-vendor-D8bdUtAQ.js",
-      "_reactIsland-Pf6mX8p-.js",
-      "_entry-DmJP6Kyv.js",
-      "_Psx-DimS0Ou8.js",
+      "_react-vendor-B6H9ACc3.js",
+      "_reactIsland-BERmJKCj.js",
+      "_entry-CUbMbw2_.js",
+      "_Psx-CnGX4wIo.js",
       "index.html"
     ]
   },
   "../agent/src/plan/planIsland.ts": {
-    "file": "assets/planIsland-CvYWEe9I.js",
+    "file": "assets/planIsland-CAxVmBP6.js",
     "name": "planIsland",
     "src": "../agent/src/plan/planIsland.ts",
     "isDynamicEntry": true,
     "imports": [
-      "_react-vendor-D8bdUtAQ.js",
-      "_reactIsland-Pf6mX8p-.js",
-      "_entry-DmJP6Kyv.js",
+      "_react-vendor-B6H9ACc3.js",
+      "_reactIsland-BERmJKCj.js",
+      "_entry-CUbMbw2_.js",
       "index.html"
     ]
   },
   "../agent/src/timeline/timelineIsland.ts": {
-    "file": "assets/timelineIsland-Dp0v-srp.js",
+    "file": "assets/timelineIsland-dXrD5pyj.js",
     "name": "timelineIsland",
     "src": "../agent/src/timeline/timelineIsland.ts",
     "isDynamicEntry": true,
     "imports": [
-      "_react-vendor-D8bdUtAQ.js",
-      "_reactIsland-Pf6mX8p-.js",
+      "_react-vendor-B6H9ACc3.js",
+      "_reactIsland-BERmJKCj.js",
       "_markdown-DF4o18JI.js",
-      "_entry-DmJP6Kyv.js",
-      "_Psx-DimS0Ou8.js",
+      "_entry-CUbMbw2_.js",
+      "_Psx-CnGX4wIo.js",
       "index.html"
     ]
   },
   "../agent/src/workspace/runtimeIsland.ts": {
-    "file": "assets/runtimeIsland-CiBmEtAq.js",
+    "file": "assets/runtimeIsland-C93LHyXj.js",
     "name": "runtimeIsland",
     "src": "../agent/src/workspace/runtimeIsland.ts",
     "isDynamicEntry": true,
     "imports": [
-      "_react-vendor-D8bdUtAQ.js",
-      "_Psx-DimS0Ou8.js",
-      "_reactIsland-Pf6mX8p-.js"
+      "_react-vendor-B6H9ACc3.js",
+      "_Psx-CnGX4wIo.js",
+      "_reactIsland-BERmJKCj.js"
     ]
   },
   "../agent/src/workspace/sessionIsland.ts": {
-    "file": "assets/sessionIsland-uI6WzATv.js",
+    "file": "assets/sessionIsland-C0HVCxlj.js",
     "name": "sessionIsland",
     "src": "../agent/src/workspace/sessionIsland.ts",
     "isDynamicEntry": true,
     "imports": [
-      "_react-vendor-D8bdUtAQ.js",
-      "_reactIsland-Pf6mX8p-.js"
+      "_react-vendor-B6H9ACc3.js",
+      "_reactIsland-BERmJKCj.js"
     ]
   },
-  "_Psx-DimS0Ou8.js": {
-    "file": "assets/Psx-DimS0Ou8.js",
+  "_Psx-CnGX4wIo.js": {
+    "file": "assets/Psx-CnGX4wIo.js",
     "name": "Psx",
     "imports": [
-      "_react-vendor-D8bdUtAQ.js"
+      "_react-vendor-B6H9ACc3.js"
     ]
   },
-  "_entry-DmJP6Kyv.js": {
-    "file": "assets/entry-DmJP6Kyv.js",
+  "_entry-CUbMbw2_.js": {
+    "file": "assets/entry-CUbMbw2_.js",
     "name": "entry",
     "isDynamicEntry": true,
     "imports": [
@@ -100,27 +100,27 @@
     "file": "assets/markdown-DF4o18JI.js",
     "name": "markdown"
   },
-  "_react-vendor-D8bdUtAQ.js": {
-    "file": "assets/react-vendor-D8bdUtAQ.js",
+  "_react-vendor-B6H9ACc3.js": {
+    "file": "assets/react-vendor-B6H9ACc3.js",
     "name": "react-vendor"
   },
-  "_reactIsland-Pf6mX8p-.js": {
-    "file": "assets/reactIsland-Pf6mX8p-.js",
+  "_reactIsland-BERmJKCj.js": {
+    "file": "assets/reactIsland-BERmJKCj.js",
     "name": "reactIsland",
     "imports": [
-      "_react-vendor-D8bdUtAQ.js"
+      "_react-vendor-B6H9ACc3.js"
     ]
   },
   "index.html": {
-    "file": "assets/index-DO9BgzLO.js",
+    "file": "assets/index-CxSQIro3.js",
     "name": "index",
     "src": "index.html",
     "isEntry": true,
     "dynamicImports": [
-      "_entry-DmJP6Kyv.js"
+      "_entry-CUbMbw2_.js"
     ],
     "css": [
-      "assets/index-BC5GcygA.css"
+      "assets/index-DxeJJNTp.css"
     ]
   }
 }

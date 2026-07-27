@@ -1,15 +1,14 @@
 // TimelineView.tsx — the Station 3 React Timeline tree (core items).
 //
 // Renders the TimelineViewModel projection as the single owner of the thread
-// subtree. Every element mirrors a legacy DOM write in TimelineController so
-// the produced DOM stays byte-identical to the legacy engine. Decision cards
-// (permission/question/elicitation/mode-transition) live in
+// subtree. CP4 area 1 swaps the Reasoning (thinking) and Tool views onto the
+// AI Elements components (Reasoning / Tool / Task on Radix Collapsible) while
+// keeping the projection-driven semantics: `open` changes only at lifecycle
+// moments, user toggles in between are preserved, and the semantic anchor
+// classes + data attributes (agent-thinking-block, agent-tool-card,
+// data-tool-id, data-state, data-run-id) stay for replay tooling and tests.
+// Decision cards (permission/question/elicitation/mode-transition) live in
 // TimelineDecisions.tsx and render inside the same tree.
-//
-// <details> open state: the projection changes `open` only at lifecycle
-// moments (legacy setAttribute/removeAttribute); user toggles in between must
-// not be overridden, so the components sync `open` through a ref effect
-// instead of a controlled prop.
 
 import { useLayoutEffect, useRef, useState, type JSX, type ReactNode } from 'react';
 import { renderMarkdown } from '../core/markdown.js';
@@ -26,6 +25,21 @@ import {
 } from './timelineViewModel.js';
 import { DecisionCard, type DecisionCallbacks } from './TimelineDecisions.js';
 import { PsxButton, PsxCard } from '../ui/Psx.js';
+import {
+  Reasoning,
+  ReasoningContent,
+  ReasoningTrigger
+} from '../components/ai-elements/reasoning.js';
+import {
+  Tool,
+  ToolContent,
+  ToolHeader,
+  type ToolState
+} from '../components/ai-elements/tool.js';
+import { Task, TaskContent, TaskTrigger } from '../components/ai-elements/task.js';
+import { Shimmer } from '../components/ai-elements/shimmer.js';
+import { Badge } from '../components/ui/badge.js';
+import { ChevronDownIcon, WrenchIcon } from 'lucide-react';
 
 export interface TimelineCallbacks extends DecisionCallbacks {
   /** Clipboard write with the legacy execCommand fallback; resolves ok. */
@@ -96,7 +110,9 @@ export function CopyButton(props: { getText(): string; copyText(text: string): P
   );
 }
 
-/** Uncontrolled <details> whose open state follows the projection lifecycle. */
+/** Uncontrolled <details> whose open state follows the projection lifecycle.
+ * Still used by TimelineDecisions (CP4 area 5 swaps those cards, then this
+ * hook goes away). */
 export function useDetailsOpen(open: boolean) {
   const ref = useRef<HTMLDetailsElement | null>(null);
   const applied = useRef<boolean | null>(null);
@@ -108,6 +124,21 @@ export function useDetailsOpen(open: boolean) {
     }
   });
   return ref;
+}
+
+/** Controlled Collapsible open state that follows the projection lifecycle:
+ * a projection `open` change overrides the view, user toggles in between are
+ * preserved (the exact contract of the old uncontrolled-<details> sync). */
+export function useProjectionOpen(
+  projectionOpen: boolean
+): [boolean, (open: boolean) => void] {
+  const [open, setOpen] = useState(projectionOpen);
+  const applied = useRef<boolean | null>(null);
+  if (applied.current !== projectionOpen) {
+    applied.current = projectionOpen;
+    if (open !== projectionOpen) setOpen(projectionOpen);
+  }
+  return [open, setOpen];
 }
 
 function SystemRow({ item }: { item: SystemItem }): JSX.Element {
@@ -137,9 +168,15 @@ function RecoveryCard({ item, callbacks }: { item: RecoveryItem; callbacks: Time
 function ThinkingRowView({ item }: { item: ThinkingItem }): JSX.Element {
   if (item.variant === 'row') {
     return (
-      <div className="agent-thinking" role="status" aria-live="polite" aria-busy="true">
-        <span className="agent-spinner"></span>
-        <span>Thinking</span>
+      <div
+        className="agent-thinking mb-4 flex items-center gap-2 text-muted-foreground text-sm"
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+      >
+        <Shimmer as="span" duration={1}>
+          Thinking...
+        </Shimmer>
       </div>
     );
   }
@@ -147,49 +184,81 @@ function ThinkingRowView({ item }: { item: ThinkingItem }): JSX.Element {
 }
 
 function ThinkingBlock({ item }: { item: ThinkingItem }): JSX.Element {
-  const ref = useDetailsOpen(item.running);
+  const [open, setOpen] = useProjectionOpen(item.running);
   return (
-    <details
-      ref={ref}
+    <Reasoning
       className={'agent-thinking-block' + (item.running ? ' agent-thinking-running' : '')}
+      isStreaming={item.running}
+      open={open}
+      onOpenChange={setOpen}
+      // defaultOpen=false disables the upstream auto-close timer: the
+      // projection already collapses the block at thinking_finished, and the
+      // timer would otherwise re-collapse a user-expanded historical block.
+      defaultOpen={false}
       aria-busy={item.running ? 'true' : 'false'}
     >
-      <summary className="agent-thinking-header">
-        <span className="agent-thinking-chevron"></span>
-        {item.running ? <span className="agent-spinner"></span> : null}
-        <span className="agent-thinking-title">Thinking</span>
-      </summary>
-      <pre className="agent-thinking-content">{item.text}</pre>
-    </details>
+      <ReasoningTrigger />
+      {/* forceMount keeps the collapsed transcript in the DOM (old <details>
+          semantics) for text search and replay tooling. */}
+      <ReasoningContent forceMount className="data-[state=closed]:hidden">
+        <pre className="agent-thinking-content max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-muted/50 p-3 font-mono text-xs">
+          {item.text}
+        </pre>
+      </ReasoningContent>
+    </Reasoning>
   );
 }
+
+/** ACP tool states → AI Elements badge states (icon only; the label keeps
+ * PSX's TOOL_STATE_LABELS wording via the badge override). */
+const TOOL_UI_STATE: Readonly<Record<string, ToolState>> = {
+  running: 'input-available',
+  done: 'output-available',
+  error: 'output-error',
+  cancelled: 'output-denied',
+  fallback: 'approval-requested'
+};
 
 function ToolCardView({
   card
 }: {
   card: ToolGroupItem['cards'][number];
 }): JSX.Element {
-  const ref = useDetailsOpen(card.open);
+  const [open, setOpen] = useProjectionOpen(card.open);
   const label = TOOL_STATE_LABELS[card.state] || TOOL_STATE_LABELS.done;
   return (
-    <details ref={ref} className={'agent-tool-card agent-tool-card-' + card.state} data-tool-id={card.toolCallId} data-state={card.state}>
-      <summary className="agent-tool-card-header">
-        <span className="agent-tool-card-summary">{card.summary}</span>
-        <span className="agent-tool-card-status" aria-label={'Tool status: ' + label}>
-          {label}
-        </span>
-      </summary>
-      <div className="agent-tool-card-body">
-        <pre className="agent-tool-card-content">{card.output}</pre>
-      </div>
-    </details>
+    <Tool
+      className={'agent-tool-card agent-tool-card-' + card.state + ' border-x-0 border-b-0 mb-0 rounded-none'}
+      data-tool-id={card.toolCallId}
+      data-state={card.state}
+      open={open}
+      onOpenChange={setOpen}
+    >
+      <ToolHeader
+        title={card.summary}
+        type={card.summary}
+        state={TOOL_UI_STATE[card.state] ?? 'output-available'}
+        badge={label}
+        titleClassName="agent-tool-card-summary text-left"
+        className="agent-tool-card-header group px-0"
+      />
+      {/* forceMount keeps closed outputs in the DOM (the old <details> body
+          was always present) for replay tooling and text search. */}
+      <ToolContent forceMount className="data-[state=closed]:hidden">
+        <div className="agent-tool-card-body pb-3 pl-6">
+          <pre className="agent-tool-card-content max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/50 p-3 font-mono text-xs">
+            {card.output}
+          </pre>
+        </div>
+      </ToolContent>
+    </Tool>
   );
 }
 
 // Items are mutated in place by the projection, so components stay unmemoized:
 // keyed reconciliation already preserves DOM node identity across renders.
 function ToolGroup({ item }: { item: ToolGroupItem }): JSX.Element {
-  const ref = useDetailsOpen(item.open);
+  const [open, setOpen] = useProjectionOpen(item.open);
   const total = item.cards.length;
   const running = item.cards.filter((card) => card.state === 'running').length;
   const label =
@@ -197,34 +266,52 @@ function ToolGroup({ item }: { item: ToolGroupItem }): JSX.Element {
       ? 'Tool activity'
       : 'Tool activity \u00b7 ' + total + ' call' + (total > 1 ? 's' : '') + (item.live && running > 0 ? ' \u00b7 ' + running + ' running' : '');
   return (
-    <details
-      ref={ref}
-      className={'agent-run-group' + (item.error ? ' agent-run-group-error' : '')}
+    <Task
+      className={'agent-run-group not-prose mb-4 w-full' + (item.error ? ' agent-run-group-error' : '')}
       data-run-id={item.runId}
+      open={open}
+      onOpenChange={setOpen}
       style={item.visible ? undefined : { display: 'none' }}
     >
-      <summary className="agent-run-group-header">
-        <span className="agent-run-group-chevron"></span>
-        <span className="agent-run-group-summary">{label}</span>
-      </summary>
-      <div className="agent-run-group-body">
-        {item.cards.map((card) => (
-          <ToolCardView key={card.toolCallId} card={card} />
-        ))}
-      </div>
-    </details>
+      <TaskTrigger title={label}>
+        <div className="agent-run-group-header flex w-full cursor-pointer items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground">
+          <WrenchIcon className="size-4" />
+          <span className="agent-run-group-summary font-medium">{label}</span>
+          {item.error ? <span className="font-medium text-destructive">{'\u00b7 Failed'}</span> : null}
+          <ChevronDownIcon className="size-4 transition-transform group-data-[state=open]:rotate-180" />
+        </div>
+      </TaskTrigger>
+      <TaskContent forceMount className="data-[state=closed]:hidden">
+        <div className="agent-run-group-body flex flex-col">
+          {item.cards.map((card) => (
+            <ToolCardView key={card.toolCallId} card={card} />
+          ))}
+        </div>
+      </TaskContent>
+    </Task>
   );
 }
 
 function InlineTool({ item }: { item: InlineToolItem }): JSX.Element {
   const statusLabel = item.state === 'error' ? 'Failed' : item.state === 'fallback' ? 'Needs terminal' : 'Done';
   return (
-    <section className={'agent-tool agent-tool-' + item.state} data-state={item.state}>
-      <div className="agent-tool-header">
-        <span>{item.name}</span>
-        <span className="agent-tool-card-status">{statusLabel}</span>
+    <section
+      className={
+        'agent-tool agent-tool-' + item.state + ' not-prose mb-4 w-full rounded-md border' +
+        (item.state === 'error' ? ' border-destructive' : item.state === 'fallback' ? ' border-yellow-600/50' : '')
+      }
+      data-state={item.state}
+    >
+      <div className="agent-tool-header flex items-center justify-between gap-4 p-3">
+        <div className="flex items-center gap-2">
+          <WrenchIcon className="size-4 text-muted-foreground" />
+          <span className="font-medium text-sm">{item.name}</span>
+        </div>
+        <Badge className="gap-1.5 rounded-full text-xs" variant="secondary">
+          {statusLabel}
+        </Badge>
       </div>
-      <pre>{item.text}</pre>
+      <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words px-3 pb-3 font-mono text-xs">{item.text}</pre>
     </section>
   );
 }

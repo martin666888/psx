@@ -87,6 +87,20 @@ const REACT_SMOKE_BOOTSTRAP = String.raw`
       contextWindowTokens: 100
     });
     emit({ type: 'user_message', workspaceId, text: 'React release smoke' });
+    emit({ type: 'thinking_started', workspaceId });
+    emit({ type: 'thinking_delta', workspaceId, text: 'considering the release' });
+    emit({ type: 'thinking_finished', workspaceId });
+    emit({
+      type: 'tool_started',
+      workspaceId,
+      runId: 'smoke-run',
+      toolCallId: 'tc1',
+      name: 'Bash',
+      summary: 'run tests',
+      input: 'npm test'
+    });
+    emit({ type: 'tool_delta', workspaceId, toolCallId: 'tc1', text: '\nok' });
+    emit({ type: 'tool_finished', workspaceId, toolCallId: 'tc1', status: 'completed' });
     emit({
       type: 'plan_update',
       workspaceId,
@@ -109,6 +123,10 @@ const REACT_SMOKE_BOOTSTRAP = String.raw`
       panel?.querySelector('.agent-message-user')?.textContent.includes('React release smoke') === true;
     result.checks.realRuntimeNode =
       panel?.querySelector('[data-role="runtime-card"]')?.dataset.state === 'missing';
+    result.checks.realThinkingBlock =
+      panel?.querySelector('.agent-thinking-block')?.textContent.includes('considering the release') === true;
+    result.checks.realToolCard =
+      panel?.querySelector('.agent-tool-card[data-tool-id="tc1"]')?.dataset.state === 'done';
 
     // The packaged Vite output must serve React and the Agent app as hashed
     // dynamic chunks from /app/assets/.

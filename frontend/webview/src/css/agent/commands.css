@@ -60,9 +60,3 @@
 .agent-command-item:active {
     background: var(--agent-surface-muted);
 }
-
-@keyframes agent-spin {
-    to {
-        transform: rotate(360deg);
-    }
-}

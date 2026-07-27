@@ -1,5 +1,11 @@
 /* 权限请求卡片 - 使用 details 实现折叠 */
 .agent-decision {
+    width: 100%;
+    box-sizing: border-box;
+    margin: 0 0 14px;
+    border: 1px solid var(--agent-border);
+    border-radius: var(--agent-radius-card);
+    background: var(--agent-surface);
     padding: 0;
 }
 
