@@ -5,16 +5,8 @@
 // Timeline path stays unrouted until the tree is feature-complete, then a
 // single commit flips react-mode routing over (no mixed ownership ever).
 import { createElement } from 'react';
-import { createRoot } from 'react-dom/client';
+import { mountReactIsland } from '../core/reactIsland.js';
 import { TimelineView } from './TimelineView.js';
-export function mountTimelineIsland(host) {
-    const root = createRoot(host);
-    return {
-        render(props) {
-            root.render(createElement(TimelineView, props));
-        },
-        dispose() {
-            root.unmount();
-        }
-    };
+export function mountTimelineIsland(host, reportFailure) {
+    return mountReactIsland('timeline', host, reportFailure, (props) => createElement(TimelineView, props));
 }

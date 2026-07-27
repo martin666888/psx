@@ -1,11 +1,7 @@
 // AgentWorkspaceStore.ts — holds one AgentWorkspaceState per live workspace.
 //
-// Phase 3 makes the store the owner of the reduced state: every decoded
-// workspace event is folded through the pure reducer here, producing a new
-// immutable state that runs in parallel with the legacy engine. The
-// LegacyAgentAdapter still owns all rendering; the store's state is validated
-// against the legacy DOM by the equivalence tests until Phase 4 controllers
-// read from it.
+// Every decoded workspace event folds through the pure reducer here and
+// produces a new immutable state for the domain controllers.
 import { createInitialWorkspaceState } from '../contracts/workspace-state.js';
 import { reduceWorkspaceState, seedIdentityFromCreation } from '../core/reducer.js';
 export class AgentWorkspaceStore {

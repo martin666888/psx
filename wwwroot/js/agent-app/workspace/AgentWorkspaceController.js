@@ -1,10 +1,7 @@
 // AgentWorkspaceController.ts — owns a single Agent workspace.
 //
-// Phase 2 delegates every content event to the LegacyAgentAdapter, which drives
-// the legacy AgentThreadManager for this workspace. The controller holds the
-// workspace's state slice and its FeatureController set (a single legacy
-// feature today; Phase 4 splits it into Session/Inspector/Composer/Decision/
-// Timeline controllers).
+// Holds the workspace state slice and coordinates the lifecycle of its domain
+// feature controllers.
 export class AgentWorkspaceController {
     workspaceId;
     state;

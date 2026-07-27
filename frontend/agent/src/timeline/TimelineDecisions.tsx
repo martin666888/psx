@@ -1,7 +1,5 @@
-// TimelineDecisions.tsx — React twins of the DecisionController thread cards
-// (permission/question, mode-transition; elicitation renders a read-only
-// notice pending full form support). DOM mirrors permissions.js /
-// modeTransition.js so the produced markup matches the legacy engine.
+// TimelineDecisions.tsx — React permission, question, elicitation and
+// mode-transition thread cards.
 
 import { useLayoutEffect, useRef, useState, type JSX } from 'react';
 import {
@@ -12,7 +10,7 @@ import {
   type ElicitationProperty
 } from '../core/elicitation.js';
 import { renderMarkdown, safeHref } from '../core/markdown.js';
-import { decisionOptionClass } from '../decisions/DecisionController.js';
+import { decisionOptionClass } from '../decisions/decisionPresentation.js';
 import type { DecisionItem, DecisionOptionVM } from './timelineViewModel.js';
 import { CopyButton, useDetailsOpen } from './TimelineView.js';
 import { PsxButton } from '../ui/Psx.js';

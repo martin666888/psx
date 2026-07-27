@@ -8,7 +8,8 @@
 // and dispose unmounts while leaving the host nodes to the panel lifecycle.
 
 import { createElement } from 'react';
-import { createRoot } from 'react-dom/client';
+import type { IslandFailureReporter, IslandHandle } from '../core/islandHost.js';
+import { mountReactIsland } from '../core/reactIsland.js';
 import {
   ContextUsage,
   SessionMeta,
@@ -16,36 +17,20 @@ import {
   type SessionMetaProps
 } from './SessionToolbar.js';
 
-export interface SessionMetaIslandHandle {
-  render(props: SessionMetaProps): void;
-  dispose(): void;
+export function mountSessionMetaIsland(
+  host: HTMLElement,
+  reportFailure: IslandFailureReporter
+): IslandHandle<SessionMetaProps> {
+  return mountReactIsland('session-meta', host, reportFailure, (props) =>
+    createElement(SessionMeta, props)
+  );
 }
 
-export function mountSessionMetaIsland(host: HTMLElement): SessionMetaIslandHandle {
-  const root = createRoot(host);
-  return {
-    render(props: SessionMetaProps): void {
-      root.render(createElement(SessionMeta, props));
-    },
-    dispose(): void {
-      root.unmount();
-    }
-  };
-}
-
-export interface ContextUsageIslandHandle {
-  render(props: ContextUsageProps): void;
-  dispose(): void;
-}
-
-export function mountContextUsageIsland(host: HTMLElement): ContextUsageIslandHandle {
-  const root = createRoot(host);
-  return {
-    render(props: ContextUsageProps): void {
-      root.render(createElement(ContextUsage, props));
-    },
-    dispose(): void {
-      root.unmount();
-    }
-  };
+export function mountContextUsageIsland(
+  host: HTMLElement,
+  reportFailure: IslandFailureReporter
+): IslandHandle<ContextUsageProps> {
+  return mountReactIsland('context-usage', host, reportFailure, (props) =>
+    createElement(ContextUsage, props)
+  );
 }

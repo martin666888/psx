@@ -7,22 +7,15 @@
 // removed by the controller.
 
 import { createElement } from 'react';
-import { createRoot } from 'react-dom/client';
+import type { IslandFailureReporter, IslandHandle } from '../core/islandHost.js';
+import { mountReactIsland } from '../core/reactIsland.js';
 import { HistoryList, type HistoryListProps } from './HistoryList.js';
 
-export interface HistoryIslandHandle {
-  render(props: HistoryListProps): void;
-  dispose(): void;
-}
-
-export function mountHistoryIsland(host: HTMLElement): HistoryIslandHandle {
-  const root = createRoot(host);
-  return {
-    render(props: HistoryListProps): void {
-      root.render(createElement(HistoryList, props));
-    },
-    dispose(): void {
-      root.unmount();
-    }
-  };
+export function mountHistoryIsland(
+  host: HTMLElement,
+  reportFailure: IslandFailureReporter
+): IslandHandle<HistoryListProps> {
+  return mountReactIsland('history-list', host, reportFailure, (props) =>
+    createElement(HistoryList, props)
+  );
 }

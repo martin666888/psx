@@ -1,6 +1,5 @@
 // sessionFormat.ts — pure session/context formatting shared by the legacy
-// renderer (SessionRuntimeController) and the React session island, so both
-// paths produce byte-identical text from the same reduced state.
+// Pure session/context formatting used by the React session island.
 /** Mirrors legacy _formatStatus. */
 export function formatStatus(status) {
     return String(status || 'ready')

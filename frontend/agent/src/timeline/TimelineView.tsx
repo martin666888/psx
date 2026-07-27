@@ -254,6 +254,95 @@ function AttachmentGrid({
   return <div className="agent-message-attachments" ref={host}></div>;
 }
 
+function UserMessageBody({
+  item,
+  callbacks
+}: {
+  item: MessageItem;
+  callbacks: TimelineCallbacks;
+}): JSX.Element {
+  const body = useRef<HTMLDivElement | null>(null);
+  const content = useRef<HTMLDivElement | null>(null);
+  const [collapsible, setCollapsible] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
+
+  useLayoutEffect(() => {
+    const contentNode = content.current;
+    if (!contentNode || !contentNode.textContent?.trim()) return;
+    let firstFrame = 0;
+    let secondFrame = 0;
+    firstFrame = requestAnimationFrame(() => {
+      firstFrame = 0;
+      secondFrame = requestAnimationFrame(() => {
+        secondFrame = 0;
+        const style = window.getComputedStyle(contentNode);
+        const fontSize = parseFloat(style.fontSize) || 15;
+        const parsedLineHeight = parseFloat(style.lineHeight);
+        const lineHeight = Number.isFinite(parsedLineHeight) ? parsedLineHeight : fontSize * 1.65;
+        if (Math.ceil(contentNode.scrollHeight / lineHeight) < 17) return;
+        contentNode.style.setProperty(
+          '--agent-user-message-collapsed-height',
+          lineHeight * 16 + 'px'
+        );
+        setCollapsible(true);
+        setCollapsed(true);
+      });
+    });
+    return () => {
+      if (firstFrame) cancelAnimationFrame(firstFrame);
+      if (secondFrame) cancelAnimationFrame(secondFrame);
+    };
+  }, [item.raw]);
+
+  const toggle = collapsible
+    ? (
+        <button
+          type="button"
+          className="agent-message-collapse-toggle"
+          aria-expanded={!collapsed}
+          onClick={() => {
+            const nextCollapsed = !collapsed;
+            setCollapsed(nextCollapsed);
+            if (!nextCollapsed) {
+              requestAnimationFrame(() => {
+                const node = body.current;
+                if (!node || node.getBoundingClientRect().bottom <= window.innerHeight) return;
+                const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                node.scrollIntoView({
+                  block: 'nearest',
+                  behavior: reduceMotion ? 'auto' : 'smooth'
+                });
+              });
+            }
+          }}
+        >
+          {collapsed ? '展开' : '收起'}
+        </button>
+      )
+    : null;
+
+  return (
+    <div
+      ref={body}
+      className={
+        'agent-message-body' +
+        (collapsible ? ' agent-message-collapsible' : '') +
+        (collapsible && collapsed ? ' agent-message-collapsed' : '')
+      }
+    >
+      {item.attachments.length > 0 ? (
+        <AttachmentGrid attachments={item.attachments} callbacks={callbacks} />
+      ) : null}
+      <div
+        ref={content}
+        className="agent-message-content"
+        dangerouslySetInnerHTML={{ __html: renderMarkdown(cleanUserText(item.raw)) }}
+      ></div>
+      {toggle}
+    </div>
+  );
+}
+
 const MessageRow = function MessageRow({
   item,
   showLabel,
@@ -277,15 +366,7 @@ const MessageRow = function MessageRow({
     >
       {showLabel ? <div className="agent-message-label">{ariaLabel}</div> : null}
       {isUser ? (
-        <div className="agent-message-body">
-          {item.attachments.length > 0 ? (
-            <AttachmentGrid attachments={item.attachments} callbacks={callbacks} />
-          ) : null}
-          <div
-            className="agent-message-content"
-            dangerouslySetInnerHTML={{ __html: renderMarkdown(cleanUserText(item.raw)) }}
-          ></div>
-        </div>
+        <UserMessageBody item={item} callbacks={callbacks} />
       ) : (
         <div
           className="agent-message-body"

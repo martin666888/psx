@@ -1,11 +1,12 @@
-// domSnapshot.js — structural DOM snapshots for legacy/React equivalence
-// tests. Captures tag, class, high-signal attributes and children; svg
+// domSnapshot.js — semantic React DOM snapshots.
+// Captures tag, class, high-signal attributes and children; svg
 // subtrees collapse to their tag (icon markup formatting differs between
 // innerHTML strings and JSX but is visually identical).
 
 const ATTRS = [
   'data-state', 'data-run-id', 'data-tool-id', 'data-request-id', 'data-option-id',
   'data-option-kind', 'data-raw', 'data-decision-state', 'data-tool-call-id',
+  'data-selected-option-id', 'data-selected-option-name',
   'aria-label', 'aria-live',
   'aria-busy', 'aria-pressed', 'aria-atomic', 'role', 'title', 'type'
 ];

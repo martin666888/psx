@@ -8,7 +8,6 @@
 // install/cancel intents flow back through props callbacks to the existing
 // bridge path.
 
-import { useLayoutEffect } from 'react';
 import type { JSX } from 'react';
 import type { WorkspaceRuntimeState } from '../contracts/workspace-state.js';
 import { PsxButton, PsxCard } from '../ui/Psx.js';
@@ -24,18 +23,9 @@ export interface SessionRuntimeCardProps {
   runtime: WorkspaceRuntimeState;
   onInstall: () => void;
   onCancel: () => void;
-  /**
-   * Fires after the first commit is flushed to the DOM (useLayoutEffect), so
-   * the island can atomically retire the legacy card without a blank frame.
-   */
-  onCommitted: () => void;
 }
 
-export function SessionRuntimeCard({ runtime, onInstall, onCancel, onCommitted }: SessionRuntimeCardProps): JSX.Element {
-  useLayoutEffect(() => {
-    onCommitted();
-  }, [onCommitted]);
-
+export function SessionRuntimeCard({ runtime, onInstall, onCancel }: SessionRuntimeCardProps): JSX.Element {
   return (
     <PsxCard
       data-role="runtime-card"

@@ -8,23 +8,16 @@
 // the workspace panel lifecycle owns the node.
 
 import { createElement } from 'react';
-import { createRoot } from 'react-dom/client';
 import type { WorkspacePlanState } from '../contracts/workspace-state.js';
+import type { IslandFailureReporter, IslandHandle } from '../core/islandHost.js';
+import { mountReactIsland } from '../core/reactIsland.js';
 import { PlanCard } from './PlanCard.js';
 
-export interface PlanIslandHandle {
-  render(plan: WorkspacePlanState): void;
-  dispose(): void;
-}
-
-export function mountPlanIsland(host: HTMLElement): PlanIslandHandle {
-  const root = createRoot(host);
-  return {
-    render(plan: WorkspacePlanState): void {
-      root.render(createElement(PlanCard, { plan }));
-    },
-    dispose(): void {
-      root.unmount();
-    }
-  };
+export function mountPlanIsland(
+  host: HTMLElement,
+  reportFailure: IslandFailureReporter
+): IslandHandle<WorkspacePlanState> {
+  return mountReactIsland('plan-card', host, reportFailure, (plan) =>
+    createElement(PlanCard, { plan })
+  );
 }

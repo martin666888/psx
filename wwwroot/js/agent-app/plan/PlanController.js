@@ -14,8 +14,6 @@
 // toggle. While hidden, an arriving active plan raises the unread dot on the
 // toggle instead of interrupting; showing the card clears it. The width is a
 // fixed CSS token; there is no resizer.
-import { planStatusClass, planStatusLabel, planStatusMarker } from '../core/plan.js';
-import { isReactUiEnabled } from '../core/flags.js';
 import { createIslandLoader } from '../core/islandHost.js';
 const EMPTY_PLAN = { active: false, runId: '', entries: [], fallbackText: '' };
 function role(panel, name) {
@@ -36,10 +34,8 @@ export class PlanController {
     narrowOverride = null;
     unread = false;
     lastPlanRef = EMPTY_PLAN;
-    // React migration: the plan-panel content is React-owned once the first
-    // plan event arrives in react mode; visibility, the unread dot and the
-    // narrow-mode rules above stay with this controller (different subtrees).
-    reactPlanEnabled = false;
+    // React owns plan-panel children. Visibility and responsive state stay with
+    // this controller because they affect the surrounding shell.
     planIsland = null;
     cleanup = [];
     constructor(workspaceId, host, callbacks) {
@@ -57,9 +53,6 @@ export class PlanController {
         this.planToggle = role(panel, 'plan-toggle');
         this.planToggleUnread = role(panel, 'plan-toggle-unread');
         this.on(this.planToggle, 'click', () => this.requestVisible(!this.effectiveVisible()));
-        this.reactPlanEnabled = isReactUiEnabled();
-        // The initial empty state is always legacy-rendered: React loads lazily
-        // on the first plan event, and its first commit replaces this content.
         this.renderPlan(EMPTY_PLAN);
         this.applyVisibility();
     }
@@ -141,28 +134,20 @@ export class PlanController {
         this.lastPlanRef = plan;
         if (!this.effectiveVisible() && plan.active)
             this.unread = true;
-        if (this.reactPlanEnabled && !this.planIsland?.hasFailed()) {
-            this.renderPlanReact(plan);
-        }
-        else {
-            this.renderPlan(plan);
-        }
+        this.renderPlan(plan);
         this.applyVisibility();
     }
-    renderPlanReact(plan) {
+    renderPlan(plan) {
+        const host = this.planPanel;
+        if (!host)
+            return;
         this.planIsland ??= createIslandLoader({
             name: 'plan-card',
             load: async () => {
                 const mod = await import('./planIsland.js');
-                return (host) => mod.mountPlanIsland(host);
+                return (islandHost, reportFailure) => mod.mountPlanIsland(islandHost, reportFailure);
             },
-            // React takes ownership of the template-owned plan panel itself; its
-            // first commit replaces the legacy-rendered content atomically.
-            createHost: () => this.planPanel,
-            onLoadFailed: (props) => {
-                if (this.panel)
-                    this.renderPlan(props);
-            }
+            host
         });
         this.planIsland.render(plan);
     }
@@ -187,44 +172,6 @@ export class PlanController {
         this.applyVisibility();
         if (this.effectiveVisible() !== previous)
             this.callbacks.onVisibilityChanged?.();
-    }
-    renderPlan(plan) {
-        if (!this.planPanel)
-            return;
-        this.planPanel.innerHTML = '';
-        if (!plan.active) {
-            const empty = document.createElement('div');
-            empty.className = 'agent-plan-empty';
-            empty.textContent = 'No active plan';
-            this.planPanel.appendChild(empty);
-            return;
-        }
-        if (plan.entries.length === 0) {
-            const fallback = document.createElement('pre');
-            fallback.className = 'agent-plan-fallback';
-            fallback.textContent = plan.fallbackText || 'No plan items.';
-            this.planPanel.appendChild(fallback);
-            return;
-        }
-        const list = document.createElement('ol');
-        list.className = 'agent-plan-list';
-        plan.entries.forEach((entry) => {
-            const item = document.createElement('li');
-            item.className = 'agent-plan-item ' + planStatusClass(entry.status);
-            item.setAttribute('aria-label', planStatusLabel(entry.status) + ': ' + entry.content);
-            if (entry.priority)
-                item.dataset.priority = entry.priority;
-            const marker = document.createElement('span');
-            marker.className = 'agent-plan-marker';
-            marker.textContent = planStatusMarker(entry.status);
-            const content = document.createElement('span');
-            content.className = 'agent-plan-content';
-            content.textContent = entry.content;
-            item.appendChild(marker);
-            item.appendChild(content);
-            list.appendChild(item);
-        });
-        this.planPanel.appendChild(list);
     }
     on(node, type, handler) {
         if (!node)

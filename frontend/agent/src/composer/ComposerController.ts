@@ -27,7 +27,6 @@ import type {
   ComposerConfigOption
 } from '../contracts/workspace-state.js';
 import { createInitialWorkspaceState } from '../contracts/workspace-state.js';
-import { isReactUiEnabled } from '../core/flags.js';
 import { createIslandLoader, type IslandLoader } from '../core/islandHost.js';
 import type {
   AttachmentStripProps,
@@ -109,8 +108,6 @@ export class ComposerController implements FeatureController {
   private modeSelect: MenuSelect | null = null;
   private readonly configSelects = new Map<string, MenuSelect>();
   private configOptionsHost: HTMLElement | null = null;
-  private attachButton: HTMLButtonElement | null = null;
-  private attachmentInput: HTMLInputElement | null = null;
   private attachmentStrip: HTMLElement | null = null;
   private imagePreview: HTMLDialogElement | null = null;
   private imagePreviewImg: HTMLImageElement | null = null;
@@ -127,9 +124,8 @@ export class ComposerController implements FeatureController {
 
   private readonly cleanup: Array<() => void> = [];
 
-  // React island state (flag: psx.agent.experimental.react, default on). The
-  // textarea + keyboard/IME + MenuSelect popups are excluded legacy regions.
-  private reactUiEnabled = false;
+  // React owns the component subtrees. Textarea/keyboard/IME and MenuSelect
+  // popups remain imperative because they have distinct DOM ownership.
   private attachmentsIsland: IslandLoader<AttachmentStripProps> | null = null;
   private actionsIsland: IslandLoader<ComposerActionsProps> | null = null;
   private hintIsland: IslandLoader<CommandHintProps> | null = null;
@@ -154,8 +150,6 @@ export class ComposerController implements FeatureController {
     this.modeSelect.element.dataset.role = 'mode';
     panel.querySelector('.agent-mode-control')?.appendChild(this.modeSelect.element);
     this.configOptionsHost = role(panel, 'config-options');
-    this.attachButton = role(panel, 'attach') as HTMLButtonElement | null;
-    this.attachmentInput = role(panel, 'attachment-input') as HTMLInputElement | null;
     this.attachmentStrip = role(panel, 'attachments-strip');
     this.imagePreview = role(panel, 'image-preview') as HTMLDialogElement | null;
     this.imagePreviewImg = role(panel, 'image-preview-img') as HTMLImageElement | null;
@@ -164,7 +158,6 @@ export class ComposerController implements FeatureController {
     this.rebuildPsxCommands();
     this.wireComposer();
     this.wireAttachments();
-    this.reactUiEnabled = isReactUiEnabled();
     this.renderComposerControls();
     this.syncAttachmentControls();
     this.resizeInput();
@@ -270,6 +263,7 @@ export class ComposerController implements FeatureController {
       this.hideCommandMenu();
     } else {
       if (this.inputRow) this.inputRow.hidden = false;
+      this.renderPendingAttachments();
       this.syncAttachmentControls();
     }
   }
@@ -666,23 +660,14 @@ export class ComposerController implements FeatureController {
       text = '无法识别命令：' + command
         + '\nPSX 只支持命令菜单中显示的指令。输入 / 查看可用命令；部分 ' + this.agentName + ' 指令需要在原生 Terminal 中使用。';
     }
-    if (this.reactUiEnabled && !this.hintIsland?.hasFailed()) {
-      this.renderHintReact(text);
-    } else {
-      hint.textContent = text;
-    }
+    this.renderHintReact(text);
     hint.hidden = false;
   }
 
   private clearCommandHint(): void {
     const hint = this.commandHint;
     if (!hint) return;
-    if (this.reactUiEnabled && !this.hintIsland?.hasFailed()) {
-      // Only rendered islands need clearing; an untouched hint stays empty.
-      if (this.hintIsland) this.renderHintReact('');
-    } else {
-      hint.textContent = '';
-    }
+    if (this.hintIsland) this.renderHintReact('');
     hint.hidden = true;
   }
 
@@ -798,17 +783,7 @@ export class ComposerController implements FeatureController {
 
   private wireAttachments(): void {
     this.lastSubmittedDraft = null;
-    if (!this.attachButton || !this.attachmentInput || !this.attachmentStrip) return;
-
-    this.on(this.attachButton, 'click', () => {
-      if (!this.runtimeReady() || !this.supportsImage || this.isBusy || this.isRestoring) return;
-      this.attachmentInput?.click();
-    });
-
-    this.on(this.attachmentInput, 'change', () => {
-      this.handleAttachmentFiles(Array.from(this.attachmentInput?.files || []));
-      if (this.attachmentInput) this.attachmentInput.value = '';
-    });
+    if (!this.panel || !this.attachmentStrip) return;
 
     this.on(this.panel, 'paste', (event) => {
       if (!this.runtimeReady() || !this.supportsImage || this.isBusy || this.isRestoring) return;
@@ -933,8 +908,7 @@ export class ComposerController implements FeatureController {
     this.renderPendingAttachments();
   }
 
-  /** Host push: legacy no longer owns the strip, so the controller marks the
-   * failed tile. The system message is emitted here via the timeline seam. */
+  /** Marks the failed tile and emits a system message through the timeline seam. */
   private handleAttachmentFailed(raw: RawHostMessage): void {
     const clientId = asString(raw.clientId);
     const message = asString(raw.text) || 'Image upload failed.';
@@ -965,22 +939,14 @@ export class ComposerController implements FeatureController {
     const strip = this.attachmentStrip;
     if (!strip) return;
     strip.hidden = this.pendingAttachments.length === 0;
-    if (this.reactUiEnabled && !this.attachmentsIsland?.hasFailed()) {
-      this.renderAttachmentsReact();
-      return;
-    }
-    strip.innerHTML = '';
-    for (const attachment of this.pendingAttachments) {
-      strip.appendChild(this.createAttachmentTile(attachment, true));
-    }
+    this.renderAttachmentsReact();
   }
 
   // ----- React composer islands ---------------------------------------------
   //
   // Three independent roots (single-owner rule): the attachment strip pills,
   // the attach action row and the command hint text. Host visibility
-  // attributes stay controller-owned; a load failure falls back permanently
-  // to the legacy DOM writes via the shared island loader.
+  // attributes stay controller-owned.
 
   private attachmentStripProps(): AttachmentStripProps {
     return {
@@ -996,16 +962,16 @@ export class ComposerController implements FeatureController {
   }
 
   private renderAttachmentsReact(): void {
+    const host = this.attachmentStrip;
+    if (!host) return;
     this.attachmentsIsland ??= createIslandLoader<AttachmentStripProps>({
       name: 'composer-attachments',
       load: async () => {
         const mod = await import('./composerIsland.js');
-        return (host) => mod.mountAttachmentStripIsland(host);
+        return (islandHost, reportFailure) =>
+          mod.mountAttachmentStripIsland(islandHost, reportFailure);
       },
-      createHost: () => this.attachmentStrip,
-      onLoadFailed: () => {
-        if (this.panel) this.renderPendingAttachments();
-      }
+      host
     });
     this.attachmentsIsland.render(this.attachmentStripProps());
   }
@@ -1023,31 +989,31 @@ export class ComposerController implements FeatureController {
   }
 
   private renderActionsReact(): void {
+    const host = this.panel?.querySelector<HTMLElement>('.agent-composer-actions') ?? null;
+    if (!host) return;
     this.actionsIsland ??= createIslandLoader<ComposerActionsProps>({
       name: 'composer-actions',
       load: async () => {
         const mod = await import('./composerIsland.js');
-        return (host) => mod.mountComposerActionsIsland(host);
+        return (islandHost, reportFailure) =>
+          mod.mountComposerActionsIsland(islandHost, reportFailure);
       },
-      createHost: () => this.panel?.querySelector<HTMLElement>('.agent-composer-actions') ?? null,
-      onLoadFailed: () => {
-        if (this.panel) this.syncAttachmentControls();
-      }
+      host
     });
     this.actionsIsland.render(this.composerActionsProps());
   }
 
   private renderHintReact(text: string): void {
+    const host = this.commandHint;
+    if (!host) return;
     this.hintIsland ??= createIslandLoader<CommandHintProps>({
       name: 'command-hint',
       load: async () => {
         const mod = await import('./composerIsland.js');
-        return (host) => mod.mountCommandHintIsland(host);
+        return (islandHost, reportFailure) =>
+          mod.mountCommandHintIsland(islandHost, reportFailure);
       },
-      createHost: () => this.commandHint,
-      onLoadFailed: (props) => {
-        if (this.commandHint) this.commandHint.textContent = props.text;
-      }
+      host
     });
     this.hintIsland.render({ text });
   }
@@ -1068,10 +1034,10 @@ export class ComposerController implements FeatureController {
       url: asString(attachment.url),
       localPreviewUrl: false
     };
-    return this.createAttachmentTile(tileData, false);
+    return this.createAttachmentTile(tileData);
   }
 
-  private createAttachmentTile(attachment: PendingAttachment, removable: boolean): HTMLElement {
+  private createAttachmentTile(attachment: PendingAttachment): HTMLElement {
     const shell = document.createElement('div');
     shell.className = 'agent-attachment-shell';
 
@@ -1119,19 +1085,6 @@ export class ComposerController implements FeatureController {
         this.showImagePreview(attachment.url);
     });
     shell.appendChild(tile);
-
-    if (removable) {
-      const remove = document.createElement('button');
-      remove.type = 'button';
-      remove.className = 'agent-attachment-remove';
-      remove.textContent = '×';
-      remove.setAttribute('aria-label', 'Remove ' + (attachment.fileName || 'image attachment'));
-      remove.addEventListener('click', (event) => {
-        event.stopPropagation();
-        this.removePendingAttachment(attachment.clientId);
-      });
-      shell.appendChild(remove);
-    }
 
     return shell;
   }
@@ -1203,16 +1156,7 @@ export class ComposerController implements FeatureController {
   }
 
   private syncAttachmentControls(): void {
-    if (this.reactUiEnabled && !this.actionsIsland?.hasFailed()) {
-      this.renderActionsReact();
-      return;
-    }
-    if (!this.attachButton) return;
-    this.attachButton.disabled =
-      !this.runtimeReady() || !this.supportsImage || this.isBusy || this.isRestoring || this.isTranscriptOnly;
-    this.attachButton.title = this.supportsImage
-      ? (this.runtimeReady() ? 'Attach images' : 'Install the Agent runtime before attaching images')
-      : 'Current ACP Agent does not support image input';
+    this.renderActionsReact();
   }
 
   // --- Helpers -------------------------------------------------------------

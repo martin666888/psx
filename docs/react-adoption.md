@@ -357,3 +357,71 @@ existence, and re-verified in a real browser against the rebuilt ZIP.
 10. Use the branch for a day or two; run `tools/test.ps1 -Suite Full`
     before proposing any mainline merge.
 
+## React single-renderer closure (2026-07-27)
+
+This section supersedes the migration-mode, fallback, and dual-renderer
+instructions above. The earlier sections remain as historical evidence of the
+adoption sequence.
+
+- Timeline, decisions, Plan, History, Composer component subtrees, session
+  metadata, context usage, and the Runtime card now have exactly one renderer:
+  their React island.
+- The migration localStorage key, startup mode log/dataset, fallback replay,
+  imperative replacement renderers, and dual-mode harness were removed.
+- Each island still owns an independent React Root. The shared mounting helper
+  standardizes Error Boundary reporting and the diagnostic
+  `data-island-state` marker; it does not share a Root.
+- Import failures are non-retryable in the current Document. The WebView2/Edge
+  probe observed one request and the same cached failure for fetch, syntax, and
+  evaluation failures. The local error card therefore asks the user to restart
+  PSX/reinstall the package. Mount and render failures offer Retry and restore
+  the latest props through a fresh Root.
+- Long user-message collapse and valid elicitation payload coverage were moved
+  into the React contract before the old implementations were deleted.
+- The retained imperative regions are intentional functional owners:
+  textarea/IME, slash-command and MenuSelect popups, configuration controls,
+  the mode-transition Composer prompt, Workspace shell, and Terminal.
+
+Frontend workflow:
+
+```powershell
+npm.cmd run build:agent
+npm.cmd run verify:agent
+npm.cmd run typecheck
+npm.cmd run test:web
+```
+
+The committed `wwwroot/js/agent-app/` output must match
+`frontend/agent/src/`. The static Web guard rejects migration-switch and
+fallback symbols as well as direct imports that bypass the React facades.
+
+### Closure verification
+
+The same jsdom stress harness was run against the branch-point compiled
+artifacts and the closure build: 100 historical turns, 1,000 sequential
+`assistant_delta` commits, one warm-up and five measured runs.
+
+| Build | Median | Samples | >50 ms commits |
+| --- | ---: | --- | ---: |
+| Branch point `0c0dc7c` | 21,453 ms | 21,470 / 21,453 / 22,418 / 20,901 / 17,700 ms | 205 |
+| Single renderer | 13,238 ms | 13,292 / 12,993 / 13,208 / 13,891 / 13,238 ms | 4 |
+
+**Correction (audited rerun):** the table above was measured while the
+battle tooling was still loading the machine, which inflated the baseline.
+A controlled rerun on an idle machine at the final commit — raw JSON kept
+as `TestResults/react-perf-baseline-run.json` and
+`TestResults/react-closure-run.json` — measured branch-point median
+12,926 ms (12,348–13,775, ≤1 long commit per run) against single-renderer
+median 12,848 ms (12,545–16,560; the first sample carried cold-cache
+noise). The honest conclusion is parity within noise: the closure adds no
+performance regression, and the earlier 38.3% improvement claim is
+withdrawn. Absolute jsdom timings are not a WebView2 UX benchmark; the
+known whole-Timeline-per-delta cost remains a separate optimization
+target.
+
+The same-Document import probe used local Edge/WebView2-compatible Chromium.
+Fetch 503, syntax failure, and evaluation failure each issued one request and
+returned the cached first error on the second `import()` call. This is the
+evidence for the non-retryable import diagnostic. Mount/render retries remain
+covered by the island-loader tests.
+

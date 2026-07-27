@@ -151,6 +151,19 @@ Build:
 dotnet build PSX.slnx
 ```
 
+The Agent interface is implemented as independently loaded React islands. Its
+TypeScript/TSX source lives in `frontend/agent/src/`, while the compiled
+JavaScript under `wwwroot/js/agent-app/` is committed so ordinary .NET builds
+do not require Node. After changing Agent frontend source, rebuild and verify
+the committed output:
+
+```powershell
+npm.cmd run build:agent
+npm.cmd run verify:agent
+npm.cmd run typecheck
+npm.cmd run test:web
+```
+
 Run:
 
 ```powershell

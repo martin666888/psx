@@ -9,10 +9,8 @@
 // replaces. TimelineItem deliberately has no 'plan' type: the Plan is a
 // Workspace context card, never chat content.
 //
-// Every fold mirrors a legacy DOM write in TimelineController/DecisionController
-// (the faithful ports of thread.js/messages.js/thinking.js/tools.js/
-// permissions.js/modeTransition.js), so the React tree that renders this model
-// can stay byte-identical to the legacy engine.
+// Every fold preserves the established event order and presentation state
+// while remaining independent from React and the bridge decoder.
 
 import type { RawHostMessage } from '../contracts/host-events.js';
 

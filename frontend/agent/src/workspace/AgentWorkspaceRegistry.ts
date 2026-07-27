@@ -19,8 +19,10 @@ import { WorkspaceHost } from './WorkspaceHost.js';
 import { PlanController } from '../plan/PlanController.js';
 import { ComposerController } from '../composer/ComposerController.js';
 import type { ComposerHost } from '../composer/ComposerController.js';
-import { DecisionController } from '../decisions/DecisionController.js';
-import type { DecisionHost } from '../decisions/DecisionController.js';
+import {
+  ModeTransitionPromptController,
+  type ModeTransitionPromptHost
+} from '../decisions/ModeTransitionPromptController.js';
 import { TimelineController } from '../timeline/TimelineController.js';
 import type { TimelineHost } from '../timeline/TimelineController.js';
 import { AgentWorkspaceController } from './AgentWorkspaceController.js';
@@ -202,8 +204,8 @@ export class AgentWorkspaceRegistry {
   }
 
   private showNotice(text: string): void {
-    // Legacy routed the notice to the active workspace's timeline; if the
-    // active workspace is a terminal (no agent controller), it is a no-op.
+    // Notices belong to the active Agent workspace's timeline. If the active
+    // workspace is a terminal (with no Agent controller), this is a no-op.
     this.noticeSinks.get(this.host.activeWorkspace())?.(text || 'Unable to create Agent workspace.');
   }
 
@@ -243,46 +245,25 @@ export class AgentWorkspaceRegistry {
       openHistory: (id) => this.historyDock?.openHistory(id)
     };
     const composer = new ComposerController(workspaceId, composerHost);
-    // The Decision controller places its cards into the timeline and reads
-    // timeline internals through the TimelineController seam (single writer =
-    // the timeline engine), and drives the composer-region prompt coordination
-    // through the composer controller instance that owns those nodes.
-    const decisionHost: DecisionHost = {
+    const promptHost: ModeTransitionPromptHost = {
       getPanel: (id) => this.host.getPanel(id),
       bridgeFor: (id) => this.host.bridgeFor(id),
-      appendToTimeline: (_id, element) => timeline.appendToTimeline(element),
-      scrollTimelineToBottom: (_id) => timeline.scrollTimelineToBottom(),
-      renderMarkdown: (_id, text) => timeline.renderMarkdown(text),
-      createCopyButton: (_id, getText) => timeline.createCopyButton(getText),
-      safeHref: (_id, url) => timeline.safeHref(url),
-      removeToolCardForModeTransition: (_id, toolCallId) =>
-        timeline.removeToolCardForModeTransition(toolCallId),
-      autoScrollPinned: (_id) => timeline.autoScrollPinned(),
-      scrollModeTransitionToStart: (_id, card) => timeline.scrollModeTransitionToStart(card),
       setComposerPromptActive: (_id, active) => composer.setModeTransitionPromptActive(active),
-      focusComposerInput: () => composer.focusInput(),
-      timelineReactFailed: (_id) => timeline.hasReactFailed()
+      focusComposerInput: () => composer.focusInput()
     };
-    const decisionController = new DecisionController(workspaceId, decisionHost);
-    // The Timeline controller is the single writer for the thread. Two pieces it
-    // arranges but does not own reach their domains through the host seam:
-    // historical mode-transition cards go to the decision controller and message
-    // attachment tiles are built by the composer controller.
+    const promptController = new ModeTransitionPromptController(workspaceId, promptHost);
     const timelineHost: TimelineHost = {
       getPanel: (id) => this.host.getPanel(id),
       bridgeFor: (id) => this.host.bridgeFor(id),
-      renderHistoricalModeTransition: (_id, msg) =>
-        decisionController.renderHistoricalModeTransition(msg),
       createMessageAttachmentTile: (_id, attachment) =>
-        composer.createMessageAttachmentTile(attachment),
-      replayDecisionEvent: (_id, type, raw) => decisionController.replayLegacyEvent(type, raw)
+        composer.createMessageAttachmentTile(attachment)
     };
     const timeline = new TimelineController(workspaceId, timelineHost);
     const controller = new AgentWorkspaceController(workspaceId, state, [
       new SessionRuntimeController(workspaceId, this.host),
       plan,
       composer,
-      decisionController,
+      promptController,
       timeline
     ]);
     this.controllers.set(workspaceId, controller);

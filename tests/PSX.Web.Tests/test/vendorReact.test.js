@@ -104,7 +104,7 @@ describe('vendored React bundles', () => {
   });
 });
 
-describe('flag-off React zero-load guard', () => {
+describe('lazy React-island loading guard', () => {
   const agentApp = path.join(repositoryRoot, 'wwwroot', 'js', 'agent-app');
   // The only compiled modules allowed to statically import React.
   const island = [
@@ -121,6 +121,7 @@ describe('flag-off React zero-load guard', () => {
     'timeline/timelineIsland.js',
     'timeline/TimelineView.js',
     'timeline/TimelineDecisions.js',
+    'core/reactIsland.js',
     'ui/Psx.js'
   ];
 
@@ -162,5 +163,44 @@ describe('flag-off React zero-load guard', () => {
         controller + ': dynamic island import missing'
       );
     }
+  });
+
+  it('contains no migration switch, fallback seam, or direct vendor bypass', () => {
+    const forbidden = [
+      'psx.agent.experimental.react',
+      'isReactUiEnabled',
+      'reactUiMode',
+      'onLoadFailed',
+      'hasReactFailed',
+      'replayLegacyEvent',
+      'replayDecisionEvent',
+      'runtime-card-legacy'
+    ];
+    const roots = [
+      path.join(repositoryRoot, 'frontend', 'agent', 'src'),
+      path.join(repositoryRoot, 'wwwroot', 'js', 'agent-app')
+    ];
+    const findings = [];
+    const walk = (dir) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const abs = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(abs);
+          continue;
+        }
+        if (!/\.(?:ts|tsx|js)$/.test(entry.name)) continue;
+        const source = fs.readFileSync(abs, 'utf8');
+        for (const token of forbidden) {
+          if (source.includes(token)) {
+            findings.push(path.relative(repositoryRoot, abs).replaceAll('\\', '/') + ': ' + token);
+          }
+        }
+        if (/vendor\/react\/.+\.js/.test(source)) {
+          findings.push(path.relative(repositoryRoot, abs).replaceAll('\\', '/') + ': direct vendor import');
+        }
+      }
+    };
+    for (const root of roots) walk(root);
+    assert.deepEqual(findings, []);
   });
 });

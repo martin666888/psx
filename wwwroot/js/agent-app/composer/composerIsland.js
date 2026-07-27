@@ -8,25 +8,17 @@
 // import. Host visibility attributes (strip.hidden / hint.hidden) stay
 // controller-owned — React owns only the children.
 import { createElement } from 'react';
-import { createRoot } from 'react-dom/client';
+import { mountReactIsland } from '../core/reactIsland.js';
 import { AttachmentStrip, CommandHint, ComposerActions } from './ComposerBits.js';
-function mount(host, component) {
-    const root = createRoot(host);
-    return {
-        render(props) {
-            root.render(createElement(component, props));
-        },
-        dispose() {
-            root.unmount();
-        }
-    };
+function mount(name, host, reportFailure, component) {
+    return mountReactIsland(name, host, reportFailure, (props) => createElement(component, props));
 }
-export function mountAttachmentStripIsland(host) {
-    return mount(host, AttachmentStrip);
+export function mountAttachmentStripIsland(host, reportFailure) {
+    return mount('composer-attachments', host, reportFailure, AttachmentStrip);
 }
-export function mountComposerActionsIsland(host) {
-    return mount(host, ComposerActions);
+export function mountComposerActionsIsland(host, reportFailure) {
+    return mount('composer-actions', host, reportFailure, ComposerActions);
 }
-export function mountCommandHintIsland(host) {
-    return mount(host, CommandHint);
+export function mountCommandHintIsland(host, reportFailure) {
+    return mount('command-hint', host, reportFailure, CommandHint);
 }

@@ -6,22 +6,15 @@
 // single commit flips react-mode routing over (no mixed ownership ever).
 
 import { createElement } from 'react';
-import { createRoot } from 'react-dom/client';
+import type { IslandFailureReporter, IslandHandle } from '../core/islandHost.js';
+import { mountReactIsland } from '../core/reactIsland.js';
 import { TimelineView, type TimelineViewProps } from './TimelineView.js';
 
-export interface TimelineIslandHandle {
-  render(props: TimelineViewProps): void;
-  dispose(): void;
-}
-
-export function mountTimelineIsland(host: HTMLElement): TimelineIslandHandle {
-  const root = createRoot(host);
-  return {
-    render(props: TimelineViewProps): void {
-      root.render(createElement(TimelineView, props));
-    },
-    dispose(): void {
-      root.unmount();
-    }
-  };
+export function mountTimelineIsland(
+  host: HTMLElement,
+  reportFailure: IslandFailureReporter
+): IslandHandle<TimelineViewProps> {
+  return mountReactIsland('timeline', host, reportFailure, (props) =>
+    createElement(TimelineView, props)
+  );
 }
