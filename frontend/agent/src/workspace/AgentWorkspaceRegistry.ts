@@ -260,7 +260,8 @@ export class AgentWorkspaceRegistry {
       autoScrollPinned: (_id) => timeline.autoScrollPinned(),
       scrollModeTransitionToStart: (_id, card) => timeline.scrollModeTransitionToStart(card),
       setComposerPromptActive: (_id, active) => composer.setModeTransitionPromptActive(active),
-      focusComposerInput: () => composer.focusInput()
+      focusComposerInput: () => composer.focusInput(),
+      timelineReactFailed: (_id) => timeline.hasReactFailed()
     };
     const decisionController = new DecisionController(workspaceId, decisionHost);
     // The Timeline controller is the single writer for the thread. Two pieces it
@@ -273,7 +274,8 @@ export class AgentWorkspaceRegistry {
       renderHistoricalModeTransition: (_id, msg) =>
         decisionController.renderHistoricalModeTransition(msg),
       createMessageAttachmentTile: (_id, attachment) =>
-        composer.createMessageAttachmentTile(attachment)
+        composer.createMessageAttachmentTile(attachment),
+      replayDecisionEvent: (_id, type, raw) => decisionController.replayLegacyEvent(type, raw)
     };
     const timeline = new TimelineController(workspaceId, timelineHost);
     const controller = new AgentWorkspaceController(workspaceId, state, [

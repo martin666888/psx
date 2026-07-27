@@ -1,0 +1,22 @@
+{
+  "name": "psx-root",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "tests/PSX.Web.Tests"
+  ],
+  "scripts": {
+    "build:agent": "npm run --workspace psx-web-tests build:agent",
+    "verify:agent": "npm run --workspace psx-web-tests verify:agent",
+    "typecheck": "npm run --workspace psx-web-tests typecheck",
+    "test:web": "npm run --workspace psx-web-tests test",
+    "vendor:react": "node tools/vendor-react.mjs"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "esbuild": "0.28.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  }
+}

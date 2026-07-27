@@ -15,6 +15,8 @@
 // toggle instead of interrupting; showing the card clears it. The width is a
 // fixed CSS token; there is no resizer.
 import { planStatusClass, planStatusLabel, planStatusMarker } from '../core/plan.js';
+import { isReactUiEnabled } from '../core/flags.js';
+import { createIslandLoader } from '../core/islandHost.js';
 const EMPTY_PLAN = { active: false, runId: '', entries: [], fallbackText: '' };
 function role(panel, name) {
     return panel.querySelector('[data-role="' + name + '"]');
@@ -34,6 +36,11 @@ export class PlanController {
     narrowOverride = null;
     unread = false;
     lastPlanRef = EMPTY_PLAN;
+    // React migration: the plan-panel content is React-owned once the first
+    // plan event arrives in react mode; visibility, the unread dot and the
+    // narrow-mode rules above stay with this controller (different subtrees).
+    reactPlanEnabled = false;
+    planIsland = null;
     cleanup = [];
     constructor(workspaceId, host, callbacks) {
         this.workspaceId = workspaceId;
@@ -50,6 +57,9 @@ export class PlanController {
         this.planToggle = role(panel, 'plan-toggle');
         this.planToggleUnread = role(panel, 'plan-toggle-unread');
         this.on(this.planToggle, 'click', () => this.requestVisible(!this.effectiveVisible()));
+        this.reactPlanEnabled = isReactUiEnabled();
+        // The initial empty state is always legacy-rendered: React loads lazily
+        // on the first plan event, and its first commit replaces this content.
         this.renderPlan(EMPTY_PLAN);
         this.applyVisibility();
     }
@@ -69,6 +79,8 @@ export class PlanController {
     dispose() {
         for (const off of this.cleanup.splice(0))
             off();
+        this.planIsland?.dispose();
+        this.planIsland = null;
         this.panel = null;
     }
     // --- Visibility (visible / hidden) -------------------------------------------
@@ -129,8 +141,30 @@ export class PlanController {
         this.lastPlanRef = plan;
         if (!this.effectiveVisible() && plan.active)
             this.unread = true;
-        this.renderPlan(plan);
+        if (this.reactPlanEnabled && !this.planIsland?.hasFailed()) {
+            this.renderPlanReact(plan);
+        }
+        else {
+            this.renderPlan(plan);
+        }
         this.applyVisibility();
+    }
+    renderPlanReact(plan) {
+        this.planIsland ??= createIslandLoader({
+            name: 'plan-card',
+            load: async () => {
+                const mod = await import('./planIsland.js');
+                return (host) => mod.mountPlanIsland(host);
+            },
+            // React takes ownership of the template-owned plan panel itself; its
+            // first commit replaces the legacy-rendered content atomically.
+            createHost: () => this.planPanel,
+            onLoadFailed: (props) => {
+                if (this.panel)
+                    this.renderPlan(props);
+            }
+        });
+        this.planIsland.render(plan);
     }
     effectiveVisible() {
         return this.narrowOverride ?? this.preferredVisible;

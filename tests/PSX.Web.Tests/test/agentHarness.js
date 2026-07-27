@@ -97,6 +97,16 @@ export function installAgentRuntime() {
       }
     }
   };
+  // The React migration flag defaults to React in the shipped app. Tests pin
+  // legacy here so every existing suite stays deterministic (Group A);
+  // mountAgentApp({ uiMode: 'react' }) lifts the pin for Group B suites. The
+  // compiled flag reader goes through globalThis.localStorage, mirroring the
+  // WebView2 global.
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: dom.window.localStorage
+  });
+  dom.window.localStorage.setItem('psx.agent.experimental.react', '0');
   vm.runInThisContext(readBridgeSource(), { filename: 'bridge-bundle.js' });
 
   return {
@@ -173,9 +183,14 @@ export function agentTemplateMarkup() {
 // Bridge globals, the real workspace template, and createAgentApp wired to a
 // stub terminal. Returns the runtime capture handles, the app sink, the stub
 // terminal, and a panelFor(workspaceId) helper reading the live panel shell.
-export async function mountAgentApp({ terminal, wide = false } = {}) {
+// uiMode pins the render path: 'legacy' (Group A, default) or 'react'
+// (Group B — the shipped default on this branch).
+export async function mountAgentApp({ terminal, wide = false, uiMode = 'legacy' } = {}) {
   const runtime = installAgentRuntime();
   const breakpoint = installBreakpoint(wide);
+  if (uiMode === 'react') {
+    window.localStorage.removeItem('psx.agent.experimental.react');
+  }
   document.body.innerHTML = `<div id="agents"></div>${agentTemplateMarkup()}`;
   const { createAgentApp } = await appModule('entry.js');
   const terminalStub = terminal || {

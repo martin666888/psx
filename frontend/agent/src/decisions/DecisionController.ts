@@ -33,6 +33,7 @@ import type { FeatureController } from '../contracts/feature-controller.js';
 import type { AgentWorkspaceEvent, RawHostMessage } from '../contracts/host-events.js';
 import type { AgentWorkspaceState } from '../contracts/workspace-state.js';
 import { createInitialWorkspaceState } from '../contracts/workspace-state.js';
+import { isReactUiEnabled } from '../core/flags.js';
 import {
   defaultOptionValue,
   orderElicitationFields,
@@ -65,6 +66,10 @@ export interface DecisionHost {
   setComposerPromptActive(workspaceId: string, active: boolean): void;
   /** Return focus to the composer input after clearing the prompt. */
   focusComposerInput(workspaceId: string): void;
+  /** Whether the React timeline island failed to load (island fallback).
+   * Thread cards live in the timeline's React tree, so when that tree is gone
+   * this domain must run its legacy switch again. */
+  timelineReactFailed(workspaceId: string): boolean;
 }
 
 interface DecisionOption {
@@ -104,6 +109,11 @@ export class DecisionController implements FeatureController {
   private activeModeTransitionRequestId = '';
   private readonly animationFrames = new Set<number>();
 
+  // React mode: the Timeline projection owns every thread card (single React
+  // tree, single DOM owner); this controller keeps only the composer-region
+  // mode-transition prompt, which is a decisions-owned node outside the thread.
+  private reactUiEnabled = false;
+
   constructor(workspaceId: string, host: DecisionHost) {
     this.workspaceId = workspaceId;
     this.host = host;
@@ -113,12 +123,30 @@ export class DecisionController implements FeatureController {
   mount(): void {
     // Decision cards are created lazily in response to ACP requests; there is no
     // static DOM to build at mount time.
+    this.reactUiEnabled = isReactUiEnabled();
   }
 
   update(event: AgentWorkspaceEvent, state: AgentWorkspaceState): void {
     this.state = state;
     const raw = event.raw;
-    switch (event.type) {
+    if (this.reactUiEnabled && !this.host.timelineReactFailed(this.workspaceId)) {
+      this.updateReact(event.type, raw);
+      return;
+    }
+    this.applyLegacyEvent(event.type, raw);
+  }
+
+  /** Replay one buffered event after the timeline island failed to load.
+   * Called by the timeline domain through the registry seam so decision
+   * cards land inside the correct turn during the interleaved replay. */
+  replayLegacyEvent(type: string, raw: RawHostMessage): void {
+    this.applyLegacyEvent(type, raw);
+  }
+
+  /** The legacy event switch: the emergency render path and, after a failed
+   * timeline island load, the replay target for buffered events. */
+  private applyLegacyEvent(type: string, raw: RawHostMessage): void {
+    switch (type) {
       case 'permission_request':
         if (raw.presentation === 'mode_transition' && raw.documentText) {
           this.appendModeTransition(raw, false);
@@ -159,6 +187,44 @@ export class DecisionController implements FeatureController {
     this.animationFrames.clear();
     this.modeTransitionCards = {};
     this.activeModeTransitionRequestId = '';
+  }
+
+  // --- React-mode event routing ---------------------------------------------
+  //
+  // Thread cards belong to the Timeline projection; only the composer-region
+  // prompt lifecycle runs here (faithful to the legacy prompt behavior).
+
+  private updateReact(type: string, raw: RawHostMessage): void {
+    switch (type) {
+      case 'permission_request': {
+        if (raw.presentation !== 'mode_transition' || !raw.documentText) return;
+        const requestId = asString(raw.requestId);
+        const options = asOptionArray(raw.options);
+        const storedState = asString(raw.decisionState) || 'pending';
+        const pending = storedState === 'pending';
+        const interactive = pending && !!requestId && options.length > 0;
+        if (pending) {
+          this.showModeTransitionPrompt(raw, null, interactive);
+        }
+        return;
+      }
+      case 'permission_resolved':
+      case 'permission_cancelled':
+      case 'elicitation_cancelled':
+        this.clearModeTransitionPrompt(asString(raw.requestId), true);
+        return;
+      case 'run_failed':
+      case 'run_finished': {
+        // The projection marks the card interrupted; here only the prompt clears.
+        const prompt = this.promptNode;
+        if (this.activeModeTransitionRequestId || (prompt && !prompt.hidden)) {
+          this.clearModeTransitionPrompt(this.activeModeTransitionRequestId || '', true);
+        }
+        return;
+      }
+      default:
+        return;
+    }
   }
 
   // --- Derived state -------------------------------------------------------
@@ -972,8 +1038,8 @@ export class DecisionController implements FeatureController {
     return 'This request is no longer active.';
   }
 
-  /** Faithful port of _showModeTransitionPrompt. */
-  private showModeTransitionPrompt(event: RawHostMessage, card: HTMLElement, interactive: boolean): void {
+  /** Faithful port of _showModeTransitionPrompt (card is null in react mode). */
+  private showModeTransitionPrompt(event: RawHostMessage, card: HTMLElement | null, interactive: boolean): void {
     const prompt = this.promptNode;
     const inputRow = this.inputRowNode;
     if (!prompt || !inputRow) return;
@@ -1049,13 +1115,15 @@ export class DecisionController implements FeatureController {
             candidate.disabled = true;
           });
           button.classList.add('agent-mode-transition-option-pending');
-          card.dataset.decisionState = 'sending';
-          card.classList.add('agent-mode-transition-sending');
+          if (card) {
+            card.dataset.decisionState = 'sending';
+            card.classList.add('agent-mode-transition-sending');
 
-          const cardHeaderState = card.querySelector<HTMLElement>('.agent-mode-transition-header-state');
-          if (cardHeaderState) cardHeaderState.textContent = 'Sending';
-          const cardStatus = card.querySelector<HTMLElement>('.agent-mode-transition-status');
-          if (cardStatus) cardStatus.textContent = 'Sending ' + optionName + '…';
+            const cardHeaderState = card.querySelector<HTMLElement>('.agent-mode-transition-header-state');
+            if (cardHeaderState) cardHeaderState.textContent = 'Sending';
+            const cardStatus = card.querySelector<HTMLElement>('.agent-mode-transition-status');
+            if (cardStatus) cardStatus.textContent = 'Sending ' + optionName + '…';
+          }
           status.textContent = 'Sending ' + optionName + '…';
           this.bridge()?.sendAgentPermissionResponse(requestId, optionId);
         });

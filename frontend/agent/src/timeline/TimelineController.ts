@@ -39,7 +39,11 @@ import type { FeatureController } from '../contracts/feature-controller.js';
 import type { AgentWorkspaceEvent, RawHostMessage } from '../contracts/host-events.js';
 import type { AgentWorkspaceState } from '../contracts/workspace-state.js';
 import { createInitialWorkspaceState } from '../contracts/workspace-state.js';
+import { isReactUiEnabled } from '../core/flags.js';
+import { createIslandLoader, type IslandLoader } from '../core/islandHost.js';
 import { renderMarkdown as renderMarkdownCore, safeHref as safeHrefCore } from '../core/markdown.js';
+import type { TimelineCallbacks, TimelineViewProps } from './TimelineView.js';
+import { TimelineProjection, type DecisionItem, type DecisionOptionVM } from './timelineViewModel.js';
 
 const AGENT_COPY_ICON_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
 const AGENT_CHECK_ICON_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>';
@@ -52,7 +56,15 @@ export interface TimelineHost {
   renderHistoricalModeTransition(workspaceId: string, msg: RawHostMessage): void;
   /** Build a non-removable message attachment tile (composer domain). */
   createMessageAttachmentTile(workspaceId: string, attachment: RawHostMessage): HTMLElement;
+  /** Replay one buffered event through the Decision legacy switch after the
+   * timeline island failed to load (island fallback recovery). */
+  replayDecisionEvent(workspaceId: string, type: string, raw: RawHostMessage): void;
 }
+
+/** One entry of the pre-commit replay buffer (island fallback recovery). */
+type ReplayEntry =
+  | { kind: 'event'; type: string; raw: RawHostMessage }
+  | { kind: 'system'; text: string };
 
 interface ToolCard {
   details: HTMLElement;
@@ -98,6 +110,19 @@ export class TimelineController implements FeatureController {
   private readonly animationFrames = new Set<number>();
   private readonly copyTimers = new Set<ReturnType<typeof setTimeout>>();
 
+  // React timeline state (flag: psx.agent.experimental.react, default on).
+  // One React root owns the whole thread subtree; events fold into the
+  // controller-local projection and the tree re-renders from it. The legacy
+  // writes below stay as the emergency fallback path.
+  private reactUiEnabled = false;
+  private readonly projection = new TimelineProjection();
+  private timelineIsland: IslandLoader<TimelineViewProps> | null = null;
+  // Until the React tree has committed once, every folded event is also kept
+  // raw so a failed island load can replay it through the legacy writes with
+  // nothing lost. After the first commit the import can no longer fail, so
+  // the buffer is dropped (null = no longer collecting).
+  private replayBuffer: ReplayEntry[] | null = [];
+
   constructor(workspaceId: string, host: TimelineHost) {
     this.workspaceId = workspaceId;
     this.host = host;
@@ -114,12 +139,31 @@ export class TimelineController implements FeatureController {
       };
       thread.addEventListener('scroll', this.scrollListener);
     }
+    this.reactUiEnabled = isReactUiEnabled();
+    // Kick the island load before the first bridge event so a load failure
+    // almost always resolves while the thread is still empty (clean fallback).
+    if (this.reactUiEnabled) this.renderReact();
   }
 
   update(event: AgentWorkspaceEvent, state: AgentWorkspaceState): void {
     this.state = state;
     const raw = event.raw;
-    switch (event.type) {
+    if (this.reactUiEnabled && !this.timelineIsland?.hasFailed()) {
+      // The projection also folds the decision-domain events; the Decision
+      // controller keeps only the composer-region prompt in react mode.
+      this.replayBuffer?.push({ kind: 'event', type: event.type, raw });
+      if (this.projection.apply(event.type, raw, this.assistantName)) {
+        this.renderReact();
+      }
+      return;
+    }
+    this.applyLegacyEvent(event.type, raw);
+  }
+
+  /** The legacy event switch: the emergency render path and, after a failed
+   * island load, the replay target for the buffered React-path events. */
+  private applyLegacyEvent(type: string, raw: RawHostMessage): void {
+    switch (type) {
       case 'agent_thread_loaded':
         this.loadThread(raw);
         break;
@@ -250,6 +294,9 @@ export class TimelineController implements FeatureController {
     this.animationFrames.clear();
     for (const timer of this.copyTimers) clearTimeout(timer);
     this.copyTimers.clear();
+    this.timelineIsland?.dispose();
+    this.timelineIsland = null;
+    this.replayBuffer = null;
     this.scrollListener = null;
     this.currentTurn = null;
     this.currentAssistant = null;
@@ -257,6 +304,105 @@ export class TimelineController implements FeatureController {
     this.thinkingRow = null;
     this.thinkingContent = null;
     this.toolCards = {};
+  }
+
+  // --- React timeline root ---------------------------------------------------
+
+  /** The stable callback surface the React tree needs from this domain. */
+  private timelineCallbacks(): TimelineCallbacks {
+    return {
+      copyText: (text) => this.copyPlainText(text),
+      onOpenTerminal: () => {
+        this.bridge()?.sendAgentCommand('terminal');
+      },
+      onDecisionOption: (item, option) => this.resolveDecisionFromReact(item, option),
+      onElicitationAction: (item, payload, statusText) => {
+        if (!item.requestId) return;
+        this.bridge()?.sendAgentElicitationResponse(item.requestId, payload);
+        this.projection.disableDecision(item.requestId, statusText);
+        this.renderReact();
+      },
+      createAttachmentTile: (attachment) =>
+        this.host.createMessageAttachmentTile(this.workspaceId, attachment as unknown as RawHostMessage)
+    };
+  }
+
+  private resolveDecisionFromReact(item: DecisionItem, option: DecisionOptionVM): void {
+    if (!item.requestId) return;
+    if (item.kind === 'permission') {
+      this.bridge()?.sendAgentPermissionResponse(item.requestId, option.optionId);
+    } else if (item.kind === 'question') {
+      this.bridge()?.sendAgentQuestionResponse(item.requestId, option.optionId);
+    } else {
+      return;
+    }
+    this.projection.selectDecisionOption(item.requestId, option.optionId, option.name);
+    this.renderReact();
+  }
+
+  private renderReact(): void {
+    this.timelineIsland ??= createIslandLoader<TimelineViewProps>({
+      name: 'timeline',
+      load: async () => {
+        const mod = await import('./timelineIsland.js');
+        return (host) => mod.mountTimelineIsland(host);
+      },
+      createHost: () => this.thread,
+      onLoadFailed: () => {
+        // Replay every event buffered before the first React commit through
+        // the legacy writes so nothing folded into the projection is lost
+        // (the load is kicked at mount, so the buffer is usually empty).
+        this.replayBufferedEvents();
+      }
+    });
+    this.timelineIsland.render({
+      rows: this.projection.snapshot().rows,
+      assistantName: this.assistantName,
+      callbacks: this.timelineCallbacks(),
+      // Scroll only after React commits: root.render() returns before the
+      // DOM is updated, so an immediate scroll would read stale layout.
+      onCommitted: () => {
+        // First successful commit: the island import can no longer fail, so
+        // stop collecting replay entries.
+        this.replayBuffer = null;
+        this.scrollToBottom();
+      }
+    });
+  }
+
+  /** Feed the pre-commit buffer through the legacy engines in arrival order:
+   * the Decision legacy switch first, then the Timeline legacy switch — the
+   * same per-event order the workspace controller uses in legacy mode. */
+  private replayBufferedEvents(): void {
+    const buffered = this.replayBuffer;
+    this.replayBuffer = null;
+    if (!buffered) return;
+    for (const entry of buffered) {
+      if (entry.kind === 'system') {
+        this.appendSystem(entry.text);
+      } else {
+        this.host.replayDecisionEvent(this.workspaceId, entry.type, entry.raw);
+        this.applyLegacyEvent(entry.type, entry.raw);
+      }
+    }
+  }
+
+  /** Plain clipboard write (legacy _copyText minus the button feedback). */
+  private async copyPlainText(text: string): Promise<boolean> {
+    const raw = typeof text === 'string' ? text : '';
+    try {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        await navigator.clipboard.writeText(raw);
+        return true;
+      }
+      return this.legacyCopy(raw);
+    } catch {
+      try {
+        return this.legacyCopy(raw);
+      } catch {
+        return false;
+      }
+    }
   }
 
   // --- Public timeline seam (used by decision / composer controllers) ------
@@ -303,7 +449,20 @@ export class TimelineController implements FeatureController {
 
   /** Append a system row to the timeline (legacy _appendSystem). */
   appendSystemMessage(text: string): void {
+    if (this.reactUiEnabled && !this.timelineIsland?.hasFailed()) {
+      this.replayBuffer?.push({ kind: 'system', text });
+      this.projection.appendSystemMessage(text);
+      this.renderReact();
+      return;
+    }
     this.appendSystem(text);
+  }
+
+  /** Whether the React timeline island failed to load (island fallback).
+   * The Decision controller gates its own React routing on this so both
+   * domains fall back to the legacy engines together. */
+  hasReactFailed(): boolean {
+    return this.timelineIsland?.hasFailed() ?? false;
   }
 
   /** Remove the tool card a mode-transition replaces (legacy internals). */

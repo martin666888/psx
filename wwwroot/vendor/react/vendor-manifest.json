@@ -1,0 +1,46 @@
+{
+  "reactVersion": "19.2.8",
+  "esbuildVersion": "0.28.1",
+  "command": "npm run vendor:react",
+  "generated": "2026-07-26",
+  "files": [
+    {
+      "file": "react-core.js",
+      "imports": [],
+      "bytes": 192496,
+      "sha256": "af0ea2aa2372fd8f4ea81545f5b4516de874fefe7983804396174312587b7a43"
+    },
+    {
+      "file": "react.js",
+      "imports": [
+        "./react-core.js"
+      ],
+      "bytes": 792,
+      "sha256": "ce6165b77e32fb65094334bb087020dda1dc93dcf0c62c530fc62e82ef458a89"
+    },
+    {
+      "file": "react-jsx-runtime.js",
+      "imports": [
+        "./react-core.js"
+      ],
+      "bytes": 229,
+      "sha256": "331c8318bfa4f98f5123d6e67d974cfa492cf6d12ba3cad9ec9aef21bf89aff7"
+    },
+    {
+      "file": "react-dom.js",
+      "imports": [
+        "./react-core.js"
+      ],
+      "bytes": 420,
+      "sha256": "7cad1192c4fdc5a8be6ced8efc1c7b5b22c44fc3e28a10c0388d51929ff187f4"
+    },
+    {
+      "file": "react-dom-client.js",
+      "imports": [
+        "./react-core.js"
+      ],
+      "bytes": 238,
+      "sha256": "cdabf4ec08cb8ea34884445a59df84779ba5023f330c146cd0cdc74da2fc38e9"
+    }
+  ]
+}

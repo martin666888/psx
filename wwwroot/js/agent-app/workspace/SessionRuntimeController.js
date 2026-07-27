@@ -10,6 +10,9 @@
 //   _updateState toolbar block + _setContextUsed (wwwroot/js/agent/thread.js)
 //   _updateRuntimeStatus + _wireRuntimeControls (wwwroot/js/agent/runtime.js)
 // Rendering is triggered on the same events legacy reacted to.
+import { isReactUiEnabled } from '../core/flags.js';
+import { createIslandLoader } from '../core/islandHost.js';
+import { computeContextUsageView, formatStatus } from './sessionFormat.js';
 const RUNTIME_TITLES = {
     missing: 'Agent runtime required',
     installing: 'Installing Agent runtime',
@@ -18,26 +21,6 @@ const RUNTIME_TITLES = {
 };
 function role(panel, name) {
     return panel.querySelector('[data-role="' + name + '"]');
-}
-/** Mirrors legacy _formatStatus. */
-function formatStatus(status) {
-    return String(status || 'ready')
-        .split('_')
-        .filter(Boolean)
-        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-        .join(' ');
-}
-function formatTokens(value) {
-    return new Intl.NumberFormat('en-US', {
-        notation: 'compact',
-        maximumFractionDigits: value >= 100_000 ? 0 : 1
-    }).format(value);
-}
-function formatPercent(value) {
-    return (value < 10 ? value.toFixed(1) : Math.round(value).toString()) + '%';
-}
-function formatCost(amount, currency) {
-    return amount.toFixed(2).replace(/\.00$/, '') + ' ' + currency;
 }
 export class SessionRuntimeController {
     workspaceId;
@@ -60,6 +43,11 @@ export class SessionRuntimeController {
     // Tracked so the install/cancel guards match legacy exactly.
     runtimeState = 'missing';
     cleanup = [];
+    // React island state (flag: psx.agent.experimental.react, default on).
+    reactUiEnabled = false;
+    runtimeIsland = null;
+    sessionMetaIsland = null;
+    contextUsageIsland = null;
     constructor(workspaceId, host) {
         this.workspaceId = workspaceId;
         this.host = host;
@@ -88,16 +76,9 @@ export class SessionRuntimeController {
         this.on(this.changeCwd, 'click', () => {
             this.host.bridgeFor(this.workspaceId)?.sendAgentCommand('pick_cwd');
         });
-        this.on(this.runtimeInstall, 'click', () => {
-            if (this.runtimeState === 'installing' || this.runtimeState === 'ready')
-                return;
-            this.host.bridgeFor(this.workspaceId)?.sendAgentCommand('install_runtime');
-        });
-        this.on(this.runtimeCancel, 'click', () => {
-            if (this.runtimeState !== 'installing')
-                return;
-            this.host.bridgeFor(this.workspaceId)?.sendAgentCommand('cancel_runtime_install');
-        });
+        this.on(this.runtimeInstall, 'click', () => this.requestInstall());
+        this.on(this.runtimeCancel, 'click', () => this.requestCancelInstall());
+        this.reactUiEnabled = isReactUiEnabled();
     }
     update(event, state) {
         if (!this.panel)
@@ -109,7 +90,12 @@ export class SessionRuntimeController {
                 this.renderSession(state);
                 break;
             case 'runtime_status':
-                this.renderRuntime(state);
+                if (this.reactUiEnabled && !this.runtimeIsland?.hasFailed()) {
+                    this.renderRuntimeReact(state.runtime);
+                }
+                else {
+                    this.renderRuntime(state.runtime);
+                }
                 break;
             default:
                 break;
@@ -118,62 +104,112 @@ export class SessionRuntimeController {
     dispose() {
         for (const off of this.cleanup.splice(0))
             off();
+        // Unmount the React root and drop its host node; a pending island import
+        // resolving after this point sees the loader disposed and discards the
+        // mount.
+        this.runtimeIsland?.dispose();
+        this.runtimeIsland = null;
+        this.sessionMetaIsland?.dispose();
+        this.sessionMetaIsland = null;
+        this.contextUsageIsland?.dispose();
+        this.contextUsageIsland = null;
         this.panel = null;
     }
     renderSession(state) {
         const s = state.session;
+        const meta = {
+            statusText: formatStatus(s.status),
+            status: s.status,
+            cwd: s.cwd || 'cwd not set',
+            sessionLabel: s.sessionId ? 'session ' + s.sessionId.slice(0, 8) : 'no session',
+            changeCwdDisabled: !s.isDraft || s.busy || s.isRestoring || s.isTranscriptOnly,
+            changeCwdTitle: s.isDraft
+                ? 'Change draft working directory'
+                : 'Create a new Agent tab to use another working directory',
+            onPickCwd: () => {
+                this.host.bridgeFor(this.workspaceId)?.sendAgentCommand('pick_cwd');
+            }
+        };
+        const usage = computeContextUsageView(s.contextUsedTokens, s.contextWindowTokens, s.contextCostAmount, s.contextCostCurrency);
+        if (this.reactUiEnabled && !this.sessionMetaIsland?.hasFailed()) {
+            this.renderSessionMetaReact(meta);
+        }
+        else {
+            this.renderSessionLegacy(meta);
+        }
+        if (this.reactUiEnabled && !this.contextUsageIsland?.hasFailed()) {
+            this.renderContextUsageReact(usage);
+        }
+        else {
+            this.renderContextUsageLegacy(usage);
+        }
+    }
+    renderSessionLegacy(meta) {
         if (this.status) {
-            this.status.textContent = formatStatus(s.status);
-            this.status.dataset.status = s.status;
+            this.status.textContent = meta.statusText;
+            this.status.dataset.status = meta.status;
         }
         if (this.cwd)
-            this.cwd.textContent = s.cwd || 'cwd not set';
-        if (this.session) {
-            this.session.textContent = s.sessionId ? 'session ' + s.sessionId.slice(0, 8) : 'no session';
-        }
+            this.cwd.textContent = meta.cwd;
+        if (this.session)
+            this.session.textContent = meta.sessionLabel;
         if (this.changeCwd) {
-            this.changeCwd.disabled = !s.isDraft || s.busy || s.isRestoring || s.isTranscriptOnly;
-            this.changeCwd.title = s.isDraft
-                ? 'Change draft working directory'
-                : 'Create a new Agent tab to use another working directory';
+            this.changeCwd.disabled = meta.changeCwdDisabled;
+            this.changeCwd.title = meta.changeCwdTitle;
         }
-        this.renderContextUsage(s.contextUsedTokens, s.contextWindowTokens, s.contextCostAmount, s.contextCostCurrency);
     }
-    renderContextUsage(used, size, costAmount, costCurrency) {
+    renderContextUsageLegacy(view) {
         if (!this.contextUsed)
             return;
-        const hasLimit = used !== null && size !== null;
-        const percent = hasLimit ? Math.min(100, Math.max(0, (used / size) * 100)) : 0;
-        const state = !hasLimit ? 'unknown' : percent >= 90 ? 'error' : percent >= 75 ? 'warning' : 'accent';
-        this.contextUsed.dataset.contextState = state;
-        this.contextProgress?.setAttribute('stroke-dashoffset', String(100 - percent));
-        let summary = 'Agent has not reported context usage';
-        let detail = 'Context usage will appear when the Agent reports it.';
-        if (hasLimit) {
-            summary = formatPercent(percent) + ' · ' + formatTokens(used) + ' / ' + formatTokens(size);
-            detail = formatTokens(Math.max(0, size - used)) + ' remaining';
-        }
-        else if (used !== null) {
-            summary = formatTokens(used) + ' used';
-            detail = 'Agent did not report a context limit.';
-        }
-        else if (size === null) {
-            detail = 'Agent did not report a context limit.';
-        }
+        this.contextUsed.dataset.contextState = view.state;
+        this.contextProgress?.setAttribute('stroke-dashoffset', String(100 - view.percent));
         if (this.contextTooltipSummary)
-            this.contextTooltipSummary.textContent = summary;
+            this.contextTooltipSummary.textContent = view.summary;
         if (this.contextTooltipDetail)
-            this.contextTooltipDetail.textContent = detail;
-        const description = 'Context: ' + summary + '. ' + detail;
-        this.contextUsed.setAttribute('aria-label', description);
+            this.contextTooltipDetail.textContent = view.detail;
+        this.contextUsed.setAttribute('aria-label', view.ariaLabel);
         if (this.contextTooltipCost) {
-            const hasCost = costAmount !== null && !!costCurrency;
-            this.contextTooltipCost.hidden = !hasCost;
-            this.contextTooltipCost.textContent = hasCost ? 'Cost · ' + formatCost(costAmount, costCurrency) : '';
+            this.contextTooltipCost.hidden = !view.cost;
+            this.contextTooltipCost.textContent = view.cost;
         }
     }
-    renderRuntime(state) {
-        const r = state.runtime;
+    // ----- React session toolbar islands ---------------------------------------
+    //
+    // Two independent roots (single-owner rule): the toolbar meta line replaces
+    // the children of .agent-meta, the Context ring replaces the children of
+    // .agent-hints. Both are props-driven from the reduced state; a load failure
+    // falls back permanently to the legacy writes via the shared island loader.
+    renderSessionMetaReact(meta) {
+        this.sessionMetaIsland ??= createIslandLoader({
+            name: 'session-meta',
+            load: async () => {
+                const mod = await import('./sessionIsland.js');
+                return (host) => mod.mountSessionMetaIsland(host);
+            },
+            createHost: () => this.panel?.querySelector('.agent-meta') ?? null,
+            onLoadFailed: (props) => {
+                if (this.panel)
+                    this.renderSessionLegacy(props);
+            }
+        });
+        this.sessionMetaIsland.render(meta);
+    }
+    renderContextUsageReact(view) {
+        this.contextUsageIsland ??= createIslandLoader({
+            name: 'context-usage',
+            load: async () => {
+                const mod = await import('./sessionIsland.js');
+                return (host) => mod.mountContextUsageIsland(host);
+            },
+            createHost: () => this.panel?.querySelector('.agent-hints') ?? null,
+            onLoadFailed: (props) => {
+                if (this.panel)
+                    this.renderContextUsageLegacy(props.view);
+            }
+        });
+        this.contextUsageIsland.render({ view });
+    }
+    renderRuntime(r) {
         this.runtimeState = r.state;
         if (this.runtimeCard) {
             this.runtimeCard.hidden = r.state === 'ready';
@@ -193,6 +229,69 @@ export class SessionRuntimeController {
             this.runtimeCancel.hidden = !r.canCancel;
             this.runtimeCancel.disabled = !r.canCancel;
         }
+    }
+    // ----- Experimental React runtime-card island -----------------------------
+    //
+    // Props-driven: every runtime_status re-renders the island from the reduced
+    // state. Until the island's first commit reaches the DOM the legacy card
+    // stays untouched, then retireLegacyRuntimeCard swaps ownership atomically
+    // (before paint, via useLayoutEffect in SessionRuntimeCard). Loading,
+    // buffering and the permanent legacy fallback live in the shared island
+    // loader (core/islandHost.ts).
+    renderRuntimeReact(r) {
+        this.runtimeState = r.state; // keep the install/cancel guards in sync
+        this.runtimeIsland ??= createIslandLoader({
+            name: 'runtime-card',
+            load: async () => {
+                const mod = await import('./runtimeIsland.js');
+                return (host) => mod.mountRuntimeIsland(host, {
+                    onInstall: () => this.requestInstall(),
+                    onCancel: () => this.requestCancelInstall(),
+                    onCommitted: () => this.retireLegacyRuntimeCard()
+                });
+            },
+            createHost: () => this.createRuntimeIslandHost(),
+            onLoadFailed: (props) => {
+                if (this.panel)
+                    this.renderRuntime(props);
+            }
+        });
+        this.runtimeIsland.render(r);
+    }
+    createRuntimeIslandHost() {
+        if (!this.panel)
+            return null;
+        const host = document.createElement('div');
+        host.className = 'agent-runtime-react-host';
+        const legacy = this.runtimeCard;
+        if (legacy && legacy.parentElement) {
+            legacy.insertAdjacentElement('afterend', host);
+        }
+        else {
+            this.panel.appendChild(host);
+        }
+        return host;
+    }
+    /**
+     * First React commit is in the DOM: hide the legacy section and rename its
+     * data-role so the React section is the only `[data-role="runtime-card"]`.
+     */
+    retireLegacyRuntimeCard() {
+        const legacy = this.runtimeCard;
+        if (!legacy || legacy.dataset.role !== 'runtime-card')
+            return;
+        legacy.hidden = true;
+        legacy.dataset.role = 'runtime-card-legacy';
+    }
+    requestInstall() {
+        if (this.runtimeState === 'installing' || this.runtimeState === 'ready')
+            return;
+        this.host.bridgeFor(this.workspaceId)?.sendAgentCommand('install_runtime');
+    }
+    requestCancelInstall() {
+        if (this.runtimeState !== 'installing')
+            return;
+        this.host.bridgeFor(this.workspaceId)?.sendAgentCommand('cancel_runtime_install');
     }
     on(node, type, handler) {
         if (!node)
