@@ -56,7 +56,15 @@ export interface TimelineHost {
   renderHistoricalModeTransition(workspaceId: string, msg: RawHostMessage): void;
   /** Build a non-removable message attachment tile (composer domain). */
   createMessageAttachmentTile(workspaceId: string, attachment: RawHostMessage): HTMLElement;
+  /** Replay one buffered event through the Decision legacy switch after the
+   * timeline island failed to load (island fallback recovery). */
+  replayDecisionEvent(workspaceId: string, type: string, raw: RawHostMessage): void;
 }
+
+/** One entry of the pre-commit replay buffer (island fallback recovery). */
+type ReplayEntry =
+  | { kind: 'event'; type: string; raw: RawHostMessage }
+  | { kind: 'system'; text: string };
 
 interface ToolCard {
   details: HTMLElement;
@@ -109,6 +117,11 @@ export class TimelineController implements FeatureController {
   private reactUiEnabled = false;
   private readonly projection = new TimelineProjection();
   private timelineIsland: IslandLoader<TimelineViewProps> | null = null;
+  // Until the React tree has committed once, every folded event is also kept
+  // raw so a failed island load can replay it through the legacy writes with
+  // nothing lost. After the first commit the import can no longer fail, so
+  // the buffer is dropped (null = no longer collecting).
+  private replayBuffer: ReplayEntry[] | null = [];
 
   constructor(workspaceId: string, host: TimelineHost) {
     this.workspaceId = workspaceId;
@@ -138,12 +151,19 @@ export class TimelineController implements FeatureController {
     if (this.reactUiEnabled && !this.timelineIsland?.hasFailed()) {
       // The projection also folds the decision-domain events; the Decision
       // controller keeps only the composer-region prompt in react mode.
+      this.replayBuffer?.push({ kind: 'event', type: event.type, raw });
       if (this.projection.apply(event.type, raw, this.assistantName)) {
         this.renderReact();
       }
       return;
     }
-    switch (event.type) {
+    this.applyLegacyEvent(event.type, raw);
+  }
+
+  /** The legacy event switch: the emergency render path and, after a failed
+   * island load, the replay target for the buffered React-path events. */
+  private applyLegacyEvent(type: string, raw: RawHostMessage): void {
+    switch (type) {
       case 'agent_thread_loaded':
         this.loadThread(raw);
         break;
@@ -276,6 +296,7 @@ export class TimelineController implements FeatureController {
     this.copyTimers.clear();
     this.timelineIsland?.dispose();
     this.timelineIsland = null;
+    this.replayBuffer = null;
     this.scrollListener = null;
     this.currentTurn = null;
     this.currentAssistant = null;
@@ -328,9 +349,10 @@ export class TimelineController implements FeatureController {
       },
       createHost: () => this.thread,
       onLoadFailed: () => {
-        // The legacy engine cannot replay already-folded events; from here on
-        // every new event renders through the legacy writes (the load is
-        // kicked at mount, so this window is nearly always empty).
+        // Replay every event buffered before the first React commit through
+        // the legacy writes so nothing folded into the projection is lost
+        // (the load is kicked at mount, so the buffer is usually empty).
+        this.replayBufferedEvents();
       }
     });
     this.timelineIsland.render({
@@ -339,8 +361,30 @@ export class TimelineController implements FeatureController {
       callbacks: this.timelineCallbacks(),
       // Scroll only after React commits: root.render() returns before the
       // DOM is updated, so an immediate scroll would read stale layout.
-      onCommitted: () => this.scrollToBottom()
+      onCommitted: () => {
+        // First successful commit: the island import can no longer fail, so
+        // stop collecting replay entries.
+        this.replayBuffer = null;
+        this.scrollToBottom();
+      }
     });
+  }
+
+  /** Feed the pre-commit buffer through the legacy engines in arrival order:
+   * the Decision legacy switch first, then the Timeline legacy switch — the
+   * same per-event order the workspace controller uses in legacy mode. */
+  private replayBufferedEvents(): void {
+    const buffered = this.replayBuffer;
+    this.replayBuffer = null;
+    if (!buffered) return;
+    for (const entry of buffered) {
+      if (entry.kind === 'system') {
+        this.appendSystem(entry.text);
+      } else {
+        this.host.replayDecisionEvent(this.workspaceId, entry.type, entry.raw);
+        this.applyLegacyEvent(entry.type, entry.raw);
+      }
+    }
   }
 
   /** Plain clipboard write (legacy _copyText minus the button feedback). */
@@ -406,11 +450,19 @@ export class TimelineController implements FeatureController {
   /** Append a system row to the timeline (legacy _appendSystem). */
   appendSystemMessage(text: string): void {
     if (this.reactUiEnabled && !this.timelineIsland?.hasFailed()) {
+      this.replayBuffer?.push({ kind: 'system', text });
       this.projection.appendSystemMessage(text);
       this.renderReact();
       return;
     }
     this.appendSystem(text);
+  }
+
+  /** Whether the React timeline island failed to load (island fallback).
+   * The Decision controller gates its own React routing on this so both
+   * domains fall back to the legacy engines together. */
+  hasReactFailed(): boolean {
+    return this.timelineIsland?.hasFailed() ?? false;
   }
 
   /** Remove the tool card a mode-transition replaces (legacy internals). */

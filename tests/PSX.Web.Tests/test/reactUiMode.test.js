@@ -237,3 +237,62 @@ test('a disposed loader with a vanished host ends quietly', async () => {
     console.warn = originalWarn;
   }
 });
+
+test('a failing timeline island replays the buffered events through the legacy engines', async () => {
+  const { app, panelFor } = await mountAgentApp({ uiMode: 'react' });
+  const { setIslandLoadInterceptorForTests } = await appModule('core/islandHost.js');
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => {
+    warnings.push(args[0]);
+  };
+  try {
+    let failTimeline;
+    setIslandLoadInterceptorForTests((name, load) => {
+      if (name !== 'timeline') return load();
+      return new Promise((unusedResolve, reject) => {
+        failTimeline = () => reject(new Error('simulated timeline load failure'));
+      });
+    });
+    createAgentWorkspace(app, WS);
+    // Events stream in while the timeline import is still in flight: a turn,
+    // a streaming answer and a decision card all fold into the projection.
+    app.handle({ type: 'user_message', workspaceId: WS, text: 'first question' });
+    app.handle({ type: 'assistant_delta', workspaceId: WS, text: 'partial answer' });
+    app.handle({
+      type: 'permission_request',
+      workspaceId: WS,
+      requestId: 'perm-1',
+      title: 'Run command?',
+      options: [{ optionId: 'once', name: 'Allow once', kind: 'allow_once' }]
+    });
+    failTimeline();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    // Every buffered event is recovered in order inside the legacy DOM.
+    const thread = panelFor(WS).querySelector('[data-role="thread"]');
+    const turn = thread.querySelector('.agent-turn');
+    assert.ok(turn, 'the replay rebuilds the turn');
+    assert.match(turn.querySelector('.agent-message-user').textContent, /first question/);
+    assert.match(turn.textContent, /partial answer/);
+    const card = thread.querySelector('[data-request-id="perm-1"]');
+    assert.ok(card, 'the decision card is replayed into the legacy thread');
+    assert.equal(card.closest('.agent-turn'), turn, 'the decision card lands inside its turn');
+    assert.equal(
+      warnings.filter((w) => /island "timeline"/.test(String(w))).length,
+      1,
+      'the timeline load failure is reported once'
+    );
+
+    // Later events keep working through the legacy engines in BOTH domains:
+    // the decision gate must notice the timeline failure too.
+    app.handle({ type: 'assistant_delta', workspaceId: WS, text: ' and more' });
+    assert.match(turn.textContent, /and more/);
+    app.handle({ type: 'permission_cancelled', workspaceId: WS, requestId: 'perm-1', text: 'Request expired.' });
+    assert.match(card.querySelector('.agent-decision-status').textContent, /Request expired\./);
+    assert.equal(warnings.filter((w) => /island "timeline"/.test(String(w))).length, 1);
+  } finally {
+    console.warn = originalWarn;
+    setIslandLoadInterceptorForTests(null);
+  }
+});

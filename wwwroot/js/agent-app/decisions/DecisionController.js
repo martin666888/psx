@@ -78,11 +78,22 @@ export class DecisionController {
     update(event, state) {
         this.state = state;
         const raw = event.raw;
-        if (this.reactUiEnabled) {
+        if (this.reactUiEnabled && !this.host.timelineReactFailed(this.workspaceId)) {
             this.updateReact(event.type, raw);
             return;
         }
-        switch (event.type) {
+        this.applyLegacyEvent(event.type, raw);
+    }
+    /** Replay one buffered event after the timeline island failed to load.
+     * Called by the timeline domain through the registry seam so decision
+     * cards land inside the correct turn during the interleaved replay. */
+    replayLegacyEvent(type, raw) {
+        this.applyLegacyEvent(type, raw);
+    }
+    /** The legacy event switch: the emergency render path and, after a failed
+     * timeline island load, the replay target for buffered events. */
+    applyLegacyEvent(type, raw) {
+        switch (type) {
             case 'permission_request':
                 if (raw.presentation === 'mode_transition' && raw.documentText) {
                     this.appendModeTransition(raw, false);

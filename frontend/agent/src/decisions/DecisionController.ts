@@ -66,6 +66,10 @@ export interface DecisionHost {
   setComposerPromptActive(workspaceId: string, active: boolean): void;
   /** Return focus to the composer input after clearing the prompt. */
   focusComposerInput(workspaceId: string): void;
+  /** Whether the React timeline island failed to load (island fallback).
+   * Thread cards live in the timeline's React tree, so when that tree is gone
+   * this domain must run its legacy switch again. */
+  timelineReactFailed(workspaceId: string): boolean;
 }
 
 interface DecisionOption {
@@ -125,11 +129,24 @@ export class DecisionController implements FeatureController {
   update(event: AgentWorkspaceEvent, state: AgentWorkspaceState): void {
     this.state = state;
     const raw = event.raw;
-    if (this.reactUiEnabled) {
+    if (this.reactUiEnabled && !this.host.timelineReactFailed(this.workspaceId)) {
       this.updateReact(event.type, raw);
       return;
     }
-    switch (event.type) {
+    this.applyLegacyEvent(event.type, raw);
+  }
+
+  /** Replay one buffered event after the timeline island failed to load.
+   * Called by the timeline domain through the registry seam so decision
+   * cards land inside the correct turn during the interleaved replay. */
+  replayLegacyEvent(type: string, raw: RawHostMessage): void {
+    this.applyLegacyEvent(type, raw);
+  }
+
+  /** The legacy event switch: the emergency render path and, after a failed
+   * timeline island load, the replay target for buffered events. */
+  private applyLegacyEvent(type: string, raw: RawHostMessage): void {
+    switch (type) {
       case 'permission_request':
         if (raw.presentation === 'mode_transition' && raw.documentText) {
           this.appendModeTransition(raw, false);
