@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { describe, it } from 'vitest';
 import { mountAgentApp, createAgentWorkspace } from './agentHarness.js';
 
 const workspaceId = '11111111-1111-4111-8111-111111111111';

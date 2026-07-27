@@ -1,6 +1,6 @@
 // reactSessionToolbar.test.js — React-only session metadata and context usage.
 
-import { test } from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { act } from 'react';
 import { mountAgentApp, createAgentWorkspace, appModule } from './agentHarness.js';

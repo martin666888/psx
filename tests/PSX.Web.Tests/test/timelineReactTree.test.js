@@ -1,6 +1,6 @@
 // timelineReactTree.test.js — semantic contracts for the React timeline.
 
-import { test } from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { act } from 'react';
 import { appModule, installAgentRuntime } from './agentHarness.js';

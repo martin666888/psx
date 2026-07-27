@@ -7,11 +7,19 @@ import { JSDOM } from 'jsdom';
 const testDirectory = path.dirname(fileURLToPath(import.meta.url));
 export const repositoryRoot = path.resolve(testDirectory, '..', '..', '..');
 
-// The Agent app ships as compiled ES modules under wwwroot/js/agent-app. The
-// repository path contains '#', so import through an encoded file URL.
+// Tests exercise the Agent TypeScript sources under frontend/agent/src
+// directly; Vitest transforms .ts/.tsx on import. Callers keep addressing
+// modules by their compiled names ('core/reducer.js'), and this maps them to
+// the .ts or .tsx source. The committed tsc output under wwwroot/js/agent-app
+// remains the shipped asset, still guarded by verify:agent.
 export function appModule(relative) {
-  const abs = path.join(repositoryRoot, 'wwwroot/js/agent-app', relative);
-  return import(pathToFileURL(abs).href);
+  const base = path.join(repositoryRoot, 'frontend/agent/src', relative.replace(/\.js$/, ''));
+  for (const extension of ['.ts', '.tsx']) {
+    if (fs.existsSync(base + extension)) {
+      return import(pathToFileURL(base + extension).href);
+    }
+  }
+  throw new Error('agent source module not found for: ' + relative);
 }
 
 // The surviving classic scripts (BridgeMessages.js + Bridge.js) are not ES

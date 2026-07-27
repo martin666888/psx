@@ -1,19 +1,11 @@
-import { test } from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { repositoryRoot } from './agentHarness.js';
+import { appModule } from './agentHarness.js';
 
 // Phase 4 checkpoint 2: the inspector plan slice is folded by the pure reducer
 // so PlanController can render straight from state. These tests pin that
 // folding independently of the DOM. History rows no longer live in workspace
 // state — they are global (AgentHistoryStore); see agentHistoryBroker.test.js.
-// The repo path contains '#', so import through an encoded file URL rather
-// than a raw specifier.
-function appModule(relative) {
-  const abs = path.join(repositoryRoot, 'wwwroot/js/agent-app', relative);
-  return import(pathToFileURL(abs).href);
-}
 
 const { reduceWorkspaceState } = await appModule('core/reducer.js');
 const { createInitialWorkspaceState } = await appModule('contracts/workspace-state.js');

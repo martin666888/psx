@@ -5,7 +5,7 @@
 // assert the import surface of every file, so the bundles stay offline,
 // self-contained and single-instance (everything funnels into react-core.js).
 
-import { describe, it } from 'node:test';
+import { describe, it } from 'vitest';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';

@@ -6,7 +6,7 @@
 // folds and replay. The projection is pure data — no DOM — so these tests run
 // without a React root; the React tree is asserted separately.
 
-import { test } from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { appModule } from './agentHarness.js';
 

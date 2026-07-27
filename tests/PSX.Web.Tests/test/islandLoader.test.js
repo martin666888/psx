@@ -1,6 +1,6 @@
 // islandLoader.test.js — required-island loading, diagnostics and recovery.
 
-import { test } from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { appModule, installAgentRuntime } from './agentHarness.js';
 

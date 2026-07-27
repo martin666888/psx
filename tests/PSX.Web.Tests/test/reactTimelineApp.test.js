@@ -1,6 +1,6 @@
 // reactTimelineApp.test.js — wired React timeline and workspace integration.
 
-import { test } from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { act } from 'react';
 import {

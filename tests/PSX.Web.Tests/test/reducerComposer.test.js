@@ -1,17 +1,11 @@
-import { test } from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { repositoryRoot } from './agentHarness.js';
+import { appModule } from './agentHarness.js';
 
 // Phase 4 checkpoint 3: the composer slice (agent commands / modes / config
 // options / current mode) is folded by the pure reducer so ComposerController
 // can render straight from state. These tests pin that folding independently of
-// the DOM. The repo path contains '#', so import through an encoded file URL.
-function appModule(relative) {
-  const abs = path.join(repositoryRoot, 'wwwroot/js/agent-app', relative);
-  return import(pathToFileURL(abs).href);
-}
+// the DOM.
 
 const { reduceWorkspaceState } = await appModule('core/reducer.js');
 const { createInitialWorkspaceState } = await appModule('contracts/workspace-state.js');

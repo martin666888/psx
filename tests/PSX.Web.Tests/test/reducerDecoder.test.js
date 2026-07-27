@@ -1,16 +1,6 @@
-import { test } from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { repositoryRoot } from './agentHarness.js';
-
-// The compiled ES modules live under wwwroot/js/agent-app (verify:agent keeps
-// them in lockstep with frontend/agent/src). The repo path contains '#', so we
-// must import through a properly encoded file URL rather than a raw specifier.
-function appModule(relative) {
-  const abs = path.join(repositoryRoot, 'wwwroot/js/agent-app', relative);
-  return import(pathToFileURL(abs).href);
-}
+import { appModule } from './agentHarness.js';
 
 const { reduceWorkspaceState, seedIdentityFromCreation } = await appModule('core/reducer.js');
 const { createInitialWorkspaceState } = await appModule('contracts/workspace-state.js');

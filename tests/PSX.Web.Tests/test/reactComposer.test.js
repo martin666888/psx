@@ -1,6 +1,6 @@
 // reactComposer.test.js — React composer islands plus imperative textarea seam.
 
-import { test } from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { act } from 'react';
 import { mountAgentApp, createAgentWorkspace, appModule } from './agentHarness.js';
