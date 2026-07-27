@@ -41,6 +41,16 @@ Workspace 自动化重点验证 Agent 与 Terminal 上限口径、`workspaceId` 
 
 当前覆盖率是观察指标，不设百分比门槛。测试命令通过“最少发现测试数”防止筛选错误导致零测试却显示成功。Release 构建会再次检查 zip，不允许包含测试程序集、Fake Agent、Fake npm、Desktop Probe、测试目录、日志或已安装 ACP runtime。
 
+## Agent React 前端门禁
+
+Agent 前端只有 React 渲染路径。源码位于 `frontend/agent/src/`，编译产物位于
+`wwwroot/js/agent-app/` 并随仓库提交。修改 `.ts`/`.tsx` 后必须依次运行
+`npm.cmd run build:agent`、`npm.cmd run verify:agent`、`npm.cmd run typecheck`
+和 Web 测试。测试直接验证 React 语义 DOM、状态变化和 Bridge payload，不再以
+已删除的命令式渲染器作为对照。Release smoke 以
+`data-island-state="mounted"`、真实 React DOM、vendor 模块请求和浏览器控制台
+为证据。
+
 ## 仍需人工验收的真实 Agent 流程
 
 以下行为依赖账号、网络、模型版本、服务端状态或主观视觉判断，不应放入稳定自动化门禁：

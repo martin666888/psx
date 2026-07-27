@@ -2,9 +2,7 @@
 //
 // Faithful port of the pure helpers in wwwroot/js/agent/plan.js
 // (_normalizePlanEntries, _isRawPlanPayload, _readRawPlanEntries and the plan
-// status class/marker/label mappers). The DOM rendering stays in the legacy
-// engine for Phase 3; only the data shaping moves here so it can be unit tested
-// and later drive PlanPanel in Phase 4.
+// status class/marker/label mappers) used by the React Plan presentation.
 const IN_PROGRESS_STATES = ['in_progress', 'in-progress', 'running', 'current'];
 function isRecord(value) {
     return !!value && typeof value === 'object';

@@ -164,6 +164,9 @@ try {
         Invoke-Checked "Build and validate the portable release package" {
             powershell -ExecutionPolicy Bypass -File (Join-Path $repoRoot "tools\build-release.ps1")
         }
+        Invoke-Checked "Run the packaged React browser smoke" {
+            powershell -ExecutionPolicy Bypass -File (Join-Path $repoRoot "tools\smoke-release.ps1")
+        }
     }
 
     Write-Host "==> $Suite test suite passed" -ForegroundColor Green

@@ -1,10 +1,7 @@
 // workspace-state.ts — the per-workspace state shape.
 //
-// Phase 3 grows the identity/session/runtime slices so the reducer can fold
-// decoded events into a semantic state that runs in parallel with the legacy
-// engine (tests assert equivalence). The timeline/composer/inspector/decisions
-// slices stay opaque here and are filled in Phase 4 when controllers take over
-// rendering. The LegacyAgentAdapter still owns all DOM during Phase 3.
+// Decoded events fold into this semantic state. Timeline presentation remains
+// controller-local in TimelineProjection; global History has its own state.
 
 export interface WorkspaceIdentity {
   workspaceId: string;

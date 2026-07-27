@@ -15,6 +15,10 @@ PSX is a Windows desktop terminal built with C#, WPF, WebView2, xterm.js, and Co
 
 Use the SDK selected by `global.json`. The release script assembles the public portable package; users install the Agent runtime later from Agent mode after explicit confirmation.
 
+### Agent frontend workflow
+
+The Agent UI has one rendering path: React 19 islands compiled from `frontend/agent/src/` into the committed `wwwroot/js/agent-app/` output. Each island owns an independent React Root and loads on demand through the import map; there is no legacy renderer or React feature flag. After changing `.ts` or `.tsx` files, run `npm.cmd run build:agent`, commit the generated output, then run `npm.cmd run verify:agent`, `npm.cmd run typecheck`, and the Web tests. Do not hand-edit generated files under `wwwroot/js/agent-app/`. Keep the tsc-only build, vendored React modules, import map, and zero-Node `dotnet build` contract unless a separate build-system decision explicitly replaces them.
+
 ## Coding Style & Naming Conventions
 
 Use four spaces in C# and follow existing .NET conventions: `PascalCase` for types, properties, methods, and public members; `camelCase` for parameters and locals; `_camelCase` for private fields. Nullable reference types and implicit usings are enabled. Keep XAML names descriptive and JavaScript/CSS consistent with nearby modules. Preserve asynchronous patterns already used: `ConfigureAwait(false)` in service code and `Dispatcher.BeginInvoke` when crossing to UI-owned state. Changes to bridge message types must be mirrored in both C# and `wwwroot/js/`. On the JS side, top-level message `type` values live in `wwwroot/js/BridgeMessages.js` (`BridgeSendType` / `BridgeEventType`); use those constants instead of string literals.
