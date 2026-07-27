@@ -19,7 +19,8 @@ PSX 是一个面向 AI Agent 工作流的 Windows 桌面终端。它把 Terminal
 - 基于 Windows ConPTY 的 Terminal 模式和多标签页。
 - 面向 ACP-compatible Claude 会话的 Agent 模式。
 - 右侧任务计划面板、工具调用卡片、权限及问题交互。
-- 通过 `psx.ini` 和 `theme-presets/` 配置主题与字体。
+- 基于 shadcn/ui 与 AI Elements 的现代 Agent 界面，内置 Vercel Neutral 深浅色预设。
+- 通过 `psx.ini` 与 `theme-presets/` 配置主题与字体。
 - 面向 Windows x64、内置 .NET 和 Node 的便携版。
 
 ## 下载和使用

@@ -132,6 +132,11 @@ export class HistoryDockController {
     resizer.setAttribute('role', 'separator');
     resizer.setAttribute('aria-label', 'Resize Agent history');
     resizer.setAttribute('aria-orientation', 'vertical');
+    // role=separator requires the value triple when focusable (axe
+    // aria-required-attr); applyWidth keeps aria-valuenow current.
+    resizer.setAttribute('aria-valuemin', String(MIN_WIDTH));
+    resizer.setAttribute('aria-valuemax', String(MAX_WIDTH));
+    resizer.setAttribute('aria-valuenow', String(this.width));
     resizer.tabIndex = 0;
 
     dock.appendChild(bar);
@@ -349,6 +354,9 @@ export class HistoryDockController {
     // (dock and .agent-panel are siblings), so the variable must live on the
     // shared container, not on the dock element itself.
     this.container?.style.setProperty('--agent-history-width', this.clampWidth(width) + 'px');
+    this.dock
+      ?.querySelector('[data-role="history-dock-resizer"]')
+      ?.setAttribute('aria-valuenow', String(this.clampWidth(width)));
   }
 
   private saveWidth(): void {

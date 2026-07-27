@@ -441,6 +441,7 @@ function ElicitationCard({
                     type="checkbox"
                     checked={!!values[spec.name]}
                     disabled={disabled}
+                    aria-label={String(spec.property.title ?? '') || spec.name}
                     onChange={(event) => setValue(spec.name, event.target.checked)}
                   />
                 </label>
@@ -498,6 +499,7 @@ function ElicitationCard({
                   step={spec.property.type === 'integer' ? '1' : undefined}
                   value={String(values[spec.name] ?? '')}
                   disabled={disabled}
+                  aria-label={String(spec.property.title ?? '') || spec.name}
                   aria-invalid={error ? true : undefined}
                   onChange={(event) => setValue(spec.name, event.target.value)}
                 />
@@ -507,6 +509,7 @@ function ElicitationCard({
                   rows={spec.isSupplement ? 2 : 3}
                   value={String(values[spec.name] ?? '')}
                   disabled={disabled}
+                  aria-label={String(spec.property.title ?? '') || spec.name}
                   aria-invalid={error ? true : undefined}
                   onChange={(event) => setValue(spec.name, event.target.value)}
                 ></Textarea>

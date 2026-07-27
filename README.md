@@ -31,6 +31,9 @@ The core value of PSX is:
   task plans are separated in the interface.
 - **Right-side plan panel**: model-generated plans are shown beside the
   conversation instead of being buried inside the chat stream.
+- **Modern Agent UI**: the conversation panel is built on shadcn/ui and
+  AI Elements with Vercel Neutral dark/light presets; reasoning, tool calls,
+  permissions and history all share one design language.
 
 PSX is for people who want to run Claude Code / ACP Agent / node / npm / git and
 other command-line tools on Windows, while keeping the experience lightweight,

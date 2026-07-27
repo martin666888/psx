@@ -108,9 +108,23 @@ export class MenuSelect {
     MenuSelect.openInstance = this;
     this.popup = document.createElement('div');
     // The popup escapes the composer card onto document.body, which sits
-    // outside the .agent-ui variable boundary; carry the class along so the
-    // shadcn variables resolve.
+    // outside the .agent-ui variable boundary. The class supplies the static
+    // fallback palette; the computed copy below carries the live theme (the
+    // Theme Adapter writes inline variables onto the workspace container).
     this.popup.className = 'agent-menu-select-popup agent-ui';
+    const scope = this.element.closest('.agent-ui');
+    if (scope instanceof HTMLElement) {
+      this.popup.classList.toggle('agent-ui-dark', scope.classList.contains('agent-ui-dark'));
+      const computed = getComputedStyle(scope);
+      for (const name of [
+        '--background', '--foreground', '--card', '--popover', '--popover-foreground',
+        '--muted-foreground', '--accent', '--accent-foreground', '--border',
+        '--primary', '--ring'
+      ]) {
+        const value = computed.getPropertyValue(name);
+        if (value) this.popup.style.setProperty(name, value);
+      }
+    }
     this.popup.setAttribute('role', 'listbox');
     this.popup.addEventListener('keydown', (event) => this.onPopupKeydown(event));
     document.body.appendChild(this.popup);
