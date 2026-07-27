@@ -121,6 +121,7 @@ describe('flag-off React zero-load guard', () => {
     'timeline/timelineIsland.js',
     'timeline/TimelineView.js',
     'timeline/TimelineDecisions.js',
+    'core/reactIsland.js',
     'ui/Psx.js'
   ];
 
