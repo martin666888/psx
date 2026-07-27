@@ -1,13 +1,12 @@
 /* Shared Agent button skin (Soft Workbench): one recipe for every Agent
  * button not yet migrated to the shadcn Button (CP4 removes areas from these
  * lists as they swap). All selectors are wrapped in :where() so specificity
- * stays zero â€?but note the rules are UNLAYERED, so they outrank Tailwind's
+ * stays zero - but note the rules are UNLAYERED, so they outrank Tailwind's
  * layered utilities on migrated components; never leave a swapped region in
  * these lists. Geometry never lives here. */
 
 :where(.agent-toolbar button:not([data-role="change-cwd"]),
     .agent-decision-actions button,
-    .agent-history-retry,
     .agent-composer-decision-stop) {
     border: 1px solid var(--agent-border-strong);
     border-radius: var(--agent-radius-control);
@@ -19,27 +18,25 @@
 
 :where(.agent-toolbar button:not([data-role="change-cwd"]),
     .agent-decision-actions button,
-    .agent-history-retry,
     .agent-composer-decision-stop):hover:not(:disabled) {
     background: var(--agent-hover);
 }
 
 :where(.agent-toolbar button:not([data-role="change-cwd"]),
     .agent-decision-actions button,
-    .agent-history-retry,
     .agent-composer-decision-stop):disabled {
     cursor: default;
     opacity: 0.56;
 }
 
 /* Subtle variants escape the hairline base entirely: no border, no fill. */
-:where(.agent-btn-subtle, .agent-history-dismiss) {
+:where(.agent-btn-subtle) {
     border: 1px solid transparent;
     background: transparent;
     color: var(--agent-text-muted);
 }
 
-:where(.agent-btn-subtle, .agent-history-dismiss):hover:not(:disabled) {
+:where(.agent-btn-subtle):hover:not(:disabled) {
     background: var(--agent-hover);
     color: var(--agent-text);
 }

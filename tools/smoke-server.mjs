@@ -46,7 +46,30 @@ const REACT_SMOKE_BOOTSTRAP = String.raw`
   const hostListeners = [];
   window.chrome = {
     webview: {
-      postMessage() {},
+      postMessage(payload) {
+        // Bridge.sendToHost posts a JSON string. The history broker only
+        // accepts agent_threads answers to its own in-flight history
+        // command, so the fixture answers like the host.
+        let message = payload;
+        if (typeof message === 'string') {
+          try { message = JSON.parse(message); } catch { return; }
+        }
+        if (message && message.type === 'agent_command' && message.command === 'history') {
+          setTimeout(() => emit({
+            type: 'agent_threads',
+            workspaceId: message.workspaceId,
+            threads: [{
+              threadId: 'ht1',
+              title: 'Release smoke thread',
+              cwd: 'D:/smoke',
+              updatedAt: '2026-07-20 10:00:00Z',
+              sessionId: '',
+              provider: 'claude-code',
+              providerKey: 'claude-code'
+            }]
+          }), 0);
+        }
+      },
       addEventListener(name, listener) {
         if (name === 'message') hostListeners.push(listener);
       }
@@ -64,6 +87,8 @@ const REACT_SMOKE_BOOTSTRAP = String.raw`
 
   addEventListener('load', async () => {
     const workspaceId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    // Open the history dock up front so the CP4-4 list swap is exercised.
+    window.localStorage.setItem('psx.agent.historyDockOpen', '1');
     emit({
       type: 'appearance_settings',
       settings: {
@@ -134,6 +159,15 @@ const REACT_SMOKE_BOOTSTRAP = String.raw`
       panel?.querySelector('.agent-thinking-block')?.textContent.includes('considering the release') === true;
     result.checks.realToolCard =
       panel?.querySelector('.agent-tool-card[data-tool-id="tc1"]')?.dataset.state === 'done';
+    // Narrow viewports responsively collapse the dock; the toggle re-opens it
+    // exactly like a user would.
+    const dock = document.querySelector('.agent-history-dock');
+    if (dock?.hidden) panel?.querySelector('[data-role="history-toggle"]')?.click();
+    await waitFor(() => !!document.querySelector('.agent-history-item[data-thread-id="ht1"]'));
+    result.checks.realHistoryThread =
+      document.querySelector('.agent-history-item[data-thread-id="ht1"]')
+        ?.textContent.includes('Release smoke thread') === true
+      && !!document.querySelector('.agent-history-group-header svg');
 
     // The packaged Vite output must serve React and the Agent app as hashed
     // dynamic chunks from /app/assets/.
