@@ -187,43 +187,53 @@ Overnight execution of the approved "PSX Agent React 全面迁移" plan
 legacy fallback. Startup logs `[agent] UI mode: React|Legacy` and mirrors it
 on `document.body.dataset.agentUiMode`.
 
-### Verdict: `PARTIAL_NOT_READY` (downgraded by the P0 hardening review)
+### Verdict: `READY_FOR_DOGFOOD` (restored after the P0 hardening fixes)
 
 A production-hardening review after the night run verified five P0
-defects against the code; the earlier `READY_FOR_DOGFOOD` call is
-withdrawn until they are fixed. The migration body stands (Stations 0–6
-wired in React mode, ZIP smoke green, all suites pass) but dogfood must
-wait for:
+defects against the code and temporarily downgraded this verdict to
+`PARTIAL_NOT_READY`. All five fixes have since landed with tests, the
+full gate and the Fast suite pass, and the rebuilt release ZIP passed
+the browser smoke again, so the dogfood call is restored. Evidence per
+P0 item:
 
-1. **Historical mode-transition state mapping is wrong** — C# persists
-   `selected`/`cancelled`/`interrupted` (`AcpAgentSessionService.cs`,
-   `ModeTransitionSnapshotMerger.cs`); the projection tests
-   `decisionState === 'resolved'`, a value that never occurs, so replayed
-   `selected`/`cancelled` cards all show "Interrupted". The active-card
-   header also says `Pending` where legacy says `Decision required`.
-   The unit fixture used the non-existent `resolved` and masked this.
-2. **Auto-scroll runs before the React commit** — `renderReact()` calls
-   `scrollToBottom()` right after `root.render()`; React 19 commits
-   asynchronously so the scroll reads stale layout (masked by `act` in
-   tests).
-3. **Island load failure loses folded events** — events enter the
-   projection before the island resolves; on import failure legacy can
-   only render subsequent events. Preheating shrinks the window but is
-   not recovery.
-4. **Island loader null-host dead state** — `createHost()` returning
-   null leaves `loading=true`, `failed=false`, no handle: no retry, no
-   fallback, permanent silence.
-5. **Recovery card splits turn keys** — `appendRecovery` pushes a
-   `turnId:null` row without closing the current turn; when the same
-   turn continues, `TimelineView`'s adjacency grouping emits two blocks
-   with the same `turn-N` React key (duplicate-key collision; DOM also
-   diverges from legacy, which keeps one turn section node).
+1. **Historical mode-transition state mapping** (`fc2d486`) — the
+   projection now maps the real persisted values
+   (`selected → Selected`, `cancelled → Cancelled`, everything else
+   `→ Interrupted`) with the legacy status-text rules; the unit fixture
+   uses the C# payload values, a three-state replay test asserts
+   React ≡ legacy, and the DOM snapshot captures `data-tool-call-id`.
+2. **Auto-scroll before the React commit** (`7add3fc`) — the timeline
+   tree emits an `onCommitted` callback from `useLayoutEffect`; the
+   controller scrolls only inside it. A test asserts the freshly
+   rendered row is already in the DOM when the callback fires.
+3. **Island load failure lost folded events** (`22c8204`) — until the
+   first successful React commit every folded event (and system
+   message) is also buffered raw; `onLoadFailed` replays the buffer
+   through the Decision and Timeline legacy switches in arrival order,
+   and the Decision react gate now checks the timeline island failure
+   so both domains fall back together. A Group C test fails the
+   timeline import mid-stream and asserts the turn, streamed text and
+   decision card are all recovered and later events keep working.
+4. **Island loader null-host dead state** (`ac142ff`) — a live loader
+   whose `createHost()` returns null now fails fast (warn once +
+   legacy fallback); a disposed loader ends quietly. Both paths are
+   unit-tested.
+5. **Recovery card split turn keys** (`69310df`) — `TimelineView`
+   groups rows by turn id instead of adjacency, so a mid-turn recovery
+   card no longer produces two blocks with the same React key; a
+   mid-turn `resume_failed` test asserts zero duplicate-key console
+   errors and the legacy-equivalent DOM order.
 
-Once the five fixes land with their tests and the ZIP smoke is re-run,
-this verdict section will be re-evaluated. The remaining review items
-(performance immutability refactor, long-message collapse, elicitation
-payload parity, per-island fallback proofs, docs/tooling) are tracked as
-P1/P2 for the mainline-merge gate.
+Post-fix gate evidence: 290/290 web tests (A+B+C), 182 C# tests via
+`tools/test.ps1 -Suite Fast` (all green), `verify:agent` + `typecheck`
+clean, release ZIP rebuilt (`PSX-1.1.2-win-x64-portable.zip`, SHA-256
+`68565656…`) and browser-smoked: `agentUiMode === 'react'`,
+`[agent] UI mode: React` logged, React 19.2.8 served from the package,
+0 console errors, 0 failed requests; PSX.exe from the unpacked ZIP
+stayed alive 6 s. The remaining review items (performance immutability
+refactor, long-message collapse, elicitation payload parity, per-island
+fallback proofs, docs/tooling) are tracked as P1/P2 for the
+mainline-merge gate.
 
 ### Station outcomes
 
