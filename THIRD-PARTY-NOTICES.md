@@ -14,6 +14,16 @@ The portable release redistributes:
   `@xterm/*` npm packages into the Vite build output under `wwwroot/app/`.
 - React and React DOM — MIT; see `licenses/react/LICENSE.txt`. Bundled into the
   Vite build output under `wwwroot/app/` (react-vendor chunk).
+- shadcn/ui component sources — MIT; see `licenses/shadcn/LICENSE`. Vendored
+  as TypeScript sources under `frontend/agent/src/components/ui/`
+  (provenance and local modifications in
+  `frontend/agent/src/components/SOURCES.md`).
+- Vercel AI Elements component sources — Apache-2.0; see
+  `licenses/ai-elements/LICENSE`. Vendored with documented local modifications
+  under `frontend/agent/src/components/ai-elements/` (same SOURCES.md).
+- Radix UI — MIT; see `licenses/radix-ui/LICENSE`.
+- Lucide icons — ISC; see `licenses/lucide/LICENSE`.
+- Tailwind CSS — MIT; see `licenses/tailwindcss/LICENSE`.
 - ACP seed manifests — the adapter is Apache-2.0; see `licenses/acp/LICENSE`.
 - Kimi Code ACP runtime — bundled under `tools/kimi/`; MIT. See
   `licenses/kimi/LICENSE` and `licenses/kimi/THIRD-PARTY-NOTICES.md` for the

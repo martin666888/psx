@@ -12,6 +12,7 @@
 import type { AgentBridgePort } from '../contracts/bridge-port.js';
 import type { SessionRuntimeHost } from './SessionRuntimeController.js';
 import type { PlanHost } from '../plan/PlanController.js';
+import { applyShadcnTheme } from '../ui/themeAdapter.js';
 
 /** The one terminal-view method the host toggles when switching workspaces. */
 interface TerminalViewToggle {
@@ -174,6 +175,8 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
    * appearance CSS variables onto document.documentElement. */
   private applyGlobalAppearance(settings: AgentAppearanceSettings): void {
     const root = document.documentElement;
+    // shadcn variable layer, scoped to the Agent UI container (CP2).
+    applyShadcnTheme(this.container, settings);
 
     const fontSize = settings.agentFontSize;
     if (typeof fontSize === 'number' && Number.isInteger(fontSize) && fontSize >= 6 && fontSize <= 72) {

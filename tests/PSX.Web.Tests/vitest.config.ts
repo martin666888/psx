@@ -21,7 +21,9 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@agent-src': path.join(repoRoot, 'frontend', 'agent', 'src')
+      '@agent-src': path.join(repoRoot, 'frontend', 'agent', 'src'),
+      // Match the production Vite/tsconfig "@/..." mapping (shadcn imports).
+      '@': path.join(repoRoot, 'frontend', 'agent', 'src')
     }
   },
   test: {

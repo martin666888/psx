@@ -92,6 +92,11 @@ export function validateOutput(outDir, label) {
     if (file.endsWith('.ts') || file.endsWith('.tsx')) problems.push(`forbidden TypeScript source: ${file}`);
     if (file.endsWith('.map')) problems.push(`forbidden source map: ${file}`);
     if (/component-lab|componentlab/i.test(file)) problems.push(`forbidden Component Lab artifact: ${file}`);
+    // The Debug-only Component Lab page (frontend/webview/lab.html + src/lab)
+    // must never be part of the production build input.
+    if (/(^|\/)lab\.html$/.test(file) || /(^|\/)lab-[-\w]+\.js$/.test(file)) {
+      problems.push(`forbidden Component Lab artifact: ${file}`);
+    }
     if (/fixture/i.test(file)) problems.push(`forbidden fixture artifact: ${file}`);
   }
   const html = files.includes('index.html')

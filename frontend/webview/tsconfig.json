@@ -15,11 +15,16 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "allowImportingTsExtensions": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["../agent/src/*"]
+    },
     "types": ["vite/client"]
   },
   "include": [
     "src/BridgeMessages.js",
     "src/Bridge.js",
+    "src/lab/**/*.tsx",
     "../agent/src/**/*.ts",
     "../agent/src/**/*.tsx",
     "../agent/src/**/*.d.ts"

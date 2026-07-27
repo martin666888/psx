@@ -9,6 +9,7 @@
 // mandatory, not a fallback. If the Agent module fails to load, the terminal
 // is already live and only the Agent panel is disabled.
 
+import './css/tailwind.css';
 import './css/terminal.css';
 import './css/agent/index.css';
 import { Bridge } from './Bridge.js';

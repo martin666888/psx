@@ -72,6 +72,10 @@ describe('lazy React-island loading guard', () => {
     const offenders = [];
     for (const abs of walkFiles(agentSrc, /\.(?:ts|tsx)$/)) {
       const relative = path.relative(agentSrc, abs).replaceAll('\\', '/');
+      // components/ = the shadcn/AI Elements component library (CP2+): React
+      // components by definition, reachable only through the island modules
+      // below, so they never widen the terminal-only startup path.
+      if (relative.startsWith('components/')) continue;
       const bare = importSpecifiers(fs.readFileSync(abs, 'utf8')).filter((s) =>
         /^react(-dom)?(\/|$)/.test(s)
       );

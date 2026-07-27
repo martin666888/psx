@@ -2,6 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const agentSrc = path.resolve(here, '..', 'agent', 'src');
@@ -13,8 +14,11 @@ const agentSrc = path.resolve(here, '..', 'agent', 'src');
 //   so the Terminal first screen never pays for React or the Agent UI
 // - build/verify tooling reads .vite/manifest.json to validate the output
 export default defineConfig({
+  // Root is this package regardless of the caller's cwd (npm run dev:web runs
+  // from the repo root; the build tooling sets cwd itself).
+  root: here,
   base: '/app/',
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   // frontend/agent has no local tsconfig (typecheck:web owns types via this
   // package's tsconfig.json), so pin the automatic JSX runtime for the agent
   // .tsx sources instead of relying on esbuild's tsconfig discovery.
@@ -58,7 +62,10 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@agent': agentSrc
+      '@agent': agentSrc,
+      // shadcn convention: components.json maps "@/..." onto the Agent source
+      // tree (frontend/agent/src), matching tsconfig "paths".
+      '@': agentSrc
     }
   }
 });
