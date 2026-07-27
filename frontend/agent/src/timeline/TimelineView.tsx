@@ -344,14 +344,22 @@ function renderItem(
 }
 
 export function TimelineView({ rows, assistantName, callbacks }: TimelineViewProps): JSX.Element {
-  // Group consecutive rows that share a turn id into agent-turn sections.
+  // Group rows by turn id into agent-turn sections. Rows of one turn always
+  // collect into a single block anchored at the turn's first row — mirroring
+  // legacy, where the turn <section> node persists and later rows keep
+  // appending into it even when a root-level row (the recovery card) was
+  // inserted in between. This also keeps every block key unique.
   const blocks: Array<{ key: string; turn: boolean; rows: TimelineRow[] }> = [];
+  const turnBlocks = new Map<string, { key: string; turn: boolean; rows: TimelineRow[] }>();
   for (const row of rows) {
-    const last = blocks[blocks.length - 1];
-    if (row.turnId && last && last.turn && last.key === row.turnId) {
-      last.rows.push(row);
-    } else if (row.turnId) {
-      blocks.push({ key: row.turnId, turn: true, rows: [row] });
+    if (row.turnId) {
+      let block = turnBlocks.get(row.turnId);
+      if (!block) {
+        block = { key: row.turnId, turn: true, rows: [] };
+        turnBlocks.set(row.turnId, block);
+        blocks.push(block);
+      }
+      block.rows.push(row);
     } else {
       blocks.push({ key: 'root-' + row.item.id, turn: false, rows: [row] });
     }

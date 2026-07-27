@@ -163,6 +163,34 @@ test('React timeline renders the empty-thread ready row and agent_cleared like l
   assert.deepEqual(react, legacy);
 });
 
+test('a mid-turn recovery card keeps one turn block and unique React keys', async () => {
+  // legacy: the recovery card lands at the thread root while the open turn
+  // section keeps collecting later rows. The React grouping must not split
+  // the turn into two blocks sharing one key.
+  const events = [
+    ['user_message', { text: 'go' }],
+    ['assistant_delta', { text: 'partial ' }],
+    ['resume_failed', { message: 'Session could not be resumed.', detail: 'boom' }],
+    ['thinking_started', {}],
+    ['thinking_delta', { text: 'recovering' }],
+    ['run_finished', {}]
+  ];
+  const errors = [];
+  const originalError = console.error;
+  console.error = (...args) => {
+    errors.push(args.map(String).join(' '));
+  };
+  try {
+    const legacy = await legacyThread(events);
+    const react = await reactThread(events);
+    assert.deepEqual(react, legacy);
+  } finally {
+    console.error = originalError;
+  }
+  const keyErrors = errors.filter((line) => /same key|unique/i.test(line));
+  assert.deepEqual(keyErrors, [], 'no duplicate React key warnings');
+});
+
 test('React timeline renders run_failed error surfaces like legacy', async () => {
   const events = [
     ['user_message', { text: 'go' }],
