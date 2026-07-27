@@ -187,18 +187,43 @@ Overnight execution of the approved "PSX Agent React 全面迁移" plan
 legacy fallback. Startup logs `[agent] UI mode: React|Legacy` and mirrors it
 on `document.body.dataset.agentUiMode`.
 
-### Verdict: `READY_FOR_DOGFOOD`
+### Verdict: `PARTIAL_NOT_READY` (downgraded by the P0 hardening review)
 
-Stations 0–6 are complete and **wired in React mode**, the Release ZIP
-was rebuilt after the Timeline switch and the Psx layer and its
-browser smoke is fully green, and all three test groups plus the Fast
-suite pass. The Timeline + Decision thread subtree — the largest and last
-holdout — now renders through a single React root in react mode
-(`15b8bdf`), with the legacy engine kept only as the emergency fallback
-path. The planned Composer exclusions (textarea/IME/MenuSelect) remain
-legacy by design and are listed below. Run the manual checklist before
-trusting the branch daily; run `tools/test.ps1 -Suite Full` before any
-mainline merge.
+A production-hardening review after the night run verified five P0
+defects against the code; the earlier `READY_FOR_DOGFOOD` call is
+withdrawn until they are fixed. The migration body stands (Stations 0–6
+wired in React mode, ZIP smoke green, all suites pass) but dogfood must
+wait for:
+
+1. **Historical mode-transition state mapping is wrong** — C# persists
+   `selected`/`cancelled`/`interrupted` (`AcpAgentSessionService.cs`,
+   `ModeTransitionSnapshotMerger.cs`); the projection tests
+   `decisionState === 'resolved'`, a value that never occurs, so replayed
+   `selected`/`cancelled` cards all show "Interrupted". The active-card
+   header also says `Pending` where legacy says `Decision required`.
+   The unit fixture used the non-existent `resolved` and masked this.
+2. **Auto-scroll runs before the React commit** — `renderReact()` calls
+   `scrollToBottom()` right after `root.render()`; React 19 commits
+   asynchronously so the scroll reads stale layout (masked by `act` in
+   tests).
+3. **Island load failure loses folded events** — events enter the
+   projection before the island resolves; on import failure legacy can
+   only render subsequent events. Preheating shrinks the window but is
+   not recovery.
+4. **Island loader null-host dead state** — `createHost()` returning
+   null leaves `loading=true`, `failed=false`, no handle: no retry, no
+   fallback, permanent silence.
+5. **Recovery card splits turn keys** — `appendRecovery` pushes a
+   `turnId:null` row without closing the current turn; when the same
+   turn continues, `TimelineView`'s adjacency grouping emits two blocks
+   with the same `turn-N` React key (duplicate-key collision; DOM also
+   diverges from legacy, which keeps one turn section node).
+
+Once the five fixes land with their tests and the ZIP smoke is re-run,
+this verdict section will be re-evaluated. The remaining review items
+(performance immutability refactor, long-message collapse, elicitation
+payload parity, per-island fallback proofs, docs/tooling) are tracked as
+P1/P2 for the mainline-merge gate.
 
 ### Station outcomes
 
