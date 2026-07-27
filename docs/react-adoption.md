@@ -406,9 +406,18 @@ artifacts and the closure build: 100 historical turns, 1,000 sequential
 | Branch point `0c0dc7c` | 21,453 ms | 21,470 / 21,453 / 22,418 / 20,901 / 17,700 ms | 205 |
 | Single renderer | 13,238 ms | 13,292 / 12,993 / 13,208 / 13,891 / 13,238 ms | 4 |
 
-The measured median improved by 38.3%, so the closure adds no performance
-regression. Absolute jsdom timings are not a WebView2 UX benchmark; the known
-whole-Timeline-per-delta cost remains a separate optimization target.
+**Correction (audited rerun):** the table above was measured while the
+battle tooling was still loading the machine, which inflated the baseline.
+A controlled rerun on an idle machine at the final commit — raw JSON kept
+as `TestResults/react-perf-baseline-run.json` and
+`TestResults/react-closure-run.json` — measured branch-point median
+12,926 ms (12,348–13,775, ≤1 long commit per run) against single-renderer
+median 12,848 ms (12,545–16,560; the first sample carried cold-cache
+noise). The honest conclusion is parity within noise: the closure adds no
+performance regression, and the earlier 38.3% improvement claim is
+withdrawn. Absolute jsdom timings are not a WebView2 UX benchmark; the
+known whole-Timeline-per-delta cost remains a separate optimization
+target.
 
 The same-Document import probe used local Edge/WebView2-compatible Chromium.
 Fetch 503, syntax failure, and evaluation failure each issued one request and
