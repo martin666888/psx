@@ -1,8 +1,5 @@
 // SessionToolbar.tsx — React twins of the SessionRuntimeController session
-// renderers: the toolbar meta line (status / cwd / change-cwd / session) and
-// the composer Context usage ring. Both mirror the legacy DOM writes exactly;
-// pure formatting lives in sessionFormat.ts and is shared with the legacy
-// renderer so both paths emit byte-identical text.
+// Owns the toolbar metadata and Composer Context usage ring.
 
 import type { JSX } from 'react';
 import type { ContextUsageView } from './sessionFormat.js';

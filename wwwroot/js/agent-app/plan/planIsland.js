@@ -7,16 +7,8 @@
 // first commit) and dispose unmounts but leaves the panel node in place —
 // the workspace panel lifecycle owns the node.
 import { createElement } from 'react';
-import { createRoot } from 'react-dom/client';
+import { mountReactIsland } from '../core/reactIsland.js';
 import { PlanCard } from './PlanCard.js';
-export function mountPlanIsland(host) {
-    const root = createRoot(host);
-    return {
-        render(plan) {
-            root.render(createElement(PlanCard, { plan }));
-        },
-        dispose() {
-            root.unmount();
-        }
-    };
+export function mountPlanIsland(host, reportFailure) {
+    return mountReactIsland('plan-card', host, reportFailure, (plan) => createElement(PlanCard, { plan }));
 }

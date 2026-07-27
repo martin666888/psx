@@ -33,11 +33,14 @@ test('keeps independent DOM and routes events only to the matching workspace', a
     cwd: 'D:/first',
     title: 'First'
   });
+  for (let attempt = 0; attempt < 200 && !role(firstPanel, 'cwd'); attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
   // Activating the second workspace hides the first and the terminal view.
   app.handle({ type: 'workspace_activated', workspaceId: SECOND, kind: 'agent' });
 
   assert.equal(role(firstPanel, 'cwd').textContent, 'D:/first');
-  assert.notEqual(role(secondPanel, 'cwd').textContent, 'D:/first');
+  assert.doesNotMatch(role(secondPanel, 'session-meta-host').textContent, /D:\/first/);
   assert.equal(role(firstPanel, 'input').value, 'first draft');
   assert.equal(role(secondPanel, 'input').value, 'second draft');
   assert.equal(firstPanel.hidden, true);

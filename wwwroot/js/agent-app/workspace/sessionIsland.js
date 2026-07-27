@@ -7,27 +7,11 @@
 // template-rendered defaults are replaced atomically by the first commit —
 // and dispose unmounts while leaving the host nodes to the panel lifecycle.
 import { createElement } from 'react';
-import { createRoot } from 'react-dom/client';
+import { mountReactIsland } from '../core/reactIsland.js';
 import { ContextUsage, SessionMeta } from './SessionToolbar.js';
-export function mountSessionMetaIsland(host) {
-    const root = createRoot(host);
-    return {
-        render(props) {
-            root.render(createElement(SessionMeta, props));
-        },
-        dispose() {
-            root.unmount();
-        }
-    };
+export function mountSessionMetaIsland(host, reportFailure) {
+    return mountReactIsland('session-meta', host, reportFailure, (props) => createElement(SessionMeta, props));
 }
-export function mountContextUsageIsland(host) {
-    const root = createRoot(host);
-    return {
-        render(props) {
-            root.render(createElement(ContextUsage, props));
-        },
-        dispose() {
-            root.unmount();
-        }
-    };
+export function mountContextUsageIsland(host, reportFailure) {
+    return mountReactIsland('context-usage', host, reportFailure, (props) => createElement(ContextUsage, props));
 }

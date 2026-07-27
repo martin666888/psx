@@ -9,7 +9,8 @@
 // controller-owned — React owns only the children.
 
 import { createElement } from 'react';
-import { createRoot } from 'react-dom/client';
+import type { IslandFailureReporter, IslandHandle } from '../core/islandHost.js';
+import { mountReactIsland } from '../core/reactIsland.js';
 import {
   AttachmentStrip,
   CommandHint,
@@ -19,34 +20,34 @@ import {
   type ComposerActionsProps
 } from './ComposerBits.js';
 
-export interface ComposerIslandHandle<TProps> {
-  render(props: TProps): void;
-  dispose(): void;
-}
-
 function mount<TProps extends object>(
+  name: string,
   host: HTMLElement,
+  reportFailure: IslandFailureReporter,
   component: (props: TProps) => unknown
-): ComposerIslandHandle<TProps> {
-  const root = createRoot(host);
-  return {
-    render(props: TProps): void {
-      root.render(createElement(component as never, props as never));
-    },
-    dispose(): void {
-      root.unmount();
-    }
-  };
+): IslandHandle<TProps> {
+  return mountReactIsland(name, host, reportFailure, (props) =>
+    createElement(component as never, props as never)
+  );
 }
 
-export function mountAttachmentStripIsland(host: HTMLElement): ComposerIslandHandle<AttachmentStripProps> {
-  return mount(host, AttachmentStrip);
+export function mountAttachmentStripIsland(
+  host: HTMLElement,
+  reportFailure: IslandFailureReporter
+): IslandHandle<AttachmentStripProps> {
+  return mount('composer-attachments', host, reportFailure, AttachmentStrip);
 }
 
-export function mountComposerActionsIsland(host: HTMLElement): ComposerIslandHandle<ComposerActionsProps> {
-  return mount(host, ComposerActions);
+export function mountComposerActionsIsland(
+  host: HTMLElement,
+  reportFailure: IslandFailureReporter
+): IslandHandle<ComposerActionsProps> {
+  return mount('composer-actions', host, reportFailure, ComposerActions);
 }
 
-export function mountCommandHintIsland(host: HTMLElement): ComposerIslandHandle<CommandHintProps> {
-  return mount(host, CommandHint);
+export function mountCommandHintIsland(
+  host: HTMLElement,
+  reportFailure: IslandFailureReporter
+): IslandHandle<CommandHintProps> {
+  return mount('command-hint', host, reportFailure, CommandHint);
 }

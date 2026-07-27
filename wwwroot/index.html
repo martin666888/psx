@@ -19,12 +19,7 @@
             <button data-role="history-toggle" class="agent-icon-toggle agent-history-toggle" type="button" title="Agent history" aria-label="Toggle Agent history" aria-expanded="false">
                 <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M2.5 3h11v10h-11z M6 3v10" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
             </button>
-            <div class="agent-meta">
-                <span data-role="status">Ready</span>
-                <span data-role="cwd">Working directory not loaded</span>
-                <button data-role="change-cwd" class="agent-link-button" type="button">Change</button>
-                <span data-role="session"></span>
-            </div>
+            <div data-role="session-meta-host" class="agent-meta"></div>
             <div class="agent-toolbar-actions">
                 <button data-role="plan-toggle" class="agent-icon-toggle agent-plan-toggle" type="button" title="Toggle Plan card" aria-label="Toggle Plan card" aria-expanded="true">
                     <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M6.5 4h7M6.5 8h7M6.5 12h7" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="3" cy="4" r="1.1" fill="currentColor"/><circle cx="3" cy="8" r="1.1" fill="currentColor"/><circle cx="3" cy="12" r="1.1" fill="currentColor"/></svg>
@@ -33,21 +28,7 @@
                 <button data-role="clear" title="Clear thread">Clear</button>
             </div>
         </header>
-        <section data-role="runtime-card"
-                 class="agent-runtime-card"
-                 aria-live="polite"
-                 hidden>
-            <div class="agent-runtime-indicator" aria-hidden="true"></div>
-            <div class="agent-runtime-copy">
-                <h2 data-role="runtime-title">Agent runtime required</h2>
-                <p data-role="runtime-message">Install the Agent runtime before starting a session.</p>
-                <p class="agent-runtime-note">Downloads pinned components from the official npm registry into this PSX folder and reuses them on later launches.</p>
-            </div>
-            <div class="agent-runtime-actions">
-                <button data-role="runtime-install" type="button">Install runtime</button>
-                <button data-role="runtime-cancel" type="button" hidden>Cancel</button>
-            </div>
-        </section>
+        <div data-role="runtime-host" class="agent-runtime-react-host"></div>
         <div class="agent-workspace">
             <main data-role="thread" class="agent-thread" role="log" aria-label="Agent conversation" aria-live="polite" aria-relevant="additions"></main>
         </div>
@@ -81,25 +62,8 @@
                     </div>
                     <div data-role="command-hint" class="agent-command-hint" role="status" aria-live="polite" hidden></div>
                     <div class="agent-composer-footer">
-                        <div class="agent-composer-actions">
-                            <button data-role="attach" class="agent-attach" type="button" title="Attach images" aria-label="Attach images">+</button>
-                            <input data-role="attachment-input" type="file" accept="image/*" multiple hidden>
-                        </div>
-                        <div class="agent-hints">
-                            <div data-role="context-used" class="agent-context-usage" role="img" tabindex="0"
-                                 aria-label="Context usage is not available">
-                                <svg class="agent-context-ring" viewBox="0 0 20 20" aria-hidden="true">
-                                    <circle class="agent-context-ring-track" cx="10" cy="10" r="7.5" pathLength="100"></circle>
-                                    <circle data-role="context-ring-progress" class="agent-context-ring-progress"
-                                            cx="10" cy="10" r="7.5" pathLength="100"></circle>
-                                </svg>
-                                <span class="agent-context-tooltip" role="tooltip">
-                                    <strong data-role="context-tooltip-summary">Context unavailable</strong>
-                                    <span data-role="context-tooltip-detail"></span>
-                                    <span data-role="context-tooltip-cost" hidden></span>
-                                </span>
-                            </div>
-                        </div>
+                        <div class="agent-composer-actions"></div>
+                        <div data-role="context-usage-host" class="agent-hints"></div>
                         <div class="agent-composer-controls">
                             <label class="agent-mode-control" title="Agent mode">
                                 <span>mode</span>

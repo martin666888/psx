@@ -13,18 +13,13 @@
 // Layered layout keeps History as a left dock at every width. Responsive
 // layouts can temporarily collapse it before it would squeeze the reading
 // column, but never turn it into a floating drawer.
-import { buildHistoryGroups, filterHistoryGroups, formatHistoryTime, providerFilterOptions } from './historyModel.js';
-import { isReactUiEnabled } from '../core/flags.js';
+import { providerFilterOptions } from './historyModel.js';
 import { createIslandLoader } from '../core/islandHost.js';
 const MIN_WIDTH = 220;
 const MAX_WIDTH = 420;
 const DEFAULT_WIDTH = 280;
 const OPEN_STORAGE_KEY = 'psx.agent.historyDockOpen';
 const WIDTH_STORAGE_KEY = 'psx.agent.historyDockWidth';
-// Group fold affordance: a folder that is open when the group is expanded and
-// closed when folded. Both SVGs live in the header; CSS shows one per state.
-const FOLDER_CLOSED_ICON = '<svg class="agent-history-folder-closed" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" focusable="false"><path d="M2.5 4h4l1.5 2h5.5v6.5h-11z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>';
-const FOLDER_OPEN_ICON = '<svg class="agent-history-folder-open" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" focusable="false"><path d="M2.5 4h4l1.5 2h5.5v2h-8.5l-2.5 6.5h-1z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M4.5 8.5h9l-2 5h-9z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>';
 export class HistoryDockController {
     host;
     dock = null;
@@ -50,10 +45,8 @@ export class HistoryDockController {
     expandedGroups = new Set();
     openListeners = new Set();
     widthListeners = new Set();
-    // React migration: the dock content subtree is React-owned in react mode;
-    // the dock frame, top bar, resizer, open/width persistence and the fold /
-    // expand interaction state stay with this controller.
-    reactHistoryEnabled = false;
+    // React owns the dock content subtree. The frame, top bar, resizer,
+    // persistence and fold/expand interaction state stay with this controller.
     historyIsland = null;
     cleanup = [];
     constructor(host) {
@@ -114,7 +107,6 @@ export class HistoryDockController {
         this.width = this.readWidth();
         this.applyWidth(this.width);
         this.preferredOpen = this.readOpen();
-        this.reactHistoryEnabled = isReactUiEnabled();
         this.unsubscribeStore = this.host.subscribe(() => this.render());
         this.wire(search, providerSelect, refresh, resizer);
         // The open/close control is the history-toggle button in every workspace
@@ -399,35 +391,25 @@ export class HistoryDockController {
     render(options) {
         if (!this.content)
             return;
-        if (this.reactHistoryEnabled && !this.historyIsland?.hasFailed()) {
-            this.renderReact();
-            // React updates children in place, so the scroll position survives
-            // store-driven renders naturally; only filter changes reset it.
-            if (options?.resetScroll)
-                this.content.scrollTop = 0;
-            return;
-        }
-        // Rebuilds wipe the list; keep the user's place across store-driven
-        // renders (open-marker refreshes, invalidation waves) and only reset when
-        // the search box or provider filter changed the result set.
-        const scrollTop = options?.resetScroll ? 0 : this.content.scrollTop;
-        this.renderContent();
-        this.content.scrollTop = scrollTop;
+        this.renderReact();
+        // React updates children in place, so the scroll position survives
+        // store-driven renders naturally; only filter changes reset it.
+        if (options?.resetScroll)
+            this.content.scrollTop = 0;
     }
     renderReact() {
+        const content = this.content;
+        if (!content)
+            return;
         const state = this.host.getState();
         this.syncProviderOptions(state);
         this.historyIsland ??= createIslandLoader({
             name: 'history-list',
             load: async () => {
                 const mod = await import('./historyIsland.js');
-                return (host) => mod.mountHistoryIsland(host);
+                return (host, reportFailure) => mod.mountHistoryIsland(host, reportFailure);
             },
-            createHost: () => this.content,
-            onLoadFailed: () => {
-                if (this.content)
-                    this.render();
-            }
+            host: content
         });
         const activeWorkspaceId = this.host.activeWorkspaceId();
         const openThreads = this.host.openWorkspaceThreadIds();
@@ -463,234 +445,6 @@ export class HistoryDockController {
             onDismissOpenError: () => this.host.dismissThreadOpenError(),
             onRetryRefresh: () => this.host.requestRefresh('')
         });
-    }
-    renderContent() {
-        if (!this.content)
-            return;
-        const state = this.host.getState();
-        this.syncProviderOptions(state);
-        this.content.innerHTML = '';
-        if (!this.host.hasAgentWorkspaces()) {
-            this.showState('empty', 'Open an Agent workspace to load history.');
-            return;
-        }
-        if (state.status === 'initial-loading') {
-            this.showState('loading', 'Loading history...');
-            return;
-        }
-        if (state.status === 'unavailable') {
-            this.showState('empty', 'Open an Agent workspace to load history.');
-            return;
-        }
-        if (state.status === 'error') {
-            this.renderError(state.errorText);
-            return;
-        }
-        const query = this.searchInput?.value ?? '';
-        const groups = filterHistoryGroups(buildHistoryGroups(state.threads, state.providers), query, this.providerFilterValue);
-        if (state.threadOpenError) {
-            this.renderThreadOpenError(state.threadOpenError.threadId, state.threadOpenError.text);
-        }
-        if (state.threads.length === 0) {
-            this.showState('empty', state.loaded ? 'No saved Agent threads.' : 'Loading history...');
-            return;
-        }
-        if (groups.length === 0) {
-            this.showState('empty', 'No threads match the current search or filter.');
-            return;
-        }
-        const activeWorkspaceId = this.host.activeWorkspaceId();
-        const openThreads = this.host.openWorkspaceThreadIds();
-        const activeThreadId = activeWorkspaceId ? openThreads.get(activeWorkspaceId) ?? '' : '';
-        const openedElsewhere = new Set();
-        for (const [workspaceId, threadId] of openThreads) {
-            if (threadId && workspaceId !== activeWorkspaceId)
-                openedElsewhere.add(threadId);
-        }
-        const list = document.createElement('div');
-        list.className = 'agent-history-list';
-        const isSearching = !!query || !!this.providerFilterValue;
-        for (const group of groups) {
-            list.appendChild(this.renderGroup(group, activeThreadId, openedElsewhere, isSearching));
-        }
-        this.content.appendChild(list);
-    }
-    renderGroup(group, activeThreadId, openedElsewhere, isSearching) {
-        const PREVIEW_LIMIT = 5;
-        const allThreads = group.threads;
-        const showAll = isSearching || this.expandedGroups.has(group.key);
-        const visibleThreads = showAll ? allThreads : allThreads.slice(0, PREVIEW_LIMIT);
-        const hiddenCount = allThreads.length - visibleThreads.length;
-        // Searching forces every group open so results stay visible.
-        const folded = !isSearching && this.foldedGroups.has(group.key);
-        const hasActive = allThreads.some((thread) => thread.threadId === activeThreadId);
-        const groupEl = document.createElement('div');
-        groupEl.className = 'agent-history-group';
-        groupEl.dataset.folded = String(folded);
-        // Header (click toggles fold)
-        const header = document.createElement('button');
-        header.type = 'button';
-        header.className = 'agent-history-group-header';
-        header.setAttribute('aria-expanded', String(!folded));
-        const folder = document.createElement('span');
-        folder.className = 'agent-history-group-folder';
-        folder.setAttribute('aria-hidden', 'true');
-        folder.innerHTML = FOLDER_CLOSED_ICON + FOLDER_OPEN_ICON;
-        header.appendChild(folder);
-        const label = document.createElement('span');
-        label.className = 'agent-history-group-label';
-        const name = document.createElement('strong');
-        name.textContent = group.name;
-        label.appendChild(name);
-        if (group.path) {
-            const path = document.createElement('small');
-            path.textContent = group.path;
-            path.title = group.path;
-            label.appendChild(path);
-        }
-        header.appendChild(label);
-        const count = document.createElement('span');
-        count.className = 'agent-history-group-count';
-        count.textContent = String(allThreads.length);
-        header.appendChild(count);
-        if (hasActive) {
-            const dot = document.createElement('span');
-            dot.className = 'agent-history-group-active';
-            dot.setAttribute('aria-label', 'Contains the active session');
-            header.appendChild(dot);
-        }
-        header.addEventListener('click', () => {
-            if (this.foldedGroups.has(group.key))
-                this.foldedGroups.delete(group.key);
-            else
-                this.foldedGroups.add(group.key);
-            this.render();
-        });
-        groupEl.appendChild(header);
-        // Threads container (hidden when folded)
-        const threadsEl = document.createElement('div');
-        threadsEl.className = 'agent-history-group-threads';
-        threadsEl.hidden = folded;
-        for (const thread of visibleThreads) {
-            threadsEl.appendChild(this.renderThread(thread, activeThreadId, openedElsewhere));
-        }
-        if (hiddenCount > 0) {
-            const more = document.createElement('button');
-            more.type = 'button';
-            more.className = 'agent-history-show-more';
-            more.textContent = 'Show all ' + allThreads.length + ' threads';
-            more.addEventListener('click', () => {
-                this.expandedGroups.add(group.key);
-                this.render();
-            });
-            threadsEl.appendChild(more);
-        }
-        groupEl.appendChild(threadsEl);
-        return groupEl;
-    }
-    renderThread(thread, activeThreadId, openedElsewhere) {
-        const row = document.createElement('button');
-        row.type = 'button';
-        row.className = 'agent-history-item';
-        row.dataset.threadId = thread.threadId || '';
-        row.setAttribute('aria-current', thread.threadId === activeThreadId ? 'true' : 'false');
-        const heading = document.createElement('span');
-        heading.className = 'agent-history-heading';
-        const titleText = thread.title || 'Agent Chat';
-        const title = document.createElement('strong');
-        title.textContent = titleText;
-        heading.appendChild(title);
-        let badgeText = '';
-        if (thread.threadId === activeThreadId) {
-            badgeText = 'Current';
-            const current = document.createElement('span');
-            current.className = 'agent-history-current';
-            current.textContent = badgeText;
-            heading.appendChild(current);
-        }
-        else if (thread.threadId && openedElsewhere.has(thread.threadId)) {
-            badgeText = 'Open';
-            const opened = document.createElement('span');
-            opened.className = 'agent-history-open';
-            opened.textContent = badgeText;
-            heading.appendChild(opened);
-        }
-        const meta = document.createElement('small');
-        const parts = [];
-        if (thread.providerDisplay)
-            parts.push(thread.providerDisplay);
-        const timeLabel = formatHistoryTime(thread.updatedAt);
-        if (timeLabel)
-            parts.push(timeLabel);
-        // Single-line row: only the short time stays visible at the row's trailing
-        // edge. The full "provider | time" string is the row's tooltip and part of
-        // its accessible name — a tooltip on the trailing <small> is unreachable
-        // for keyboard and screen-reader users because focus lands on the row.
-        meta.textContent = timeLabel || thread.providerDisplay || '';
-        const fullDescription = parts.join(' | ');
-        if (fullDescription)
-            row.title = fullDescription;
-        row.setAttribute('aria-label', [titleText, badgeText, fullDescription].filter((part) => part).join(', '));
-        heading.appendChild(meta);
-        row.appendChild(heading);
-        row.addEventListener('click', () => {
-            if (thread.threadId)
-                this.host.openThread(thread.threadId);
-        });
-        return row;
-    }
-    renderThreadOpenError(threadId, text) {
-        if (!this.content)
-            return;
-        const notice = document.createElement('div');
-        notice.className = 'agent-history-open-error';
-        notice.setAttribute('role', 'alert');
-        const message = document.createElement('p');
-        message.textContent = text || 'PSX could not open the selected Agent thread. Try again.';
-        const actions = document.createElement('div');
-        actions.className = 'agent-history-open-error-actions';
-        const retry = document.createElement('button');
-        retry.type = 'button';
-        retry.className = 'agent-history-retry';
-        retry.textContent = 'Retry';
-        retry.addEventListener('click', () => this.host.openThread(threadId));
-        const dismiss = document.createElement('button');
-        dismiss.type = 'button';
-        dismiss.className = 'agent-history-dismiss';
-        dismiss.textContent = 'Dismiss';
-        dismiss.addEventListener('click', () => this.host.dismissThreadOpenError());
-        actions.append(retry, dismiss);
-        notice.append(message, actions);
-        this.content.appendChild(notice);
-    }
-    renderError(text) {
-        if (!this.content)
-            return;
-        const state = document.createElement('div');
-        state.className = 'agent-history-state agent-history-error';
-        state.setAttribute('role', 'alert');
-        const message = document.createElement('p');
-        message.textContent = text || 'Unable to load Agent thread history.';
-        const retry = document.createElement('button');
-        retry.type = 'button';
-        retry.className = 'agent-history-retry';
-        retry.textContent = 'Retry';
-        retry.addEventListener('click', () => this.host.requestRefresh(''));
-        state.appendChild(message);
-        state.appendChild(retry);
-        this.content.appendChild(state);
-    }
-    showState(stateName, text) {
-        if (!this.content)
-            return;
-        const state = document.createElement('div');
-        state.className = 'agent-history-state agent-history-' + stateName;
-        if (stateName === 'loading') {
-            state.setAttribute('role', 'status');
-            state.setAttribute('aria-live', 'polite');
-        }
-        state.textContent = text;
-        this.content.appendChild(state);
     }
     syncProviderOptions(state) {
         if (!this.providerSelect)

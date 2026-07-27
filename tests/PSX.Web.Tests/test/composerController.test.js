@@ -114,10 +114,17 @@ function composerSnapshot(panel) {
 async function drive(events) {
   const { app, panelFor } = await mountAgentApp();
   createAgentWorkspace(app, WS);
-  for (const event of events) {
-    app.handle(event);
+  for (const event of events) app.handle(event);
+  const panel = panelFor(WS);
+  const expectsHint = events.some((event) => event.type === 'agent_command_rejected');
+  for (let attempt = 0; attempt < 200; attempt++) {
+    const attachReady = !!panel.querySelector('[data-role="attach"]');
+    const hintReady =
+      !expectsHint || !!panel.querySelector('[data-role="command-hint"]')?.textContent;
+    if (attachReady && hintReady) return panel;
+    await new Promise((resolve) => setTimeout(resolve, 10));
   }
-  return panelFor(WS);
+  assert.fail('composer islands did not reach the requested state');
 }
 
 test('ComposerController renders composer controls from modes and config options', async () => {

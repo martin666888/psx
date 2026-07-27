@@ -33,21 +33,35 @@ async function mount() {
   return { app, panel: panelFor(workspaceId) };
 }
 
+async function render(run, predicate) {
+  run();
+  for (let attempt = 0; attempt < 200; attempt++) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.fail('React replay did not reach the requested state');
+}
+
 describe('Thread replay', () => {
   it('clears and rebuilds the thread from a historical payload', async () => {
     const { app, panel } = await mount();
-    app.handle({ type: 'assistant_delta', workspaceId, text: 'stale live output' });
-    app.handle({
-      type: 'agent_thread_loaded',
-      workspaceId,
-      clear: true,
-      cwd: 'D:/replay',
-      sessionId: 'sess-1234abcd',
-      messages: [
-        { role: 'user', text: 'Please refactor' },
-        { role: 'assistant', text: 'Refactored.' }
-      ]
-    });
+    await render(() => {
+      app.handle({ type: 'assistant_delta', workspaceId, text: 'stale live output' });
+      app.handle({
+        type: 'agent_thread_loaded',
+        workspaceId,
+        clear: true,
+        cwd: 'D:/replay',
+        sessionId: 'sess-1234abcd',
+        messages: [
+          { role: 'user', text: 'Please refactor' },
+          { role: 'assistant', text: 'Refactored.' }
+        ]
+      });
+    }, () =>
+      observableProjection(panel).messages.length === 2
+      && panel.querySelector('[data-role="cwd"]')?.textContent === 'D:/replay'
+    );
 
     const messages = observableProjection(panel).messages;
     assert.deepEqual(messages, [
@@ -59,14 +73,18 @@ describe('Thread replay', () => {
 
   it('shows a ready hint when replaying an empty thread', async () => {
     const { app, panel } = await mount();
-    app.handle({ type: 'agent_thread_loaded', workspaceId, clear: true, messages: [] });
+    await render(
+      () => app.handle({ type: 'agent_thread_loaded', workspaceId, clear: true, messages: [] }),
+      () => !!panel.querySelector('[data-role="thread"] .agent-system')
+    );
     const thread = panel.querySelector('[data-role="thread"]');
     assert.match(thread.querySelector('.agent-system').textContent, /will start on the first message/);
   });
 });
 
 describe('Live and history observable-DOM invariant', () => {
-  function buildLive(app) {
+  async function buildLive(app, panel) {
+    await render(() => {
     app.handle({ type: 'user_message', workspaceId, text: 'Add a feature' });
     app.handle({ type: 'tool_started', workspaceId, runId: 'run-1', toolCallId: 'tool-1', name: 'edit', input: '', summary: 'Edit file' });
     app.handle({ type: 'tool_delta', workspaceId, toolCallId: 'tool-1', text: 'patched 3 lines' });
@@ -79,10 +97,14 @@ describe('Live and history observable-DOM invariant', () => {
     app.handle({ type: 'assistant_delta', workspaceId, text: 'All done.' });
     app.handle({ type: 'assistant_message_done', workspaceId });
     app.handle({ type: 'run_finished', workspaceId });
+    }, () =>
+      observableProjection(panel).messages.length === 2
+      && observableProjection(panel).plan.length === 3
+    );
   }
 
-  function buildHistory(app) {
-    app.handle({
+  async function buildHistory(app, panel) {
+    await render(() => app.handle({
       type: 'agent_thread_loaded',
       workspaceId,
       clear: true,
@@ -97,16 +119,19 @@ describe('Live and history observable-DOM invariant', () => {
         ] },
         { role: 'assistant', text: 'All done.' }
       ]
-    });
+    }), () =>
+      observableProjection(panel).messages.length === 2
+      && observableProjection(panel).plan.length === 3
+    );
   }
 
   it('produces the same observable messages, tools, and plan for live vs replayed history', async () => {
     const live = await mount();
-    buildLive(live.app);
+    await buildLive(live.app, live.panel);
     const liveProjection = observableProjection(live.panel);
 
     const history = await mount();
-    buildHistory(history.app);
+    await buildHistory(history.app, history.panel);
     const historyProjection = observableProjection(history.panel);
 
     assert.deepEqual(historyProjection, liveProjection);
