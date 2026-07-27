@@ -1,84 +1,121 @@
 {
   "../agent/src/composer/composerIsland.ts": {
-    "file": "assets/composerIsland-hC-_CtZP.js",
+    "file": "assets/composerIsland-Bu1qwfSZ.js",
     "name": "composerIsland",
     "src": "../agent/src/composer/composerIsland.ts",
     "isDynamicEntry": true,
     "imports": [
       "_react-vendor-B6H9ACc3.js",
       "_reactIsland-BERmJKCj.js",
-      "_Psx-CnGX4wIo.js"
+      "_Psx-DY2shBBu.js"
     ]
   },
   "../agent/src/history/historyIsland.ts": {
-    "file": "assets/historyIsland-Dq5HVVRf.js",
+    "file": "assets/historyIsland-B5MsKA_W.js",
     "name": "historyIsland",
     "src": "../agent/src/history/historyIsland.ts",
     "isDynamicEntry": true,
     "imports": [
       "_react-vendor-B6H9ACc3.js",
       "_reactIsland-BERmJKCj.js",
-      "_entry-C7aJOb4b.js",
-      "_Psx-CnGX4wIo.js",
+      "_entry-D5iM5NZ9.js",
+      "_Psx-DY2shBBu.js",
       "index.html"
     ]
   },
   "../agent/src/plan/planIsland.ts": {
-    "file": "assets/planIsland-5w--ROJY.js",
+    "file": "assets/planIsland-BO2nsP7h.js",
     "name": "planIsland",
     "src": "../agent/src/plan/planIsland.ts",
     "isDynamicEntry": true,
     "imports": [
       "_react-vendor-B6H9ACc3.js",
       "_reactIsland-BERmJKCj.js",
-      "_entry-C7aJOb4b.js",
+      "_entry-D5iM5NZ9.js",
+      "_createLucideIcon-DCYiVK4S.js",
+      "_circle-BALYEv6v.js",
       "index.html"
     ]
   },
   "../agent/src/timeline/timelineIsland.ts": {
-    "file": "assets/timelineIsland-CkRGSEKw.js",
+    "file": "assets/timelineIsland-VTyMarOc.js",
     "name": "timelineIsland",
     "src": "../agent/src/timeline/timelineIsland.ts",
     "isDynamicEntry": true,
     "imports": [
       "_react-vendor-B6H9ACc3.js",
       "_reactIsland-BERmJKCj.js",
-      "_entry-C7aJOb4b.js",
+      "_entry-D5iM5NZ9.js",
       "_markdown-DF4o18JI.js",
-      "_Psx-CnGX4wIo.js",
+      "_Psx-DY2shBBu.js",
+      "_button-BLjdKWr4.js",
+      "_createLucideIcon-DCYiVK4S.js",
+      "_circle-x-BJIyslIS.js",
+      "_circle-BALYEv6v.js",
       "index.html"
     ]
   },
   "../agent/src/workspace/runtimeIsland.ts": {
-    "file": "assets/runtimeIsland-C93LHyXj.js",
+    "file": "assets/runtimeIsland-C50R7OL1.js",
     "name": "runtimeIsland",
     "src": "../agent/src/workspace/runtimeIsland.ts",
     "isDynamicEntry": true,
     "imports": [
       "_react-vendor-B6H9ACc3.js",
-      "_Psx-CnGX4wIo.js",
+      "_button-BLjdKWr4.js",
+      "_createLucideIcon-DCYiVK4S.js",
+      "_circle-x-BJIyslIS.js",
       "_reactIsland-BERmJKCj.js"
     ]
   },
   "../agent/src/workspace/sessionIsland.ts": {
-    "file": "assets/sessionIsland-C0HVCxlj.js",
+    "file": "assets/sessionIsland-BzGg9P-h.js",
     "name": "sessionIsland",
     "src": "../agent/src/workspace/sessionIsland.ts",
     "isDynamicEntry": true,
     "imports": [
       "_react-vendor-B6H9ACc3.js",
-      "_reactIsland-BERmJKCj.js"
+      "_reactIsland-BERmJKCj.js",
+      "_button-BLjdKWr4.js"
     ]
   },
-  "_Psx-CnGX4wIo.js": {
-    "file": "assets/Psx-CnGX4wIo.js",
+  "_Psx-DY2shBBu.js": {
+    "file": "assets/Psx-DY2shBBu.js",
     "name": "Psx",
     "imports": [
       "_react-vendor-B6H9ACc3.js"
     ]
   },
-  "_entry-C7aJOb4b.js": {
-    "file": "assets/entry-C7aJOb4b.js",
+  "_button-BLjdKWr4.js": {
+    "file": "assets/button-BLjdKWr4.js",
+    "name": "button",
+    "imports": [
+      "_react-vendor-B6H9ACc3.js"
+    ]
+  },
+  "_circle-BALYEv6v.js": {
+    "file": "assets/circle-BALYEv6v.js",
+    "name": "circle",
+    "imports": [
+      "_createLucideIcon-DCYiVK4S.js"
+    ]
+  },
+  "_circle-x-BJIyslIS.js": {
+    "file": "assets/circle-x-BJIyslIS.js",
+    "name": "circle-x",
+    "imports": [
+      "_createLucideIcon-DCYiVK4S.js"
+    ]
+  },
+  "_createLucideIcon-DCYiVK4S.js": {
+    "file": "assets/createLucideIcon-DCYiVK4S.js",
+    "name": "createLucideIcon",
+    "imports": [
+      "_react-vendor-B6H9ACc3.js"
+    ]
+  },
+  "_entry-D5iM5NZ9.js": {
+    "file": "assets/entry-D5iM5NZ9.js",
     "name": "entry",
     "isDynamicEntry": true,
     "imports": [
@@ -112,15 +149,15 @@
     ]
   },
   "index.html": {
-    "file": "assets/index-DH-fovEo.js",
+    "file": "assets/index-zoxWMfeT.js",
     "name": "index",
     "src": "index.html",
     "isEntry": true,
     "dynamicImports": [
-      "_entry-C7aJOb4b.js"
+      "_entry-D5iM5NZ9.js"
     ],
     "css": [
-      "assets/index-DaQc3GjE.css"
+      "assets/index-DkgDSMsA.css"
     ]
   }
 }

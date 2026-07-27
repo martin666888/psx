@@ -203,26 +203,6 @@
     color: var(--agent-text-muted);
 }
 
-.agent-link-button {
-    border: 0;
-    padding: 0;
-    background: transparent;
-    color: var(--agent-accent);
-    cursor: pointer;
-    font: inherit;
-    text-decoration: none;
-}
-
-.agent-link-button:hover {
-    color: var(--agent-accent-hover);
-}
-
-.agent-link-button:focus-visible {
-    outline: 2px solid var(--agent-focus-ring);
-    outline-offset: 2px;
-    border-radius: var(--agent-radius-control);
-}
-
 /* Right group floats to the toolbar edge; everything else (history toggle +
  * status/path) stays left-anchored. Replaces the previous space-between rule,
  * which would push the middle child (status) to the centre once the toolbar

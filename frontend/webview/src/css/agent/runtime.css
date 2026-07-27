@@ -1,3 +1,7 @@
+/* Runtime install card — shell wiring only (CP4 area 3): grid placement and
+   the reading-column track. Visuals live on the component's Tailwind
+   classes (SessionRuntimeCard.tsx). */
+
 .agent-runtime-card {
     grid-area: runtime;
     display: grid;
@@ -11,88 +15,17 @@
     box-sizing: border-box;
     margin: 12px auto 0 max(0px, var(--agent-reading-column-start));
     padding: 14px 16px;
-    border: 1px solid var(--agent-permission-border);
-    border-radius: var(--agent-radius-card);
-    background: var(--agent-permission-bg);
-    color: var(--agent-text);
 }
 
 .agent-runtime-card[hidden] {
     display: none;
 }
 
-/* Sibling host for the experimental React runtime-card island. It replaces
- * the legacy section as the direct grid item in the `runtime` area; the card
- * rendered inside keeps the .agent-runtime-card styles above. */
+/* Sibling host for the React runtime-card island. It replaces the legacy
+ * section as the direct grid item in the `runtime` area. */
 .agent-runtime-react-host {
     grid-area: runtime;
     min-width: 0;
-}
-
-.agent-runtime-card[data-state="failed"],
-.agent-runtime-card[data-state="cancelled"] {
-    border-color: var(--agent-error);
-    background: var(--agent-error-bg);
-}
-
-.agent-runtime-indicator {
-    width: 12px;
-    height: 12px;
-    border: 2px solid var(--agent-warning);
-    border-radius: 50%;
-}
-
-.agent-runtime-card[data-state="installing"] .agent-runtime-indicator {
-    border-color: color-mix(in srgb, var(--agent-accent) 30%, transparent);
-    border-top-color: var(--agent-accent);
-    animation: agent-runtime-spin 800ms linear infinite;
-}
-
-.agent-runtime-card[data-state="failed"] .agent-runtime-indicator,
-.agent-runtime-card[data-state="cancelled"] .agent-runtime-indicator {
-    border-color: var(--agent-error);
-}
-
-.agent-runtime-copy {
-    min-width: 0;
-}
-
-.agent-runtime-copy h2 {
-    margin: 0;
-    font-size: 14px;
-    line-height: 1.35;
-}
-
-.agent-runtime-copy p {
-    margin: 4px 0 0;
-    color: var(--agent-text-muted);
-    font-size: 12px;
-    line-height: 1.45;
-    overflow-wrap: anywhere;
-}
-
-.agent-runtime-copy .agent-runtime-note {
-    color: var(--agent-text-muted);
-}
-
-.agent-runtime-actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.agent-runtime-actions button {
-    min-width: 104px;
-    padding: 7px 12px;
-}
-
-.agent-runtime-actions button:focus-visible {
-    outline: 2px solid var(--agent-focus-ring);
-    outline-offset: 2px;
-}
-
-@keyframes agent-runtime-spin {
-    to { transform: rotate(360deg); }
 }
 
 @media (max-width: 720px) {
@@ -103,12 +36,5 @@
     .agent-runtime-actions {
         grid-column: 2;
         justify-content: flex-start;
-    }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .agent-runtime-card[data-state="installing"] .agent-runtime-indicator {
-        animation-duration: 0.01ms;
-        animation-iteration-count: 1;
     }
 }

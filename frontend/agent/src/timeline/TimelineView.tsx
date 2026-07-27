@@ -23,7 +23,7 @@ import {
   type ToolGroupItem
 } from './timelineViewModel.js';
 import { DecisionCard, type DecisionCallbacks } from './TimelineDecisions.js';
-import { PsxButton, PsxCard } from '../ui/Psx.js';
+import { Button } from '../components/ui/button.js';
 import {
   Reasoning,
   ReasoningContent,
@@ -146,21 +146,30 @@ function SystemRow({ item }: { item: SystemItem }): JSX.Element {
 
 function RecoveryCard({ item, callbacks }: { item: RecoveryItem; callbacks: TimelineCallbacks }): JSX.Element {
   return (
-    <PsxCard className="agent-recovery" role="status" aria-live="polite" aria-atomic="true">
-      <div className="agent-recovery-content">
-        <div className="agent-recovery-title">Session could not be resumed</div>
-        <p className="agent-recovery-message">{item.message}</p>
-        <details className="agent-recovery-details" hidden={!item.detail}>
-          <summary>Technical details</summary>
-          <pre className="agent-recovery-technical">{item.detail}</pre>
+    <section
+      className="agent-recovery mb-4 grid w-full gap-3 rounded-lg border border-yellow-600/50 bg-yellow-600/10 p-4"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+    >
+      <div className="agent-recovery-content grid min-w-0 gap-2">
+        <div className="agent-recovery-title font-semibold text-[13px] leading-snug">Session could not be resumed</div>
+        <p className="agent-recovery-message m-0 break-words text-[13px] leading-normal">{item.message}</p>
+        <details className="agent-recovery-details min-w-0 text-muted-foreground text-xs" hidden={!item.detail}>
+          <summary className="w-fit cursor-pointer select-none font-semibold hover:text-foreground">
+            Technical details
+          </summary>
+          <pre className="agent-recovery-technical mt-2 max-h-44 overflow-auto whitespace-pre-wrap break-words rounded-md border bg-muted/50 p-3 font-mono text-[11px] leading-normal">
+            {item.detail}
+          </pre>
         </details>
       </div>
-      <div className="agent-recovery-actions">
-        <PsxButton variant="subtle" onClick={() => callbacks.onOpenTerminal()}>
+      <div className="agent-recovery-actions flex flex-wrap gap-2">
+        <Button variant="outline" size="sm" onClick={() => callbacks.onOpenTerminal()}>
           Open terminal
-        </PsxButton>
+        </Button>
       </div>
-    </PsxCard>
+    </section>
   );
 }
 

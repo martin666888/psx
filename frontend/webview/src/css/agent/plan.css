@@ -110,17 +110,9 @@
     grid-template-columns: 20px minmax(0, 1fr);
     align-items: start;
     gap: 7px;
-    color: var(--agent-text-muted);
+    color: var(--muted-foreground);
     font-size: var(--agent-font-size);
     line-height: 1.45;
-}
-
-.agent-plan-marker {
-    color: var(--agent-text-muted);
-    font-family: var(--agent-font-mono);
-    font-size: 0.94em;
-    line-height: 1.45;
-    text-align: center;
 }
 
 .agent-plan-content {
@@ -128,36 +120,16 @@
     overflow-wrap: anywhere;
 }
 
-.agent-plan-item-completed .agent-plan-marker {
-    color: var(--agent-accent);
+.agent-plan-item-in-progress .agent-plan-content {
+    color: var(--foreground);
 }
 
 .agent-plan-item-completed .agent-plan-content {
-    color: var(--agent-text-muted);
     text-decoration: line-through;
     text-decoration-thickness: 1px;
 }
 
-.agent-plan-item-pending .agent-plan-content {
-    color: var(--agent-text-muted);
-}
-
-.agent-plan-empty {
-    color: var(--agent-text-muted);
-    font-size: 13px;
-    line-height: 1.5;
-}
-
-.agent-plan-item-in-progress .agent-plan-marker,
-.agent-plan-item-running .agent-plan-marker {
-    color: var(--agent-accent);
-}
-
 .agent-plan-fallback {
-    margin: 0;
-    color: var(--agent-text-muted);
-    font-family: var(--agent-font-mono);
     font-size: clamp(11px, calc(var(--agent-font-size) * 0.8), 18px);
     line-height: 1.5;
-    white-space: pre-wrap;
 }

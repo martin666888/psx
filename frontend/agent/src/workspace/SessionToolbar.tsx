@@ -3,6 +3,7 @@
 
 import type { JSX } from 'react';
 import type { ContextUsageView } from './sessionFormat.js';
+import { Button } from '../components/ui/button.js';
 
 export interface SessionMetaProps {
   statusText: string;
@@ -21,16 +22,17 @@ export function SessionMeta(props: SessionMetaProps): JSX.Element {
         {props.statusText}
       </span>
       <span data-role="cwd">{props.cwd}</span>
-      <button
+      <Button
         data-role="change-cwd"
-        className="agent-link-button"
-        type="button"
+        variant="link"
+        size="sm"
+        className="h-auto p-0 text-xs"
         disabled={props.changeCwdDisabled}
         title={props.changeCwdTitle}
         onClick={props.onPickCwd}
       >
         Change
-      </button>
+      </Button>
       <span data-role="session">{props.sessionLabel}</span>
     </>
   );

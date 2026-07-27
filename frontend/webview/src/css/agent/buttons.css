@@ -1,12 +1,12 @@
 /* Shared Agent button skin (Soft Workbench): one recipe for every Agent
- * button. All selectors are wrapped in :where() so specificity stays zero â€”
- * component files keep full control of geometry (padding, size, min-width)
- * and may override the skin locally. Geometry never lives here. */
+ * button not yet migrated to the shadcn Button (CP4 removes areas from these
+ * lists as they swap). All selectors are wrapped in :where() so specificity
+ * stays zero â€?but note the rules are UNLAYERED, so they outrank Tailwind's
+ * layered utilities on migrated components; never leave a swapped region in
+ * these lists. Geometry never lives here. */
 
-:where(.agent-toolbar button,
+:where(.agent-toolbar button:not([data-role="change-cwd"]),
     .agent-decision-actions button,
-    .agent-recovery-actions button,
-    .agent-runtime-actions button,
     .agent-history-retry,
     .agent-composer-decision-stop) {
     border: 1px solid var(--agent-border-strong);
@@ -17,19 +17,15 @@
     font: inherit;
 }
 
-:where(.agent-toolbar button,
+:where(.agent-toolbar button:not([data-role="change-cwd"]),
     .agent-decision-actions button,
-    .agent-recovery-actions button,
-    .agent-runtime-actions button,
     .agent-history-retry,
     .agent-composer-decision-stop):hover:not(:disabled) {
     background: var(--agent-hover);
 }
 
-:where(.agent-toolbar button,
+:where(.agent-toolbar button:not([data-role="change-cwd"]),
     .agent-decision-actions button,
-    .agent-recovery-actions button,
-    .agent-runtime-actions button,
     .agent-history-retry,
     .agent-composer-decision-stop):disabled {
     cursor: default;
