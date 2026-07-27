@@ -279,6 +279,38 @@ test('React elicitation validation errors match legacy on an empty required subm
   assert.deepEqual(react, legacy);
 });
 
+test('onCommitted fires after the DOM commit so auto-scroll reads fresh layout', async () => {
+  const projection = new TimelineProjection();
+  projection.apply('user_message', { text: 'q' }, NAME);
+  const host = document.createElement('div');
+  document.body.appendChild(host);
+  const island = mountTimelineIsland(host);
+  const seen = [];
+  await act(async () => {
+    island.render({
+      rows: projection.snapshot().rows,
+      assistantName: NAME,
+      callbacks: CALLBACKS,
+      onCommitted: () => seen.push(host.querySelectorAll('.agent-message-user').length)
+    });
+  });
+  assert.deepEqual(seen, [1], 'the commit callback observed the committed row');
+  projection.apply('assistant_delta', { text: 'a' }, NAME);
+  await act(async () => {
+    island.render({
+      rows: projection.snapshot().rows,
+      assistantName: NAME,
+      callbacks: CALLBACKS,
+      onCommitted: () => seen.push(host.querySelectorAll('.agent-message-assistant').length)
+    });
+  });
+  assert.deepEqual(seen, [1, 1], 'every commit reports against the fresh DOM');
+  await act(async () => {
+    island.dispose();
+  });
+  host.remove();
+});
+
 test('assistant delta re-renders keep node identity (no remount churn)', async () => {
   const projection = new TimelineProjection();
   projection.apply('user_message', { text: 'q' }, NAME);

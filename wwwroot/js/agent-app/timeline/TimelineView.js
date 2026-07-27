@@ -135,7 +135,12 @@ function renderItem(row, rowsInTurn, assistantName, callbacks) {
             return null;
     }
 }
-export function TimelineView({ rows, assistantName, callbacks }) {
+export function TimelineView({ rows, assistantName, callbacks, onCommitted }) {
+    // After every commit the fresh layout is observable; let the controller
+    // run its pinned auto-scroll then (never against the pre-commit DOM).
+    useLayoutEffect(() => {
+        onCommitted?.();
+    });
     // Group rows by turn id into agent-turn sections. Rows of one turn always
     // collect into a single block anchored at the turn's first row — mirroring
     // legacy, where the turn <section> node persists and later rows keep

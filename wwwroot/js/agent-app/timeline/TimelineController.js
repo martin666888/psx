@@ -290,9 +290,11 @@ export class TimelineController {
         this.timelineIsland.render({
             rows: this.projection.snapshot().rows,
             assistantName: this.assistantName,
-            callbacks: this.timelineCallbacks()
+            callbacks: this.timelineCallbacks(),
+            // Scroll only after React commits: root.render() returns before the
+            // DOM is updated, so an immediate scroll would read stale layout.
+            onCommitted: () => this.scrollToBottom()
         });
-        this.scrollToBottom();
     }
     /** Plain clipboard write (legacy _copyText minus the button feedback). */
     async copyPlainText(text) {

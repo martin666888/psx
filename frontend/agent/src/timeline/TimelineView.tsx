@@ -40,6 +40,12 @@ export interface TimelineViewProps {
   rows: TimelineRow[];
   assistantName: string;
   callbacks: TimelineCallbacks;
+  /**
+   * Fires after each commit is flushed to the DOM (useLayoutEffect), so the
+   * controller can auto-scroll against the fresh layout — root.render() alone
+   * gives no commit guarantee in React 19.
+   */
+  onCommitted?: () => void;
 }
 
 const COPY_ICON = (
@@ -343,7 +349,12 @@ function renderItem(
   }
 }
 
-export function TimelineView({ rows, assistantName, callbacks }: TimelineViewProps): JSX.Element {
+export function TimelineView({ rows, assistantName, callbacks, onCommitted }: TimelineViewProps): JSX.Element {
+  // After every commit the fresh layout is observable; let the controller
+  // run its pinned auto-scroll then (never against the pre-commit DOM).
+  useLayoutEffect(() => {
+    onCommitted?.();
+  });
   // Group rows by turn id into agent-turn sections. Rows of one turn always
   // collect into a single block anchored at the turn's first row — mirroring
   // legacy, where the turn <section> node persists and later rows keep
