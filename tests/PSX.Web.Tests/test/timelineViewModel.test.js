@@ -224,32 +224,44 @@ test('a live mode transition replaces its tool card and is interrupted by run_fi
   assert.equal(transition.statusText, 'This request is no longer active.');
 });
 
-test('historical mode transitions replay as resolved or interrupted cards', () => {
-  const projection = fold([
-    [
-      'agent_thread_loaded',
-      {
-        clear: true,
-        messages: [
-          { role: 'user', text: 'go' },
-          {
-            role: 'mode_transition',
-            requestId: 'mt2',
-            name: 'Proposal',
-            text: '# Doc',
-            decisionOptions: [{ optionId: 'go', name: 'Proceed' }],
-            selectedOptionId: 'go',
-            decisionState: 'resolved'
-          }
-        ]
-      }
-    ]
-  ]);
-  const transition = items(projection).find((item) => item.type === 'decision');
-  assert.equal(transition.historical, true);
-  assert.equal(transition.decisionState, 'disabled');
-  assert.equal(transition.headerState, 'Selected');
-  assert.equal(transition.selectedOptionId, 'go');
+test('historical mode transitions replay with the real C# decisionState values', () => {
+  // C# persists selected / cancelled / interrupted (never "resolved").
+  const replay = (decisionState, selectedOptionId) =>
+    fold([
+      [
+        'agent_thread_loaded',
+        {
+          clear: true,
+          messages: [
+            { role: 'user', text: 'go' },
+            {
+              role: 'mode_transition',
+              requestId: 'mt2',
+              name: 'Proposal',
+              text: '# Doc',
+              decisionOptions: [{ optionId: 'go', name: 'Proceed' }],
+              selectedOptionId,
+              decisionState
+            }
+          ]
+        }
+      ]
+    ]);
+
+  const selected = items(replay('selected', 'go')).find((item) => item.type === 'decision');
+  assert.equal(selected.historical, true);
+  assert.equal(selected.decisionState, 'disabled');
+  assert.equal(selected.headerState, 'Selected');
+  assert.equal(selected.selectedOptionId, 'go');
+  assert.equal(selected.statusText, 'Selected: Proceed');
+
+  const cancelled = items(replay('cancelled', '')).find((item) => item.type === 'decision');
+  assert.equal(cancelled.headerState, 'Cancelled');
+  assert.equal(cancelled.statusText, 'Request cancelled.');
+
+  const interrupted = items(replay('interrupted', '')).find((item) => item.type === 'decision');
+  assert.equal(interrupted.headerState, 'Interrupted');
+  assert.equal(interrupted.statusText, 'This request is no longer active.');
 });
 
 test('normalizeToolState mirrors the legacy status buckets', () => {

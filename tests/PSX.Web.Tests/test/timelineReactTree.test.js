@@ -96,6 +96,63 @@ test('React timeline renders a history replay structurally equivalent to legacy'
   assert.deepEqual(react, legacy);
 });
 
+// Historical mode-transition cards must map the real persisted C# states
+// (selected / cancelled / interrupted — never "resolved").
+const MODE_TRANSITION_REPLAY = [
+  [
+    'agent_thread_loaded',
+    {
+      clear: true,
+      messages: [
+        { role: 'user', text: 'go' },
+        {
+          role: 'mode_transition',
+          requestId: 'mt-selected',
+          toolCallId: 'tc-1',
+          name: 'Plan',
+          text: '# Proposal A',
+          decisionOptions: [
+            { optionId: 'approve', name: 'Approve', kind: 'allow_once' },
+            { optionId: 'reject', name: 'Reject', kind: 'reject_once' }
+          ],
+          selectedOptionId: 'approve',
+          decisionState: 'selected'
+        },
+        {
+          role: 'mode_transition',
+          requestId: 'mt-cancelled',
+          name: 'Plan',
+          text: '# Proposal B',
+          decisionOptions: [{ optionId: 'approve', name: 'Approve', kind: 'allow_once' }],
+          selectedOptionId: '',
+          decisionState: 'cancelled'
+        },
+        {
+          role: 'mode_transition',
+          requestId: 'mt-interrupted',
+          name: 'Plan',
+          text: '# Proposal C',
+          decisionOptions: [{ optionId: 'approve', name: 'Approve', kind: 'allow_once' }],
+          selectedOptionId: '',
+          decisionState: 'interrupted'
+        }
+      ]
+    }
+  ]
+];
+
+test('React historical mode transitions render selected/cancelled/interrupted like legacy', async () => {
+  const legacy = await legacyThread(MODE_TRANSITION_REPLAY);
+  const react = await reactThread(MODE_TRANSITION_REPLAY);
+  assert.deepEqual(react, legacy);
+  // Belt and braces: the header labels must be the real-state mapping, not
+  // the removed 'resolved' check.
+  const states = JSON.stringify(legacy);
+  for (const label of ['Selected', 'Cancelled', 'Interrupted']) {
+    assert.ok(states.includes(label), 'legacy snapshot contains the ' + label + ' header');
+  }
+});
+
 test('React timeline renders the empty-thread ready row and agent_cleared like legacy', async () => {
   const events = [
     ['agent_thread_loaded', { clear: true, messages: [] }],

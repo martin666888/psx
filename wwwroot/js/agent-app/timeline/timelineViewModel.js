@@ -19,6 +19,26 @@ function asString(value) {
 function asMessageArray(value) {
     return Array.isArray(value) ? value : [];
 }
+// Faithful ports of _modeTransitionStateLabel / _modeTransitionStatusText for
+// the non-active states C# actually persists: selected / cancelled /
+// interrupted (ModeTransitionSnapshotMerger folds pending/sending into
+// interrupted on save).
+function modeTransitionHeaderLabel(state) {
+    if (state === 'selected')
+        return 'Selected';
+    if (state === 'cancelled')
+        return 'Cancelled';
+    return 'Interrupted';
+}
+function modeTransitionStatusText(state, options, selectedOptionId) {
+    if (state === 'selected') {
+        const selected = options.find((option) => option.optionId === selectedOptionId);
+        return selected ? 'Selected: ' + selected.name : 'Selection recorded.';
+    }
+    if (state === 'cancelled')
+        return 'Request cancelled.';
+    return 'This request is no longer active.';
+}
 // --- Projection --------------------------------------------------------------
 /**
  * Controller-local projection: apply() folds one event, returning true when the
@@ -469,6 +489,7 @@ export class TimelineProjection {
             selectedOptionName: '',
             statusText: '',
             headerState: '',
+            toolCallId: '',
             historical: false,
             schema: null,
             elicitationMessage: ''
@@ -489,6 +510,7 @@ export class TimelineProjection {
             selectedOptionName: '',
             statusText: '',
             headerState: '',
+            toolCallId: '',
             historical: false,
             schema: raw,
             elicitationMessage: asString(raw.message) || 'Provide the requested information to continue.'
@@ -504,6 +526,15 @@ export class TimelineProjection {
         }
         if (!this.currentTurnId && historical)
             this.startTurn();
+        // C# persists decisionState as selected / cancelled / interrupted
+        // (ModeTransitionSnapshotMerger folds pending/sending into interrupted).
+        const storedState = asString(raw.decisionState) || (historical ? 'interrupted' : 'pending');
+        const options = asMessageArray(raw.options).map((option) => ({
+            optionId: asString(option.optionId),
+            name: asString(option.name) || asString(option.optionId) || 'Select',
+            kind: asString(option.kind)
+        }));
+        const selectedOptionId = historical ? asString(raw.selectedOptionId) : '';
         this.append({
             type: 'decision',
             id: this.nextId('dec'),
@@ -511,21 +542,14 @@ export class TimelineProjection {
             requestId: asString(raw.requestId),
             title: asString(raw.title) || asString(raw.name) || 'Review the proposed direction',
             text: asString(raw.documentText) || asString(raw.text),
-            options: asMessageArray(raw.options).map((option) => ({
-                optionId: asString(option.optionId),
-                name: asString(option.name) || asString(option.optionId) || 'Select',
-                kind: asString(option.kind)
-            })),
+            options,
             decisionState: historical ? 'disabled' : 'active',
             collapsed: false,
-            selectedOptionId: historical ? asString(raw.selectedOptionId) : '',
+            selectedOptionId,
             selectedOptionName: '',
-            statusText: '',
-            headerState: historical
-                ? asString(raw.decisionState) === 'resolved'
-                    ? 'Selected'
-                    : 'Interrupted'
-                : 'Pending',
+            statusText: historical ? modeTransitionStatusText(storedState, options, selectedOptionId) : '',
+            headerState: historical ? modeTransitionHeaderLabel(storedState) : 'Pending',
+            toolCallId: asString(raw.toolCallId),
             historical,
             schema: null,
             elicitationMessage: ''

@@ -5,7 +5,8 @@
 
 const ATTRS = [
   'data-state', 'data-run-id', 'data-tool-id', 'data-request-id', 'data-option-id',
-  'data-option-kind', 'data-raw', 'data-decision-state', 'aria-label', 'aria-live',
+  'data-option-kind', 'data-raw', 'data-decision-state', 'data-tool-call-id',
+  'aria-label', 'aria-live',
   'aria-busy', 'aria-pressed', 'aria-atomic', 'role', 'title', 'type'
 ];
 

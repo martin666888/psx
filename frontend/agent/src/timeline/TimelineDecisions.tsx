@@ -148,6 +148,7 @@ function ModeTransitionCard({
       className="agent-mode-transition"
       data-decision-state={pending ? 'active' : 'disabled'}
       data-request-id={item.requestId || undefined}
+      data-tool-call-id={item.toolCallId || undefined}
     >
       <header className="agent-mode-transition-header">
         <div className="agent-mode-transition-title">{item.title}</div>
