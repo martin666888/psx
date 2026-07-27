@@ -1,64 +1,18 @@
-// reactIsland.tsx — shared mounting tool for independent React roots.
+// reactIsland.tsx — bridges the imperative island contract to the single
+// Agent React root (CP3a).
 //
-// Every call creates its own root. Sharing this helper standardizes commit
-// diagnostics and failure containment without coupling island lifecycles.
+// Controllers keep calling mountReactIsland exactly as before; instead of
+// creating a root per island, each mount registers an entry with
+// AgentAppRoot, which renders one portal per entry inside ONE React tree.
+// Error boundaries and commit diagnostics live in AgentAppRoot's per-entry
+// frame, so this module only adapts the IslandHandle lifecycle.
 
-import {
-  Component,
-  useLayoutEffect,
-  type ErrorInfo,
-  type JSX,
-  type ReactNode
-} from 'react';
-import { createRoot, type Root } from 'react-dom/client';
+import type { ReactNode } from 'react';
 import type {
   IslandFailureReporter,
   IslandHandle
 } from './islandHost.js';
-
-interface BoundaryProps {
-  children: ReactNode;
-  host: HTMLElement;
-  reportFailure: IslandFailureReporter;
-}
-
-interface BoundaryState {
-  failed: boolean;
-}
-
-class IslandErrorBoundary extends Component<BoundaryProps, BoundaryState> {
-  override state: BoundaryState = { failed: false };
-
-  static getDerivedStateFromError(): BoundaryState {
-    return { failed: true };
-  }
-
-  override componentDidCatch(error: Error, _info: ErrorInfo): void {
-    this.props.reportFailure(error, 'render');
-  }
-
-  override render(): ReactNode {
-    if (this.state.failed) return null;
-    return this.props.children;
-  }
-}
-
-function CommitMarker({ host }: { host: HTMLElement }): null {
-  useLayoutEffect(() => {
-    host.dataset.islandState = 'mounted';
-    host.removeAttribute('aria-busy');
-  });
-  return null;
-}
-
-function IslandFrame(props: BoundaryProps): JSX.Element {
-  return (
-    <IslandErrorBoundary host={props.host} reportFailure={props.reportFailure}>
-      <CommitMarker host={props.host} />
-      {props.children}
-    </IslandErrorBoundary>
-  );
-}
+import { registerIsland } from './AgentAppRoot.js';
 
 export function mountReactIsland<TProps>(
   name: string,
@@ -67,28 +21,17 @@ export function mountReactIsland<TProps>(
   renderElement: (props: TProps) => ReactNode
 ): IslandHandle<TProps> {
   let disposed = false;
-  const root: Root = createRoot(host, {
-    onUncaughtError(error): void {
-      reportFailure(error, 'render');
-    },
-    onRecoverableError(error): void {
-      console.warn('[agent] React island "' + name + '" recovered from an error.', error);
-    }
-  });
+  const registered = registerIsland(name, host, reportFailure);
 
   return {
     render(props: TProps): void {
       if (disposed) return;
-      root.render(
-        <IslandFrame host={host} reportFailure={reportFailure}>
-          {renderElement(props)}
-        </IslandFrame>
-      );
+      registered.setElement(renderElement(props));
     },
     dispose(): void {
       if (disposed) return;
       disposed = true;
-      root.unmount();
+      registered.remove();
     }
   };
 }

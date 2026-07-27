@@ -38,6 +38,14 @@ interface WorkspaceEntry {
   panel: HTMLElement;
   bridge: AgentBridgePort;
   focusTimer: ReturnType<typeof setTimeout> | null;
+  /** keep-alive (CP3a): view state saved on hide, restored on show. The panel
+   * DOM itself survives tab switches (hidden, never unmounted), but a
+   * display:none subtree loses scroll offsets and focus, so those are saved
+   * explicitly. The composer draft lives in the kept-alive textarea. */
+  savedScrollTop: number;
+  savedAtBottom: boolean;
+  savedFocusRole: string | null;
+  savedSelection: { start: number; end: number } | null;
 }
 
 export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
@@ -75,7 +83,15 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
     clear?.addEventListener('click', () => bridge.sendAgentCommand('clear'));
 
     if (this.settings) this.applyGlobalAppearance(this.settings);
-    this.workspaces.set(id, { panel, bridge, focusTimer: null });
+    this.workspaces.set(id, {
+      panel,
+      bridge,
+      focusTimer: null,
+      savedScrollTop: 0,
+      savedAtBottom: true,
+      savedFocusRole: null,
+      savedSelection: null
+    });
     this.setPanelVisible(panel, false);
     // Ask the host for the initial workspace state (legacy createAgent tail).
     bridge.sendAgentCommand('state');
@@ -140,21 +156,82 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
   // --- internals -----------------------------------------------------------
 
   private setPanelVisible(panel: HTMLElement, visible: boolean): void {
-    panel.hidden = !visible;
     const entry = this.entryForPanel(panel);
+    if (!visible && entry && !panel.hidden) this.saveViewState(entry);
+    panel.hidden = !visible;
     if (entry) this.clearFocusTimer(entry);
-    if (visible) {
-      // Legacy focused the input on show (gated on runtime readiness). The
-      // composer disables the input until the runtime is ready / while
-      // restoring / for transcripts, so focusing a disabled input is a no-op.
-      const input = panel.querySelector<HTMLTextAreaElement>('[data-role="input"]');
-      if (entry) {
-        entry.focusTimer = setTimeout(() => {
-          entry.focusTimer = null;
-          if (panel.isConnected && input && !input.disabled) input.focus();
-        }, 0);
+    if (visible && entry) {
+      this.restoreViewState(entry);
+    }
+  }
+
+  /** keep-alive: capture the thread scroll anchor and the focused control
+   * before the panel goes display:none (both are lost while hidden). */
+  private saveViewState(entry: WorkspaceEntry): void {
+    const thread = entry.panel.querySelector<HTMLElement>('[data-role="thread"]');
+    if (thread) {
+      entry.savedScrollTop = thread.scrollTop;
+      // Within one pixel of the end counts as pinned (fractional scroll).
+      entry.savedAtBottom =
+        thread.scrollTop + thread.clientHeight >= thread.scrollHeight - 1;
+    }
+
+    const active = entry.panel.ownerDocument.activeElement;
+    entry.savedFocusRole = null;
+    entry.savedSelection = null;
+    if (active instanceof HTMLElement && entry.panel.contains(active)) {
+      entry.savedFocusRole = active.dataset.role ?? null;
+      if (active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement) {
+        const start = active.selectionStart;
+        const end = active.selectionEnd;
+        if (typeof start === 'number' && typeof end === 'number') {
+          entry.savedSelection = { start, end };
+        }
       }
     }
+  }
+
+  private restoreViewState(entry: WorkspaceEntry): void {
+    const panel = entry.panel;
+    const thread = panel.querySelector<HTMLElement>('[data-role="thread"]');
+    if (thread) {
+      // A workspace pinned to the newest message stays pinned even when new
+      // content streamed in while it was hidden; otherwise the exact reading
+      // position is restored.
+      thread.scrollTop = entry.savedAtBottom
+        ? thread.scrollHeight
+        : entry.savedScrollTop;
+    }
+
+    // Legacy focused the input on show (gated on runtime readiness). The
+    // composer disables the input until the runtime is ready / while
+    // restoring / for transcripts, so focusing a disabled input is a no-op.
+    const focusRole = entry.savedFocusRole ?? 'input';
+    const selection = entry.savedSelection;
+    entry.focusTimer = setTimeout(() => {
+      entry.focusTimer = null;
+      if (!panel.isConnected) return;
+      const selector = '[data-role="' + focusRole + '"]';
+      let target = panel.querySelector<HTMLElement>(selector);
+      if (!target || target.hidden) {
+        target = panel.querySelector<HTMLElement>('[data-role="input"]');
+      }
+      if (!target) return;
+      if ((target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement) && target.disabled) {
+        return;
+      }
+      target.focus();
+      if (
+        selection &&
+        (target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement)
+      ) {
+        try {
+          target.setSelectionRange(selection.start, selection.end);
+        } catch {
+          /* input types without selection support */
+        }
+      }
+    }, 0);
   }
 
   private entryForPanel(panel: HTMLElement): WorkspaceEntry | undefined {

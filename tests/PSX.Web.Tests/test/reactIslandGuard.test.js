@@ -65,6 +65,7 @@ describe('lazy React-island loading guard', () => {
     'timeline/TimelineView.tsx',
     'timeline/TimelineDecisions.tsx',
     'core/reactIsland.tsx',
+    'core/AgentAppRoot.tsx',
     'ui/Psx.tsx'
   ];
 
