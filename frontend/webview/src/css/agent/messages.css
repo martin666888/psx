@@ -17,6 +17,13 @@
     white-space: normal;
 }
 
+/* The collapsible body is the positioning context for the collapsed-state
+   toggle below; without it the absolute toggle would resolve against the
+   page and escape the bubble. */
+.agent-message-collapsible {
+    position: relative;
+}
+
 .agent-message-collapsed .agent-message-content {
     position: relative;
     max-height: var(--agent-user-message-collapsed-height);
@@ -24,6 +31,9 @@
     padding-bottom: 34px;
 }
 
+/* Fade the clipped text out into the user-bubble background (--secondary,
+   see MessageContent's group-[.is-user]:bg-secondary) instead of covering
+   it with a hard line. */
 .agent-message-collapsed .agent-message-content::after {
     content: "";
     position: absolute;
@@ -32,8 +42,7 @@
     bottom: 0;
     height: 48px;
     pointer-events: none;
-    border-top: 1px solid var(--border);
-    background: var(--secondary);
+    background: linear-gradient(to bottom, transparent, var(--secondary));
 }
 
 .agent-message-collapse-toggle {
@@ -53,9 +62,10 @@
 
 .agent-message-collapsed .agent-message-collapse-toggle {
     position: absolute;
-    left: 8px;
+    left: 50%;
     bottom: 6px;
     margin: 0;
+    transform: translateX(-50%);
 }
 
 .agent-message-collapse-toggle:hover {

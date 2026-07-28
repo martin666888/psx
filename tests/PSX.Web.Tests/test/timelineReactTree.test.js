@@ -2,6 +2,9 @@
 
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { act } from 'react';
 import { appModule, installAgentRuntime } from './agentHarness.js';
 
@@ -368,5 +371,79 @@ test('user messages over sixteen lines can be expanded and collapsed accessibly'
   } finally {
     if (original) Object.defineProperty(HTMLElement.prototype, 'scrollHeight', original);
     else delete HTMLElement.prototype.scrollHeight;
+  }
+});
+
+test('collapsed toggle stays anchored inside the message bubble with a gradient fade', async () => {
+  installAgentRuntime();
+  // Load the SHIPPED stylesheet so this test breaks when the positioning
+  // contract in messages.css regresses (the toggle previously escaped to the
+  // page corner because no ancestor inside the bubble was positioned).
+  const cssPath = path.join(
+    path.dirname(fileURLToPath(import.meta.url)),
+    '..', '..', '..', 'frontend', 'webview', 'src', 'css', 'agent', 'messages.css'
+  );
+  const css = readFileSync(cssPath, 'utf8');
+  const styleTag = document.createElement('style');
+  styleTag.textContent = css;
+  document.head.appendChild(styleTag);
+
+  const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollHeight');
+  Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
+    configurable: true,
+    get() {
+      return this.classList?.contains('agent-message-content') ? 400 : 0;
+    }
+  });
+  try {
+    const projection = new TimelineProjection();
+    projection.apply(
+      'user_message',
+      { text: Array.from({ length: 17 }, (_, i) => 'line ' + i).join('\n') },
+      NAME
+    );
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const island = mountTimelineIsland(host, (error) => {
+      throw error;
+    });
+    await act(async () => {
+      island.render({
+        rows: projection.snapshot().rows,
+        assistantName: NAME,
+        callbacks: BASE_CALLBACKS
+      });
+    });
+    const button = host.querySelector('.agent-message-collapse-toggle');
+    const body = host.querySelector('.agent-message-body');
+    assert.ok(body.classList.contains('agent-message-collapsed'));
+    assert.ok(
+      body.classList.contains('agent-message-collapsible'),
+      'collapsible body must carry the class that establishes the positioning context'
+    );
+    assert.equal(window.getComputedStyle(button).position, 'absolute');
+    // The nearest positioned ancestor of the absolute toggle must be the
+    // message body itself, never anything outside the bubble.
+    let anchor = button.parentElement;
+    while (anchor && window.getComputedStyle(anchor).position === 'static') {
+      anchor = anchor.parentElement;
+    }
+    assert.ok(anchor, 'toggle must have a positioned ancestor');
+    assert.ok(
+      anchor.classList.contains('agent-message-body'),
+      'toggle must anchor to the message body, not an outer container'
+    );
+    // Fade contract: gradient into the bubble background, no hard divider.
+    const afterRule = css
+      .split('}')
+      .find((rule) => rule.includes('.agent-message-collapsed .agent-message-content::after'));
+    assert.ok(afterRule, 'collapsed content ::after mask rule must exist');
+    assert.match(afterRule, /linear-gradient\(to bottom,\s*transparent,\s*var\(--secondary\)\)/);
+    assert.ok(!afterRule.includes('border-top'), 'mask must not draw a divider line');
+    await act(async () => island.dispose());
+  } finally {
+    if (original) Object.defineProperty(HTMLElement.prototype, 'scrollHeight', original);
+    else delete HTMLElement.prototype.scrollHeight;
+    styleTag.remove();
   }
 });
