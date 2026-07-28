@@ -83,7 +83,6 @@ export type AgentWorkspaceEventType =
   | 'agent_mode_current'
   | 'agent_attachment_uploaded'
   | 'agent_attachment_failed'
-  | 'agent_cleared'
   | 'command_result'
   | 'user_message'
   | 'run_finished'
@@ -153,7 +152,6 @@ const AGENT_WORKSPACE_EVENT_TYPES: ReadonlySet<string> = new Set<AgentWorkspaceE
   'agent_mode_current',
   'agent_attachment_uploaded',
   'agent_attachment_failed',
-  'agent_cleared',
   'command_result',
   'user_message',
   'run_finished',

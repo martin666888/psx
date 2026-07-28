@@ -650,7 +650,6 @@ internal sealed class BarrierWorkspaceSession(
     public string WorkingDirectory => thread.Cwd;
     public bool IsDraft => true;
     public Task SubmitMessageAsync(string text, IReadOnlyList<string>? attachmentIds = null) => Task.CompletedTask;
-    public Task ClearAsync() => Task.CompletedTask;
     public async Task CancelAsync()
     {
         cancellationStarted();

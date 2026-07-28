@@ -273,13 +273,6 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         await StartAcpRunAsync(trimmed, attachments).ConfigureAwait(false);
     }
 
-    public async Task ClearAsync()
-    {
-        _currentThread.Messages.Clear();
-        SaveCurrentThread();
-        await _bridgeService.SendEventAsync(new { type = "agent_cleared" }).ConfigureAwait(false);
-    }
-
     public async Task CancelAsync()
     {
         await CancelRunAsync(notify: true).ConfigureAwait(false);
@@ -768,9 +761,6 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             case "cancel_runtime_install":
                 await CancelRuntimeInstallAsync().ConfigureAwait(false);
                 break;
-            case "clear":
-                await ClearAsync().ConfigureAwait(false);
-                break;
             case "cwd":
                 if (string.IsNullOrWhiteSpace(e.Value))
                     await _bridgeService.SendEventAsync(new { type = "command_result", text = $"Current working directory: {_workingDirectory}" }).ConfigureAwait(false);
@@ -999,7 +989,6 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
         task = command switch
         {
-            "/clear" => ClearAsync(),
             "/cwd" => string.IsNullOrWhiteSpace(value)
                 ? _bridgeService.SendEventAsync(new { type = "command_result", text = $"Current working directory: {_workingDirectory}" })
                 : ChangeDirectoryAsync(value),
@@ -1011,7 +1000,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             _ => Task.CompletedTask
         };
 
-        return command is "/clear" or "/cwd" or "/terminal" or "/stop" or "/history" or "/delete" or "/help";
+        return command is "/cwd" or "/terminal" or "/stop" or "/history" or "/delete" or "/help";
     }
 
     private static bool TryParseLeadingSlashCommand(
@@ -1089,7 +1078,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         return _bridgeService.SendEventAsync(new
         {
             type = "command_result",
-            text = $"PSX commands: /clear, /cwd, /cwd <path>, /terminal, /stop, /history, /delete, /help. ACP commands are sent through {_provider.Descriptor.AssistantName} Agent."
+            text = $"PSX commands: /cwd, /cwd <path>, /terminal, /stop, /history, /delete, /help. ACP commands are sent through {_provider.Descriptor.AssistantName} Agent."
         });
     }
 

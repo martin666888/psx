@@ -1,8 +1,8 @@
 // WorkspaceToolbarView.tsx — the single React view for the workspace toolbar.
 //
 // One island (host: [data-role="toolbar-host"]) renders the history toggle,
-// the session meta line, the plan toggle (with unread dot) and the clear
-// button. The WorkspaceToolbarController is the only setElement writer; the
+// the session meta line and the plan toggle (with unread dot). The
+// WorkspaceToolbarController is the only setElement writer; the
 // Session/History/Plan controllers push their slices through it, so each
 // state kind keeps exactly one authoritative owner.
 
@@ -29,7 +29,6 @@ export interface WorkspaceToolbarProps {
     onToggle(): void;
     toggleRef: RefObject<HTMLButtonElement | null>;
   };
-  onClear(): void;
 }
 
 function HistoryIcon(): JSX.Element {
@@ -117,17 +116,6 @@ export function WorkspaceToolbar(props: WorkspaceToolbarProps): JSX.Element {
           </TooltipTrigger>
           <TooltipContent>{planLabel}</TooltipContent>
         </Tooltip>
-        <Button
-          data-role="clear"
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-7 border border-input text-xs"
-          title="Clear thread"
-          onClick={props.onClear}
-        >
-          Clear
-        </Button>
       </div>
     </TooltipProvider>
   );

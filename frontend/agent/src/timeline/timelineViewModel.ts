@@ -219,10 +219,6 @@ export class TimelineProjection {
       case 'agent_thread_loaded':
         this.loadThread(raw, assistantName);
         return true;
-      case 'agent_cleared':
-        this.reset();
-        this.appendSystem('Thread UI cleared. ' + assistantName + ' session context is unchanged.');
-        return true;
       case 'command_result':
         this.appendSystem(asString(raw.text));
         return true;

@@ -69,23 +69,6 @@ test('reducer: plan_update with plain text falls back to a text-only active plan
   assert.equal(state.inspector.plan.fallbackText, 'Freeform plan text');
 });
 
-test('reducer: agent_cleared resets an active plan and is a no-op when already empty', () => {
-  let state = createInitialWorkspaceState(WS);
-  const empty = state.inspector.plan;
-  // No-op path returns the identical state ref.
-  const same = reduceWorkspaceState(state, workspaceEvent({ type: 'agent_cleared' }));
-  assert.equal(same, state);
-
-  state = reduceWorkspaceState(state, workspaceEvent({
-    type: 'plan_update',
-    entries: [{ content: 'Active', status: 'pending' }]
-  }));
-  assert.equal(state.inspector.plan.active, true);
-  state = reduceWorkspaceState(state, workspaceEvent({ type: 'agent_cleared' }));
-  assert.equal(state.inspector.plan.active, false);
-  assert.deepEqual(state.inspector.plan, empty);
-});
-
 test('reducer: agent_thread_loaded folds plan-role messages, last one wins', () => {
   let state = createInitialWorkspaceState(WS);
   state = reduceWorkspaceState(state, workspaceEvent({

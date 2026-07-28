@@ -195,18 +195,6 @@ test('replay keeps tool cards when assistant text interleaves inside the same ru
   assert.deepEqual(allCards, ['t1', 't2', 't3'], 'no tool card is silently dropped');
 });
 
-test('agent_cleared resets the model and appends the cleared system row', () => {
-  const projection = fold([
-    ['user_message', { text: 'q' }],
-    ['assistant_delta', { text: 'a' }],
-    ['agent_cleared', {}]
-  ]);
-  const list = items(projection);
-  assert.equal(list.length, 1);
-  assert.equal(list[0].type, 'system');
-  assert.match(list[0].text, /Thread UI cleared/);
-});
-
 test('permission and question requests fold into decision items with default options', () => {
   const projection = fold([
     ['user_message', { text: 'q' }],

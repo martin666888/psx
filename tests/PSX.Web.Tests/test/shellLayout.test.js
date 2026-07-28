@@ -49,7 +49,7 @@ test('shell: the context-cards overlay sits outside the single-column workspace 
 
   // Agent chrome buttons share the soft border-input token; the raw `border`
   // color reads darker than inputs/selects and must not come back.
-  for (const name of ['history-toggle', 'plan-toggle', 'clear']) {
+  for (const name of ['history-toggle', 'plan-toggle']) {
     assert.ok(
       role(panel, name).classList.contains('border-input'),
       name + ' must use the soft border-input token'

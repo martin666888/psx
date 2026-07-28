@@ -122,8 +122,7 @@ export class WorkspaceToolbarController implements FeatureController {
         unread: this.planUnread,
         onToggle: () => this.onPlanToggle(),
         toggleRef: this.planToggleRef
-      },
-      onClear: () => this.host.bridgeFor(this.workspaceId)?.sendAgentCommand('clear')
+      }
     });
   }
 }

@@ -209,7 +209,6 @@ interface AgentGenericEvent extends AgentWorkspaceEventBase {
         | 'agent_mode_current'
         | 'agent_attachment_uploaded'
         | 'agent_attachment_failed'
-        | 'agent_cleared'
         | 'command_result'
         | 'user_message'
         | 'run_finished'

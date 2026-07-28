@@ -67,7 +67,7 @@ test('plan entries, document mode and empty state render in place', async () => 
   await settle(
     app,
     () => !!host.querySelector('.agent-plan-empty'),
-    () => app.handle({ type: 'agent_cleared', workspaceId: WS })
+    () => app.handle({ type: 'agent_thread_loaded', workspaceId: WS, clear: true, messages: [] })
   );
   assert.match(host.querySelector('.agent-plan-empty').textContent, /No active plan/);
 });

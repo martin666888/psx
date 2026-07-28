@@ -4,7 +4,7 @@
 // (data-role="context-cards") inside every workspace panel; future cards will
 // reuse the same host, but there is deliberately no registry abstraction yet.
 // Plan entries render purely from the reduced AgentWorkspaceState (the
-// reducer folds plan_update / agent_thread_loaded / agent_cleared), and the
+// reducer folds plan_update / agent_thread_loaded), and the
 // panel DOM survives Tab hide/show untouched.
 //
 // Visibility is two-state (visible / hidden), workspace-local runtime state
@@ -89,7 +89,6 @@ export class PlanController implements FeatureController {
     switch (event.type) {
       case 'plan_update':
       case 'agent_thread_loaded':
-      case 'agent_cleared':
         this.applyPlan(state);
         break;
       default:

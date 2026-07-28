@@ -197,10 +197,6 @@ export class ComposerController implements FeatureController {
       case 'agent_attachment_failed':
         this.handleAttachmentFailed(raw);
         break;
-      case 'agent_cleared':
-        this.clearPendingAttachments();
-        this.projectDraft('');
-        break;
       case 'user_message':
         this.lastSubmittedDraft = null;
         break;
@@ -282,7 +278,6 @@ export class ComposerController implements FeatureController {
   private rebuildPsxCommands(): void {
     const assistant = this.assistantName;
     this.psxCommands = [
-      { source: 'PSX', name: '/clear', label: 'Clear visible messages only', command: 'clear' },
       { source: 'PSX', name: '/cwd', label: 'Show current working directory', command: 'cwd' },
       { source: 'PSX', name: '/cwd <path>', label: 'Change this draft Agent working directory', fill: '/cwd ' },
       { source: 'PSX', name: '/terminal', label: 'Open raw ' + assistant + ' terminal here', command: 'terminal' },

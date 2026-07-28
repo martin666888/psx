@@ -312,11 +312,6 @@ export function reduceWorkspaceState(
       return { ...state, inspector: { ...state.inspector, plan } };
     }
 
-    case 'agent_cleared': {
-      if (!state.inspector.plan.active) return state;
-      return { ...state, inspector: { ...state.inspector, plan: EMPTY_PLAN } };
-    }
-
     case 'agent_commands': {
       return {
         ...state,

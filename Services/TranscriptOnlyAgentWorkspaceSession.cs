@@ -37,17 +37,6 @@ internal sealed class TranscriptOnlyAgentWorkspaceSession : IAgentWorkspaceSessi
     public Task SubmitMessageAsync(string text, IReadOnlyList<string>? attachmentIds = null) =>
         SendReadOnlyErrorAsync();
 
-    public async Task ClearAsync()
-    {
-        if (_disposed)
-            return;
-
-        _thread.Messages.Clear();
-        _threadStore.SaveThread(_thread);
-        await _bridge.SendEventAsync(new { type = "agent_cleared" }).ConfigureAwait(false);
-        await PublishStateAsync().ConfigureAwait(false);
-    }
-
     public Task CancelAsync() => Task.CompletedTask;
 
     public Task ChangeDirectoryAsync(string path) => SendReadOnlyErrorAsync();
@@ -142,9 +131,6 @@ internal sealed class TranscriptOnlyAgentWorkspaceSession : IAgentWorkspaceSessi
             case "history":
                 await ListThreadsAsync().ConfigureAwait(false);
                 break;
-            case "clear":
-                await ClearAsync().ConfigureAwait(false);
-                break;
             case "delete":
                 _threadStore.DeleteThread(_thread.ThreadId);
                 await _bridge.SendEventAsync(new { type = "command_result", text = "Deleted thread." }).ConfigureAwait(false);
@@ -171,7 +157,7 @@ internal sealed class TranscriptOnlyAgentWorkspaceSession : IAgentWorkspaceSessi
                 await _bridge.SendEventAsync(new
                 {
                     type = "command_result",
-                    text = "This transcript is read-only. You can use /history, /cwd, /clear, or /delete. Create a new Agent tab to continue with a provider."
+                    text = "This transcript is read-only. You can use /history, /cwd, or /delete. Create a new Agent tab to continue with a provider."
                 }).ConfigureAwait(false);
                 break;
             default:

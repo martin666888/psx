@@ -44,12 +44,12 @@ test('canonicalizes built-in and advertised ACP commands on submit', async () =>
     commands: [{ name: '/review', description: 'Review' }]
   });
 
-  setDraft(panel, '/CLEAR');
+  setDraft(panel, '/HELP');
   let before = posted.length;
   role(panel, 'send').click();
   await waitFor(() => posted.length > before);
   assert.equal(posted.at(-1).type, 'agent_submit');
-  assert.equal(posted.at(-1).text, '/clear');
+  assert.equal(posted.at(-1).text, '/help');
 
   setDraft(panel, '/REVIEW src');
   before = posted.length;

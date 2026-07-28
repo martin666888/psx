@@ -450,7 +450,7 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
             WorkspaceChanged?.Invoke(this, new AgentWorkspaceEventArgs { Workspace = entry.Descriptor });
         }
 
-        if (type is "user_message" or "run_finished" or "run_failed" or "agent_cleared")
+        if (type is "user_message" or "run_finished" or "run_failed")
             _historyCatalog.Invalidate();
 
         return true;

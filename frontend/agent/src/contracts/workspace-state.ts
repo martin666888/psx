@@ -41,7 +41,7 @@ export interface InspectorPlanEntry {
   priority: string;
 }
 
-/** Plan panel state folded from plan_update / agent_thread_loaded / agent_cleared. */
+/** Plan panel state folded from plan_update / agent_thread_loaded. */
 export interface WorkspacePlanState {
   // false renders the "No active plan" empty state; true renders entries/fallback.
   active: boolean;
@@ -53,7 +53,7 @@ export interface WorkspacePlanState {
 /** A saved thread row rendered in the History list lives in the global
  * AgentHistoryState (contracts/agent-history.ts), not per workspace. */
 
-/** Plan data folded from plan_update / agent_thread_loaded / agent_cleared.
+/** Plan data folded from plan_update / agent_thread_loaded.
  * The transient loading/empty-initial display states are controller-local UI,
  * not host state. */
 export interface WorkspaceInspectorState {

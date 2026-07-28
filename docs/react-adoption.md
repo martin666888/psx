@@ -297,7 +297,7 @@ existence, and re-verified in a real browser against the rebuilt ZIP.
   equivalence vs legacy: streaming, replay, run_failed,
   permission/question states, elicitation forms + validation, node
   identity), `reactTimelineApp` (full-app react mode: streaming/replay
-  thread equivalence, agent_cleared, byte-identical permission and
+  thread equivalence, byte-identical permission and
   mode-transition responses, workspace switch/hide/restore with node
   identity, mid-stream close teardown).
 - Group C (fallback): `reactUiMode` — injected import failure ⇒ permanent

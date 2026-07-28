@@ -64,7 +64,6 @@ export const BridgeEventType = Object.freeze({
     AgentModeCurrent: 'agent_mode_current',
     AgentAttachmentUploaded: 'agent_attachment_uploaded',
     AgentAttachmentFailed: 'agent_attachment_failed',
-    AgentCleared: 'agent_cleared',
     CommandResult: 'command_result',
     UserMessage: 'user_message',
     RunFinished: 'run_finished',

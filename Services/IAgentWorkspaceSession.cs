@@ -8,7 +8,6 @@ public interface IAgentWorkspaceSession : IDisposable
     string WorkingDirectory { get; }
     bool IsDraft { get; }
     Task SubmitMessageAsync(string text, IReadOnlyList<string>? attachmentIds = null);
-    Task ClearAsync();
     Task CancelAsync();
     Task ChangeDirectoryAsync(string path);
     Task ListThreadsAsync();
