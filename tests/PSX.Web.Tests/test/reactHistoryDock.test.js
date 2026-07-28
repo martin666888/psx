@@ -84,6 +84,10 @@ test('loading, grouped list and empty states render semantically', async () => {
   assert.equal(content().querySelectorAll('.agent-history-item').length, 3);
   // The island host is the dock host element the portal renders into.
   assert.equal(document.querySelector('[data-role="history-dock-host"]').dataset.islandState, 'mounted');
+  assert.ok(
+    document.querySelector('[data-role="history-refresh"]').classList.contains('border-input'),
+    'refresh button must use the soft border-input token like the search/select inputs'
+  );
 
   await settle(
     () => {

@@ -171,7 +171,7 @@ export function HistoryDockView(props: HistoryDockViewProps): JSX.Element {
         <Button
           variant="outline"
           size="icon"
-          className="agent-history-refresh size-8 shrink-0"
+          className="agent-history-refresh size-8 shrink-0 border-input"
           data-role="history-refresh"
           title="Refresh history"
           aria-label="Refresh history"

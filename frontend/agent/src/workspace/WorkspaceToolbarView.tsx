@@ -76,7 +76,7 @@ export function WorkspaceToolbar(props: WorkspaceToolbarProps): JSX.Element {
             variant="ghost"
             size="icon"
             className={
-              'agent-icon-toggle agent-history-toggle size-7 border' +
+              'agent-icon-toggle agent-history-toggle size-7 border border-input' +
               (props.history.open ? '' : ' text-muted-foreground')
             }
             aria-label="Toggle Agent history"
@@ -99,7 +99,7 @@ export function WorkspaceToolbar(props: WorkspaceToolbarProps): JSX.Element {
               variant="ghost"
               size="icon"
               className={
-                'agent-icon-toggle agent-plan-toggle relative size-7 border' +
+                'agent-icon-toggle agent-plan-toggle relative size-7 border border-input' +
                 (props.plan.visible ? '' : ' text-muted-foreground')
               }
               aria-label={planLabel}
@@ -122,7 +122,7 @@ export function WorkspaceToolbar(props: WorkspaceToolbarProps): JSX.Element {
           type="button"
           variant="ghost"
           size="sm"
-          className="h-7 border text-xs"
+          className="h-7 border border-input text-xs"
           title="Clear thread"
           onClick={props.onClear}
         >

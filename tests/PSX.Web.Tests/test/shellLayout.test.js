@@ -46,6 +46,15 @@ test('shell: the context-cards overlay sits outside the single-column workspace 
   assert.equal(cards.querySelector('[data-role="plan-resizer"]'), null, 'fixed-width card: no resizer');
   await toolbarReady(panel);
   assert.ok(panel.querySelector('.agent-toolbar [data-role="plan-toggle"]'), 'visibility toggle lives in the toolbar');
+
+  // Agent chrome buttons share the soft border-input token; the raw `border`
+  // color reads darker than inputs/selects and must not come back.
+  for (const name of ['history-toggle', 'plan-toggle', 'clear']) {
+    assert.ok(
+      role(panel, name).classList.contains('border-input'),
+      name + ' must use the soft border-input token'
+    );
+  }
 });
 
 test('shell: dock open toggles the canvas dock-open state class', async () => {
