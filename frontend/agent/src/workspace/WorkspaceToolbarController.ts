@@ -9,7 +9,7 @@
 import type { AgentBridgePort } from '../contracts/bridge-port.js';
 import type { FeatureController } from '../contracts/feature-controller.js';
 import type { AgentWorkspaceEvent } from '../contracts/host-events.js';
-import type { AgentWorkspaceState } from '../contracts/workspace-state.js';
+import type { AgentWorkspaceState, WorkspaceRuntimeUpdateState } from '../contracts/workspace-state.js';
 import type { RefObject } from 'react';
 import { createIslandLoader, type IslandLoader } from '../core/islandHost.js';
 import type { SessionMetaProps } from './SessionToolbar.js';
@@ -31,6 +31,12 @@ export class WorkspaceToolbarController implements FeatureController {
   private historyOpen = false;
   private planVisible = true;
   private planUnread = false;
+  private runtimeUpdate: WorkspaceRuntimeUpdateState = {
+    state: 'idle',
+    message: '',
+    currentVersion: '',
+    pendingVersion: ''
+  };
   private onHistoryToggle: () => void = () => {};
   private onPlanToggle: () => void = () => {};
 
@@ -83,6 +89,11 @@ export class WorkspaceToolbarController implements FeatureController {
     this.render();
   }
 
+  setUpdateState(update: WorkspaceRuntimeUpdateState): void {
+    this.runtimeUpdate = update;
+    this.render();
+  }
+
   setToggleHandlers(onHistoryToggle: () => void, onPlanToggle: () => void): void {
     this.onHistoryToggle = onHistoryToggle;
     this.onPlanToggle = onPlanToggle;
@@ -122,6 +133,13 @@ export class WorkspaceToolbarController implements FeatureController {
         unread: this.planUnread,
         onToggle: () => this.onPlanToggle(),
         toggleRef: this.planToggleRef
+      },
+      update: {
+        state: this.runtimeUpdate.state,
+        currentVersion: this.runtimeUpdate.currentVersion,
+        pendingVersion: this.runtimeUpdate.pendingVersion,
+        onRequest: () =>
+          this.host.bridgeFor(this.workspaceId)?.sendAgentCommand('check_runtime_update')
       }
     });
   }

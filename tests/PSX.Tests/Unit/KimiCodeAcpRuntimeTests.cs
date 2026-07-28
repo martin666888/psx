@@ -21,6 +21,19 @@ public sealed class KimiCodeAcpRuntimeTests
     }
 
     [TestMethod]
+    public void VersionSnapshot_BundledInstall_ReportsVersionWithoutSelfUpdate()
+    {
+        using var workspace = TestWorkspace.Create(nameof(VersionSnapshot_BundledInstall_ReportsVersionWithoutSelfUpdate));
+        var runtime = CreateRuntime(workspace.Path);
+
+        Assert.IsFalse(runtime.SupportsSelfUpdate);
+        var snapshot = runtime.GetVersionSnapshot();
+        Assert.AreEqual(KimiVersion, snapshot.CurrentVersion);
+        Assert.IsNull(snapshot.PendingVersion);
+        Assert.IsFalse(snapshot.HasPendingUpdate);
+    }
+
+    [TestMethod]
     public async Task EnsureInstalled_CompleteBundledInstall_ReportsAlreadyReady()
     {
         using var workspace = TestWorkspace.Create(nameof(EnsureInstalled_CompleteBundledInstall_ReportsAlreadyReady));

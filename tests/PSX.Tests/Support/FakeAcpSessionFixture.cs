@@ -16,6 +16,7 @@ internal sealed class FakeAcpSessionFixture : IDisposable
         Runtime = new FakeAcpRuntime(Workspace, scenario: scenario);
         Provider = new FakeAcpProvider(Runtime);
         Registry = new FakeAgentProviderRegistry(Provider);
+        RuntimeCoordinator = new AgentRuntimeCoordinator(Registry);
         var thread = Store.CreateThread(Workspace.Path);
         thread.Provider = Provider.Descriptor.Key;
         Store.SaveThread(thread);
@@ -28,7 +29,8 @@ internal sealed class FakeAcpSessionFixture : IDisposable
             new NullAgentDirectoryPicker(),
             Registry,
             Provider,
-            thread);
+            thread,
+            RuntimeCoordinator);
     }
 
     public TestWorkspace Workspace { get; }
@@ -37,6 +39,7 @@ internal sealed class FakeAcpSessionFixture : IDisposable
     public FakeAcpRuntime Runtime { get; }
     public FakeAcpProvider Provider { get; }
     public FakeAgentProviderRegistry Registry { get; }
+    public AgentRuntimeCoordinator RuntimeCoordinator { get; }
     public AcpAgentSessionService Service { get; private set; }
 
     public void BindToThread(AgentThread thread)
@@ -51,7 +54,8 @@ internal sealed class FakeAcpSessionFixture : IDisposable
             new NullAgentDirectoryPicker(),
             Registry,
             Provider,
-            thread);
+            thread,
+            RuntimeCoordinator);
     }
 
     public AgentThread LoadOnlyVisibleThread()
@@ -147,7 +151,23 @@ internal sealed class FakeAcpRuntime(TestWorkspace workspace, bool initiallyRead
 
     public string LogPath => Path.Combine(workspace.Path, "runtime.log");
 
+    public bool SupportsSelfUpdate { get; set; } = true;
+
+    /// <summary>Result kind reported by <see cref="RefreshAsync"/>.</summary>
+    public AcpRuntimeOperationKind RefreshResultKind { get; set; } = AcpRuntimeOperationKind.AlreadyReady;
+
+    /// <summary>Non-null: a refresh stages this version (HasPendingUpdate).</summary>
+    public string? StagedVersion { get; set; }
+
+    private bool _refreshed;
+
     public bool IsReady() => _ready;
+
+    public RuntimeVersionSnapshot GetVersionSnapshot() =>
+        new(
+            CurrentVersion: "1.0.0-fake",
+            PendingVersion: _refreshed ? StagedVersion : null,
+            HasPendingUpdate: _refreshed && StagedVersion != null);
 
     public string BuildStatusText(string? suffix = null) =>
         suffix ?? (_ready ? "Fake ACP runtime ready." : "Fake ACP runtime is not installed.");
@@ -163,8 +183,11 @@ internal sealed class FakeAcpRuntime(TestWorkspace workspace, bool initiallyRead
             "Fake ACP runtime ready."));
     }
 
-    public Task<AcpRuntimeOperationResult> RefreshAsync(CancellationToken cancellationToken = default) =>
-        Task.FromResult(new AcpRuntimeOperationResult(AcpRuntimeOperationKind.AlreadyReady, "Fake ACP runtime ready."));
+    public Task<AcpRuntimeOperationResult> RefreshAsync(CancellationToken cancellationToken = default)
+    {
+        _refreshed = true;
+        return Task.FromResult(new AcpRuntimeOperationResult(RefreshResultKind, "Fake ACP refresh finished."));
+    }
 
     public Task PrepareForStartupAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 

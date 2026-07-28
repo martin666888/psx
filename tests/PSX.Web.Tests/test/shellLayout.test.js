@@ -49,12 +49,57 @@ test('shell: the context-cards overlay sits outside the single-column workspace 
 
   // Agent chrome buttons share the soft border-input token; the raw `border`
   // color reads darker than inputs/selects and must not come back.
-  for (const name of ['history-toggle', 'plan-toggle']) {
+  for (const name of ['history-toggle', 'plan-toggle', 'update']) {
     assert.ok(
       role(panel, name).classList.contains('border-input'),
       name + ' must use the soft border-input token'
     );
   }
+});
+
+// The runtime Update button (former Clear slot) renders every
+// runtime_update_status state and posts check_runtime_update on click.
+test('shell: the toolbar Update button follows runtime_update_status states', async () => {
+  const { app, runtime, panelFor } = await mountAgentApp();
+  createAgentWorkspace(app, WS);
+  const panel = panelFor(WS);
+  await toolbarReady(panel);
+
+  const update = () => role(panel, 'update');
+  async function until(predicate, message) {
+    for (let attempt = 0; attempt < 200 && !predicate(); attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.ok(predicate(), message);
+  }
+
+  // Default (idle): actionable before any status event arrives.
+  assert.equal(update().textContent, 'Update');
+  assert.equal(update().disabled, false);
+
+  update().click();
+  const request = runtime.postedMessages.at(-1);
+  assert.equal(request.command, 'check_runtime_update');
+
+  app.handle({ type: 'runtime_update_status', workspaceId: WS, state: 'checking', message: '', currentVersion: '1.2.3', pendingVersion: '' });
+  await until(() => update().dataset.updateState === 'checking', 'checking state renders');
+  assert.equal(update().disabled, true);
+
+  app.handle({ type: 'runtime_update_status', workspaceId: WS, state: 'staged_restart_required', message: '', currentVersion: '1.2.3', pendingVersion: '2.0.0' });
+  await until(() => update().dataset.updateState === 'staged_restart_required', 'staged state renders');
+  assert.equal(update().textContent, 'Restart to update');
+  assert.equal(update().disabled, true);
+  assert.match(update().title, /2\.0\.0/);
+
+  app.handle({ type: 'runtime_update_status', workspaceId: WS, state: 'unsupported', message: '', currentVersion: '0.29.1', pendingVersion: '' });
+  await until(() => update().dataset.updateState === 'unsupported', 'unsupported state renders');
+  assert.equal(update().disabled, true);
+  assert.equal(update().title, 'Updates ship with PSX releases');
+
+  app.handle({ type: 'runtime_update_status', workspaceId: WS, state: 'up_to_date', message: '', currentVersion: '1.2.3', pendingVersion: '' });
+  await until(() => update().dataset.updateState === 'up_to_date', 'up_to_date state renders');
+  assert.equal(update().textContent, 'Up to date');
+  assert.equal(update().disabled, false);
 });
 
 test('shell: dock open toggles the canvas dock-open state class', async () => {

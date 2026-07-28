@@ -48,6 +48,12 @@ public sealed class KimiCodeAcpRuntime : IAcpAgentRuntime
 
     public RuntimePaths Paths => _locator.Locate();
 
+    /// <summary>Kimi Code ships inside the PSX release; it never self-updates.</summary>
+    public bool SupportsSelfUpdate => false;
+
+    public RuntimeVersionSnapshot GetVersionSnapshot() =>
+        new(CurrentVersion: ReadKimiVersion(), PendingVersion: null, HasPendingUpdate: false);
+
     /// <summary>
     /// True only when the full bundled install is structurally valid: portable
     /// Node, the pinned lockfile, the Kimi package manifest, a resolvable

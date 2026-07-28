@@ -115,7 +115,8 @@ public sealed class KimiCodeAcpAgentProviderTests
         var terminalBridge = new NullTerminalBridgeService();
         var directoryPicker = new NullAgentDirectoryPicker();
         var factory = new AgentWorkspaceFactory(
-            bridge, tabs, terminalBridge, store, directoryPicker, registry);
+            bridge, tabs, terminalBridge, store, directoryPicker, registry,
+            new AgentRuntimeCoordinator(registry));
         using var coordinator = new AgentWorkspaceCoordinator(
             bridge, store, registry, factory, history);
 

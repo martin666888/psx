@@ -235,6 +235,30 @@ public sealed class AcpRuntimeManagerTests
         Assert.AreEqual("1.0.0", fixture.Manager.GetVersionInfo().CurrentAcpVersion);
     }
 
+    [TestMethod]
+    public async Task RequestUpdate_ConcurrentRequests_RunNpmOnceAndShareTheResult()
+    {
+        using var fixture = new FakeNpmFixture(nameof(RequestUpdate_ConcurrentRequests_RunNpmOnceAndShareTheResult));
+        fixture.CreateCompleteRuntime(fixture.Paths.AcpCurrentDirectory, "1.0.0");
+        fixture.WritePointer("current");
+        var scenario = Success("install", "acp-next", "2.0.0");
+        scenario.DelayMilliseconds = 250;
+        fixture.Configure(scenario);
+        using var coordinator = new AgentRuntimeCoordinator(
+            new FakeAgentProviderRegistry(new FakeAcpProvider(fixture.Manager)));
+
+        var first = coordinator.RequestUpdateAsync(fixture.Manager);
+        var second = coordinator.RequestUpdateAsync(fixture.Manager);
+        var results = await Task.WhenAll(first, second);
+
+        Assert.HasCount(1, fixture.ReadInvocations());
+        Assert.IsTrue(results.All(result => result.Kind == AcpRuntimeOperationKind.Success));
+        var snapshot = fixture.Manager.GetVersionSnapshot();
+        Assert.IsTrue(snapshot.HasPendingUpdate);
+        Assert.AreEqual("2.0.0", snapshot.PendingVersion);
+        Assert.AreEqual("1.0.0", snapshot.CurrentVersion);
+    }
+
     private static FakeNpmScenario Success(string command, string directory, string version) => new()
     {
         Command = command,

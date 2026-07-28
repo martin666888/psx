@@ -197,6 +197,7 @@ interface AgentGenericEvent extends AgentWorkspaceEventBase {
         | 'agent_ready'
         | 'agent_state'
         | 'runtime_status'
+        | 'runtime_update_status'
         | 'agent_thread_loaded'
         | 'agent_threads'
         | 'agent_history_error'

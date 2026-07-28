@@ -26,7 +26,8 @@ public sealed class AgentWorkspaceIsolationTests
             new NullTerminalBridgeService(),
             store,
             new NullAgentDirectoryPicker(),
-            registry);
+            registry,
+            new AgentRuntimeCoordinator(registry));
         using var coordinator = new AgentWorkspaceCoordinator(
             bridge, store, registry, factory, history);
 
@@ -86,7 +87,8 @@ public sealed class AgentWorkspaceIsolationTests
             new NullTerminalBridgeService(),
             store,
             new NullAgentDirectoryPicker(),
-            registry);
+            registry,
+            new AgentRuntimeCoordinator(registry));
         using var coordinator = new AgentWorkspaceCoordinator(
             bridge, store, registry, factory, history);
         var workspaceId = (await coordinator.CreateAsync(provider.Descriptor.Key, workspace.Path))!.Value;

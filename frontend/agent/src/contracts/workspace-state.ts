@@ -34,6 +34,16 @@ export interface WorkspaceRuntimeState {
   canCancel: boolean;
 }
 
+/** Toolbar Update button state folded from runtime_update_status.
+ * States: idle | checking | up_to_date | staged_restart_required |
+ * unsupported | failed. */
+export interface WorkspaceRuntimeUpdateState {
+  state: string;
+  message: string;
+  currentVersion: string;
+  pendingVersion: string;
+}
+
 /** A single normalized Plan entry (mirrors core/plan.ts PlanEntry). */
 export interface InspectorPlanEntry {
   content: string;
@@ -108,6 +118,7 @@ export interface AgentWorkspaceState {
   identity: WorkspaceIdentity;
   session: WorkspaceSessionState;
   runtime: WorkspaceRuntimeState;
+  runtimeUpdate: WorkspaceRuntimeUpdateState;
   timeline: unknown[];
   composer: WorkspaceComposerState;
   inspector: WorkspaceInspectorState;
@@ -149,6 +160,12 @@ export function createInitialWorkspaceState(workspaceId: string): AgentWorkspace
       message: 'Agent runtime is not installed.',
       canInstall: false,
       canCancel: false
+    },
+    runtimeUpdate: {
+      state: 'idle',
+      message: '',
+      currentVersion: '',
+      pendingVersion: ''
     },
     timeline: [],
     composer: {

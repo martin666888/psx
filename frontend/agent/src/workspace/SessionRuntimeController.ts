@@ -68,6 +68,9 @@ export class SessionRuntimeController implements FeatureController {
       case 'runtime_status':
         this.renderRuntime(state.runtime);
         break;
+      case 'runtime_update_status':
+        this.toolbar.setUpdateState(state.runtimeUpdate);
+        break;
       default:
         break;
     }

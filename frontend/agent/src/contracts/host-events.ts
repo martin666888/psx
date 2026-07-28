@@ -74,6 +74,7 @@ export type AgentWorkspaceEventType =
   | 'agent_ready'
   | 'agent_state'
   | 'runtime_status'
+  | 'runtime_update_status'
   | 'agent_thread_loaded'
   | 'agent_commands'
   | 'agent_command_rejected'
@@ -143,6 +144,7 @@ const AGENT_WORKSPACE_EVENT_TYPES: ReadonlySet<string> = new Set<AgentWorkspaceE
   'agent_ready',
   'agent_state',
   'runtime_status',
+  'runtime_update_status',
   'agent_thread_loaded',
   'agent_commands',
   'agent_command_rejected',

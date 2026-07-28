@@ -35,6 +35,15 @@ const RUNTIME_STATES: ReadonlySet<string> = new Set([
   'cancelled'
 ]);
 
+const RUNTIME_UPDATE_STATES: ReadonlySet<string> = new Set([
+  'idle',
+  'checking',
+  'up_to_date',
+  'staged_restart_required',
+  'unsupported',
+  'failed'
+]);
+
 function asString(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
@@ -303,6 +312,19 @@ export function reduceWorkspaceState(
           ...contextUsage
         },
         inspector: plan === state.inspector.plan ? state.inspector : { ...state.inspector, plan }
+      };
+    }
+
+    case 'runtime_update_status': {
+      const rawState = asString(raw.state);
+      return {
+        ...state,
+        runtimeUpdate: {
+          state: RUNTIME_UPDATE_STATES.has(rawState) ? rawState : 'idle',
+          message: asString(raw.message),
+          currentVersion: asString(raw.currentVersion),
+          pendingVersion: asString(raw.pendingVersion)
+        }
       };
     }
 

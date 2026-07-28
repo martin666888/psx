@@ -102,7 +102,8 @@ public sealed class AgentWorkspaceCoordinatorTests
             new NullTerminalBridgeService(),
             store,
             new NullAgentDirectoryPicker(),
-            registry);
+            registry,
+            new AgentRuntimeCoordinator(registry));
         using var coordinator = new AgentWorkspaceCoordinator(
             bridge, store, registry, factory, history);
 
@@ -142,7 +143,8 @@ public sealed class AgentWorkspaceCoordinatorTests
         var terminalBridge = new NullTerminalBridgeService();
         var directoryPicker = new NullAgentDirectoryPicker();
         var factory = new AgentWorkspaceFactory(
-            bridge, tabs, terminalBridge, store, directoryPicker, registry);
+            bridge, tabs, terminalBridge, store, directoryPicker, registry,
+            new AgentRuntimeCoordinator(registry));
         using var coordinator = new AgentWorkspaceCoordinator(
             bridge, store, registry, factory, history);
 
@@ -174,7 +176,8 @@ public sealed class AgentWorkspaceCoordinatorTests
         var terminalBridge = new NullTerminalBridgeService();
         var directoryPicker = new NullAgentDirectoryPicker();
         var factory = new AgentWorkspaceFactory(
-            bridge, tabs, terminalBridge, store, directoryPicker, registry);
+            bridge, tabs, terminalBridge, store, directoryPicker, registry,
+            new AgentRuntimeCoordinator(registry));
         using var coordinator = new AgentWorkspaceCoordinator(
             bridge, store, registry, factory, history);
 
@@ -201,7 +204,8 @@ public sealed class AgentWorkspaceCoordinatorTests
         var terminalBridge = new NullTerminalBridgeService();
         var directoryPicker = new NullAgentDirectoryPicker();
         var factory = new AgentWorkspaceFactory(
-            bridge, tabs, terminalBridge, store, directoryPicker, registry);
+            bridge, tabs, terminalBridge, store, directoryPicker, registry,
+            new AgentRuntimeCoordinator(registry));
         using var coordinator = new AgentWorkspaceCoordinator(
             bridge, store, registry, factory, history);
         var workspaceId = (await coordinator.CreateAsync("test", workspace.Path))!.Value;
@@ -231,7 +235,8 @@ public sealed class AgentWorkspaceCoordinatorTests
             new NullTerminalBridgeService(),
             store,
             new NullAgentDirectoryPicker(),
-            registry);
+            registry,
+            new AgentRuntimeCoordinator(registry));
         using var coordinator = new AgentWorkspaceCoordinator(
             bridge, store, registry, factory, history);
 
@@ -264,7 +269,8 @@ public sealed class AgentWorkspaceCoordinatorTests
             new NullTerminalBridgeService(),
             store,
             new NullAgentDirectoryPicker(),
-            registry);
+            registry,
+            new AgentRuntimeCoordinator(registry));
         using var coordinator = new AgentWorkspaceCoordinator(
             bridge, store, registry, factory, history);
 
@@ -303,7 +309,8 @@ public sealed class AgentWorkspaceCoordinatorTests
             new NullTerminalBridgeService(),
             store,
             new NullAgentDirectoryPicker(),
-            registry);
+            registry,
+            new AgentRuntimeCoordinator(registry));
         using var coordinator = new AgentWorkspaceCoordinator(
             bridge, store, registry, factory, history);
 
@@ -364,7 +371,8 @@ public sealed class AgentWorkspaceCoordinatorTests
             new NullTerminalBridgeService(),
             store,
             new NullAgentDirectoryPicker(),
-            registry);
+            registry,
+            new AgentRuntimeCoordinator(registry));
         using var coordinator = new AgentWorkspaceCoordinator(
             bridge, store, registry, factory, history);
         var statuses = new List<ActiveRuntimeStatusChangedEventArgs>();
@@ -412,7 +420,8 @@ public sealed class AgentWorkspaceCoordinatorTests
             new NullTerminalBridgeService(),
             store,
             new NullAgentDirectoryPicker(),
-            registry);
+            registry,
+            new AgentRuntimeCoordinator(registry));
         using var coordinator = new AgentWorkspaceCoordinator(
             bridge, store, registry, factory, history);
         var statuses = new List<ActiveRuntimeStatusChangedEventArgs>();
@@ -526,8 +535,11 @@ internal sealed class CountingRuntime(string root) : IAcpAgentRuntime
     public int RefreshCount { get; private set; }
     public int ProcessSpecCount { get; private set; }
     public string LogPath => Path.Combine(root, "runtime.log");
+    public bool SupportsSelfUpdate => true;
     public bool IsReady() => true;
     public string BuildStatusText(string? suffix = null) => suffix ?? "Ready";
+    public RuntimeVersionSnapshot GetVersionSnapshot() =>
+        new(CurrentVersion: "1.0.0", PendingVersion: null, HasPendingUpdate: false);
     public Task<AcpRuntimeOperationResult> EnsureInstalledAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult(new AcpRuntimeOperationResult(AcpRuntimeOperationKind.AlreadyReady, "Ready"));
     public Task<AcpRuntimeOperationResult> RefreshAsync(CancellationToken cancellationToken = default)

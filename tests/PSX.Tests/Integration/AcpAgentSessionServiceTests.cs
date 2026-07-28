@@ -12,6 +12,56 @@ namespace PSX.Tests.Integration;
 public sealed class AcpAgentSessionServiceTests
 {
     [TestMethod]
+    public async Task CheckRuntimeUpdate_NoNewerVersion_PublishesCheckingThenUpToDate()
+    {
+        using var fixture = new FakeAcpSessionFixture(nameof(CheckRuntimeUpdate_NoNewerVersion_PublishesCheckingThenUpToDate));
+
+        fixture.Bridge.RaiseCommand("check_runtime_update");
+
+        var final = await fixture.Bridge.WaitForEventAsync(
+            "runtime_update_status",
+            message => message.GetProperty("state").GetString() == "up_to_date");
+        Assert.AreEqual("1.0.0-fake", final.GetProperty("currentVersion").GetString());
+        var states = fixture.Bridge.Events
+            .Where(message => EventType(message) == "runtime_update_status")
+            .Select(message => message.GetProperty("state").GetString())
+            .ToList();
+        CollectionAssert.Contains(states, "checking");
+        Assert.AreEqual("up_to_date", states.Last());
+    }
+
+    [TestMethod]
+    public async Task CheckRuntimeUpdate_StagedUpdate_PublishesRestartRequired()
+    {
+        using var fixture = new FakeAcpSessionFixture(nameof(CheckRuntimeUpdate_StagedUpdate_PublishesRestartRequired));
+        fixture.Runtime.RefreshResultKind = AcpRuntimeOperationKind.Success;
+        fixture.Runtime.StagedVersion = "2.0.0-fake";
+
+        fixture.Bridge.RaiseCommand("check_runtime_update");
+
+        var staged = await fixture.Bridge.WaitForEventAsync(
+            "runtime_update_status",
+            message => message.GetProperty("state").GetString() == "staged_restart_required");
+        Assert.AreEqual("2.0.0-fake", staged.GetProperty("pendingVersion").GetString());
+    }
+
+    [TestMethod]
+    public async Task CheckRuntimeUpdate_BundledRuntime_PublishesUnsupportedWithoutRefreshing()
+    {
+        using var fixture = new FakeAcpSessionFixture(nameof(CheckRuntimeUpdate_BundledRuntime_PublishesUnsupportedWithoutRefreshing));
+        fixture.Runtime.SupportsSelfUpdate = false;
+
+        fixture.Bridge.RaiseCommand("check_runtime_update");
+
+        await fixture.Bridge.WaitForEventAsync(
+            "runtime_update_status",
+            message => message.GetProperty("state").GetString() == "unsupported");
+        Assert.IsFalse(fixture.Bridge.Events.Any(message =>
+            EventType(message) == "runtime_update_status"
+            && message.GetProperty("state").GetString() == "checking"));
+    }
+
+    [TestMethod]
     public async Task Prompt_PersistsProtocolUpdatesAndFinishesCleanly()
     {
         using var fixture = new FakeAcpSessionFixture(nameof(Prompt_PersistsProtocolUpdatesAndFinishesCleanly));

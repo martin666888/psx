@@ -1,10 +1,10 @@
 // WorkspaceToolbarView.tsx — the single React view for the workspace toolbar.
 //
 // One island (host: [data-role="toolbar-host"]) renders the history toggle,
-// the session meta line and the plan toggle (with unread dot). The
-// WorkspaceToolbarController is the only setElement writer; the
-// Session/History/Plan controllers push their slices through it, so each
-// state kind keeps exactly one authoritative owner.
+// the session meta line, the plan toggle (with unread dot) and the runtime
+// Update button. The WorkspaceToolbarController is the only setElement
+// writer; the Session/History/Plan controllers push their slices through it,
+// so each state kind keeps exactly one authoritative owner.
 
 import type { JSX, RefObject } from 'react';
 import { Button } from '../components/ui/button.js';
@@ -29,6 +29,40 @@ export interface WorkspaceToolbarProps {
     onToggle(): void;
     toggleRef: RefObject<HTMLButtonElement | null>;
   };
+  update: {
+    // idle | checking | up_to_date | staged_restart_required | unsupported | failed
+    state: string;
+    currentVersion: string;
+    pendingVersion: string;
+    onRequest(): void;
+  };
+}
+
+function updateButtonLabel(state: string): string {
+  switch (state) {
+    case 'checking':
+      return 'Checking…';
+    case 'up_to_date':
+      return 'Up to date';
+    case 'staged_restart_required':
+      return 'Restart to update';
+    case 'failed':
+      return 'Retry update';
+    default:
+      return 'Update';
+  }
+}
+
+function updateButtonTitle(update: WorkspaceToolbarProps['update']): string {
+  if (update.state === 'unsupported') return 'Updates ship with PSX releases';
+  if (update.state === 'staged_restart_required') {
+    return update.pendingVersion
+      ? 'Update to ' + update.pendingVersion + ' is ready; restart PSX to apply'
+      : 'Update is ready; restart PSX to apply';
+  }
+  return update.currentVersion
+    ? 'Check for Agent runtime updates (current: ' + update.currentVersion + ')'
+    : 'Check for Agent runtime updates';
 }
 
 function HistoryIcon(): JSX.Element {
@@ -116,6 +150,23 @@ export function WorkspaceToolbar(props: WorkspaceToolbarProps): JSX.Element {
           </TooltipTrigger>
           <TooltipContent>{planLabel}</TooltipContent>
         </Tooltip>
+        <Button
+          data-role="update"
+          data-update-state={props.update.state}
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 border border-input text-xs"
+          disabled={
+            props.update.state === 'unsupported' ||
+            props.update.state === 'checking' ||
+            props.update.state === 'staged_restart_required'
+          }
+          title={updateButtonTitle(props.update)}
+          onClick={props.update.onRequest}
+        >
+          {updateButtonLabel(props.update.state)}
+        </Button>
       </div>
     </TooltipProvider>
   );

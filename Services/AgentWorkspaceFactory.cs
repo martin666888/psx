@@ -32,6 +32,7 @@ public sealed class AgentWorkspaceFactory : IAgentWorkspaceFactory
     private readonly IAgentThreadStore _threadStore;
     private readonly IAgentDirectoryPicker _directoryPicker;
     private readonly IAgentProviderRegistry _providerRegistry;
+    private readonly IAgentRuntimeCoordinator _runtimeCoordinator;
 
     public AgentWorkspaceFactory(
         IAgentBridgeService rootBridge,
@@ -39,7 +40,8 @@ public sealed class AgentWorkspaceFactory : IAgentWorkspaceFactory
         ITerminalBridgeService terminalBridgeService,
         IAgentThreadStore threadStore,
         IAgentDirectoryPicker directoryPicker,
-        IAgentProviderRegistry providerRegistry)
+        IAgentProviderRegistry providerRegistry,
+        IAgentRuntimeCoordinator runtimeCoordinator)
     {
         _rootBridge = rootBridge;
         _tabManagementService = tabManagementService;
@@ -47,6 +49,7 @@ public sealed class AgentWorkspaceFactory : IAgentWorkspaceFactory
         _threadStore = threadStore;
         _directoryPicker = directoryPicker;
         _providerRegistry = providerRegistry;
+        _runtimeCoordinator = runtimeCoordinator;
     }
 
     public AgentWorkspaceSessionHandle Create(
@@ -74,7 +77,8 @@ public sealed class AgentWorkspaceFactory : IAgentWorkspaceFactory
                 _directoryPicker,
                 _providerRegistry,
                 provider,
-                thread);
+                thread,
+                _runtimeCoordinator);
 
         return new AgentWorkspaceSessionHandle
         {

@@ -116,6 +116,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     private readonly IAgentProviderRegistry _providerRegistry;
     private readonly IAcpAgentProvider _provider;
     private readonly IAcpAgentRuntime _runtime;
+    private readonly IAgentRuntimeCoordinator _runtimeCoordinator;
     private readonly object _runLock = new();
     private readonly object _commandLock = new();
     private readonly object _runtimeInstallLock = new();
@@ -161,6 +162,8 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     private bool _runtimeInstallInProgress;
     private string _runtimeInstallState = "missing";
     private string _runtimeInstallMessage = "Agent runtime is not installed.";
+    private readonly object _runtimeUpdateLock = new();
+    private bool _runtimeUpdateInProgress;
     private bool _restoreBlockedByRuntime;
     private bool _disposed;
     private IReadOnlyList<AcpAuthMethod> _authMethods = Array.Empty<AcpAuthMethod>();
@@ -197,7 +200,8 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         IAgentDirectoryPicker directoryPicker,
         IAgentProviderRegistry providerRegistry,
         IAcpAgentProvider provider,
-        AgentThread initialThread)
+        AgentThread initialThread,
+        IAgentRuntimeCoordinator runtimeCoordinator)
     {
         if (workspaceId == Guid.Empty)
             throw new ArgumentException("Agent Workspace ID must not be empty.", nameof(workspaceId));
@@ -211,6 +215,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         _providerRegistry = providerRegistry;
         _provider = provider;
         _runtime = _provider.Runtime;
+        _runtimeCoordinator = runtimeCoordinator;
         if (IsAgentRuntimeReady())
         {
             _runtimeInstallState = "ready";
@@ -726,7 +731,10 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             store = _threadStore.RootDirectory
         }).ConfigureAwait(false);
         if (IsBoundProviderThread(_currentThread))
+        {
             await PublishRuntimeStatusAsync().ConfigureAwait(false);
+            await PublishRuntimeUpdateSnapshotAsync().ConfigureAwait(false);
+        }
     }
 
     private void OnUserMessageSubmitted(object? sender, AgentSubmitEventArgs e)
@@ -760,6 +768,9 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 break;
             case "cancel_runtime_install":
                 await CancelRuntimeInstallAsync().ConfigureAwait(false);
+                break;
+            case "check_runtime_update":
+                await CheckRuntimeUpdateAsync().ConfigureAwait(false);
                 break;
             case "cwd":
                 if (string.IsNullOrWhiteSpace(e.Value))
@@ -833,6 +844,14 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     private void OnRuntimeStatusChanged(string message)
     {
+        bool updateInProgress;
+        lock (_runtimeUpdateLock)
+        {
+            updateInProgress = _runtimeUpdateInProgress;
+        }
+        if (updateInProgress)
+            _ = PublishRuntimeUpdateStatusAsync("checking", message);
+
         lock (_runtimeInstallLock)
         {
             if (!_runtimeInstallInProgress)
@@ -974,6 +993,88 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             message,
             canInstall = state is "missing" or "failed" or "cancelled",
             canCancel
+        });
+    }
+
+    /// <summary>
+    /// User-requested update check. The runtime coordinator single-flights
+    /// concurrent requests per runtime, so multiple tabs sharing one runtime
+    /// trigger at most one npm run; every requesting tab still gets its own
+    /// <c>runtime_update_status</c> event sequence.
+    /// </summary>
+    private async Task CheckRuntimeUpdateAsync()
+    {
+        if (!_runtime.SupportsSelfUpdate)
+        {
+            await PublishRuntimeUpdateStatusAsync("unsupported").ConfigureAwait(false);
+            return;
+        }
+
+        lock (_runtimeUpdateLock)
+        {
+            if (_runtimeUpdateInProgress)
+                return;
+            _runtimeUpdateInProgress = true;
+        }
+
+        try
+        {
+            await PublishRuntimeUpdateStatusAsync("checking").ConfigureAwait(false);
+            var result = await _runtimeCoordinator.RequestUpdateAsync(_runtime).ConfigureAwait(false);
+            var state = result.Kind is AcpRuntimeOperationKind.Success or AcpRuntimeOperationKind.AlreadyReady
+                ? (_runtime.GetVersionSnapshot().HasPendingUpdate ? "staged_restart_required" : "up_to_date")
+                : "failed";
+            await PublishRuntimeUpdateStatusAsync(state, result.Message).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            await PublishRuntimeUpdateStatusAsync("failed", ex.Message).ConfigureAwait(false);
+        }
+        finally
+        {
+            lock (_runtimeUpdateLock)
+            {
+                _runtimeUpdateInProgress = false;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Startup/state snapshot for the toolbar Update button: unsupported for
+    /// bundled runtimes, staged when a previous refresh is waiting for a
+    /// restart, idle otherwise.
+    /// </summary>
+    private Task PublishRuntimeUpdateSnapshotAsync()
+    {
+        string state;
+        if (!_runtime.SupportsSelfUpdate)
+            state = "unsupported";
+        else
+        {
+            bool updateInProgress;
+            lock (_runtimeUpdateLock)
+            {
+                updateInProgress = _runtimeUpdateInProgress;
+            }
+            state = updateInProgress
+                ? "checking"
+                : _runtime.GetVersionSnapshot().HasPendingUpdate ? "staged_restart_required" : "idle";
+        }
+
+        return PublishRuntimeUpdateStatusAsync(state);
+    }
+
+    private Task PublishRuntimeUpdateStatusAsync(string state, string? message = null)
+    {
+        var snapshot = _runtime.GetVersionSnapshot();
+        return _bridgeService.SendEventAsync(new
+        {
+            type = "runtime_update_status",
+            providerKey = _provider.Descriptor.Key,
+            state,
+            message = message ?? "",
+            currentVersion = snapshot.CurrentVersion ?? "",
+            pendingVersion = snapshot.PendingVersion ?? ""
         });
     }
 

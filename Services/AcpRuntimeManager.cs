@@ -91,6 +91,18 @@ public sealed class AcpRuntimeManager : IAcpAgentRuntime
 
     public RuntimePaths Paths => _locator.Locate();
 
+    /// <summary>The npm two-directory staging model supports self-update.</summary>
+    public bool SupportsSelfUpdate => true;
+
+    public RuntimeVersionSnapshot GetVersionSnapshot()
+    {
+        var info = GetVersionInfo();
+        return new RuntimeVersionSnapshot(
+            CurrentVersion: info.CurrentAcpVersion,
+            PendingVersion: info.PendingAcpVersion,
+            HasPendingUpdate: info.HasPendingUpdate);
+    }
+
     public bool IsReady()
     {
         return IsAdapterInstalled() && IsBundledClaudeCodeInstalled();

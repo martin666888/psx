@@ -44,7 +44,8 @@ public sealed class AgentWorkspaceActivationTests
                 new NullTerminalBridgeService(),
                 Store,
                 new NullAgentDirectoryPicker(),
-                Registry);
+                Registry,
+                new AgentRuntimeCoordinator(Registry));
             Coordinator = new AgentWorkspaceCoordinator(Bridge, Store, Registry, factory, History);
         }
 
@@ -269,7 +270,8 @@ public sealed class AgentWorkspaceActivationTests
             new NullTerminalBridgeService(),
             store,
             new NullAgentDirectoryPicker(),
-            registry);
+            registry,
+            new AgentRuntimeCoordinator(registry));
         using var coordinator = new AgentWorkspaceCoordinator(bridge, store, registry, factory, history);
         var firstWorkspaceId = (await coordinator.CreateAsync(firstProvider.Descriptor.Key, workspace.Path))!.Value;
         var secondWorkspaceId = (await coordinator.CreateAsync(secondProvider.Descriptor.Key, workspace.Path))!.Value;
@@ -333,7 +335,8 @@ public sealed class AgentWorkspaceActivationTests
             new NullTerminalBridgeService(),
             store,
             new NullAgentDirectoryPicker(),
-            registry);
+            registry,
+            new AgentRuntimeCoordinator(registry));
         using var coordinator = new AgentWorkspaceCoordinator(bridge, store, registry, factory, history);
         var sourceId = (await coordinator.CreateAsync(provider.Descriptor.Key, workspace.Path))!.Value;
 
