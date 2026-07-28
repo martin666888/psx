@@ -89,6 +89,9 @@
 .agent-message-attachments {
     display: flex;
     flex-wrap: wrap;
+    /* User bubbles right-align via MessageContent w-fit+ml-auto; the tile
+     * grid is a full-width sibling, so it aligns its flex items to match. */
+    justify-content: flex-end;
     gap: 8px;
     margin: 0 0 3px;
 }

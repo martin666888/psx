@@ -181,10 +181,12 @@ function ThinkingRowView({ item }: { item: ThinkingItem }): JSX.Element {
   return <ThinkingBlock item={item} />;
 }
 
-/** Live elapsed-seconds readout next to the streaming "Thinking..." shimmer.
- *  The vendored Reasoning only computes its duration once streaming ends, so
- *  the running state gets its own 1s ticker; the block mounts with the
- *  thinking row, which makes mount time the thinking start time. */
+/** Live "Thinking for N seconds" readout while streaming. The vendored
+ *  Reasoning only computes its duration once streaming ends, so the running
+ *  state gets its own 1s ticker; the block mounts with the thinking row,
+ *  which makes mount time the thinking start time. The whole sentence runs
+ *  through the Shimmer so the live wording matches the finished
+ *  "Thought for N seconds" phrasing. */
 function ThinkingElapsed(): JSX.Element {
   const startRef = useRef(Date.now());
   const [elapsed, setElapsed] = useState(0);
@@ -194,19 +196,18 @@ function ThinkingElapsed(): JSX.Element {
     }, 1000);
     return () => clearInterval(timer);
   }, []);
-  return <span className="ml-1 tabular-nums">{elapsed}s</span>;
+  const text =
+    elapsed < 1
+      ? 'Thinking...'
+      : 'Thinking for ' + elapsed + (elapsed === 1 ? ' second' : ' seconds');
+  return <Shimmer duration={1}>{text}</Shimmer>;
 }
 
 /** ReasoningTrigger message with a live timer while streaming; once the
  *  stream ends it falls back to the upstream duration wording. */
 const getLiveThinkingMessage = (isStreaming: boolean, duration?: number): ReactNode => {
   if (isStreaming || duration === 0) {
-    return (
-      <>
-        <Shimmer duration={1}>Thinking...</Shimmer>
-        <ThinkingElapsed />
-      </>
-    );
+    return <ThinkingElapsed />;
   }
   if (duration === undefined) {
     return <p>Thought for a few seconds</p>;

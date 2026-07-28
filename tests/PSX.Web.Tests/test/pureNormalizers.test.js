@@ -198,3 +198,17 @@ test('elicitation: supplemental fields are optional free-text prompts', () => {
   assert.equal(elicitation.isSupplementalElicitationField('comment', { type: 'string' }, true), false);
   assert.equal(elicitation.isSupplementalElicitationField('other', { type: 'number' }, false), false);
 });
+
+test('elicitation: orderElicitationFields keeps schema declaration order', () => {
+  const fields = elicitation.orderElicitationFields({
+    properties: {
+      q1: { type: 'string', title: 'Question 1', enum: ['a', 'b'] },
+      q1_other: { type: 'string', title: 'Other' },
+      q2: { type: 'string', title: 'Question 2', enum: ['c', 'd'] },
+      q2_other: { type: 'string', title: 'Other' }
+    },
+    required: ['q1', 'q2']
+  });
+  assert.deepEqual(fields.map((field) => field.name), ['q1', 'q1_other', 'q2', 'q2_other']);
+  assert.deepEqual(fields.map((field) => field.isSupplement), [false, true, false, true]);
+});

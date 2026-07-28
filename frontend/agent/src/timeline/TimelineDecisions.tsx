@@ -21,7 +21,7 @@ import {
 } from '../components/ui/collapsible.js';
 import { Input } from '../components/ui/input.js';
 import { Textarea } from '../components/ui/textarea.js';
-import { ChevronRightIcon } from 'lucide-react';
+import { ChevronRightIcon, InfoIcon } from 'lucide-react';
 
 export interface DecisionCallbacks {
   /** Permission/question option chosen (posts the bridge response). */
@@ -356,7 +356,7 @@ function ElicitationOptionButton({
       type="button"
       variant="outline"
       className={
-        'agent-elicitation-option grid w-full min-w-0 cursor-pointer gap-0.5 whitespace-normal break-words rounded-lg p-2.5 text-left hover:bg-accent disabled:cursor-default disabled:opacity-70' +
+        'agent-elicitation-option flex h-auto w-full min-w-0 cursor-pointer items-start justify-start gap-2.5 whitespace-normal break-words rounded-lg px-3 py-2.5 text-left hover:bg-accent disabled:cursor-default disabled:opacity-70' +
         (selected ? ' agent-elicitation-option-selected border-ring bg-accent' : '')
       }
       role={multi ? 'button' : 'radio'}
@@ -365,10 +365,23 @@ function ElicitationOptionButton({
       disabled={disabled}
       onClick={onClick}
     >
-      <span className="agent-elicitation-option-title break-words text-[13px] leading-normal">{option.title}</span>
-      {option.description ? (
-        <small className="agent-elicitation-option-description break-words text-xs leading-normal text-muted-foreground">{option.description}</small>
-      ) : null}
+      {/* Visual radio/checkbox indicator only; selection semantics stay on the
+          button's role + aria-checked/aria-pressed. */}
+      <span
+        aria-hidden="true"
+        className={
+          'agent-elicitation-option-indicator mt-0.5 flex size-3.5 shrink-0 items-center justify-center border border-muted-foreground/60 bg-background ' +
+          (multi ? 'rounded-[3px]' : 'rounded-full')
+        }
+      >
+        {selected ? <span className={'size-2 bg-primary ' + (multi ? 'rounded-[1px]' : 'rounded-full')}></span> : null}
+      </span>
+      <span className="agent-elicitation-option-content grid min-w-0 gap-0.5">
+        <span className="agent-elicitation-option-title break-words text-[13px] font-semibold leading-normal text-foreground">{option.title}</span>
+        {option.description ? (
+          <small className="agent-elicitation-option-description break-words text-xs leading-normal text-muted-foreground">{option.description}</small>
+        ) : null}
+      </span>
     </Button>
   );
 }
@@ -435,14 +448,23 @@ function ElicitationCard({
   return (
     <section
       className={
-        'agent-decision agent-decision-elicitation mb-3.5 w-full rounded-lg border bg-card p-3 text-card-foreground' +
+        'agent-decision agent-decision-elicitation mb-3.5 w-full overflow-hidden rounded-lg border bg-card p-0 text-card-foreground' +
         (disabled ? ' agent-decision-disabled opacity-80' : '')
       }
       data-decision-state={disabled ? 'disabled' : 'active'}
       data-request-id={item.requestId || undefined}
     >
-      <div className="agent-decision-title text-[13px] font-bold">{item.title}</div>
-      <div className="agent-decision-subtitle mt-1 break-words text-sm leading-normal">{item.elicitationMessage}</div>
+      <div className="agent-decision-header flex items-center justify-between gap-2 border-b bg-muted/50 px-3 py-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <InfoIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <div className="agent-decision-title text-[13px] font-bold">{item.title}</div>
+        </div>
+        {!disabled ? (
+          <div className="agent-decision-header-status shrink-0 text-xs text-muted-foreground">Waiting for input</div>
+        ) : null}
+      </div>
+      <div className="agent-decision-body p-3">
+      <div className="agent-decision-subtitle break-words text-sm leading-normal">{item.elicitationMessage}</div>
       <form className="agent-elicitation-form mt-3 grid gap-3" noValidate>
         {specs.map((spec) => {
           const error = errors[spec.name] || '';
@@ -457,6 +479,7 @@ function ElicitationCard({
               }
             >
               <div className={'agent-elicitation-label font-semibold ' + (error ? 'text-destructive' : 'text-foreground')}>{label}</div>
+              {spec.property.description ? <small className="text-muted-foreground">{String(spec.property.description)}</small> : null}
               {spec.kind === 'boolean' ? (
                 <label className="agent-elicitation-checkbox justify-self-start">
                   <input
@@ -470,7 +493,7 @@ function ElicitationCard({
               ) : spec.kind === 'options' ? (
                 <div
                   className={
-                    'agent-elicitation-option-list grid max-h-[280px] gap-1.5 overflow-auto p-0.5' +
+                    'agent-elicitation-option-list grid gap-1.5' +
                     (error ? ' rounded-md outline outline-1 outline-offset-2 outline-destructive' : '')
                   }
                   role="radiogroup"
@@ -490,7 +513,7 @@ function ElicitationCard({
               ) : spec.kind === 'array' ? (
                 <div
                   className={
-                    'agent-elicitation-option-list grid max-h-[280px] gap-1.5 overflow-auto p-0.5' +
+                    'agent-elicitation-option-list grid gap-1.5' +
                     (error ? ' rounded-md outline outline-1 outline-offset-2 outline-destructive' : '')
                   }
                   role="group"
@@ -536,7 +559,6 @@ function ElicitationCard({
                   onChange={(event) => setValue(spec.name, event.target.value)}
                 ></Textarea>
               )}
-              {spec.property.description ? <small className="text-muted-foreground">{String(spec.property.description)}</small> : null}
               <div className="agent-elicitation-error text-destructive [&[hidden]]:hidden" hidden={!error}>
                 {error}
               </div>
@@ -583,6 +605,7 @@ function ElicitationCard({
         </Button>
       </div>
       {disabled && item.statusText ? <div className="agent-decision-status mt-2.5 text-xs text-muted-foreground">{item.statusText}</div> : null}
+      </div>
     </section>
   );
 }

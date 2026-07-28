@@ -32,7 +32,11 @@ const ShimmerComponent = ({
     <Component
       className={cn(
         "psx-shimmer relative inline-block bg-[length:250%_100%,auto] bg-clip-text text-transparent",
-        "[--bg:linear-gradient(90deg,#0000_calc(50%-var(--spread)),var(--color-background),#0000_calc(50%+var(--spread)))] [background-repeat:no-repeat,padding-box]",
+        // PSX local modification: upstream references var(--color-*) theme
+        // variables, but this project's "@theme inline" setup does not emit
+        // runtime --color-* variables (raw shadcn vars live on .agent-ui and
+        // are what the Theme Adapter updates), so the raw vars are used here.
+        "[--bg:linear-gradient(90deg,#0000_calc(50%-var(--spread)),var(--background),#0000_calc(50%+var(--spread)))] [background-repeat:no-repeat,padding-box]",
         className
       )}
       style={
@@ -40,7 +44,7 @@ const ShimmerComponent = ({
           "--spread": `${dynamicSpread}px`,
           "--psx-shimmer-duration": `${duration}s`,
           backgroundImage:
-            "var(--bg), linear-gradient(var(--color-muted-foreground), var(--color-muted-foreground))",
+            "var(--bg), linear-gradient(var(--muted-foreground), var(--muted-foreground))",
         } as CSSProperties
       }
     >

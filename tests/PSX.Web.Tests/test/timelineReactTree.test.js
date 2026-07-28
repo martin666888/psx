@@ -236,6 +236,47 @@ test('a valid elicitation emits the exact accepted payload', async () => {
   await view.dispose();
 });
 
+test('elicitation option buttons render title and description and submit the picked value', async () => {
+  const actions = [];
+  const view = await renderEvents([
+    ['elicitation_request', {
+      requestId: 'e3',
+      message: 'Pick one.',
+      schema: {
+        properties: {
+          mode: {
+            type: 'string',
+            title: 'Mode',
+            oneOf: [
+              { const: 'fast', title: 'Fast', description: 'Skips checks' },
+              { const: 'safe', title: 'Safe', description: 'Runs all checks' }
+            ]
+          }
+        },
+        required: ['mode']
+      }
+    }]
+  ], {
+    onElicitationAction: (item, payload, statusText) => actions.push({ payload, statusText })
+  });
+  const options = [...view.host.querySelectorAll('.agent-elicitation-option')];
+  assert.equal(options.length, 2);
+  assert.match(options[1].querySelector('.agent-elicitation-option-title').textContent, /Safe/);
+  assert.match(options[1].querySelector('.agent-elicitation-option-description').textContent, /Runs all checks/);
+  await act(async () => options[1].click());
+  const picked = [...view.host.querySelectorAll('.agent-elicitation-option')][1];
+  assert.equal(picked.getAttribute('aria-checked'), 'true');
+  const continueButton = [...view.host.querySelectorAll('button')].find(
+    (button) => button.textContent === 'Continue'
+  );
+  await act(async () => continueButton.click());
+  assert.deepEqual(actions, [{
+    payload: JSON.stringify({ action: 'accept', content: { mode: 'safe' } }),
+    statusText: 'Response sent.'
+  }]);
+  await view.dispose();
+});
+
 test('unsafe elicitation URLs remain plain text', async () => {
   const view = await renderEvents([
     ['elicitation_request', { requestId: 'e2', mode: 'url', url: 'javascript:alert(1)' }]

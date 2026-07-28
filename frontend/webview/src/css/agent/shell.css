@@ -241,6 +241,13 @@
     overflow-x: hidden;
     overflow-y: auto;
     padding: var(--agent-space-5) 0 var(--agent-space-8);
+    /* use-stick-to-bottom injects an inline "scrollbar-gutter: stable
+     * both-edges", which insets the thread content by one gutter on BOTH
+     * sides and shifts the reading column right of the composer's identical
+     * vw-based column. !important is the only way to beat the inline style;
+     * plain "stable" keeps the right-side gutter so the scrollbar still never
+     * causes horizontal jitter. */
+    scrollbar-gutter: stable !important;
     scrollbar-color: var(--agent-scrollbar) var(--agent-bg);
     scrollbar-width: thin;
     min-height: 0;

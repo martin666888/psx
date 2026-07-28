@@ -116,11 +116,6 @@
     .agent-composer {
         padding-bottom: var(--agent-space-2);
     }
-
-    .agent-composer-main {
-        width: calc(100% - (var(--agent-space-3) * 2));
-        margin-left: var(--agent-space-3);
-    }
 }
 
 @media (prefers-reduced-motion: reduce) {

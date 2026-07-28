@@ -93,15 +93,16 @@ export function isSupplementalElicitationField(
 }
 
 /**
- * Orders schema fields the way the legacy form did: required/primary fields
- * first (in declaration order), supplemental free-text fields last.
+ * Reads schema fields in declaration order so each supplemental free-text
+ * field ("Other" etc.) stays next to the question it belongs to; the
+ * isSupplement flag only drives presentation.
  */
 export function orderElicitationFields(schema: unknown): ElicitationField[] {
   const properties = isRecord(schema) && isRecord(schema.properties) ? schema.properties : {};
   const requiredList = isRecord(schema) && Array.isArray(schema.required) ? schema.required : [];
   const required = new Set(requiredList as unknown[]);
 
-  const entries: ElicitationField[] = Object.entries(properties).map(([name, rawProperty], index) => {
+  return Object.entries(properties).map(([name, rawProperty], index) => {
     const property = (isRecord(rawProperty) ? rawProperty : {}) as ElicitationProperty;
     return {
       name,
@@ -110,8 +111,4 @@ export function orderElicitationFields(schema: unknown): ElicitationField[] {
       isSupplement: isSupplementalElicitationField(name, property, required.has(name))
     };
   });
-
-  return entries.sort(
-    (a, b) => Number(a.isSupplement) - Number(b.isSupplement) || a.index - b.index
-  );
 }
