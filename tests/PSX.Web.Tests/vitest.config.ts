@@ -31,9 +31,16 @@ export default defineConfig({
     include: ['test/**/*.test.js'],
     setupFiles: ['test/vitest.setup.js'],
     // The harness mutates globalThis (window/document/Bridge); keep every
-    // file in its own isolated worker like node --test did.
+    // file isolated like node --test did. Run exactly one worker/file at a
+    // time: parallel jsdom/React roots have previously exhausted workstation
+    // memory and left orphaned Node workers after a failed test.
     isolate: true,
     pool: 'forks',
+    fileParallelism: false,
+    maxWorkers: 1,
+    // A broken jsdom/focus loop must fail the worker instead of exhausting
+    // physical memory and freezing the developer workstation.
+    execArgv: ['--max-old-space-size=1024'],
     testTimeout: 20000,
     coverage: {
       provider: 'v8',

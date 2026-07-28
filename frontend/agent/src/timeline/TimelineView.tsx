@@ -38,13 +38,23 @@ import {
 import { Task, TaskContent, TaskTrigger } from '../components/ai-elements/task.js';
 import { Shimmer } from '../components/ai-elements/shimmer.js';
 import {
+  Conversation,
+  ConversationContent,
+  ConversationEmptyState,
+  ConversationScrollButton
+} from '../components/ai-elements/conversation.js';
+import {
   Message,
   MessageAction,
   MessageActions,
   MessageContent,
   PsxMessageResponse
 } from '../components/ai-elements/message.js';
-import { Badge } from '../components/ui/badge.js';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger
+} from '../components/ui/collapsible.js';
 import { CheckIcon, ChevronDownIcon, CopyIcon, WrenchIcon } from 'lucide-react';
 
 export interface TimelineCallbacks extends DecisionCallbacks {
@@ -60,12 +70,6 @@ export interface TimelineViewProps {
   rows: TimelineRow[];
   assistantName: string;
   callbacks: TimelineCallbacks;
-  /**
-   * Fires after each commit is flushed to the DOM (useLayoutEffect), so the
-   * controller can auto-scroll against the fresh layout — root.render() alone
-   * gives no commit guarantee in React 19.
-   */
-  onCommitted?: () => void;
 }
 
 /** React twin of createCopyButton + showCopyFeedback, restyled onto the AI
@@ -109,22 +113,6 @@ export function CopyButton(props: { getText(): string; copyText(text: string): P
   );
 }
 
-/** Uncontrolled <details> whose open state follows the projection lifecycle.
- * Still used by TimelineDecisions (CP4 area 5 swaps those cards, then this
- * hook goes away). */
-export function useDetailsOpen(open: boolean) {
-  const ref = useRef<HTMLDetailsElement | null>(null);
-  const applied = useRef<boolean | null>(null);
-  useLayoutEffect(() => {
-    if (!ref.current) return;
-    if (applied.current === null || applied.current !== open) {
-      applied.current = open;
-      ref.current.open = open;
-    }
-  });
-  return ref;
-}
-
 /** Controlled Collapsible open state that follows the projection lifecycle:
  * a projection `open` change overrides the view, user toggles in between are
  * preserved (the exact contract of the old uncontrolled-<details> sync). */
@@ -155,14 +143,16 @@ function RecoveryCard({ item, callbacks }: { item: RecoveryItem; callbacks: Time
       <div className="agent-recovery-content grid min-w-0 gap-2">
         <div className="agent-recovery-title font-semibold text-[13px] leading-snug">Session could not be resumed</div>
         <p className="agent-recovery-message m-0 break-words text-[13px] leading-normal">{item.message}</p>
-        <details className="agent-recovery-details min-w-0 text-muted-foreground text-xs" hidden={!item.detail}>
-          <summary className="w-fit cursor-pointer select-none font-semibold hover:text-foreground">
+        <Collapsible className="agent-recovery-details min-w-0 text-muted-foreground text-xs" hidden={!item.detail}>
+          <CollapsibleTrigger className="w-fit cursor-pointer select-none font-semibold hover:text-foreground">
             Technical details
-          </summary>
-          <pre className="agent-recovery-technical mt-2 max-h-44 overflow-auto whitespace-pre-wrap break-words rounded-md border bg-muted/50 p-3 font-mono text-[11px] leading-normal">
-            {item.detail}
-          </pre>
-        </details>
+          </CollapsibleTrigger>
+          <CollapsibleContent forceMount className="data-[state=closed]:hidden">
+            <pre className="agent-recovery-technical mt-2 max-h-44 overflow-auto whitespace-pre-wrap break-words rounded-md border bg-muted/50 p-3 font-mono text-[11px] leading-normal">
+              {item.detail}
+            </pre>
+          </CollapsibleContent>
+        </Collapsible>
       </div>
       <div className="agent-recovery-actions flex flex-wrap gap-2">
         <Button variant="outline" size="sm" onClick={() => callbacks.onOpenTerminal()}>
@@ -333,27 +323,39 @@ function ToolGroup({ item }: { item: ToolGroupItem }): JSX.Element {
   );
 }
 
+/** Inline (non-ACP-card) tool states → AI Elements badge states; the label
+ * keeps the legacy wording via ToolHeader's badge override. */
+const INLINE_TOOL_BADGE_STATE: Record<string, ToolState> = {
+  output: 'output-available',
+  done: 'output-available',
+  error: 'output-error',
+  fallback: 'output-denied'
+};
+
 function InlineTool({ item }: { item: InlineToolItem }): JSX.Element {
   const statusLabel = item.state === 'error' ? 'Failed' : item.state === 'fallback' ? 'Needs terminal' : 'Done';
   return (
-    <section
+    <Tool
+      defaultOpen
       className={
-        'agent-tool agent-tool-' + item.state + ' not-prose mb-4 w-full rounded-md border' +
+        'agent-tool agent-tool-' + item.state +
         (item.state === 'error' ? ' border-destructive' : item.state === 'fallback' ? ' border-yellow-600/50' : '')
       }
       data-state={item.state}
     >
-      <div className="agent-tool-header flex items-center justify-between gap-4 p-3">
-        <div className="flex items-center gap-2">
-          <WrenchIcon className="size-4 text-muted-foreground" />
-          <span className="font-medium text-sm">{item.name}</span>
-        </div>
-        <Badge className="gap-1.5 rounded-full text-xs" variant="secondary">
-          {statusLabel}
-        </Badge>
-      </div>
-      <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words px-3 pb-3 font-mono text-xs">{item.text}</pre>
-    </section>
+      <ToolHeader
+        type={'tool-' + item.name}
+        title={item.name}
+        state={INLINE_TOOL_BADGE_STATE[item.state] ?? 'output-available'}
+        badge={statusLabel}
+        titleClassName="agent-tool-name"
+      />
+      {/* forceMount keeps the collapsed output in the DOM (old static-card
+          semantics) for text search and replay tooling. */}
+      <ToolContent forceMount className="data-[state=closed]:hidden">
+        <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words px-3 pb-3 font-mono text-xs">{item.text}</pre>
+      </ToolContent>
+    </Tool>
   );
 }
 
@@ -569,12 +571,7 @@ function renderItem(
   }
 }
 
-export function TimelineView({ rows, assistantName, callbacks, onCommitted }: TimelineViewProps): JSX.Element {
-  // After every commit the fresh layout is observable; let the controller
-  // run its pinned auto-scroll then (never against the pre-commit DOM).
-  useLayoutEffect(() => {
-    onCommitted?.();
-  });
+export function TimelineView({ rows, assistantName, callbacks }: TimelineViewProps): JSX.Element {
   // Group rows by turn id into agent-turn sections. Rows of one turn always
   // collect into a single block anchored at the turn's first row — mirroring
   // legacy, where the turn <section> node persists and later rows keep
@@ -595,17 +592,40 @@ export function TimelineView({ rows, assistantName, callbacks, onCommitted }: Ti
       blocks.push({ key: 'root-' + row.item.id, turn: false, rows: [row] });
     }
   }
+  // The AI Elements Conversation owns visible-time stick-to-bottom behavior.
+  // [data-role="thread"] stays the semantic anchor; .agent-thread-scroll is
+  // the single scroll node (WorkspaceHost snapshots it across tab hide/show).
+  // initial/resize stay "instant" to match the legacy pinned-jump behavior.
   return (
-    <>
-      {blocks.map((block) =>
-        block.turn ? (
-          <section key={block.key} className="agent-turn">
-            {block.rows.map((row) => renderItem(row, block.rows, assistantName, callbacks))}
-          </section>
+    <Conversation
+      data-role="thread"
+      className="agent-thread"
+      aria-label="Agent conversation"
+      aria-live="polite"
+      aria-relevant="additions"
+      initial="instant"
+      resize="instant"
+    >
+      <ConversationContent scrollClassName="agent-thread-scroll" className="agent-thread-content gap-0 p-0">
+        {rows.length === 0 ? (
+          <ConversationEmptyState
+            className="agent-conversation-empty"
+            title="No messages yet"
+            description="Send a message to start the conversation."
+          />
         ) : (
-          block.rows.map((row) => renderItem(row, block.rows, assistantName, callbacks))
-        )
-      )}
-    </>
+          blocks.map((block) =>
+            block.turn ? (
+              <section key={block.key} className="agent-turn">
+                {block.rows.map((row) => renderItem(row, block.rows, assistantName, callbacks))}
+              </section>
+            ) : (
+              block.rows.map((row) => renderItem(row, block.rows, assistantName, callbacks))
+            )
+          )
+        )}
+      </ConversationContent>
+      <ConversationScrollButton className="agent-thread-scroll-button" />
+    </Conversation>
   );
 }

@@ -2,14 +2,18 @@ import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { act } from 'react';
 import {
   installAgentRuntime,
   installBreakpoint,
   agentTemplateMarkup,
   createAgentWorkspace,
+  composerReady,
   appModule,
   repositoryRoot
 } from './agentHarness.js';
+
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 // Narrow mode (<1000px): History remains a dock and Plan remains a content
 // card, but both auto-collapse and reopen one at a time. matchMedia is
@@ -25,9 +29,27 @@ function dock() {
   return document.querySelector('[data-role="history-dock"]');
 }
 
-// The dock's open/close control lives in every workspace toolbar.
+// The dock's open/close control lives in every workspace toolbar (rendered by
+// the workspace toolbar island).
 function trigger(panel) {
   return panel.querySelector('[data-role="history-toggle"]');
+}
+
+// The toolbar island renders the toggles asynchronously after workspace
+// creation; wait for its first commit before clicking them.
+async function toolbarReady(panel) {
+  for (let i = 0; i < 100 && !trigger(panel); i++) {
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 5)));
+  }
+  assert.ok(trigger(panel), 'workspace toolbar island did not mount');
+}
+
+// Clicks flow through React props into the controllers and back into the
+// islands; act() flushes that re-render synchronously.
+async function click(el) {
+  await act(async () => {
+    el.click();
+  });
 }
 
 async function mountApp({ wide = false } = {}) {
@@ -42,6 +64,12 @@ async function mountApp({ wide = false } = {}) {
     container: document.getElementById('agents'),
     template: document.getElementById('agent-workspace-template')
   });
+  // The dock chrome renders through the history-dock React island; wait for
+  // its first commit so the tests can read dock state synchronously.
+  for (let i = 0; i < 100 && !dock(); i++) {
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 5)));
+  }
+  assert.ok(dock(), 'history dock island did not mount');
   return {
     app,
     breakpoint,
@@ -71,11 +99,12 @@ test('responsive: opening History closes the active Plan card in narrow mode', a
   createAgentWorkspace(app, WS);
   app.handle({ type: 'workspace_activated', workspaceId: WS, kind: 'agent' });
   const panel = panelFor(WS);
+  await toolbarReady(panel);
   // Narrow starts hidden; the user temporarily opens the Plan card.
-  role(panel, 'plan-toggle').click();
+  await click(role(panel, 'plan-toggle'));
   assert.equal(role(panel, 'plan-card').hidden, false);
 
-  trigger(panel).click();
+  await click(trigger(panel));
   assert.equal(dock().hidden, false);
   assert.equal(role(panel, 'plan-card').hidden, true, 'one narrow panel at a time');
   assert.equal(role(panel, 'plan-toggle').getAttribute('aria-expanded'), 'false');
@@ -85,10 +114,11 @@ test('responsive: showing the Plan card closes History in narrow mode', async ()
   const { app, panelFor } = await mountApp({ wide: false });
   createAgentWorkspace(app, WS);
   app.handle({ type: 'workspace_activated', workspaceId: WS, kind: 'agent' });
-  trigger(panelFor(WS)).click();
+  await toolbarReady(panelFor(WS));
+  await click(trigger(panelFor(WS)));
   assert.equal(dock().hidden, false);
 
-  role(panelFor(WS), 'plan-toggle').click();
+  await click(role(panelFor(WS), 'plan-toggle'));
   assert.equal(role(panelFor(WS), 'plan-card').hidden, false);
   assert.equal(dock().hidden, true, 'Plan wins the narrow slot');
 });
@@ -97,9 +127,10 @@ test('responsive: wide mode lets the dock and the Plan card coexist', async () =
   const { app, panelFor } = await mountApp({ wide: true });
   createAgentWorkspace(app, WS);
   app.handle({ type: 'workspace_activated', workspaceId: WS, kind: 'agent' });
+  await toolbarReady(panelFor(WS));
   // Wide mode shows the Plan card by default; both panels can coexist.
   assert.equal(role(panelFor(WS), 'plan-card').hidden, false);
-  trigger(panelFor(WS)).click();
+  await click(trigger(panelFor(WS)));
 
   assert.equal(dock().hidden, false);
   assert.equal(role(panelFor(WS), 'plan-card').hidden, false, 'no exclusivity above the breakpoint');
@@ -109,7 +140,8 @@ test('responsive: entering narrow auto-collapses both and widening restores pref
   const { app, breakpoint, panelFor } = await mountApp({ wide: true });
   createAgentWorkspace(app, WS);
   app.handle({ type: 'workspace_activated', workspaceId: WS, kind: 'agent' });
-  trigger(panelFor(WS)).click();
+  await toolbarReady(panelFor(WS));
+  await click(trigger(panelFor(WS)));
   assert.equal(role(panelFor(WS), 'plan-card').hidden, false, 'wide default: plan visible');
 
   breakpoint.setWide(false);
@@ -126,7 +158,8 @@ test('responsive: History yields before it would squeeze the full reading column
   createAgentWorkspace(app, WS);
   app.handle({ type: 'workspace_activated', workspaceId: WS, kind: 'agent' });
   const panel = panelFor(WS);
-  trigger(panel).click();
+  await toolbarReady(panel);
+  await click(trigger(panel));
   assert.equal(dock().hidden, false, 'History is visible while the full column fits');
 
   // Default 280px History: 280 + 16px gap + 920px reading + 24px edge = 1240px.
@@ -147,8 +180,9 @@ test('responsive: an explicit History open remains available in the reading-cons
   app.handle({ type: 'workspace_activated', workspaceId: WS, kind: 'agent' });
   breakpoint.setViewportWidth(1239);
   const panel = panelFor(WS);
+  await toolbarReady(panel);
 
-  trigger(panel).click();
+  await click(trigger(panel));
   assert.equal(dock().hidden, false, 'the user can temporarily prioritize History');
   assert.equal(window.localStorage.getItem('psx.agent.historyDockOpen'), '0', 'temporary open leaves the preference unchanged');
 });
@@ -157,17 +191,18 @@ test('responsive: aria-expanded tracks both narrow-panel triggers', async () => 
   const { app, panelFor } = await mountApp({ wide: false });
   createAgentWorkspace(app, WS);
   app.handle({ type: 'workspace_activated', workspaceId: WS, kind: 'agent' });
+  await toolbarReady(panelFor(WS));
 
   const historyToggle = trigger(panelFor(WS));
   assert.equal(historyToggle.getAttribute('aria-expanded'), 'false');
-  historyToggle.click();
+  await click(historyToggle);
   assert.equal(historyToggle.getAttribute('aria-expanded'), 'true');
   assert.equal(document.activeElement, document.querySelector('[data-role="history-search"]'),
     'focus moves into History search on deliberate open');
 
   const toggle = role(panelFor(WS), 'plan-toggle');
   assert.equal(toggle.getAttribute('aria-expanded'), 'false', 'narrow starts hidden');
-  toggle.click();
+  await click(toggle);
   assert.equal(toggle.getAttribute('aria-expanded'), 'true');
 });
 
@@ -175,7 +210,8 @@ test('responsive: Escape closes narrow History and returns focus to the toolbar 
   const { app, panelFor } = await mountApp({ wide: false });
   createAgentWorkspace(app, WS);
   app.handle({ type: 'workspace_activated', workspaceId: WS, kind: 'agent' });
-  trigger(panelFor(WS)).click();
+  await toolbarReady(panelFor(WS));
+  await click(trigger(panelFor(WS)));
   assert.equal(dock().hidden, false);
 
   escape();
@@ -188,7 +224,8 @@ test('responsive: Escape closes the narrow Plan card and returns focus to its to
   createAgentWorkspace(app, WS);
   app.handle({ type: 'workspace_activated', workspaceId: WS, kind: 'agent' });
   const panel = panelFor(WS);
-  role(panel, 'plan-toggle').click();
+  await toolbarReady(panel);
+  await click(role(panel, 'plan-toggle'));
   assert.equal(role(panel, 'plan-card').hidden, false);
 
   escape();
@@ -200,7 +237,8 @@ test('responsive: Escape is inert in wide mode', async () => {
   const { app, panelFor } = await mountApp({ wide: true });
   createAgentWorkspace(app, WS);
   app.handle({ type: 'workspace_activated', workspaceId: WS, kind: 'agent' });
-  trigger(panelFor(WS)).click();
+  await toolbarReady(panelFor(WS));
+  await click(trigger(panelFor(WS)));
   escape();
   assert.equal(dock().hidden, false, 'wide dock stays open');
 });
@@ -222,7 +260,8 @@ test('responsive: Escape respects an already-handled (defaultPrevented) event', 
   const { app, panelFor } = await mountApp({ wide: false });
   createAgentWorkspace(app, WS);
   app.handle({ type: 'workspace_activated', workspaceId: WS, kind: 'agent' });
-  trigger(panelFor(WS)).click();
+  await toolbarReady(panelFor(WS));
+  await click(trigger(panelFor(WS)));
   assert.equal(dock().hidden, false);
 
   const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
@@ -236,8 +275,10 @@ test('responsive: widening restores History without stealing Composer focus', as
   createAgentWorkspace(app, WS);
   app.handle({ type: 'workspace_activated', workspaceId: WS, kind: 'agent' });
   const panel = panelFor(WS);
+  await toolbarReady(panel);
 
-  trigger(panel).click();
+  await click(trigger(panel));
+  await composerReady(panel);
   role(panel, 'input').focus();
   breakpoint.setWide(false);
   assert.equal(dock().hidden, true);

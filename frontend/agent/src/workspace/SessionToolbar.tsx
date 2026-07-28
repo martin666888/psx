@@ -4,6 +4,12 @@
 import type { JSX } from 'react';
 import type { ContextUsageView } from './sessionFormat.js';
 import { Button } from '../components/ui/button.js';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger
+} from '../components/ui/tooltip.js';
 
 export interface SessionMetaProps {
   statusText: string;
@@ -44,33 +50,41 @@ export interface ContextUsageProps {
 
 export function ContextUsage({ view }: ContextUsageProps): JSX.Element {
   return (
-    <div
-      data-role="context-used"
-      className="agent-context-usage"
-      role="img"
-      tabIndex={0}
-      data-context-state={view.state}
-      aria-label={view.ariaLabel}
-    >
-      <svg className="agent-context-ring" viewBox="0 0 20 20" aria-hidden="true">
-        <circle className="agent-context-ring-track" cx="10" cy="10" r="7.5" pathLength="100" />
-        <circle
-          data-role="context-ring-progress"
-          className="agent-context-ring-progress"
-          cx="10"
-          cy="10"
-          r="7.5"
-          pathLength="100"
-          strokeDashoffset={String(100 - view.percent)}
-        />
-      </svg>
-      <span className="agent-context-tooltip" role="tooltip">
-        <strong data-role="context-tooltip-summary">{view.summary}</strong>
-        <span data-role="context-tooltip-detail">{view.detail}</span>
-        <span data-role="context-tooltip-cost" hidden={!view.cost}>
-          {view.cost}
-        </span>
-      </span>
-    </div>
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div
+            data-role="context-used"
+            className="agent-context-usage"
+            role="img"
+            tabIndex={0}
+            data-context-state={view.state}
+            aria-label={view.ariaLabel}
+          >
+            <svg className="agent-context-ring" viewBox="0 0 20 20" aria-hidden="true">
+              <circle className="agent-context-ring-track" cx="10" cy="10" r="7.5" pathLength="100" />
+              <circle
+                data-role="context-ring-progress"
+                className="agent-context-ring-progress"
+                cx="10"
+                cy="10"
+                r="7.5"
+                pathLength="100"
+                strokeDashoffset={String(100 - view.percent)}
+              />
+            </svg>
+          </div>
+        </TooltipTrigger>
+        <TooltipContent className="agent-context-tooltip">
+          <div className="flex flex-col">
+            <strong data-role="context-tooltip-summary">{view.summary}</strong>
+            <span data-role="context-tooltip-detail">{view.detail}</span>
+            <span data-role="context-tooltip-cost" hidden={!view.cost}>
+              {view.cost}
+            </span>
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }

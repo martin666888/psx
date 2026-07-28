@@ -1,10 +1,11 @@
-// planIsland.ts — mounts the React plan panel content.
+// planIsland.ts — mounts the React plan card.
 //
 // Static React imports are confined to island modules; PlanController reaches
 // this file only through a dynamic import so the legacy mode never loads
-// React. The host is the template-owned plan panel itself: createRoot takes
-// ownership of its children (React clears the legacy-rendered content on the
-// first commit) and dispose unmounts but leaves the panel node in place —
+// React. The host is the template-owned plan-card section itself: the island
+// loader clears its children on mount (dropping the legacy static header and
+// panel markup while the template still carries it) and React renders the
+// whole card shell. Dispose unmounts but leaves the section node in place —
 // the workspace panel lifecycle owns the node.
 
 import { createElement } from 'react';

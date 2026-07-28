@@ -69,23 +69,8 @@
     background: var(--agent-accent);
 }
 
-.agent-plan-card-header {
-    display: flex;
-    align-items: center;
-    gap: var(--agent-space-2);
-    min-height: 36px;
-    padding: 0 var(--agent-space-2) 0 var(--agent-space-3);
-    border-bottom: 1px solid var(--agent-border);
-}
-
-.agent-plan-card-title {
-    flex: 1 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    font-size: 13px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
+/* The card header ("Plan" title) renders inside the React island now; its
+ * styling moved onto shadcn CardHeader/CardTitle in PlanCard.tsx. */
 
 .agent-plan-panel {
     flex: 1 1 auto;

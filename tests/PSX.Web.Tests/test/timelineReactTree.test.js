@@ -246,7 +246,7 @@ test('unsafe elicitation URLs remain plain text', async () => {
   await view.dispose();
 });
 
-test('commit callback runs against the fresh DOM and updates preserve node identity', async () => {
+test('streaming updates preserve node identity', async () => {
   installAgentRuntime();
   const projection = new TimelineProjection();
   projection.apply('user_message', { text: 'q' }, NAME);
@@ -256,14 +256,12 @@ test('commit callback runs against the fresh DOM and updates preserve node ident
   const island = mountTimelineIsland(host, (error) => {
     throw error;
   });
-  const committed = [];
   const render = async () => {
     await act(async () => {
       island.render({
         rows: projection.snapshot().rows,
         assistantName: NAME,
-        callbacks: BASE_CALLBACKS,
-        onCommitted: () => committed.push(host.querySelectorAll('.agent-message-assistant').length)
+        callbacks: BASE_CALLBACKS
       });
     });
   };
@@ -271,7 +269,6 @@ test('commit callback runs against the fresh DOM and updates preserve node ident
   const body = host.querySelector('.agent-message-assistant .agent-message-body');
   projection.apply('assistant_delta', { text: 'b' }, NAME);
   await render();
-  assert.deepEqual(committed, [1, 1]);
   assert.equal(host.querySelector('.agent-message-assistant .agent-message-body'), body);
   assert.equal(body.dataset.raw, 'ab');
   await act(async () => island.dispose());

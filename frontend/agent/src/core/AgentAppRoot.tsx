@@ -138,15 +138,16 @@ function ensureRoot(): void {
   // jsdom); a root bound to a dead document must be rebuilt.
   if (root && rootContainer && rootContainer.ownerDocument === document) return;
   if (root) {
-    const stale = root;
+    // The harness closes the previous jsdom window before the next app mount.
+    // Calling ReactRoot.unmount() against that already-detached document can
+    // make React remove nodes whose parent was cleared by jsdom, producing a
+    // NotFoundError. Drop every store/subscriber reference instead; the closed
+    // window owns the abandoned tree and can be collected as one unit.
     root = null;
-    try {
-      stale.unmount();
-    } catch {
-      /* stale document — nothing to clean */
-    }
+    rootContainer = null;
     entries.clear();
     commitSnapshot();
+    listeners.clear();
   }
   rootContainer = document.createElement('div');
   rootContainer.dataset.role = 'agent-react-root';

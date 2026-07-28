@@ -10,6 +10,13 @@
 // picker without entering the request state machine. Open state and width
 // persist in localStorage.
 //
+// The dock chrome (aside frame, top bar, scroll node, resizer) renders
+// through the history-dock React island; this controller owns the business
+// logic only — the open-state machine, width clamp/persistence/broadcast,
+// toolbar-toggle aria and the HistoryList interaction state — and pushes it
+// as HistoryDockViewProps. Pointer/keyboard resizing lives in the view; the
+// controller only clamps, persists and broadcasts the committed width.
+//
 // Layered layout keeps History as a left dock at every width. Responsive
 // layouts can temporarily collapse it before it would squeeze the reading
 // column, but never turn it into a floating drawer.
@@ -19,10 +26,13 @@ import type {
   AgentHistoryState
 } from '../contracts/agent-history.js';
 import {
+  HISTORY_DOCK_DEFAULT_WIDTH,
+  HISTORY_DOCK_MAX_WIDTH,
+  HISTORY_DOCK_MIN_WIDTH,
   providerFilterOptions
 } from './historyModel.js';
 import { createIslandLoader, type IslandLoader } from '../core/islandHost.js';
-import type { HistoryListProps } from './HistoryList.js';
+import type { HistoryDockViewProps } from './HistoryDockView.js';
 
 /** Everything the dock needs from the registry (store + broker + the live
  * workspace set). Provided as one seam so the controller stays testable. */
@@ -39,20 +49,17 @@ export interface HistoryDockHost {
   openWorkspaceThreadIds(): ReadonlyMap<string, string>;
 }
 
-const MIN_WIDTH = 220;
-const MAX_WIDTH = 420;
-const DEFAULT_WIDTH = 280;
 const OPEN_STORAGE_KEY = 'psx.agent.historyDockOpen';
 const WIDTH_STORAGE_KEY = 'psx.agent.historyDockWidth';
 
 export class HistoryDockController {
   private readonly host: HistoryDockHost;
 
-  private dock: HTMLElement | null = null;
+  /** Controller-owned portal host for the dock island. display:contents
+   * keeps the React-rendered <aside> a layout child of the container, so the
+   * absolute frame and stacking in history.css/shell.css apply unchanged. */
+  private dockHost: HTMLElement | null = null;
   private container: HTMLElement | null = null;
-  private content: HTMLElement | null = null;
-  private searchInput: HTMLInputElement | null = null;
-  private providerSelect: HTMLSelectElement | null = null;
 
   // preferredOpen is the persisted user choice. responsiveOverride is a
   // temporary responsive value: null means normal layout, boolean means the
@@ -60,10 +67,13 @@ export class HistoryDockController {
   private preferredOpen = true;
   private responsiveOverride: boolean | null = null;
   private agentViewActive = true;
-  private width = DEFAULT_WIDTH;
-  private isResizing = false;
+  private width = HISTORY_DOCK_DEFAULT_WIDTH;
+  private query = '';
   private providerFilterValue = '';
-  private providerOptionsSignature = '';
+  /** Bumped when a search/filter change must zero the list viewport; the
+   * island's scroll node watches it. In-place React updates preserve the
+   * scroll position on every other render without help. */
+  private resetScrollToken = 0;
   private unsubscribeStore: (() => void) | null = null;
   /** Folded groups by cwd key (user clicked the header to collapse). Runtime
    * state, never persisted; shared across workspaces (a project is global). */
@@ -73,99 +83,31 @@ export class HistoryDockController {
   private readonly openListeners = new Set<(open: boolean) => void>();
   private readonly widthListeners = new Set<(width: number) => void>();
 
-  // React owns the dock content subtree. The frame, top bar, resizer,
-  // persistence and fold/expand interaction state stay with this controller.
-  private historyIsland: IslandLoader<HistoryListProps> | null = null;
-
-  private readonly cleanup: Array<() => void> = [];
+  // React owns the entire dock subtree (chrome + list) inside dockHost.
+  private historyIsland: IslandLoader<HistoryDockViewProps> | null = null;
 
   constructor(host: HistoryDockHost) {
     this.host = host;
   }
 
   mount(parent: HTMLElement): void {
-    if (this.dock || !parent) return;
+    if (this.dockHost || !parent) return;
 
-    const dock = document.createElement('aside');
-    dock.className = 'agent-history-dock';
-    dock.dataset.role = 'history-dock';
-    dock.setAttribute('aria-label', 'Agent history');
-    dock.hidden = true;
+    const dockHost = document.createElement('div');
+    dockHost.dataset.role = 'history-dock-host';
+    dockHost.style.display = 'contents';
+    parent.appendChild(dockHost);
 
-    const bar = document.createElement('div');
-    bar.className = 'agent-history-dock-bar';
-
-    const search = document.createElement('input');
-    search.type = 'search';
-    search.className = 'agent-history-search';
-    search.dataset.role = 'history-search';
-    search.placeholder = 'Search threads';
-    search.setAttribute('aria-label', 'Search history');
-
-    const providerSelect = document.createElement('select');
-    providerSelect.className = 'agent-history-provider-filter';
-    providerSelect.dataset.role = 'history-provider-filter';
-    providerSelect.setAttribute('aria-label', 'Filter by provider');
-
-    const refresh = document.createElement('button');
-    refresh.type = 'button';
-    refresh.className = 'agent-history-refresh';
-    refresh.dataset.role = 'history-refresh';
-    refresh.title = 'Refresh history';
-    refresh.setAttribute('aria-label', 'Refresh history');
-    refresh.innerHTML =
-      '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" focusable="false">' +
-      '<path d="M13.5 8a5.5 5.5 0 1 1-1.61-3.89 M13.5 2.5v2.6h-2.6" fill="none" ' +
-      'stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-
-    bar.appendChild(search);
-    bar.appendChild(providerSelect);
-    bar.appendChild(refresh);
-
-    const content = document.createElement('div');
-    content.className = 'agent-history-dock-content';
-    content.dataset.role = 'history-content';
-
-    const resizer = document.createElement('div');
-    resizer.className = 'agent-history-dock-resizer';
-    resizer.dataset.role = 'history-dock-resizer';
-    resizer.setAttribute('role', 'separator');
-    resizer.setAttribute('aria-label', 'Resize Agent history');
-    resizer.setAttribute('aria-orientation', 'vertical');
-    // role=separator requires the value triple when focusable (axe
-    // aria-required-attr); applyWidth keeps aria-valuenow current.
-    resizer.setAttribute('aria-valuemin', String(MIN_WIDTH));
-    resizer.setAttribute('aria-valuemax', String(MAX_WIDTH));
-    resizer.setAttribute('aria-valuenow', String(this.width));
-    resizer.tabIndex = 0;
-
-    dock.appendChild(bar);
-    dock.appendChild(content);
-    dock.appendChild(resizer);
-    parent.appendChild(dock);
-
-    this.dock = dock;
+    this.dockHost = dockHost;
     this.container = parent;
-    this.content = content;
-    this.searchInput = search;
-    this.providerSelect = providerSelect;
 
     this.width = this.readWidth();
     this.applyWidth(this.width);
     this.preferredOpen = this.readOpen();
     this.unsubscribeStore = this.host.subscribe(() => this.render());
-    this.wire(search, providerSelect, refresh, resizer);
-    // The open/close control is the history-toggle button in every workspace
-    // toolbar (there is no dock-owned strip trigger anymore); one delegated
-    // listener on the container also covers panels created later.
-    this.on(parent, 'click', (event) => {
-      const target = event.target as HTMLElement | null;
-      if (!target || !target.closest('[data-role="history-toggle"]')) return;
-      if (this.effectiveOpen()) this.requestClose();
-      else this.openHistory('');
-    });
+    // The open/close control is the history-toggle rendered by every
+    // workspace's toolbar island; clicks arrive through toggleFromToolbar.
     this.syncVisibility();
-    this.render();
   }
 
   /** Composer `/history` + toolbar-toggle seam: open the dock and load through the
@@ -174,6 +116,13 @@ export class HistoryDockController {
    * a redundant second wave. */
   openHistory(sourceWorkspaceId: string): void {
     this.requestOpen(sourceWorkspaceId);
+  }
+
+  /** Toolbar history-toggle seam (routed through the workspace toolbar
+   * island's onToggle): one click toggles the dock. */
+  toggleFromToolbar(): void {
+    if (this.effectiveOpen()) this.requestClose();
+    else this.openHistory('');
   }
 
   isOpen(): boolean {
@@ -197,13 +146,7 @@ export class HistoryDockController {
 
   /** Focus entry point for user-initiated History open requests. */
   focusSearch(): void {
-    this.searchInput?.focus();
-  }
-
-  /** Focus the history toggle of the currently visible workspace panel. */
-  focusToggle(): void {
-    const panel = this.dock?.parentElement?.querySelector('.agent-panel:not([hidden])');
-    panel?.querySelector<HTMLElement>('[data-role="history-toggle"]')?.focus();
+    this.dockHost?.querySelector<HTMLElement>('[data-role="history-search"]')?.focus();
   }
 
   /** WorkspaceHost view toggle: the whole agent area (dock included) hides
@@ -225,24 +168,18 @@ export class HistoryDockController {
   }
 
   dispose(): void {
-    if (this.isResizing) {
-      this.isResizing = false;
-      document.body.classList.remove('agent-history-dock-resizing');
-    }
+    // A dispose mid-drag must not leave the body stuck in col-resize mode.
+    document.body.classList.remove('agent-history-dock-resizing');
     if (this.unsubscribeStore) {
       this.unsubscribeStore();
       this.unsubscribeStore = null;
     }
-    for (const off of this.cleanup.splice(0)) off();
     this.historyIsland?.dispose();
     this.historyIsland = null;
-    this.dock?.remove();
+    this.dockHost?.remove();
     this.container?.style.removeProperty('--agent-history-width');
-    this.dock = null;
+    this.dockHost = null;
     this.container = null;
-    this.content = null;
-    this.searchInput = null;
-    this.providerSelect = null;
   }
 
   // --- Visibility + persistence ---------------------------------------------
@@ -318,21 +255,27 @@ export class HistoryDockController {
     return true;
   }
 
+  private isVisible(): boolean {
+    return this.effectiveOpen() && this.agentViewActive;
+  }
+
   private syncVisibility(): void {
-    if (!this.dock) return;
-    const open = this.effectiveOpen();
-    const visible = open && this.agentViewActive;
-    this.dock.hidden = !visible;
-    this.dock.parentElement?.classList.toggle('agent-history-dock-open', visible);
-    // Every workspace toolbar carries a history-toggle; keep them all in sync.
-    this.dock.parentElement
-      ?.querySelectorAll('[data-role="history-toggle"]')
-      .forEach((toggle) => toggle.setAttribute('aria-expanded', String(open)));
+    if (!this.dockHost) return;
+    const visible = this.isVisible();
+    // The dock frame renders through the island, but visibility applies
+    // synchronously: requestOpen focuses the search box right after unhiding
+    // and Shell reads `hidden` in the same task. The island render below
+    // carries the same `open` value, so React's deferred commit of the
+    // hidden attribute is a no-op.
+    const dock = this.dockHost.querySelector<HTMLElement>('[data-role="history-dock"]');
+    if (dock) dock.hidden = !visible;
+    this.container?.classList.toggle('agent-history-dock-open', visible);
     if (visible) this.maybeAutoLoad();
+    this.render();
   }
 
   private maybeAutoLoad(): void {
-    if (!this.dock || this.dock.hidden) return;
+    if (!this.dockHost || !this.isVisible()) return;
     if (!this.host.hasAgentWorkspaces()) return;
     const state = this.host.getState();
     if (state.loaded || state.status !== 'idle' || state.inFlightWorkspaceId) return;
@@ -346,7 +289,7 @@ export class HistoryDockController {
     } catch {
       // localStorage can be unavailable in constrained WebView profiles.
     }
-    return DEFAULT_WIDTH;
+    return HISTORY_DOCK_DEFAULT_WIDTH;
   }
 
   private applyWidth(width: number): void {
@@ -354,106 +297,54 @@ export class HistoryDockController {
     // (dock and .agent-panel are siblings), so the variable must live on the
     // shared container, not on the dock element itself.
     this.container?.style.setProperty('--agent-history-width', this.clampWidth(width) + 'px');
-    this.dock
-      ?.querySelector('[data-role="history-dock-resizer"]')
-      ?.setAttribute('aria-valuenow', String(this.clampWidth(width)));
   }
 
-  private saveWidth(): void {
+  /** Resizer drag preview from the island: live width, no persistence and no
+   * Shell broadcast until the pointer is released. */
+  private previewWidth(width: number): void {
+    this.applyWidth(width);
+  }
+
+  /** Completed pointer drag or keyboard resize: clamp, persist, broadcast
+   * and push the committed width back to the island (resizer aria). */
+  private commitWidth(width: number): void {
+    this.width = this.clampWidth(width);
+    this.applyWidth(this.width);
     try {
       window.localStorage?.setItem(WIDTH_STORAGE_KEY, String(this.width));
     } catch {
       // Width persistence is optional; resizing remains available.
     }
     for (const listener of this.widthListeners) listener(this.width);
+    this.render();
   }
 
   private clampWidth(width: number): number {
     const numeric = Number(width);
-    if (!Number.isFinite(numeric)) return DEFAULT_WIDTH;
-    return Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, Math.round(numeric)));
-  }
-
-  // --- Wiring -------------------------------------------------------------------
-
-  private wire(
-    search: HTMLInputElement,
-    providerSelect: HTMLSelectElement,
-    refresh: HTMLButtonElement,
-    resizer: HTMLElement
-  ): void {
-    this.on(search, 'input', () => this.render({ resetScroll: true }));
-    this.on(providerSelect, 'change', () => {
-      this.providerFilterValue = providerSelect.value;
-      this.render({ resetScroll: true });
-    });
-    this.on(refresh, 'click', () => this.host.requestRefresh(''));
-
-    this.on(resizer, 'pointerdown', (event) => {
-      if (event.button !== 0) return;
-      this.isResizing = true;
-      resizer.setPointerCapture(event.pointerId);
-      document.body.classList.add('agent-history-dock-resizing');
-      event.preventDefault();
-    });
-    this.on(resizer, 'pointermove', (event) => {
-      if (!this.isResizing || !this.dock) return;
-      const rect = this.dock.getBoundingClientRect();
-      this.width = this.clampWidth(event.clientX - rect.left);
-      this.applyWidth(this.width);
-    });
-    const endResize = (event: PointerEvent): void => {
-      if (!this.isResizing) return;
-      this.isResizing = false;
-      document.body.classList.remove('agent-history-dock-resizing');
-      try {
-        resizer.releasePointerCapture(event.pointerId);
-      } catch {
-        // Pointer capture may already be gone if the window lost focus.
-      }
-      this.saveWidth();
-    };
-    this.on(resizer, 'pointerup', endResize);
-    this.on(resizer, 'pointercancel', endResize);
-    this.on(resizer, 'keydown', (event) => {
-      const step = event.shiftKey ? 40 : 16;
-      if (event.key === 'ArrowLeft') this.setWidthFromKeyboard(this.width - step);
-      else if (event.key === 'ArrowRight') this.setWidthFromKeyboard(this.width + step);
-      else if (event.key === 'Home') this.setWidthFromKeyboard(MAX_WIDTH);
-      else if (event.key === 'End') this.setWidthFromKeyboard(MIN_WIDTH);
-      else return;
-      event.preventDefault();
-    });
-  }
-
-  private setWidthFromKeyboard(width: number): void {
-    this.width = this.clampWidth(width);
-    this.applyWidth(this.width);
-    this.saveWidth();
+    if (!Number.isFinite(numeric)) return HISTORY_DOCK_DEFAULT_WIDTH;
+    return Math.max(HISTORY_DOCK_MIN_WIDTH, Math.min(HISTORY_DOCK_MAX_WIDTH, Math.round(numeric)));
   }
 
   // --- Rendering ------------------------------------------------------------------
 
   private render(options?: { resetScroll?: boolean }): void {
-    if (!this.content) return;
+    if (!this.dockHost) return;
+    if (options?.resetScroll) this.resetScrollToken += 1;
     this.renderReact();
-    // React updates children in place, so the scroll position survives
-    // store-driven renders naturally; only filter changes reset it.
-    if (options?.resetScroll) this.content.scrollTop = 0;
   }
 
   private renderReact(): void {
-    const content = this.content;
-    if (!content) return;
+    const dockHost = this.dockHost;
+    if (!dockHost) return;
     const state = this.host.getState();
-    this.syncProviderOptions(state);
-    this.historyIsland ??= createIslandLoader<HistoryListProps>({
-      name: 'history-list',
+
+    this.historyIsland ??= createIslandLoader<HistoryDockViewProps>({
+      name: 'history-dock',
       load: async () => {
         const mod = await import('./historyIsland.js');
         return (host, reportFailure) => mod.mountHistoryIsland(host, reportFailure);
       },
-      host: content
+      host: dockHost
     });
 
     const activeWorkspaceId = this.host.activeWorkspaceId();
@@ -465,62 +356,57 @@ export class HistoryDockController {
     }
 
     this.historyIsland.render({
-      hasWorkspaces: this.host.hasAgentWorkspaces(),
-      state,
-      query: this.searchInput?.value ?? '',
+      open: this.isVisible(),
+      query: this.query,
       providerFilter: this.providerFilterValue,
-      activeThreadId,
-      openedElsewhere,
-      foldedGroups: this.foldedGroups,
-      expandedGroups: this.expandedGroups,
-      onToggleFold: (key) => {
-        if (this.foldedGroups.has(key)) this.foldedGroups.delete(key);
-        else this.foldedGroups.add(key);
-        this.render();
+      providers: this.providerFilterEntries(state),
+      width: this.width,
+      onQueryChange: (query) => {
+        this.query = query;
+        this.render({ resetScroll: true });
       },
-      onExpandGroup: (key) => {
-        this.expandedGroups.add(key);
-        this.render();
+      onProviderChange: (key) => {
+        this.providerFilterValue = key;
+        this.render({ resetScroll: true });
       },
-      onOpenThread: (threadId) => {
-        this.host.openThread(threadId);
-      },
-      onDismissOpenError: () => this.host.dismissThreadOpenError(),
-      onRetryRefresh: () => this.host.requestRefresh('')
+      onRefresh: () => this.host.requestRefresh(''),
+      onWidthPreview: (width) => this.previewWidth(width),
+      onWidthCommit: (width) => this.commitWidth(width),
+      resetScrollToken: this.resetScrollToken,
+      list: {
+        hasWorkspaces: this.host.hasAgentWorkspaces(),
+        state,
+        query: this.query,
+        providerFilter: this.providerFilterValue,
+        activeThreadId,
+        openedElsewhere,
+        foldedGroups: this.foldedGroups,
+        expandedGroups: this.expandedGroups,
+        onToggleFold: (key) => {
+          if (this.foldedGroups.has(key)) this.foldedGroups.delete(key);
+          else this.foldedGroups.add(key);
+          this.render();
+        },
+        onExpandGroup: (key) => {
+          this.expandedGroups.add(key);
+          this.render();
+        },
+        onOpenThread: (threadId) => {
+          this.host.openThread(threadId);
+        },
+        onDismissOpenError: () => this.host.dismissThreadOpenError(),
+        onRetryRefresh: () => this.host.requestRefresh('')
+      }
     });
   }
 
-  private syncProviderOptions(state: AgentHistoryState): void {
-    if (!this.providerSelect) return;
+  /** Provider filter entries for the island's Select; drops a selection
+   * whose option disappeared from the data. */
+  private providerFilterEntries(state: AgentHistoryState): Array<{ key: string; label: string }> {
     const options = providerFilterOptions(state.threads, state.providers);
-    const signature = options.map((option) => option.value + '="' + option.label).join('');
-    if (signature === this.providerOptionsSignature) return;
-    this.providerOptionsSignature = signature;
-
-    const selected = this.providerFilterValue;
-    this.providerSelect.innerHTML = '';
-    const all = document.createElement('option');
-    all.value = '';
-    all.textContent = 'All providers';
-    this.providerSelect.appendChild(all);
-    for (const option of options) {
-      const item = document.createElement('option');
-      item.value = option.value;
-      item.textContent = option.label;
-      this.providerSelect.appendChild(item);
+    if (this.providerFilterValue && !options.some((option) => option.value === this.providerFilterValue)) {
+      this.providerFilterValue = '';
     }
-    // Drop a selection whose option disappeared from the data.
-    this.providerFilterValue = options.some((option) => option.value === selected) ? selected : '';
-    this.providerSelect.value = this.providerFilterValue;
-  }
-
-  private on<K extends keyof HTMLElementEventMap>(
-    node: HTMLElement | null,
-    type: K,
-    handler: (event: HTMLElementEventMap[K]) => void
-  ): void {
-    if (!node) return;
-    node.addEventListener(type, handler as EventListener);
-    this.cleanup.push(() => node.removeEventListener(type, handler as EventListener));
+    return options.map((option) => ({ key: option.value, label: option.label }));
   }
 }

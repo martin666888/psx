@@ -5,6 +5,8 @@ import { JSDOM } from 'jsdom';
 
 const testDirectory = path.dirname(fileURLToPath(import.meta.url));
 export const repositoryRoot = path.resolve(testDirectory, '..', '..', '..');
+const nativeFetch = globalThis.fetch.bind(globalThis);
+let activeAgentDom = null;
 
 // Tests exercise the Agent TypeScript sources under frontend/agent/src
 // directly; Vitest transforms .ts/.tsx on import. Callers keep addressing
@@ -35,10 +37,12 @@ await loadBridgeGlobals();
 // touch. The Bridge globals were published once at harness load; they read the
 // current jsdom window at call time. Returns the message-capture handles.
 export function installAgentRuntime() {
+  activeAgentDom?.window.close();
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {
     url: 'https://psx.local/',
     runScripts: 'outside-only'
   });
+  activeAgentDom = dom;
   globalThis.window = dom.window;
   globalThis.document = dom.window.document;
   Object.defineProperty(globalThis, 'navigator', {
@@ -46,13 +50,38 @@ export function installAgentRuntime() {
     value: dom.window.navigator
   });
   globalThis.HTMLElement = dom.window.HTMLElement;
+  globalThis.Element = dom.window.Element;
+  globalThis.HTMLButtonElement = dom.window.HTMLButtonElement;
+  const capturedPointers = new WeakMap();
+  dom.window.HTMLElement.prototype.setPointerCapture = function (pointerId) {
+    capturedPointers.set(this, pointerId);
+  };
+  dom.window.HTMLElement.prototype.hasPointerCapture = function (pointerId) {
+    return capturedPointers.get(this) === pointerId;
+  };
+  dom.window.HTMLElement.prototype.releasePointerCapture = function () {
+    capturedPointers.delete(this);
+  };
+  dom.window.HTMLElement.prototype.scrollIntoView = function () {};
+  dom.window.HTMLElement.prototype.attachEvent = function () {};
+  dom.window.HTMLElement.prototype.detachEvent = function () {};
   globalThis.HTMLTextAreaElement = dom.window.HTMLTextAreaElement;
   globalThis.HTMLInputElement = dom.window.HTMLInputElement;
+  // Radix Select touches bare globals the harness must mirror like the other
+  // DOM constructors: the form-association effect tests `instanceof
+  // HTMLFormElement`, and SelectContent allocates a `new DocumentFragment()`
+  // portal container even while closed.
+  globalThis.HTMLFormElement = dom.window.HTMLFormElement;
+  globalThis.DocumentFragment = dom.window.DocumentFragment;
   globalThis.Node = dom.window.Node;
+  globalThis.NodeFilter = dom.window.NodeFilter;
   globalThis.Event = dom.window.Event;
   globalThis.KeyboardEvent = dom.window.KeyboardEvent;
   globalThis.MouseEvent = dom.window.MouseEvent;
   globalThis.CustomEvent = dom.window.CustomEvent;
+  // SessionRuntimeController watches the panel for the composer-rendered
+  // context-usage host (3-0).
+  globalThis.MutationObserver = dom.window.MutationObserver;
   globalThis.getComputedStyle = dom.window.getComputedStyle.bind(dom.window);
   globalThis.requestAnimationFrame = (callback) => {
     callback(0);
@@ -72,17 +101,34 @@ export function installAgentRuntime() {
   globalThis.File = dom.window.File;
   globalThis.Blob = dom.window.Blob;
   globalThis.FileList = dom.window.FileList;
+  globalThis.FormData = dom.window.FormData;
   const createdObjectUrls = [];
   const revokedObjectUrls = [];
-  dom.window.URL.createObjectURL = () => {
+  const objectUrlBlobs = new Map();
+  dom.window.URL.createObjectURL = (blob) => {
     const url = 'blob:psx/' + (createdObjectUrls.length + 1);
     createdObjectUrls.push(url);
+    objectUrlBlobs.set(url, blob);
     return url;
   };
   dom.window.URL.revokeObjectURL = (url) => {
     revokedObjectUrls.push(url);
+    objectUrlBlobs.delete(url);
   };
   globalThis.URL = dom.window.URL;
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === 'string' ? input : input?.url;
+    const blob = objectUrlBlobs.get(url);
+    if (blob) {
+      return {
+        ok: true,
+        status: 200,
+        blob: async () => blob
+      };
+    }
+    return nativeFetch(input, init);
+  };
+  dom.window.fetch = globalThis.fetch;
 
   const postedMessages = [];
   const hostListeners = [];
@@ -218,6 +264,20 @@ export function createAgentWorkspace(app, workspaceId, { ready = true } = {}) {
     });
   }
   return document.querySelector(`.agent-panel[data-workspace-id="${workspaceId}"]`);
+}
+
+// The ComposerView island (3-0) renders the whole composer subtree
+// asynchronously after workspace creation. The controller finishes wiring
+// (node listeners and initial resize) inside the island's first commit, so the
+// React-owned [data-role="mode"] trigger doubles
+// as the wiring-complete signal. Poll for it before touching composer nodes.
+export async function composerReady(panel) {
+  for (let attempt = 0; attempt < 200 && !panel.querySelector('[data-role="mode"]'); attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  if (!panel.querySelector('[data-role="mode"]')) {
+    throw new Error('composer island did not mount');
+  }
 }
 
 export function modeTransitionEvent(overrides = {}) {

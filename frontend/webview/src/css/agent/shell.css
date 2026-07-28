@@ -137,31 +137,9 @@
     background: var(--agent-bg);
 }
 
-/* Shared quiet icon button for toolbar toggles (History, Plan). */
-.agent-icon-toggle {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 5px;
-    border: 1px solid var(--agent-border-strong);
-    border-radius: var(--agent-radius-control);
-    background: var(--agent-surface-raised);
-    color: var(--agent-text);
-    cursor: pointer;
-    font: inherit;
-}
-
-.agent-icon-toggle svg {
-    display: block;
-}
-
-.agent-icon-toggle:hover {
-    background: var(--agent-hover);
-}
-
-.agent-icon-toggle[aria-expanded="false"] {
-    color: var(--agent-text-muted);
+/* The toolbar island renders straight into the toolbar flex row. */
+.agent-toolbar-host {
+    display: contents;
 }
 
 .agent-meta {
@@ -214,20 +192,6 @@
     gap: var(--agent-space-2);
 }
 
-.agent-toolbar button {
-    box-sizing: border-box;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    height: 28px;
-    padding: 0 10px;
-    font-size: 12px;
-    line-height: 1;
-    white-space: nowrap;
-}
-
-.agent-toolbar button:focus-visible,
-.agent-send:focus-visible,
 .agent-decision-actions button:focus-visible,
 .agent-attach:focus-visible,
 .agent-history-item:focus-visible,
@@ -236,8 +200,6 @@
     outline-offset: 2px;
 }
 
-.agent-toolbar button:active,
-.agent-send:active,
 .agent-decision-actions button:active,
 .agent-attach:active,
 .agent-history-item:active {
@@ -265,7 +227,17 @@
     overflow: hidden;
 }
 
+.agent-conversation-host {
+    display: contents;
+}
+
+/* Conversation root (AI Elements StickToBottom positioning container). */
 .agent-thread {
+    min-height: 0;
+}
+
+/* The single scroll node inside the Conversation. */
+.agent-thread-scroll {
     overflow-x: hidden;
     overflow-y: auto;
     padding: var(--agent-space-5) 0 var(--agent-space-8);
@@ -274,12 +246,12 @@
     min-height: 0;
 }
 
-.agent-thread > .agent-turn,
-.agent-thread > .agent-system,
-.agent-thread > .agent-recovery,
-.agent-thread > .agent-run-group,
-.agent-thread > .agent-tool,
-.agent-thread > .agent-decision {
+.agent-thread-content > .agent-turn,
+.agent-thread-content > .agent-system,
+.agent-thread-content > .agent-recovery,
+.agent-thread-content > .agent-run-group,
+.agent-thread-content > .agent-tool,
+.agent-thread-content > .agent-decision {
     width: var(--agent-reading-column-max);
     max-width: 100%;
     margin-left: max(0px, var(--agent-reading-column-start));

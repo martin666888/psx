@@ -6,7 +6,8 @@
   scroll-area/select fetched 2026-02 from `ui.shadcn.com` during the CP0 probe;
   badge/collapsible/tooltip/button-group/command/dropdown-menu/hover-card/
   input-group/textarea/separator/kbd fetched from
-  `https://ui.shadcn.com/r/styles/new-york-v4/{name}.json`).
+  `https://ui.shadcn.com/r/styles/new-york-v4/{name}.json`; card fetched
+  2026-07-28 and switch fetched 2026-07-28 from the same registry).
 - License: MIT (`licenses/shadcn/LICENSE`). Runtime deps: `radix-ui`, `cmdk`,
   `class-variance-authority`, `clsx`, `tailwind-merge`, `lucide-react`.
 - Local modifications: none.
@@ -31,7 +32,10 @@
     ACP tool-state wording) and `titleClassName` (semantic anchor classes)
     props to ToolHeader.
   - `prompt-input.tsx`: `ai` types (ChatStatus/FileUIPart) declared locally;
-    `nanoid` replaced with `crypto.randomUUID`.
+    `nanoid` replaced with `crypto.randomUUID`; adds optional
+    removal/preview chrome, `convertBlobUrls`, the attachment-input data role,
+    and composition of consumer textarea keyboard/composition/paste handlers
+    for the ComposerView/AttachmentBridge integration.
   - `shimmer.tsx`: motion/react animation reproduced as a CSS keyframe
     (`psx-shimmer` in `frontend/webview/src/css/tailwind.css`).
   - `conversation.tsx`, `loader.tsx`, `task.tsx`: unchanged.

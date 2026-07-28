@@ -82,9 +82,6 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
     this.container.appendChild(fragment);
 
     const bridge = Bridge.createAgentScope(id);
-    // Clear is a PSX built-in with no feature domain, so the shell wires it.
-    const clear = panel.querySelector<HTMLElement>('[data-role="clear"]');
-    clear?.addEventListener('click', () => bridge.sendAgentCommand('clear'));
 
     if (this.settings) this.applyGlobalAppearance(this.settings);
     this.workspaces.set(id, {
@@ -170,9 +167,10 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
   }
 
   /** keep-alive: capture the thread scroll anchor and the focused control
-   * before the panel goes display:none (both are lost while hidden). */
+   * before the panel goes display:none (both are lost while hidden). The
+   * single scroll node is .agent-thread-scroll inside the Conversation. */
   private saveViewState(entry: WorkspaceEntry): void {
-    const thread = entry.panel.querySelector<HTMLElement>('[data-role="thread"]');
+    const thread = entry.panel.querySelector<HTMLElement>('.agent-thread-scroll');
     if (thread) {
       entry.savedScrollTop = thread.scrollTop;
       // Within one pixel of the end counts as pinned (fractional scroll).
@@ -197,7 +195,7 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
 
   private restoreViewState(entry: WorkspaceEntry): void {
     const panel = entry.panel;
-    const thread = panel.querySelector<HTMLElement>('[data-role="thread"]');
+    const thread = panel.querySelector<HTMLElement>('.agent-thread-scroll');
     if (thread) {
       // A workspace pinned to the newest message stays pinned even when new
       // content streamed in while it was hidden; otherwise the exact reading
@@ -297,9 +295,6 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
       this.setVar(root, '--agent-code-block-bg', a.codeBlockBg);
       this.setVar(root, '--agent-code-block-text', a.codeBlockText);
       this.setVar(root, '--agent-code-block-border', a.codeBlockBorder);
-      this.setVar(root, '--agent-send-btn', a.sendBtn);
-      this.setVar(root, '--agent-send-btn-hover', a.sendBtnHover);
-      this.setVar(root, '--agent-send-btn-text', a.sendBtnText);
       this.setVar(root, '--agent-decision-primary', a.decisionPrimary);
       this.setVar(root, '--agent-decision-primary-hover', a.decisionPrimaryHover);
       this.setVar(root, '--agent-decision-primary-text', a.decisionPrimaryText);

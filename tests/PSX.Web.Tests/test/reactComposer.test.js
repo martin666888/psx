@@ -53,7 +53,7 @@ test('attachment upload, confirmation and removal update the React strip', async
     if (!upload) await tick();
   }
   assert.ok(upload);
-  assert.equal(panel.querySelector('.agent-attachment-name').textContent, 'shot.png');
+  assert.match(panel.querySelector('[data-status="uploading"]').textContent, /shot\.png/);
   await settle(
     () => app.handle({
       type: 'agent_attachment_uploaded',
@@ -68,8 +68,10 @@ test('attachment upload, confirmation and removal update the React strip', async
     }),
     () => !!panel.querySelector('.agent-attachment-uploaded')
   );
-  await act(async () => panel.querySelector('.agent-attachment-remove').click());
-  assert.equal(panel.querySelector('.agent-attachment-tile'), null);
+  await settle(
+    () => panel.querySelector('[aria-label="Remove attachment"]').click(),
+    () => panel.querySelector('.agent-attachments-strip [data-status]') === null
+  );
   assert.equal(role(panel, 'attachments-strip').hidden, true);
 });
 
@@ -114,8 +116,15 @@ test('textarea submit and stop preserve exact bridge payloads', async () => {
     () => app.handle({ type: 'agent_state', workspaceId: WS, status: 'ready', busy: false }),
     () => !!role(panel, 'send')
   );
-  role(panel, 'input').value = 'ship it';
-  role(panel, 'send').click();
+  await settle(
+    () => {
+      const input = role(panel, 'input');
+      input.value = 'ship it';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      role(panel, 'send').click();
+    },
+    () => runtime.postedMessages.at(-1)?.type === 'agent_submit'
+  );
   assert.deepEqual(runtime.postedMessages.at(-1), {
     type: 'agent_submit',
     workspaceId: WS,
@@ -125,7 +134,10 @@ test('textarea submit and stop preserve exact bridge payloads', async () => {
   await act(async () => {
     app.handle({ type: 'agent_state', workspaceId: WS, status: 'busy', busy: true });
   });
-  role(panel, 'send').click();
+  await settle(
+    () => role(panel, 'send').click(),
+    () => runtime.postedMessages.at(-1)?.command === 'stop'
+  );
   assert.deepEqual(runtime.postedMessages.at(-1), {
     type: 'agent_command',
     workspaceId: WS,

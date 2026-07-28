@@ -1,5 +1,4 @@
 @import "./tokens.css";
-@import "./buttons.css";
 @import "./shell.css";
 @import "./scrollbars.css";
 @import "./messages.css";
@@ -8,7 +7,6 @@
 @import "./decisions.css";
 @import "./history.css";
 @import "./composer.css";
-@import "./commands.css";
 @import "./attachments.css";
 @import "./runtime.css";
 @import "./islands.css";

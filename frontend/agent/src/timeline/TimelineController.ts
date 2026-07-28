@@ -1,7 +1,10 @@
 // TimelineController.ts — React Timeline projection and side-effect owner.
 //
-// TimelineProjection is the single source of render state and one React root
-// is the single writer for [data-role="thread"] children.
+// TimelineProjection is the single source of render state and the timeline
+// island (mounted on [data-role="conversation-host"]) is the single writer
+// for the thread subtree. Visible-time stick-to-bottom scrolling is owned by
+// the AI Elements Conversation inside TimelineView; hide/show scroll
+// snapshots stay with WorkspaceHost.
 
 import type { AgentBridgePort } from '../contracts/bridge-port.js';
 import type { FeatureController } from '../contracts/feature-controller.js';
@@ -25,8 +28,6 @@ export class TimelineController implements FeatureController {
   private state: AgentWorkspaceState;
   private readonly projection = new TimelineProjection();
   private timelineIsland: IslandLoader<TimelineViewProps> | null = null;
-  private autoScrollPinned = true;
-  private scrollListener: (() => void) | null = null;
 
   constructor(workspaceId: string, host: TimelineHost) {
     this.workspaceId = workspaceId;
@@ -35,12 +36,7 @@ export class TimelineController implements FeatureController {
   }
 
   mount(): void {
-    const thread = this.thread;
-    if (!thread) return;
-    this.scrollListener = () => {
-      this.autoScrollPinned = this.isNearBottom();
-    };
-    thread.addEventListener('scroll', this.scrollListener);
+    if (!this.conversationHost) return;
     this.render();
   }
 
@@ -52,11 +48,6 @@ export class TimelineController implements FeatureController {
   }
 
   dispose(): void {
-    const thread = this.thread;
-    if (thread && this.scrollListener) {
-      thread.removeEventListener('scroll', this.scrollListener);
-    }
-    this.scrollListener = null;
     this.timelineIsland?.dispose();
     this.timelineIsland = null;
   }
@@ -67,7 +58,7 @@ export class TimelineController implements FeatureController {
   }
 
   private render(): void {
-    const host = this.thread;
+    const host = this.conversationHost;
     if (!host) return;
     this.timelineIsland ??= createIslandLoader<TimelineViewProps>({
       name: 'timeline',
@@ -81,8 +72,7 @@ export class TimelineController implements FeatureController {
     this.timelineIsland.render({
       rows: this.projection.snapshot().rows,
       assistantName: this.assistantName,
-      callbacks: this.callbacks(),
-      onCommitted: () => this.scrollToBottom()
+      callbacks: this.callbacks()
     });
   }
 
@@ -153,19 +143,6 @@ export class TimelineController implements FeatureController {
     }
   }
 
-  private scrollToBottom(): void {
-    const thread = this.thread;
-    if (!thread || !this.autoScrollPinned) return;
-    thread.scrollTop = thread.scrollHeight;
-    this.autoScrollPinned = true;
-  }
-
-  private isNearBottom(): boolean {
-    const thread = this.thread;
-    if (!thread) return true;
-    return thread.scrollHeight - thread.scrollTop - thread.clientHeight <= 48;
-  }
-
   private get assistantName(): string {
     return this.state.identity.assistantName;
   }
@@ -174,9 +151,9 @@ export class TimelineController implements FeatureController {
     return this.host.bridgeFor(this.workspaceId);
   }
 
-  private get thread(): HTMLElement | null {
+  private get conversationHost(): HTMLElement | null {
     return this.host
       .getPanel(this.workspaceId)
-      ?.querySelector<HTMLElement>('[data-role="thread"]') ?? null;
+      ?.querySelector<HTMLElement>('[data-role="conversation-host"]') ?? null;
   }
 }

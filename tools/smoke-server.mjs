@@ -158,7 +158,7 @@ const REACT_SMOKE_BOOTSTRAP = String.raw`
         && panel.querySelector('[data-role="session-meta-host"]')?.dataset.islandState === 'mounted'
         && panel.querySelector('[data-role="context-usage-host"]')?.dataset.islandState === 'mounted'
         && panel.querySelector('[data-role="runtime-host"]')?.dataset.islandState === 'mounted'
-        && panel.querySelector('[data-role="plan-panel"]')?.dataset.islandState === 'mounted';
+        && panel.querySelector('[data-role="plan-card"]')?.dataset.islandState === 'mounted';
     });
     const panel = document.querySelector('[data-workspace-id="' + workspaceId + '"]');
     result.checks.islandsMounted = mounted;

@@ -1,7 +1,7 @@
 // TimelineDecisions.tsx — React permission, question, elicitation and
 // mode-transition thread cards.
 
-import { useLayoutEffect, useRef, useState, type JSX } from 'react';
+import { useRef, useState, type JSX } from 'react';
 import {
   defaultOptionValue,
   orderElicitationFields,
@@ -12,7 +12,7 @@ import {
 import { renderMarkdown, safeHref } from '../core/markdown.js';
 import { decisionOptionClass } from '../decisions/decisionPresentation.js';
 import type { DecisionItem, DecisionOptionVM } from './timelineViewModel.js';
-import { CopyButton, useDetailsOpen } from './TimelineView.js';
+import { CopyButton, useProjectionOpen } from './TimelineView.js';
 import { Button } from '../components/ui/button.js';
 import {
   Collapsible,
@@ -41,8 +41,9 @@ function PermissionQuestionCard({
   callbacks: DecisionCallbacks;
 }): JSX.Element {
   // legacy: the card starts open and only a local option click closes it;
-  // external resolve/cancel leaves the user's toggle alone.
-  const ref = useDetailsOpen(!item.collapsed);
+  // external resolve/cancel leaves the user's toggle alone (projection-lifecycle
+  // open sync, same contract as the old uncontrolled <details>).
+  const [open, setOpen] = useProjectionOpen(!item.collapsed);
   const disabled = item.decisionState !== 'active';
   const [rawInputOpen, setRawInputOpen] = useState(false);
   const resolvedId = item.selectedOptionId;
@@ -58,8 +59,9 @@ function PermissionQuestionCard({
   // Selected option leads the row; the rest hide (legacy completeDecisionCard).
   const ordered = selected ? [selected, ...item.options.filter((option) => option !== selected)] : item.options;
   return (
-    <details
-      ref={ref}
+    <Collapsible
+      open={open}
+      onOpenChange={setOpen}
       className={
         'agent-decision agent-decision-' + item.kind +
         ' group/decision mb-3.5 w-full rounded-lg border text-card-foreground' +
@@ -71,17 +73,20 @@ function PermissionQuestionCard({
       data-selected-option-id={resolvedId || undefined}
       data-selected-option-name={resolvedName || undefined}
     >
-      <summary className="agent-decision-header cursor-pointer select-none list-none p-3 [&::-webkit-details-marker]:hidden">
+      <CollapsibleTrigger className="agent-decision-header w-full cursor-pointer select-none p-3 text-left">
         <div className="agent-decision-header-content flex flex-col gap-1">
           <div className="agent-decision-header-title-row flex items-center gap-2">
             <span className="agent-decision-chevron inline-flex shrink-0 text-muted-foreground" aria-hidden="true">
-              <ChevronRightIcon className="size-3 transition-transform group-open/decision:rotate-90" />
+              <ChevronRightIcon className="size-3 transition-transform group-data-[state=open]/decision:rotate-90" />
             </span>
             <span className="agent-decision-header-title text-[13px] font-bold">{item.title}</span>
           </div>
           <span className="agent-decision-header-subtitle text-xs text-muted-foreground">{subtitle}</span>
         </div>
-      </summary>
+      </CollapsibleTrigger>
+      {/* forceMount keeps the collapsed card body in the DOM (old <details>
+          semantics) for text search and replay tooling. */}
+      <CollapsibleContent forceMount className="data-[state=closed]:hidden">
       <div className="agent-decision-body relative px-3 pb-3">
         <Collapsible
           className="agent-decision-raw-input group/raw mt-2.5"
@@ -110,11 +115,13 @@ function PermissionQuestionCard({
             // button only; hidden losers keep theirs.
             const semantic = isSelected ? '' : decisionOptionClass(option);
             return (
-              <button
+              <Button
                 key={option.optionId || option.name}
                 type="button"
+                variant="outline"
+                size="sm"
                 className={
-                  'agent-decision-option min-h-8 max-w-full cursor-pointer break-words rounded-full border bg-background px-4 py-1 text-xs leading-normal transition-colors hover:bg-accent disabled:cursor-default' +
+                  'agent-decision-option min-h-8 max-w-full cursor-pointer whitespace-normal break-words rounded-full px-4 py-1 text-xs leading-normal hover:bg-accent disabled:cursor-default' +
                   (semantic ? ' ' + semantic : '') +
                   (isSelected
                     ? ' agent-decision-option-selected border-border bg-muted text-muted-foreground'
@@ -130,7 +137,7 @@ function PermissionQuestionCard({
                 }}
               >
                 {option.name}
-              </button>
+              </Button>
             );
           })}
         </div>
@@ -138,7 +145,8 @@ function PermissionQuestionCard({
           <div className="agent-decision-status mt-2.5 text-xs text-muted-foreground">{item.statusText}</div>
         ) : null}
       </div>
-    </details>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
@@ -150,14 +158,8 @@ function ModeTransitionCard({
   callbacks: DecisionCallbacks;
 }): JSX.Element {
   const pending = item.decisionState === 'active';
-  const detailsRef = useRef<HTMLDetailsElement | null>(null);
-  const openedOnce = useRef(false);
-  useLayoutEffect(() => {
-    if (openedOnce.current || !detailsRef.current) return;
-    openedOnce.current = true;
-    detailsRef.current.open = !item.historical;
-    // Runs once on mount by design: item.historical is intentionally omitted.
-  }, []);
+  // Uncontrolled: historical cards start collapsed, live ones start open;
+  // afterwards the user toggles freely (legacy openedOnce-on-mount semantics).
   const statusText = item.statusText
     ? item.statusText
     : pending
@@ -181,11 +183,14 @@ function ModeTransitionCard({
           {pending ? 'Decision required' : item.headerState || 'Interrupted'}
         </span>
       </header>
-      <details ref={detailsRef} className="agent-mode-transition-details group/mt bg-background">
-        <summary className="agent-mode-transition-summary flex cursor-pointer select-none list-none items-center gap-2 px-4 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:bg-accent hover:text-foreground [&::-webkit-details-marker]:hidden">
-          <ChevronRightIcon className="size-2.5 shrink-0 transition-transform group-open/mt:rotate-90" aria-hidden="true" />
+      <Collapsible defaultOpen={!item.historical} className="agent-mode-transition-details group/mt bg-background">
+        <CollapsibleTrigger className="agent-mode-transition-summary flex w-full cursor-pointer select-none items-center gap-2 px-4 py-2 text-left text-xs font-semibold text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
+          <ChevronRightIcon className="size-2.5 shrink-0 transition-transform group-data-[state=open]/mt:rotate-90" aria-hidden="true" />
           Proposal details
-        </summary>
+        </CollapsibleTrigger>
+        {/* forceMount keeps the collapsed proposal in the DOM (old <details>
+            semantics) for text search and replay tooling. */}
+        <CollapsibleContent forceMount className="data-[state=closed]:hidden">
         <div
           className="agent-mode-transition-document agent-message-body border-t px-4 pt-3 pb-4"
           dangerouslySetInnerHTML={{ __html: renderMarkdown(item.text) }}
@@ -202,11 +207,12 @@ function ModeTransitionCard({
               </div>
             ) : (
               item.options.map((option) => (
-                <button
+                <Button
                   key={option.optionId || option.name}
                   type="button"
+                  variant="outline"
                   className={
-                    'agent-mode-transition-option min-h-10 w-full min-w-0 cursor-pointer break-words rounded-md border bg-background px-3 py-2 text-left text-xs font-semibold leading-snug disabled:cursor-default' +
+                    'agent-mode-transition-option min-h-10 w-full min-w-0 cursor-pointer whitespace-normal break-words px-3 py-2 text-left text-xs font-semibold leading-snug disabled:cursor-default' +
                     (decisionOptionClass(option) ? ' ' + decisionOptionClass(option) : '') +
                     (option.optionId === item.selectedOptionId
                       ? ' agent-mode-transition-option-selected border-ring bg-accent'
@@ -218,7 +224,7 @@ function ModeTransitionCard({
                   disabled
                 >
                   {option.name}
-                </button>
+                </Button>
               ))
             )}
           </div>
@@ -226,7 +232,8 @@ function ModeTransitionCard({
         <div className="agent-mode-transition-status min-h-[17px] px-4 pt-2 pb-3 text-xs leading-snug text-muted-foreground" aria-live="polite">
           {statusText}
         </div>
-      </details>
+        </CollapsibleContent>
+      </Collapsible>
     </section>
   );
 }
@@ -345,10 +352,11 @@ function ElicitationOptionButton({
   onClick(): void;
 }): JSX.Element {
   return (
-    <button
+    <Button
       type="button"
+      variant="outline"
       className={
-        'agent-elicitation-option grid w-full min-w-0 cursor-pointer gap-0.5 rounded-lg border bg-background p-2.5 text-left transition-colors hover:bg-accent disabled:cursor-default disabled:opacity-70' +
+        'agent-elicitation-option grid w-full min-w-0 cursor-pointer gap-0.5 whitespace-normal break-words rounded-lg p-2.5 text-left hover:bg-accent disabled:cursor-default disabled:opacity-70' +
         (selected ? ' agent-elicitation-option-selected border-ring bg-accent' : '')
       }
       role={multi ? 'button' : 'radio'}
@@ -361,7 +369,7 @@ function ElicitationOptionButton({
       {option.description ? (
         <small className="agent-elicitation-option-description break-words text-xs leading-normal text-muted-foreground">{option.description}</small>
       ) : null}
-    </button>
+    </Button>
   );
 }
 

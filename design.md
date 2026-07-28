@@ -82,7 +82,7 @@ Every interactive element provides default, hover, active, and disabled states. 
 
 ## Component rules
 
-- **Buttons have one skin.** `frontend/webview/src/css/agent/buttons.css` owns the shared recipe — hairline border, `--agent-radius-control`, surface fill, hover/active/disabled — wrapped in `:where()` so specificity stays zero. Component files keep geometry (padding, size, min-width) locally and may override the skin. Variants are existing selectors only: `.agent-btn-primary` (filled accent), `.agent-btn-subtle` / `.agent-history-dismiss` (borderless), `.agent-send-stop` / `.agent-composer-decision-stop` (destructive).
+- **Buttons have one component contract.** Agent React surfaces use the shadcn `Button` primitive and its named variants; component files may add layout geometry but must not recreate hover/active/disabled skins. Remaining non-React shell controls use their local semantic selectors until their owning surface migrates.
 - WPF chrome buttons use `SoftWorkbenchButtonStyle`, `SoftWorkbenchToggleButtonStyle`, or `SoftWorkbenchIconButtonStyle` from `Themes/Dark.xaml`; icons are XAML `Path` geometry, never font glyphs.
 - Assistant responses are not cards. User prompts use one low-contrast bounded surface and never form left/right chat bubbles.
 - Tool activity is one disclosure region containing a flat divided list. Each row includes an explicit state label; no colored side rail.

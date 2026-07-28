@@ -2,7 +2,7 @@ import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { mountAgentApp, createAgentWorkspace, repositoryRoot } from './agentHarness.js';
+import { mountAgentApp, createAgentWorkspace, composerReady, repositoryRoot } from './agentHarness.js';
 
 // AgentShell layered layout (step 5): History dock at the bottom layer, the
 // conversation canvas above it, the Plan card as a right-edge overlay. The
@@ -14,6 +14,15 @@ const WS = '11111111-1111-4111-8111-111111111111';
 
 function role(panel, name) {
   return panel.querySelector('[data-role="' + name + '"]');
+}
+
+// The workspace toolbar island renders the toggles asynchronously after
+// workspace creation; poll until its first commit lands.
+async function toolbarReady(panel) {
+  for (let attempt = 0; attempt < 200 && !role(panel, 'plan-toggle'); attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.ok(role(panel, 'plan-toggle'), 'workspace toolbar island did not mount');
 }
 
 function readCss(name) {
@@ -32,9 +41,10 @@ test('shell: the context-cards overlay sits outside the single-column workspace 
 
   const workspace = panel.querySelector('.agent-workspace');
   assert.equal(workspace.children.length, 1, 'workspace grid is back to a single column');
-  assert.equal(workspace.children[0].dataset.role, 'thread');
+  assert.equal(workspace.children[0].dataset.role, 'conversation-host');
 
   assert.equal(cards.querySelector('[data-role="plan-resizer"]'), null, 'fixed-width card: no resizer');
+  await toolbarReady(panel);
   assert.ok(panel.querySelector('.agent-toolbar [data-role="plan-toggle"]'), 'visibility toggle lives in the toolbar');
 });
 
@@ -45,10 +55,16 @@ test('shell: dock open toggles the canvas dock-open state class', async () => {
   assert.equal(container.classList.contains('agent-history-dock-open'), false);
 
   const panel = panelFor(WS);
+  await composerReady(panel);
   role(panel, 'input').value = '/history';
-  role(panel, 'input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+  role(panel, 'input').dispatchEvent(new Event('input', { bubbles: true }));
+  role(panel, 'input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  for (let attempt = 0; attempt < 100 && !container.classList.contains('agent-history-dock-open'); attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
   assert.equal(container.classList.contains('agent-history-dock-open'), true);
 
+  await toolbarReady(panel);
   role(panel, 'history-toggle').click();
   assert.equal(container.classList.contains('agent-history-dock-open'), false);
 });
@@ -119,14 +135,18 @@ test('shell: retired layout tokens are gone from every agent stylesheet', () => 
 
 test('shell: composer and conversation share the same reading-column rules', () => {
   const composer = readCss('composer.css');
+  const view = fs.readFileSync(
+    path.join(repositoryRoot, 'frontend', 'agent', 'src', 'composer', 'ComposerView.tsx'),
+    'utf8'
+  );
   assert.match(composer, /width: var\(--agent-reading-column-max\)/);
   assert.match(composer, /margin-left: max\(0px, var\(--agent-reading-column-start\)\)/);
-  // The old three-column composer grid is gone. The compact boolean switch
-  // intentionally uses ::after for its thumb, so a global pseudo-element ban
-  // would reject the current accessible control.
+  // The old three-column composer grid is gone. Footer geometry moved with
+  // the React-owned Composer subtree and no longer has a parallel CSS owner.
   assert.ok(!composer.includes('grid-template-columns'), 'composer grid retired');
   assert.ok(!composer.includes('agent-plan-column'), 'plan-column separator retired');
-  assert.match(composer, /\.agent-composer-footer[\s\S]*?border-radius: 0 0 var\(--agent-radius-composer\)/);
+  assert.ok(!composer.includes('.agent-composer-footer'));
+  assert.match(view, /rounded-b-\[var\(--agent-radius-composer\)\]/);
 });
 
 test('shell: dock width stays persisted in wide mode and becomes fixed only while narrow', () => {

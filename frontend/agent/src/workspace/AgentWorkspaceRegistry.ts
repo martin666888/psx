@@ -28,6 +28,7 @@ import type { TimelineHost } from '../timeline/TimelineController.js';
 import { AgentWorkspaceController } from './AgentWorkspaceController.js';
 import { AgentWorkspaceStore } from './AgentWorkspaceStore.js';
 import { SessionRuntimeController } from './SessionRuntimeController.js';
+import { WorkspaceToolbarController } from './WorkspaceToolbarController.js';
 import { AgentHistoryStore, normalizeProviderCatalog } from '../history/AgentHistoryStore.js';
 import { AgentHistoryRequestBroker } from '../history/AgentHistoryRequestBroker.js';
 import type { HistoryDockController, HistoryDockHost } from '../history/HistoryDockController.js';
@@ -44,6 +45,7 @@ export class AgentWorkspaceRegistry {
   // Plan controller refs by workspace: the shell layout coordinator needs the
   // ACTIVE workspace's card for the narrow one-at-a-time rule.
   private readonly planControllers = new Map<string, PlanController>();
+  private readonly toolbarControllers = new Map<string, WorkspaceToolbarController>();
   // Shell owns responsive layout. Registry retains the narrow result so a Plan
   // created while narrow immediately starts collapsed, and separately tracks
   // whether History must yield to preserve the reading column.
@@ -95,6 +97,10 @@ export class AgentWorkspaceRegistry {
   attachHistoryDock(dock: HistoryDockController): void {
     this.historyDock = dock;
     dock.applyResponsiveCollapse(this.narrow || this.historyReadingConstrained);
+    // The global dock's open state feeds every workspace toolbar toggle.
+    dock.onOpenChanged((open) => {
+      for (const toolbar of this.toolbarControllers.values()) toolbar.setHistoryOpen(open);
+    });
   }
 
   /** The seam entry.ts hands to the AgentShellLayoutController: flat accessors
@@ -110,7 +116,8 @@ export class AgentWorkspaceRegistry {
       onHistoryOpenChanged: (listener) => dock.onOpenChanged(listener),
       historyWidth: () => dock.getWidth(),
       onHistoryWidthChanged: (listener) => dock.onWidthChanged(listener),
-      focusHistoryToggle: () => dock.focusToggle(),
+      focusHistoryToggle: () =>
+        this.toolbarControllers.get(this.activeAgentWorkspace())?.focusHistoryToggle(),
       isActivePlanVisible: () => activePlan()?.isVisible() ?? false,
       closeActivePlan: () => activePlan()?.closeCard(),
       focusActivePlanToggle: () => activePlan()?.focusToggle(),
@@ -230,11 +237,20 @@ export class AgentWorkspaceRegistry {
     if (this.controllers.has(workspaceId)) return;
     this.host.createWorkspace(workspaceId);
     const state = this.store.create(workspaceId, createdRaw);
+    // The toolbar island has exactly one writer; the Session/Plan controllers
+    // and the global dock push their slices through it.
+    const toolbar = new WorkspaceToolbarController(workspaceId, this.host);
+    this.toolbarControllers.set(workspaceId, toolbar);
     const plan = new PlanController(workspaceId, this.host, {
       onVisibilityChanged: () => this.notifyPlanVisibility(workspaceId)
-    });
+    }, toolbar);
     this.planControllers.set(workspaceId, plan);
     plan.applyNarrow(this.narrow);
+    toolbar.setToggleHandlers(
+      () => this.historyDock?.toggleFromToolbar(),
+      () => plan.requestVisible(!plan.isVisible())
+    );
+    toolbar.setHistoryOpen(this.historyDock?.isOpen() ?? false);
     // The composer renders its own system messages (upload validation, "still
     // uploading", read errors) through the timeline seam so the thread keeps a
     // single writer, and opens the global History dock through the dock seam.
@@ -248,7 +264,7 @@ export class AgentWorkspaceRegistry {
     const promptHost: ModeTransitionPromptHost = {
       getPanel: (id) => this.host.getPanel(id),
       bridgeFor: (id) => this.host.bridgeFor(id),
-      setComposerPromptActive: (_id, active) => composer.setModeTransitionPromptActive(active),
+      setComposerPrompt: (_id, prompt) => composer.setModeTransitionPrompt(prompt),
       focusComposerInput: () => composer.focusInput()
     };
     const promptController = new ModeTransitionPromptController(workspaceId, promptHost);
@@ -260,7 +276,8 @@ export class AgentWorkspaceRegistry {
     };
     const timeline = new TimelineController(workspaceId, timelineHost);
     const controller = new AgentWorkspaceController(workspaceId, state, [
-      new SessionRuntimeController(workspaceId, this.host),
+      toolbar,
+      new SessionRuntimeController(workspaceId, this.host, toolbar),
       plan,
       composer,
       promptController,
@@ -278,6 +295,7 @@ export class AgentWorkspaceRegistry {
     if (!controller) return;
     this.controllers.delete(workspaceId);
     this.planControllers.delete(workspaceId);
+    this.toolbarControllers.delete(workspaceId);
     this.noticeSinks.delete(workspaceId);
     this.store.delete(workspaceId);
     this.historyBroker.unregisterWorkspace(workspaceId);

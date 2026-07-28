@@ -1,18 +1,20 @@
-// ModeTransitionPromptController.ts — composer-region ACP mode prompt.
-//
-// Decision cards in the conversation are React Timeline items. This controller
-// owns only the separate prompt that temporarily takes over the Composer.
+// ModeTransitionPromptController.ts — ACP state/action adapter for the
+// Composer-owned React mode-transition prompt.
 
 import type { AgentBridgePort } from '../contracts/bridge-port.js';
 import type { FeatureController } from '../contracts/feature-controller.js';
 import type { AgentWorkspaceEvent, RawHostMessage } from '../contracts/host-events.js';
 import type { AgentWorkspaceState } from '../contracts/workspace-state.js';
+import type { ComposerModeTransitionPromptVM } from '../composer/ModeTransitionPrompt.js';
 import { decisionOptionClass } from './decisionPresentation.js';
 
 export interface ModeTransitionPromptHost {
   getPanel(workspaceId: string): HTMLElement | null;
   bridgeFor(workspaceId: string): AgentBridgePort | null;
-  setComposerPromptActive(workspaceId: string, active: boolean): void;
+  setComposerPrompt(
+    workspaceId: string,
+    prompt: ComposerModeTransitionPromptVM | null
+  ): void;
   focusComposerInput(workspaceId: string): void;
 }
 
@@ -42,9 +44,7 @@ export class ModeTransitionPromptController implements FeatureController {
     this.host = host;
   }
 
-  mount(): void {
-    // The prompt is rendered lazily when ACP raises a mode transition.
-  }
+  mount(): void {}
 
   update(event: AgentWorkspaceEvent, state: AgentWorkspaceState): void {
     this.assistantName = state.identity.assistantName;
@@ -52,11 +52,9 @@ export class ModeTransitionPromptController implements FeatureController {
     switch (event.type) {
       case 'permission_request': {
         if (raw.presentation !== 'mode_transition' || !raw.documentText) return;
-        const requestId = asString(raw.requestId);
-        const options = asOptionArray(raw.options);
         const storedState = asString(raw.decisionState) || 'pending';
         if (storedState !== 'pending') return;
-        this.showPrompt(raw, !!requestId && options.length > 0);
+        this.showPrompt(raw);
         return;
       }
       case 'permission_resolved':
@@ -77,127 +75,56 @@ export class ModeTransitionPromptController implements FeatureController {
     for (const frame of this.animationFrames) cancelAnimationFrame(frame);
     this.animationFrames.clear();
     this.activeRequestId = '';
+    this.host.setComposerPrompt(this.workspaceId, null);
   }
 
-  private showPrompt(event: RawHostMessage, interactive: boolean): void {
-    const prompt = this.promptNode;
-    const inputRow = this.inputRowNode;
-    if (!prompt || !inputRow) return;
-
+  private showPrompt(event: RawHostMessage): void {
     const requestId = asString(event.requestId);
-    const options = asOptionArray(event.options);
-    const composerHadFocus = inputRow.contains(document.activeElement);
-
-    this.clearPrompt('', false);
-    this.activeRequestId = requestId;
-    prompt.replaceChildren();
-
-    const header = document.createElement('div');
-    header.className = 'agent-composer-decision-header';
-
-    const heading = document.createElement('div');
-    heading.className = 'agent-composer-decision-heading';
-
-    const title = document.createElement('div');
-    title.className = 'agent-composer-decision-title';
-    title.textContent = asString(event.title) || 'Mode transition';
-
-    const instruction = document.createElement('div');
-    instruction.className = 'agent-composer-decision-instruction';
-    instruction.textContent = 'Choose how to continue';
-    heading.append(title, instruction);
-
-    const status = document.createElement('div');
-    status.className = 'agent-composer-decision-status';
-    status.setAttribute('role', 'status');
-    status.setAttribute('aria-live', 'polite');
-
-    const stopButton = document.createElement('button');
-    stopButton.type = 'button';
-    stopButton.className = 'agent-composer-decision-stop';
-    stopButton.textContent = 'Stop';
-    stopButton.title = 'Stop ' + this.assistantName;
-    stopButton.addEventListener('click', () => {
-      if (stopButton.disabled) return;
-      stopButton.disabled = true;
-      stopButton.textContent = 'Stopping';
-      status.textContent = 'Stopping the current Agent run…';
-      prompt.querySelectorAll<HTMLButtonElement>('.agent-composer-decision-option').forEach((button) => {
-        button.disabled = true;
-      });
-      this.bridge()?.sendAgentCommand('stop');
-    });
-    header.append(heading, stopButton);
-
-    const actions = document.createElement('div');
-    actions.className = 'agent-composer-decision-options';
-    actions.setAttribute('role', 'group');
-    actions.setAttribute('aria-label', 'Choose how to continue');
-
-    if (interactive) {
-      for (const option of options) {
+    const options = asOptionArray(event.options)
+      .map((option) => {
         const optionId = asString(option.optionId);
-        const optionName = asString(option.name) || optionId || 'Select';
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'agent-composer-decision-option';
-        button.textContent = optionName;
-        button.dataset.optionId = optionId;
-        button.dataset.optionKind = asString(option.kind);
-        const semanticClass = decisionOptionClass(option);
-        if (semanticClass) button.classList.add(semanticClass);
-        button.addEventListener('click', () => {
-          if (this.activeRequestId !== requestId || !optionId) return;
-          prompt.dataset.decisionState = 'sending';
-          prompt.querySelectorAll<HTMLButtonElement>('.agent-composer-decision-option').forEach((candidate) => {
-            candidate.disabled = true;
-          });
-          button.classList.add('agent-mode-transition-option-pending');
-          status.textContent = 'Sending ' + optionName + '…';
-          this.bridge()?.sendAgentPermissionResponse(requestId, optionId);
-        });
-        actions.appendChild(button);
-      }
-    } else {
-      const error = document.createElement('div');
-      error.className = 'agent-mode-transition-error';
-      error.textContent = requestId
+        return {
+          optionId,
+          name: asString(option.name) || optionId || 'Select',
+          kind: asString(option.kind),
+          semanticClass: decisionOptionClass(option)
+        };
+      })
+      .filter((option) => !!option.optionId);
+    const interactive = !!requestId && options.length > 0;
+    const input = this.host
+      .getPanel(this.workspaceId)
+      ?.querySelector<HTMLElement>('[data-role="input"]');
+    const composerHadFocus = !!input?.contains(document.activeElement);
+
+    this.activeRequestId = requestId;
+    this.host.setComposerPrompt(this.workspaceId, {
+      requestId,
+      title: asString(event.title) || 'Mode transition',
+      assistantName: this.assistantName,
+      autoFocus: composerHadFocus,
+      interactive,
+      errorText: requestId
         ? 'The ACP Agent did not provide any response options.'
-        : 'The ACP Agent did not provide a valid request identifier.';
-      actions.appendChild(error);
-    }
-
-    status.textContent = interactive
-      ? 'The Agent is waiting for your selection.'
-      : 'The request cannot continue until the Agent provides valid ACP response data.';
-
-    prompt.append(header, actions, status);
-    prompt.dataset.decisionState = interactive ? 'active' : 'error';
-    prompt.hidden = false;
-    this.host.setComposerPromptActive(this.workspaceId, true);
-
-    if (composerHadFocus) {
-      this.requestFrame(() => {
-        const target =
-          prompt.querySelector<HTMLElement>('.agent-composer-decision-option:not(:disabled)') ??
-          stopButton;
-        target.focus();
-      });
-    }
+        : 'The ACP Agent did not provide a valid request identifier.',
+      options,
+      onRespond: (optionId) => {
+        if (this.activeRequestId !== requestId || !optionId) return;
+        this.bridge()?.sendAgentPermissionResponse(requestId, optionId);
+      },
+      onStop: () => this.bridge()?.sendAgentCommand('stop')
+    });
   }
 
   private clearPrompt(requestId: string, restoreFocus: boolean): void {
-    const prompt = this.promptNode;
-    if (!prompt) return;
     if (requestId && this.activeRequestId && this.activeRequestId !== requestId) return;
+    const prompt = this.host
+      .getPanel(this.workspaceId)
+      ?.querySelector<HTMLElement>('[data-role="mode-transition-prompt"]');
+    const promptHadFocus = !!prompt?.contains(document.activeElement);
 
-    const promptHadFocus = prompt.contains(document.activeElement);
-    prompt.hidden = true;
-    prompt.replaceChildren();
-    delete prompt.dataset.decisionState;
     this.activeRequestId = '';
-    this.host.setComposerPromptActive(this.workspaceId, false);
-
+    this.host.setComposerPrompt(this.workspaceId, null);
     if (restoreFocus && promptHadFocus) {
       this.requestFrame(() => this.host.focusComposerInput(this.workspaceId));
     }
@@ -214,17 +141,5 @@ export class ModeTransitionPromptController implements FeatureController {
 
   private bridge(): AgentBridgePort | null {
     return this.host.bridgeFor(this.workspaceId);
-  }
-
-  private get promptNode(): HTMLElement | null {
-    return this.host
-      .getPanel(this.workspaceId)
-      ?.querySelector<HTMLElement>('[data-role="mode-transition-prompt"]') ?? null;
-  }
-
-  private get inputRowNode(): HTMLElement | null {
-    return this.host
-      .getPanel(this.workspaceId)
-      ?.querySelector<HTMLElement>('[data-role="input-row"]') ?? null;
   }
 }

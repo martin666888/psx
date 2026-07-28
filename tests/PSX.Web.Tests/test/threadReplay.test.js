@@ -8,19 +8,21 @@ const workspaceId = '11111111-1111-4111-8111-111111111111';
 // structure that is stable across the live-stream and history-replay code
 // paths, reading only the observable DOM inside the workspace panel.
 function observableProjection(panel) {
+  // [data-role="thread"] exists only once the React Conversation has mounted;
+  // stay null-tolerant so the polling predicate can keep retrying.
   const thread = panel.querySelector('[data-role="thread"]');
-  const planPanel = panel.querySelector('[data-role="plan-panel"]');
-  const messages = [...thread.querySelectorAll('.agent-message')].map((row) => {
+  const planPanel = panel.querySelector('[data-role="plan-card"]');
+  const messages = !thread ? [] : [...thread.querySelectorAll('.agent-message')].map((row) => {
     const role = row.classList.contains('agent-message-user') ? 'user' : 'assistant';
     const content = row.querySelector('.agent-message-content') || row.querySelector('.agent-message-body');
     return { role, text: (content?.textContent || '').trim() };
   });
-  const tools = [...thread.querySelectorAll('.agent-tool-card')].map((card) => ({
+  const tools = !thread ? [] : [...thread.querySelectorAll('.agent-tool-card')].map((card) => ({
     summary: card.querySelector('.agent-tool-card-summary')?.textContent || '',
     state: card.dataset.state || '',
     output: card.querySelector('.agent-tool-card-content')?.textContent || ''
   }));
-  const plan = [...planPanel.querySelectorAll('.agent-plan-item')].map((item) => ({
+  const plan = !planPanel ? [] : [...planPanel.querySelectorAll('.agent-plan-item')].map((item) => ({
     content: item.querySelector('.agent-plan-content')?.textContent || '',
     status: item.className.replace('agent-plan-item ', '').trim()
   }));

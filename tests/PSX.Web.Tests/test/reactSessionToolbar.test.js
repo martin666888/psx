@@ -39,10 +39,14 @@ async function settle(app, panel, event) {
     app.handle(event);
     await new Promise((resolve) => setTimeout(resolve, 20));
   });
-  for (let i = 0; i < 50 && !panel.querySelector('[data-role="status"]'); i++) {
+  // The context-usage island mounts after the ComposerView island commits
+  // (MutationObserver replay), so wait for both island outputs.
+  const ready = () =>
+    panel.querySelector('[data-role="status"]') && panel.querySelector('[data-role="context-used"]');
+  for (let i = 0; i < 50 && !ready(); i++) {
     await act(async () => new Promise((resolve) => setTimeout(resolve, 5)));
   }
-  assert.ok(panel.querySelector('[data-role="status"]'));
+  assert.ok(ready());
 }
 
 test('session status, cwd, session id and context bands update semantically', async () => {

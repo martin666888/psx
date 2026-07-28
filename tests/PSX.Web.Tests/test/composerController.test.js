@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { mountAgentApp, createAgentWorkspace } from './agentHarness.js';
+import { mountAgentApp, createAgentWorkspace, composerReady } from './agentHarness.js';
 
 const WS = '22222222-2222-4222-8222-222222222222';
 
@@ -86,11 +86,11 @@ function composerSnapshot(panel) {
   const menu = role('command-menu');
   return {
     send: {
-      text: role('send-label').textContent,
+      text: send.getAttribute('aria-label'),
       title: send.title,
       ariaLabel: send.getAttribute('aria-label'),
       disabled: send.disabled,
-      stop: send.classList.contains('agent-send-stop')
+      stop: send.dataset.status === 'streaming'
     },
     input: {
       disabled: input.disabled,
@@ -99,7 +99,8 @@ function composerSnapshot(panel) {
     },
     mode: {
       html: mode.innerHTML,
-      value: mode.querySelector('.agent-menu-select-value')?.textContent ?? '',
+      value: mode.querySelector('[data-slot="select-value"]')?.textContent ?? '',
+      ariaLabel: mode.getAttribute('aria-label'),
       disabled: mode.disabled,
       labelHidden: modeLabel ? modeLabel.hidden : null
     },
@@ -110,7 +111,10 @@ function composerSnapshot(panel) {
 }
 
 // Drive the compiled Agent app the way production main.js does, then read the
-// controller-owned composer nodes off the live panel.
+// controller-owned composer nodes off the live panel. The ComposerView island
+// renders the composer asynchronously; [data-role="attach"] marks its first
+// commit and [data-role="mode"] the controller's wiring (both land inside the
+// same synchronous commit, so together they pin full readiness).
 async function drive(events) {
   const { app, panelFor } = await mountAgentApp();
   createAgentWorkspace(app, WS);
@@ -119,9 +123,10 @@ async function drive(events) {
   const expectsHint = events.some((event) => event.type === 'agent_command_rejected');
   for (let attempt = 0; attempt < 200; attempt++) {
     const attachReady = !!panel.querySelector('[data-role="attach"]');
+    const wiringReady = !!panel.querySelector('[data-role="mode"]');
     const hintReady =
       !expectsHint || !!panel.querySelector('[data-role="command-hint"]')?.textContent;
-    if (attachReady && hintReady) return panel;
+    if (attachReady && wiringReady && hintReady) return panel;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   assert.fail('composer islands did not reach the requested state');
@@ -131,12 +136,10 @@ test('ComposerController renders composer controls from modes and config options
   const panel = await drive([stateEvent(WS, false), modesEvent(WS), configEvent(WS)]);
   const controlled = composerSnapshot(panel);
 
-  panel.querySelector('[data-role="mode"]').click();
-  const modeOptions = [...document.querySelectorAll('.agent-menu-select-option')];
-  assert.deepEqual(modeOptions.map((option) => option.dataset.value), ['default', 'plan']);
-  panel.querySelector('[data-role="mode"]').click();
   assert.equal(controlled.mode.value, 'Plan');
+  assert.equal(controlled.mode.ariaLabel, 'mode: Plan');
   assert.match(controlled.configOptionsHtml, /Verbosity/);
+  assert.equal(panel.querySelectorAll('[data-slot="select-trigger"]').length, 2);
   assert.equal(panel.querySelectorAll('.agent-config-switch').length, 2);
 });
 
@@ -146,6 +149,7 @@ test('ComposerController submits native booleans and legacy binary selects witho
   app.handle(stateEvent(WS, false));
   app.handle(configEvent(WS));
   const panel = panelFor(WS);
+  await composerReady(panel);
 
   const nativeBoolean = panel.querySelector('button[data-config-id="fast_mode"]');
   nativeBoolean.click();
@@ -196,9 +200,9 @@ test('Composer template keeps input, controls, and actions in one reading-column
   assert.equal(input.closest('.agent-composer-card'), card);
   assert.equal(attach.closest('.agent-composer-footer'), send.closest('.agent-composer-footer'));
   assert.equal(controls.contains(panel.querySelector('[data-role="mode"]')), true);
-  assert.equal(input.style.height, '52px');
-  assert.ok(send.querySelector('.agent-send-icon-submit'));
-  assert.ok(send.querySelector('.agent-send-icon-stop'));
+  assert.equal(input.getAttribute('data-slot'), 'input-group-control');
+  assert.ok(input.classList.contains('field-sizing-content'));
+  assert.ok(send.querySelector('.lucide-corner-down-left'));
 });
 
 test('ComposerController renders the command-rejected hint', async () => {

@@ -1,10 +1,10 @@
 "use client";
 
-// PSX local modifications (CP2): the `ai` package types (ChatStatus,
-// FileUIPart) are declared locally and nanoid is replaced with
-// crypto.randomUUID — PSX ships neither package. Everything else is
-// unchanged from upstream; CP4 wires PromptInput as view-only (the existing
-// ComposerController keeps owning IME/attachment/slash/Bridge state).
+// PSX local modifications: `ai` package types are declared locally and nanoid
+// is replaced with crypto.randomUUID. PromptInput also exposes the attachment
+// input role, optional removal/preview chrome and blob conversion control, and
+// composes consumer textarea keyboard/composition/paste handlers. These seams
+// let ComposerView own UI state while AttachmentBridge owns protocol mapping.
 
 import { Button } from "@/components/ui/button";
 import {
@@ -295,11 +295,15 @@ export const usePromptInputAttachments = () => {
 export type PromptInputAttachmentProps = HTMLAttributes<HTMLDivElement> & {
   data: FileUIPart & { id: string };
   className?: string;
+  removable?: boolean;
+  showPreviewCard?: boolean;
 };
 
 export function PromptInputAttachment({
   data,
   className,
+  removable = true,
+  showPreviewCard = true,
   ...props
 }: PromptInputAttachmentProps) {
   const attachments = usePromptInputAttachments();
@@ -312,51 +316,59 @@ export function PromptInputAttachment({
 
   const attachmentLabel = filename || (isImage ? "Image" : "Attachment");
 
+  const attachment = (
+    <div
+      className={cn(
+        "group relative flex h-8 cursor-pointer select-none items-center gap-1.5 rounded-md border border-border px-1.5 font-medium text-sm transition-all hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
+        className
+      )}
+      key={data.id}
+      {...props}
+    >
+      <div className="relative size-5 shrink-0">
+        <div className="absolute inset-0 flex size-5 items-center justify-center overflow-hidden rounded bg-background transition-opacity group-hover:opacity-0">
+          {isImage ? (
+            <img
+              alt={filename || "attachment"}
+              className="size-5 object-cover"
+              height={20}
+              src={data.url}
+              width={20}
+            />
+          ) : (
+            <div className="flex size-5 items-center justify-center text-muted-foreground">
+              <PaperclipIcon className="size-3" />
+            </div>
+          )}
+        </div>
+        {removable ? (
+          <Button
+            aria-label="Remove attachment"
+            className="absolute inset-0 size-5 cursor-pointer rounded p-0 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 [&>svg]:size-2.5"
+            onClick={(e) => {
+              e.stopPropagation();
+              attachments.remove(data.id);
+            }}
+            type="button"
+            variant="ghost"
+          >
+            <XIcon />
+            <span className="sr-only">Remove</span>
+          </Button>
+        ) : null}
+      </div>
+
+      <span className="flex-1 truncate">{attachmentLabel}</span>
+    </div>
+  );
+
+  if (!showPreviewCard) {
+    return attachment;
+  }
+
   return (
     <PromptInputHoverCard>
-      <HoverCardTrigger asChild>
-        <div
-          className={cn(
-            "group relative flex h-8 cursor-pointer select-none items-center gap-1.5 rounded-md border border-border px-1.5 font-medium text-sm transition-all hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
-            className
-          )}
-          key={data.id}
-          {...props}
-        >
-          <div className="relative size-5 shrink-0">
-            <div className="absolute inset-0 flex size-5 items-center justify-center overflow-hidden rounded bg-background transition-opacity group-hover:opacity-0">
-              {isImage ? (
-                <img
-                  alt={filename || "attachment"}
-                  className="size-5 object-cover"
-                  height={20}
-                  src={data.url}
-                  width={20}
-                />
-              ) : (
-                <div className="flex size-5 items-center justify-center text-muted-foreground">
-                  <PaperclipIcon className="size-3" />
-                </div>
-              )}
-            </div>
-            <Button
-              aria-label="Remove attachment"
-              className="absolute inset-0 size-5 cursor-pointer rounded p-0 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 [&>svg]:size-2.5"
-              onClick={(e) => {
-                e.stopPropagation();
-                attachments.remove(data.id);
-              }}
-              type="button"
-              variant="ghost"
-            >
-              <XIcon />
-              <span className="sr-only">Remove</span>
-            </Button>
-          </div>
-
-          <span className="flex-1 truncate">{attachmentLabel}</span>
-        </div>
-      </HoverCardTrigger>
+      <HoverCardTrigger asChild>{attachment}</HoverCardTrigger>
       <PromptInputHoverCardContent className="w-auto p-2">
         <div className="w-auto space-y-3">
           {isImage && (
@@ -461,6 +473,8 @@ export type PromptInputProps = Omit<
   // Minimal constraints
   maxFiles?: number;
   maxFileSize?: number; // bytes
+  // Keep blob URLs intact when a local adapter only needs attachment metadata.
+  convertBlobUrls?: boolean;
   onError?: (err: {
     code: "max_files" | "max_file_size" | "accept";
     message: string;
@@ -479,6 +493,7 @@ export const PromptInput = ({
   syncHiddenInput,
   maxFiles,
   maxFileSize,
+  convertBlobUrls = true,
   onError,
   onSubmit,
   children,
@@ -740,12 +755,13 @@ export const PromptInput = ({
       form.reset();
     }
 
-    // Convert blob URLs to data URLs asynchronously
+    // Convert blob URLs only for consumers that need serializable file parts.
+    // PSX's AttachmentBridge already reconstructs/uploads the File and opts
+    // out so submission cannot race a second fetch of the same object URL.
     Promise.all(
       files.map(async ({ id: _id, ...item }) => {
-        if (item.url && item.url.startsWith("blob:")) {
+        if (convertBlobUrls && item.url && item.url.startsWith("blob:")) {
           const dataUrl = await convertBlobUrlToDataUrl(item.url);
-          // If conversion failed, keep the original blob URL
           return {
             ...item,
             url: dataUrl ?? item.url,
@@ -793,6 +809,7 @@ export const PromptInput = ({
         accept={accept}
         aria-label="Upload files"
         className="hidden"
+        data-role="attachment-input"
         multiple={multiple}
         onChange={handleChange}
         ref={inputRef}
@@ -834,6 +851,10 @@ export type PromptInputTextareaProps = ComponentProps<
 
 export const PromptInputTextarea = ({
   onChange,
+  onCompositionEnd,
+  onCompositionStart,
+  onKeyDown,
+  onPaste,
   className,
   placeholder = "What would you like to know?",
   ...props
@@ -843,6 +864,10 @@ export const PromptInputTextarea = ({
   const [isComposing, setIsComposing] = useState(false);
 
   const handleKeyDown: KeyboardEventHandler<HTMLTextAreaElement> = (e) => {
+    onKeyDown?.(e);
+    if (e.defaultPrevented) {
+      return;
+    }
     if (e.key === "Enter") {
       if (isComposing || e.nativeEvent.isComposing) {
         return;
@@ -879,6 +904,10 @@ export const PromptInputTextarea = ({
   };
 
   const handlePaste: ClipboardEventHandler<HTMLTextAreaElement> = (event) => {
+    onPaste?.(event);
+    if (event.defaultPrevented) {
+      return;
+    }
     const items = event.clipboardData?.items;
 
     if (!items) {
@@ -918,8 +947,14 @@ export const PromptInputTextarea = ({
     <InputGroupTextarea
       className={cn("field-sizing-content max-h-48 min-h-16", className)}
       name="message"
-      onCompositionEnd={() => setIsComposing(false)}
-      onCompositionStart={() => setIsComposing(true)}
+      onCompositionEnd={(event) => {
+        setIsComposing(false);
+        onCompositionEnd?.(event);
+      }}
+      onCompositionStart={(event) => {
+        setIsComposing(true);
+        onCompositionStart?.(event);
+      }}
       onKeyDown={handleKeyDown}
       onPaste={handlePaste}
       placeholder={placeholder}

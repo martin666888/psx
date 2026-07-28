@@ -5,6 +5,12 @@
     background: transparent;
 }
 
+/* The composer island renders the whole composer straight into the grid area
+ * (same display:contents contract as the toolbar/conversation hosts). */
+.agent-composer-host {
+    display: contents;
+}
+
 /* The card follows exactly the same window-centred reading column as the
  * conversation. It deliberately lives inside the canvas instead of creating
  * another full-width application bar. */
@@ -20,9 +26,6 @@
 }
 
 .agent-composer-card {
-    /* The Context tooltip intentionally extends above the compact card.
-     * Borderless soft-fill surface: the card lifts off the canvas via fill +
-     * shadow, not lines. Focus does not add a separate visual treatment. */
     overflow: visible;
     border: 0;
     border-radius: var(--agent-radius-composer);
@@ -35,83 +38,8 @@
     box-shadow: var(--agent-shadow-composer);
 }
 
-.agent-input-row {
-    min-width: 0;
-    padding: 14px 18px 8px;
-}
-
-.agent-composer textarea {
-    width: 100%;
-    min-height: var(--agent-composer-input-min-height);
-    max-height: 180px;
-    resize: none;
-    box-sizing: border-box;
-    border: 0;
-    border-radius: 0;
-    padding: 0;
-    outline: 0;
-    overflow-y: hidden;
-    background: transparent;
-    color: var(--foreground);
-    font-family: var(--agent-font-mono);
-    font-size: 14px;
-    line-height: 1.45;
-    scrollbar-color: var(--agent-scrollbar) var(--background);
-    scrollbar-width: thin;
-}
-
-.agent-composer textarea::placeholder {
-    color: var(--muted-foreground);
-    opacity: 1;
-}
-
-.agent-command-hint {
-    padding: 0 var(--agent-space-3) var(--agent-space-2);
-    color: var(--muted-foreground);
-    font-size: 12px;
-    line-height: 1.45;
-    white-space: pre-line;
-}
-
-.agent-command-hint[hidden] {
-    display: none;
-}
-
-.agent-composer-footer {
-    display: flex;
-    align-items: center;
-    min-width: 0;
-    gap: var(--agent-space-2);
-    min-height: 51px;
-    box-sizing: border-box;
-    /* Right/bottom padding = card radius (24px) − send radius (17px), so the
-     * circular send button's centre lands exactly on the corner arc centre. */
-    padding: 6px 7px 7px 14px;
-    /* No divider: the footer shares the card's soft fill. Clip this painted
-     * child itself so it still follows the card's lower corners. */
-    border-radius: 0 0 var(--agent-radius-composer) var(--agent-radius-composer);
-}
-
-.agent-input-row[hidden],
-.agent-composer-mode-transition[hidden] {
-    display: none;
-}
-
-.agent-composer-actions {
-    display: flex;
-    flex: 0 0 auto;
-    align-items: center;
-}
-
-.agent-hints {
-    display: flex;
-    flex: 0 0 auto;
-    gap: var(--agent-space-2);
-    color: var(--muted-foreground);
-    font-size: 11px;
-    white-space: nowrap;
-}
-
+/* Context usage retains its custom ring visualization; its surrounding
+ * Composer layout and interactive controls are React utility-owned. */
 .agent-context-usage {
     position: relative;
     display: grid;
@@ -173,312 +101,15 @@
     display: none;
 }
 
-.agent-context-tooltip {
-    position: absolute;
-    z-index: var(--agent-layer-menu);
-    bottom: calc(100% + var(--agent-space-2));
-    left: 0;
-    display: grid;
-    width: max-content;
-    max-width: 240px;
-    gap: 2px;
-    box-sizing: border-box;
-    border: 1px solid var(--border);
-    border-radius: var(--agent-radius-card);
-    padding: var(--agent-space-2) var(--agent-space-3);
-    background: var(--card);
-    box-shadow: var(--agent-shadow-popover);
-    color: var(--foreground);
-    font-size: 12px;
-    line-height: 1.35;
-    opacity: 0;
-    pointer-events: none;
-    transform: translateY(2px);
-    transition: opacity var(--agent-duration-fast) var(--agent-ease-standard),
-        transform var(--agent-duration-fast) var(--agent-ease-standard);
-}
-
-.agent-context-tooltip strong {
-    font-weight: 600;
-}
-
-.agent-context-tooltip span {
-    color: var(--muted-foreground);
-}
-
-.agent-context-tooltip [hidden] {
-    display: none;
-}
-
-.agent-context-usage:hover .agent-context-tooltip,
-.agent-context-usage:focus-visible .agent-context-tooltip {
-    opacity: 1;
-    transform: translateY(0);
-}
-
-.agent-composer-controls {
-    display: flex;
-    flex: 1 1 auto;
-    min-width: 0;
-    align-items: center;
-    justify-content: flex-end;
-    gap: var(--agent-space-2);
-}
-
-.agent-config-options {
-    display: flex;
-    flex: 0 1 auto;
-    flex-wrap: nowrap;
-    align-items: center;
-    justify-content: flex-start;
-    gap: var(--agent-space-2);
-    min-width: 0;
-}
-
-.agent-mode-control,
-.agent-config-control {
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    gap: var(--agent-space-1);
-    color: var(--muted-foreground);
-    font-size: 12px;
-    white-space: nowrap;
-}
-
 .agent-mode-control[hidden],
 .agent-config-control[hidden] {
     display: none;
 }
 
-.agent-config-switch {
-    position: relative;
-    width: 28px;
-    min-width: 28px;
-    height: 16px;
-    box-sizing: border-box;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 0;
-    background: var(--muted);
-    color: transparent;
-    cursor: pointer;
-}
-
-.agent-config-switch::after {
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: var(--muted-foreground);
-    content: "";
-    transition: transform var(--agent-duration-fast) var(--agent-ease-standard),
-        background-color var(--agent-duration-fast) var(--agent-ease-standard);
-}
-
-.agent-config-switch[aria-checked="true"] {
-    border-color: var(--primary);
-    background: color-mix(in srgb, var(--primary) 38%, var(--muted));
-}
-
-.agent-config-switch[aria-checked="true"]::after {
-    transform: translateX(12px);
-    background: var(--primary-foreground);
-}
-
-.agent-config-switch:hover:not(:disabled) {
-    border-color: var(--primary);
-}
-
-.agent-config-switch:focus-visible {
-    outline: 2px solid var(--ring);
-    outline-offset: 2px;
-}
-
-.agent-config-switch:disabled {
-    cursor: default;
-    opacity: 0.56;
-}
-
-/* --- MenuSelect: compact custom dropdown (trigger + on-demand popup) ------ */
-
-.agent-menu-select {
-    display: inline-flex;
-    max-width: 150px;
-    min-width: 0;
-    align-items: center;
-    gap: 5px;
-    box-sizing: border-box;
-    padding: 3px 6px;
-    border: 0;
-    border-radius: var(--agent-radius-input);
-    background: transparent;
-    color: var(--foreground);
-    cursor: pointer;
-    font: inherit;
-}
-
-.agent-menu-select:hover:not(:disabled) {
-    background: var(--accent);
-}
-
-.agent-menu-select:focus-visible {
-    outline: 2px solid var(--ring);
-    outline-offset: 1px;
-}
-
-.agent-menu-select:disabled {
-    color: var(--muted-foreground);
-    cursor: default;
-    opacity: 0.72;
-}
-
-.agent-menu-select-value {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.agent-menu-select-chevron {
-    flex: 0 0 auto;
-    color: var(--muted-foreground);
-}
-
-.agent-menu-select[aria-expanded="true"] .agent-menu-select-chevron {
-    transform: rotate(180deg);
-}
-
-/* The popup lives on document.body (position: fixed) so it can escape the
- * composer card without clipping. */
-.agent-menu-select-popup {
-    position: fixed;
-    z-index: var(--agent-layer-menu);
-    display: grid;
-    min-width: 180px;
-    max-width: 260px;
-    max-height: 240px;
-    gap: 1px;
-    box-sizing: border-box;
-    overflow-y: auto;
-    padding: var(--agent-space-1);
-    border: 1px solid var(--border);
-    border-radius: var(--agent-radius-card);
-    background: var(--card);
-    box-shadow: var(--agent-shadow-popover);
-    font-family: var(--agent-font-ui);
-}
-
-.agent-menu-select-option {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--agent-space-3);
-    padding: 6px 8px;
-    border-radius: var(--agent-radius-control);
-    color: var(--foreground);
-    cursor: pointer;
-    font-size: 12px;
-    white-space: nowrap;
-}
-
-.agent-menu-select-option:hover,
-.agent-menu-select-option-active {
-    background: var(--accent);
-}
-
-.agent-menu-select-option:focus-visible {
-    outline: 2px solid var(--ring);
-    outline-offset: -2px;
-}
-
-.agent-menu-select-option[aria-selected="true"] {
-    color: var(--primary);
-}
-
-.agent-menu-select-option svg {
-    color: var(--primary);
-}
-
-.agent-menu-select[data-config-id="model"] {
-    max-width: 188px;
-}
-
-/* Send is the one primary action in the footer: accent whenever it can act,
- * explicitly muted (not just dimmed) while disabled. It is a full circle whose
- * centre coincides with the composer card's corner arc centre. */
-.agent-send {
-    flex: 0 0 34px;
-    width: 34px;
-    min-width: 34px;
-    height: 34px;
-    display: grid;
-    place-items: center;
-    box-sizing: border-box;
-    padding: 0;
-    border: 0;
-    border-radius: 50%;
-    background: var(--primary);
-    color: var(--primary-foreground);
-    font-size: 0;
-}
-
-.agent-send-icon {
-    display: block;
-    width: 15px;
-    height: 15px;
-    fill: currentColor;
-}
-
-.agent-send-icon-stop {
-    display: none;
-}
-
-.agent-send:hover:not(:disabled) {
-    background: color-mix(in oklab, var(--primary) 88%, black);
-    border-color: color-mix(in oklab, var(--primary) 88%, black);
-    color: var(--primary-foreground);
-}
-
-.agent-send:disabled {
-    cursor: default;
-    border-color: var(--border);
-    background: var(--muted);
-    color: var(--muted-foreground);
-    opacity: 1;
-}
-
-.agent-send-stop .agent-send-icon-submit {
-    display: none;
-}
-
-.agent-send-stop .agent-send-icon-stop {
-    display: block;
-}
-
-.agent-composer-mode-transition {
-    margin: var(--agent-space-3) var(--agent-space-3) 0;
-}
-
-/* Match .agent-input-row's horizontal padding so pills align with the text.
- * The top gap must be padding, not margin: the composer card is borderless
- * with overflow: visible, so a strip margin-top collapses through the card
- * and leaves the pills flush against the card's top edge. */
+/* PromptInput attachment pills share the reading-column text inset. */
 .agent-attachments-strip {
     margin: 0 18px;
     padding-top: var(--agent-space-3);
-}
-
-.agent-visually-hidden {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    clip-path: inset(50%);
-    white-space: nowrap;
 }
 
 @media (max-width: 760px) {
@@ -489,20 +120,6 @@
     .agent-composer-main {
         width: calc(100% - (var(--agent-space-3) * 2));
         margin-left: var(--agent-space-3);
-    }
-
-    .agent-composer-footer {
-        flex-wrap: wrap;
-    }
-
-    .agent-composer-controls {
-        flex: 1 0 100%;
-        justify-content: flex-start;
-        order: 5;
-    }
-
-    .agent-config-options {
-        flex-wrap: wrap;
     }
 }
 

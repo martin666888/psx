@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { mountAgentApp, createAgentWorkspace } from './agentHarness.js';
+import { mountAgentApp, createAgentWorkspace, composerReady } from './agentHarness.js';
 
 const FIRST = '11111111-1111-4111-8111-111111111111';
 const SECOND = '22222222-2222-4222-8222-222222222222';
@@ -19,10 +19,14 @@ test('keeps independent DOM and routes events only to the matching workspace', a
   assert.ok(firstPanel);
   assert.ok(secondPanel);
   assert.notEqual(firstPanel, secondPanel);
+  await composerReady(firstPanel);
+  await composerReady(secondPanel);
 
   // Workspace-local draft text survives on each panel independently.
   role(firstPanel, 'input').value = 'first draft';
+  role(firstPanel, 'input').dispatchEvent(new Event('input', { bubbles: true }));
   role(secondPanel, 'input').value = 'second draft';
+  role(secondPanel, 'input').dispatchEvent(new Event('input', { bubbles: true }));
 
   // A state event addressed to the first workspace only touches its panel.
   app.handle({
@@ -40,7 +44,7 @@ test('keeps independent DOM and routes events only to the matching workspace', a
   app.handle({ type: 'workspace_activated', workspaceId: SECOND, kind: 'agent' });
 
   assert.equal(role(firstPanel, 'cwd').textContent, 'D:/first');
-  assert.doesNotMatch(role(secondPanel, 'session-meta-host').textContent, /D:\/first/);
+  assert.doesNotMatch(role(secondPanel, 'toolbar-host').textContent, /D:\/first/);
   assert.equal(role(firstPanel, 'input').value, 'first draft');
   assert.equal(role(secondPanel, 'input').value, 'second draft');
   assert.equal(firstPanel.hidden, true);
@@ -94,11 +98,12 @@ test('keeps transcript-only workspaces read-only even when their runtime is read
   });
 
   const panel = panelFor(workspaceId);
+  await composerReady(panel);
   const input = role(panel, 'input');
   const send = role(panel, 'send');
   assert.equal(input.disabled, true);
   assert.equal(send.disabled, true);
-  assert.equal(role(panel, 'send-label').textContent, 'Read only');
+  assert.equal(role(panel, 'send').getAttribute('aria-label'), 'Read only');
 });
 
 test('renders each provider identity independently and stays brand-neutral for unknown providers', async () => {
@@ -113,6 +118,9 @@ test('renders each provider identity independently and stays brand-neutral for u
   app.handle({ type: 'agent_state', workspaceId: FIRST, status: 'ready', providerKey: 'alpha', assistantName: 'Alpha' });
   app.handle({ type: 'agent_state', workspaceId: SECOND, status: 'ready', providerKey: 'beta', assistantName: 'Beta' });
 
+  await composerReady(panelFor(FIRST));
+  await composerReady(panelFor(SECOND));
+  await composerReady(panelFor(THIRD));
   const first = role(panelFor(FIRST), 'input').placeholder;
   const second = role(panelFor(SECOND), 'input').placeholder;
   const third = role(panelFor(THIRD), 'input').placeholder;

@@ -1,12 +1,11 @@
-// ComposerController.ts — the Phase 4 Composer domain owner.
+// ComposerController.ts — the Composer state/action adapter.
 //
-// Owns the whole Agent composer: the input textarea + send button, the slash
-// command menu + hint, the fallback mode menu, the provider config
-// dropdowns, and the image-attachment strip / preview. Slash commands, modes
-// and config options are rendered purely from the reduced AgentWorkspaceState
-// (the reducer folds agent_commands / agent_modes / agent_config_options /
-// agent_mode_current). The pending-attachment upload list stays controller-
-// local imperative state, matching the legacy AgentThreadManager instance.
+// ComposerView is the single React owner of the complete composer subtree and
+// its UI state: controlled draft/IME handling, PromptInput attachments, slash
+// menu, mode/config controls, submit/cancel button, transition prompt and
+// preview dialog. This controller projects reduced AgentWorkspaceState into
+// view props and retains protocol responsibilities: command validation,
+// Bridge actions, attachment upload/server IDs and external restore tokens.
 //
 // Faithful port of the legacy DOM writes and listeners:
 //   wwwroot/js/agent/composer.js    (input/send wiring, submit, resize)
@@ -30,10 +29,19 @@ import { createInitialWorkspaceState } from '../contracts/workspace-state.js';
 import { createIslandLoader, type IslandLoader } from '../core/islandHost.js';
 import type {
   AttachmentStripProps,
-  CommandHintProps,
   ComposerActionsProps
 } from './ComposerBits.js';
-import { MenuSelect } from './MenuSelect.js';
+import type {
+  AttachmentRestoreItem,
+  AttachmentSnapshotItem,
+  PreparedAttachment
+} from './AttachmentBridge.js';
+import type {
+  ComposerCommandMenuProps,
+  ComposerControlsProps,
+  ComposerViewProps
+} from './ComposerView.js';
+import type { ComposerModeTransitionPromptVM } from './ModeTransitionPrompt.js';
 
 /** The strangler seam the composer controller needs from the host. */
 export interface ComposerHost {
@@ -55,9 +63,11 @@ interface MenuCommand {
   agent?: boolean;
 }
 
-/** A controller-local pending image attachment (imperative upload state). */
+/** A controller-local pending image attachment (Bridge/upload state). */
 interface PendingAttachment {
   clientId: string;
+  retryKey?: string;
+  file?: File;
   id: string;
   fileName: string;
   mimeType: string;
@@ -70,11 +80,8 @@ interface PendingAttachment {
 
 interface SubmittedDraft {
   text: string;
-  attachments: PendingAttachment[];
+  attachments: AttachmentRestoreItem[];
 }
-
-const MAX_INPUT_HEIGHT = 180;
-const DEFAULT_INPUT_MIN_HEIGHT = 52;
 
 function role(panel: HTMLElement, name: string): HTMLElement | null {
   return panel.querySelector<HTMLElement>('[data-role="' + name + '"]');
@@ -84,51 +91,38 @@ function asString(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
-/** Mirrors legacy _escape so command-menu markup is byte-identical. */
-function escapeHtml(value: unknown): string {
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
 export class ComposerController implements FeatureController {
   private readonly workspaceId: string;
   private readonly host: ComposerHost;
 
   private panel: HTMLElement | null = null;
-  private input: HTMLTextAreaElement | null = null;
-  private sendButton: HTMLButtonElement | null = null;
-  private sendLabel: HTMLElement | null = null;
-  private inputRow: HTMLElement | null = null;
-  private commandMenu: HTMLElement | null = null;
-  private commandHint: HTMLElement | null = null;
-  private modeSelect: MenuSelect | null = null;
-  private readonly configSelects = new Map<string, MenuSelect>();
-  private configOptionsHost: HTMLElement | null = null;
-  private attachmentStrip: HTMLElement | null = null;
-  private imagePreview: HTMLDialogElement | null = null;
-  private imagePreviewImg: HTMLImageElement | null = null;
-  private imagePreviewClose: HTMLButtonElement | null = null;
 
   private state: AgentWorkspaceState;
   private psxCommands: MenuCommand[] = [];
   private commandIndex = 0;
   private visibleCommands: MenuCommand[] = [];
+  private commandMenuOpen = false;
   private pendingAttachments: PendingAttachment[] = [];
+  private attachmentSnapshot: AttachmentSnapshotItem[] = [];
+  private attachmentResetToken = 0;
+  private attachmentRestoreToken = 0;
+  private attachmentRestoreItems: AttachmentRestoreItem[] = [];
+  private readonly attachmentReaders = new Map<string, FileReader>();
   private lastSubmittedDraft: SubmittedDraft | null = null;
-  private imagePreviewReturnFocus: Element | null = null;
-  private commandMenuHideTimer: ReturnType<typeof setTimeout> | null = null;
+  private imagePreviewRequestToken = 0;
+  private imagePreviewCloseToken = 0;
+  private imagePreviewSrc = '';
+  private draftText = '';
+  private draftToken = 0;
+  private focusToken = 0;
 
-  private readonly cleanup: Array<() => void> = [];
-
-  // React owns the component subtrees. Textarea/keyboard/IME and MenuSelect
-  // popups remain imperative because they have distinct DOM ownership.
-  private attachmentsIsland: IslandLoader<AttachmentStripProps> | null = null;
-  private actionsIsland: IslandLoader<ComposerActionsProps> | null = null;
-  private hintIsland: IslandLoader<CommandHintProps> | null = null;
+  // The island loader retains the latest projection while its dynamic import
+  // is pending. The host is the only composer DOM node cached here.
+  private composerHost: HTMLElement | null = null;
+  private composerIsland: IslandLoader<ComposerViewProps> | null = null;
+  private hintText = '';
+  private hintVisible = false;
+  private modeTransitionPrompt: ComposerModeTransitionPromptVM | null = null;
 
   constructor(workspaceId: string, host: ComposerHost) {
     this.workspaceId = workspaceId;
@@ -140,27 +134,18 @@ export class ComposerController implements FeatureController {
     const panel = this.host.getPanel(this.workspaceId);
     if (!panel) return;
     this.panel = panel;
-    this.input = role(panel, 'input') as HTMLTextAreaElement | null;
-    this.sendButton = role(panel, 'send') as HTMLButtonElement | null;
-    this.sendLabel = role(panel, 'send-label');
-    this.inputRow = role(panel, 'input-row');
-    this.commandMenu = role(panel, 'command-menu');
-    this.commandHint = role(panel, 'command-hint');
-    this.modeSelect = new MenuSelect((value) => this.handleModeSelected(value), 'Agent mode');
-    this.modeSelect.element.dataset.role = 'mode';
-    panel.querySelector('.agent-mode-control')?.appendChild(this.modeSelect.element);
-    this.configOptionsHost = role(panel, 'config-options');
-    this.attachmentStrip = role(panel, 'attachments-strip');
-    this.imagePreview = role(panel, 'image-preview') as HTMLDialogElement | null;
-    this.imagePreviewImg = role(panel, 'image-preview-img') as HTMLImageElement | null;
-    this.imagePreviewClose = role(panel, 'image-preview-close') as HTMLButtonElement | null;
-
+    this.composerHost = role(panel, 'composer-host');
+    this.lastSubmittedDraft = null;
     this.rebuildPsxCommands();
-    this.wireComposer();
-    this.wireAttachments();
+    // The first commit replays the current controller projection once more so
+    // events received while the island loaded cannot be lost.
+    this.renderComposerIsland();
+  }
+
+  /** Replay the current projection after the island's first commit. */
+  private handleComposerReady(): void {
     this.renderComposerControls();
-    this.syncAttachmentControls();
-    this.resizeInput();
+    this.renderPendingAttachments();
   }
 
   update(event: AgentWorkspaceEvent, state: AgentWorkspaceState): void {
@@ -169,21 +154,27 @@ export class ComposerController implements FeatureController {
     this.state = state;
     if (identityChanged) {
       this.rebuildPsxCommands();
-      this.updateModeControlTitle();
+      this.renderComposerIsland();
     }
 
     const raw = event.raw;
     switch (event.type) {
       case 'agent_state':
         this.renderComposerControls();
+        this.renderComposerIsland();
         break;
       case 'runtime_status':
         this.syncRuntimeControls();
+        this.renderComposerIsland();
         break;
       case 'agent_thread_loaded':
         this.clearCommandHint();
-        if (raw.clear === true) this.clearPendingAttachments();
+        if (raw.clear === true) {
+          this.clearPendingAttachments();
+          this.projectDraft('');
+        }
         this.renderComposerControls();
+        this.renderComposerIsland();
         break;
       case 'agent_commands':
         this.updateCommandMenu();
@@ -192,15 +183,13 @@ export class ComposerController implements FeatureController {
         this.showCommandHint(asString(raw.command), asString(raw.reason) || 'unsupported');
         break;
       case 'agent_modes':
-        this.renderModes();
+        this.renderComposerIsland();
         break;
       case 'agent_config_options':
-        this.renderConfigOptions();
-        this.syncFallbackModeVisibility();
-        this.syncConfigOptionDisabledState();
+        this.renderComposerIsland();
         break;
       case 'agent_mode_current':
-        this.setCurrentMode();
+        this.renderComposerIsland();
         break;
       case 'agent_attachment_uploaded':
         this.handleAttachmentUploaded(raw);
@@ -210,6 +199,7 @@ export class ComposerController implements FeatureController {
         break;
       case 'agent_cleared':
         this.clearPendingAttachments();
+        this.projectDraft('');
         break;
       case 'user_message':
         this.lastSubmittedDraft = null;
@@ -223,27 +213,14 @@ export class ComposerController implements FeatureController {
   }
 
   dispose(): void {
-    // Menus portal their popup onto document.body: destroy them explicitly or
-    // an open menu (and its global listeners) would outlive the workspace.
-    this.modeSelect?.destroy();
-    this.modeSelect = null;
-    this.configSelects.forEach((menu) => menu.destroy());
-    this.configSelects.clear();
-    if (this.commandMenuHideTimer !== null) {
-      clearTimeout(this.commandMenuHideTimer);
-      this.commandMenuHideTimer = null;
-    }
-    for (const item of this.pendingAttachments) {
-      if (item.localPreviewUrl && item.url) URL.revokeObjectURL(item.url);
-    }
+    for (const reader of this.attachmentReaders.values()) reader.abort();
+    this.attachmentReaders.clear();
     this.pendingAttachments = [];
-    for (const off of this.cleanup.splice(0)) off();
-    this.attachmentsIsland?.dispose();
-    this.attachmentsIsland = null;
-    this.actionsIsland?.dispose();
-    this.actionsIsland = null;
-    this.hintIsland?.dispose();
-    this.hintIsland = null;
+    this.attachmentSnapshot = [];
+    this.attachmentRestoreItems = [];
+    this.composerIsland?.dispose();
+    this.composerIsland = null;
+    this.composerHost = null;
     this.panel = null;
   }
 
@@ -255,22 +232,19 @@ export class ComposerController implements FeatureController {
   // instead of writing them directly (no dual-write). Faithful port of the
   // composer side of _showModeTransitionPrompt / _clearModeTransitionPrompt.
 
-  setModeTransitionPromptActive(active: boolean): void {
-    if (active) {
-      if (this.inputRow) this.inputRow.hidden = true;
-      if (this.attachmentStrip) this.attachmentStrip.hidden = true;
+  setModeTransitionPrompt(prompt: ComposerModeTransitionPromptVM | null): void {
+    this.modeTransitionPrompt = prompt;
+    if (prompt) {
       this.clearCommandHint();
       this.hideCommandMenu();
-    } else {
-      if (this.inputRow) this.inputRow.hidden = false;
-      this.renderPendingAttachments();
-      this.syncAttachmentControls();
     }
+    this.renderComposerIsland();
   }
 
   /** Decision seam: return focus to the composer input (legacy this.input.focus()). */
   focusInput(): void {
-    this.input?.focus();
+    this.focusToken += 1;
+    this.renderComposerIsland();
   }
 
   // --- Derived state -------------------------------------------------------
@@ -319,37 +293,7 @@ export class ComposerController implements FeatureController {
     ];
   }
 
-  private updateModeControlTitle(): void {
-    const modeLabel = this.modeSelect?.element.closest('.agent-mode-control') as HTMLElement | null;
-    if (modeLabel) modeLabel.title = this.assistantName + ' Agent mode';
-  }
-
-  // --- Composer wiring + submit --------------------------------------------
-
-  private wireComposer(): void {
-    this.on(this.sendButton, 'click', () => this.submit());
-    this.on(this.input, 'keydown', (event) => {
-      const keyboard = event as KeyboardEvent;
-      if (this.commandMenu && !this.commandMenu.hidden && this.handleCommandKey(keyboard)) return;
-      if (keyboard.key === 'Enter' && !keyboard.shiftKey) {
-        keyboard.preventDefault();
-        // `/history` is global UI navigation and stays available while busy.
-        if (!this.isBusy || this.isHistoryNavigation(this.input?.value ?? '')) this.submit();
-      }
-    });
-    this.on(this.input, 'input', () => {
-      this.clearCommandHint();
-      this.resizeInput();
-      this.updateCommandMenu();
-    });
-    this.on(this.input, 'blur', () => {
-      if (this.commandMenuHideTimer !== null) clearTimeout(this.commandMenuHideTimer);
-      this.commandMenuHideTimer = setTimeout(() => {
-        this.commandMenuHideTimer = null;
-        this.hideCommandMenu();
-      }, 120);
-    });
-  }
+  // --- Composer draft + submit ---------------------------------------------
 
   private handleModeSelected(value: string): void {
     if (!value) return;
@@ -360,36 +304,39 @@ export class ComposerController implements FeatureController {
     }
   }
 
-  private submit(): void {
-    if (!this.input) return;
-
-    let text = this.input.value.trim();
+  private async submit(rawText: string, submittedFileCount: number): Promise<void> {
+    let text = rawText.trim();
     // `/history` is global UI navigation, handled before every session guard:
     // it never enters busy state, never writes thread history and never
     // reaches the conversation as a prompt or a loading card.
     if (this.isHistoryNavigation(text)) {
       this.clearCommandHint();
-      this.input.value = '';
-      this.resizeInput();
       this.hideCommandMenu();
       this.host.openHistory(this.workspaceId);
       return;
     }
-    if (!this.runtimeReady()) return;
-    if (this.isRestoring) return;
-    if (this.isTranscriptOnly) return;
+    if (!this.runtimeReady()) throw new Error('runtime_not_ready');
+    if (this.isRestoring) throw new Error('restoring');
+    if (this.isTranscriptOnly) throw new Error('transcript_only');
     if (this.isBusy) {
       this.bridge()?.sendAgentCommand('stop');
-      return;
+      throw new Error('busy');
     }
 
     const attachmentIds = this.pendingAttachmentIds();
-    if (!text && attachmentIds.length === 0) return;
+    if (!text && attachmentIds.length === 0) throw new Error('empty');
+    if (submittedFileCount !== this.attachmentSnapshot.length) {
+      this.host.appendSystemMessage(
+        this.workspaceId,
+        'Attachments changed while sending. Review them, then send again.'
+      );
+      throw new Error('attachment_snapshot_mismatch');
+    }
 
     const commandValidation = this.validateSubmissionCommand(text);
     if (!commandValidation.allowed) {
       this.showCommandHint(commandValidation.command || '', commandValidation.reason || 'unsupported');
-      return;
+      throw new Error('command_rejected');
     }
     text = commandValidation.text ?? text;
     if (!this.attachmentsReady()) {
@@ -397,86 +344,56 @@ export class ComposerController implements FeatureController {
         this.workspaceId,
         'Images are still uploading. Wait for upload to finish, then send again.'
       );
-      return;
+      throw new Error('attachments_uploading');
     }
     this.clearCommandHint();
-    this.input.value = '';
-    this.resizeInput();
     this.hideCommandMenu();
-    this.lastSubmittedDraft = { text, attachments: this.pendingAttachments.slice() };
+    const retryAttachments = this.attachmentSnapshot
+      .map((snapshot) => this.pendingAttachments.find((item) => item.clientId === snapshot.id))
+      .filter((attachment): attachment is PendingAttachment =>
+        !!attachment && !!attachment.file && !!attachment.retryKey)
+      .map((attachment) => ({
+        retryKey: attachment.retryKey!,
+        file: attachment.file!,
+        serverAttachmentId: attachment.id || undefined
+      }));
+    this.lastSubmittedDraft = { text, attachments: retryAttachments };
+    this.draftText = '';
     this.bridge()?.sendAgentMessage(text, attachmentIds);
-    this.clearPendingAttachments();
   }
 
-  private resizeInput(): void {
-    if (!this.input) return;
-    const minHeight = this.composerInputMinimumHeight();
-    this.input.style.height = 'auto';
-    const nextHeight = Math.min(Math.max(this.input.scrollHeight, minHeight), MAX_INPUT_HEIGHT);
-    this.input.style.height = nextHeight + 'px';
-    this.input.style.overflowY = this.input.scrollHeight > MAX_INPUT_HEIGHT ? 'auto' : 'hidden';
+  private cancel(): void {
+    if (this.isBusy) this.bridge()?.sendAgentCommand('stop');
   }
 
-  private composerInputMinimumHeight(): number {
-    const raw = getComputedStyle(document.documentElement)
-      .getPropertyValue('--agent-composer-input-min-height')
-      .trim();
-    const parsed = Number.parseFloat(raw);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_INPUT_MIN_HEIGHT;
+  private handleDraftChange(text: string): void {
+    this.draftText = text;
+    this.clearCommandHint();
+    this.updateCommandMenu();
+  }
+
+  private projectDraft(text: string): void {
+    this.draftText = text;
+    this.draftToken += 1;
+    this.renderComposerIsland();
   }
 
   // --- Send/input/mode/config disabled sync --------------------------------
 
   /** Faithful port of the composer-owned part of thread.js/_updateState. */
   private renderComposerControls(): void {
-    if (this.sendButton) {
-      let label = 'Send';
-      if (this.isRestoring) {
-        label = 'Loading';
-        this.sendButton.title = 'ACP history is loading';
-      } else if (this.isTranscriptOnly) {
-        label = 'Read only';
-        this.sendButton.title = 'Create a new Agent tab to continue';
-      } else {
-        label = this.isBusy ? 'Stop' : 'Send';
-        this.sendButton.title = this.isBusy ? 'Stop ' + this.assistantName : 'Send message';
-      }
-      if (this.sendLabel) this.sendLabel.textContent = label;
-      this.sendButton.setAttribute('aria-label', label);
-      this.sendButton.disabled = this.isRestoring || this.isTranscriptOnly || !this.runtimeReady();
-      this.sendButton.classList.toggle('agent-send-stop', this.isBusy);
-    }
-    if (this.modeSelect) {
-      this.syncFallbackModeVisibility();
-      this.modeSelect.setDisabled(this.configControlsDisabled() || this.modes.length === 0 || this.hasConfigOption('mode'));
-    }
-    this.syncConfigOptionDisabledState();
     this.syncRuntimeControls();
   }
 
   /** Faithful port of runtime.js/_syncRuntimeControls (composer-owned nodes). */
   private syncRuntimeControls(): void {
-    const blocked = !this.runtimeReady();
-    if (this.input) {
-      this.input.disabled = blocked || this.isRestoring || this.isTranscriptOnly;
-      this.input.placeholder = this.isTranscriptOnly
-        ? 'Read-only transcript - create a new Agent tab to continue'
-        : blocked
-        ? 'Install the Agent runtime to start messaging'
-        : 'Message ' + this.assistantName + ' Agent - / for commands';
-    }
-    if (this.sendButton) {
-      this.sendButton.disabled = blocked || this.isRestoring || this.isTranscriptOnly;
-    }
     this.syncAttachmentControls();
-    this.syncConfigOptionDisabledState();
   }
 
   // --- Command menu + hint -------------------------------------------------
 
   private updateCommandMenu(): void {
-    if (!this.input || !this.commandMenu) return;
-    const value = this.input.value.trimStart();
+    const value = this.draftText.trimStart();
     if (!value.startsWith('/')) {
       this.hideCommandMenu();
       return;
@@ -493,75 +410,18 @@ export class ComposerController implements FeatureController {
       return;
     }
 
-    this.commandMenu.innerHTML = '';
     this.commandIndex = Math.min(this.commandIndex, matches.length - 1);
-    let currentGroup = '';
-    matches.forEach((command, index) => {
-      if (command.source !== currentGroup) {
-        currentGroup = command.source;
-        const group = document.createElement('div');
-        group.className = 'agent-command-group';
-        group.setAttribute('role', 'presentation');
-        group.textContent = currentGroup;
-        this.commandMenu!.appendChild(group);
-      }
-
-      const row = document.createElement('button');
-      row.type = 'button';
-      row.id = 'agent-command-option-' + index;
-      row.tabIndex = -1;
-      row.setAttribute('role', 'option');
-      row.setAttribute('aria-selected', index === this.commandIndex ? 'true' : 'false');
-      row.className = 'agent-command-item' + (index === this.commandIndex ? ' is-active' : '');
-      row.innerHTML = '<span>' + escapeHtml(command.name) + '</span><small>' + escapeHtml(command.label) + '</small>';
-      row.addEventListener('mousedown', (event) => {
-        event.preventDefault();
-        this.applyCommand(command);
-      });
-      this.commandMenu!.appendChild(row);
-    });
-    this.commandMenu.hidden = false;
-    this.input.setAttribute('aria-expanded', 'true');
-    this.input.setAttribute('aria-activedescendant', 'agent-command-option-' + this.commandIndex);
     this.visibleCommands = matches;
-  }
-
-  private handleCommandKey(event: KeyboardEvent): boolean {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      this.hideCommandMenu();
-      return true;
-    }
-    if (event.key === 'ArrowDown') {
-      event.preventDefault();
-      this.commandIndex = Math.min((this.visibleCommands.length || 1) - 1, this.commandIndex + 1);
-      this.updateCommandMenu();
-      return true;
-    }
-    if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      this.commandIndex = Math.max(0, this.commandIndex - 1);
-      this.updateCommandMenu();
-      return true;
-    }
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      const command = this.visibleCommands[this.commandIndex];
-      if (command) this.applyCommand(command);
-      return true;
-    }
-    return false;
+    this.commandMenuOpen = true;
+    this.renderComposerIsland();
   }
 
   private applyCommand(command: MenuCommand): void {
-    if (!this.input) return;
     if (command.fill) {
       this.clearCommandHint();
-      this.input.value = command.fill;
-      this.input.focus();
-      this.input.setSelectionRange(this.input.value.length, this.input.value.length);
+      this.projectDraft(command.fill);
+      this.focusToken += 1;
       this.hideCommandMenu();
-      this.resizeInput();
       return;
     }
 
@@ -571,9 +431,8 @@ export class ComposerController implements FeatureController {
     }
 
     this.clearCommandHint();
-    this.input.value = '';
+    this.projectDraft('');
     this.hideCommandMenu();
-    this.resizeInput();
 
     // The broker owns every `history` load; the menu entry only opens the dock.
     if (command.command === 'history') {
@@ -589,13 +448,11 @@ export class ComposerController implements FeatureController {
   }
 
   private hideCommandMenu(): void {
-    if (this.commandMenu) this.commandMenu.hidden = true;
-    if (this.input) {
-      this.input.setAttribute('aria-expanded', 'false');
-      this.input.removeAttribute('aria-activedescendant');
-    }
+    const shouldRender = this.commandMenuOpen || this.visibleCommands.length > 0 || this.commandIndex !== 0;
+    this.commandMenuOpen = false;
     this.visibleCommands = [];
     this.commandIndex = 0;
+    if (shouldRender) this.renderComposerIsland();
   }
 
   private parseLeadingSlashCommand(text: string): { name: string; arguments: string } | null {
@@ -649,8 +506,6 @@ export class ComposerController implements FeatureController {
   }
 
   private showCommandHint(command: string, reason: string): void {
-    const hint = this.commandHint;
-    if (!hint) return;
     let text: string;
     if (reason === 'attachments_not_allowed') {
       text = '斜杠命令不能与附件同时发送，请先移除附件。';
@@ -660,108 +515,114 @@ export class ComposerController implements FeatureController {
       text = '无法识别命令：' + command
         + '\nPSX 只支持命令菜单中显示的指令。输入 / 查看可用命令；部分 ' + this.agentName + ' 指令需要在原生 Terminal 中使用。';
     }
-    this.renderHintReact(text);
-    hint.hidden = false;
+    this.hintText = text;
+    this.hintVisible = true;
+    this.renderComposerIsland();
   }
 
   private clearCommandHint(): void {
-    const hint = this.commandHint;
-    if (!hint) return;
-    if (this.hintIsland) this.renderHintReact('');
-    hint.hidden = true;
+    const hadVisibleHint = this.hintVisible;
+    this.hintText = '';
+    this.hintVisible = false;
+    if (hadVisibleHint) this.renderComposerIsland();
   }
 
   // --- Modes + config options ----------------------------------------------
 
-  private renderModes(): void {
-    if (!this.modeSelect) return;
-    this.syncFallbackModeVisibility();
-    if (this.modes.length === 0) {
-      this.modeSelect.setItems([{ value: '', label: 'default' }], '');
-      this.modeSelect.setDisabled(true);
-      return;
-    }
-
-    this.modeSelect.setItems(
-      this.modes.map((mode) => ({
-        value: mode.id,
-        label: mode.name || mode.id,
-        title: mode.description || ''
-      })),
-      this.currentModeId ?? '');
-    this.modeSelect.setDisabled(this.configControlsDisabled() || this.hasConfigOption('mode'));
+  private commandMenuId(): string {
+    return 'agent-command-menu-' + this.workspaceId;
   }
 
-    private setCurrentMode(): void {
-    const modeId = this.currentModeId;
-    if (this.modeSelect && modeId) this.modeSelect.setValue(modeId);
-    if (modeId) this.configSelects.get('mode')?.setValue(modeId);
+  private commandOptionId(index: number): string {
+    return this.commandMenuId() + '-option-' + index;
   }
 
-  private renderConfigOptions(): void {
-    const host = this.configOptionsHost;
-    if (!host) return;
-
-    this.configSelects.forEach((menu) => menu.destroy());
-    this.configSelects.clear();
-    host.innerHTML = '';
-    this.configOptions.forEach((configOption) => {
-      const label = document.createElement('label');
-      label.className = 'agent-config-control';
-      label.title = configOption.description || configOption.name || configOption.id;
-
-      const name = document.createElement('span');
-      name.textContent = configOption.name || configOption.id;
-      label.appendChild(name);
-
-      const toggleValues = this.toggleValues(configOption);
-      if (configOption.type === 'boolean' || toggleValues) {
-        const switchButton = document.createElement('button');
-        const checked = configOption.type === 'boolean'
-          ? configOption.currentValue === true
-          : configOption.currentValue === toggleValues?.enabled;
-        switchButton.type = 'button';
-        switchButton.className = 'agent-config-switch';
-        switchButton.dataset.configId = configOption.id;
-        switchButton.setAttribute('role', 'switch');
-        switchButton.setAttribute('aria-checked', String(checked));
-        switchButton.setAttribute('aria-label', configOption.name || configOption.id);
-        switchButton.addEventListener('click', () => {
-          const next = switchButton.getAttribute('aria-checked') !== 'true';
-          switchButton.setAttribute('aria-checked', String(next));
-          const value = configOption.type === 'boolean'
-            ? next
-            : next ? toggleValues!.enabled : toggleValues!.disabled;
-          this.bridge()?.sendAgentCommand('set_config_option', value, configOption.id);
-        });
-        label.appendChild(switchButton);
-        host.appendChild(label);
-        return;
-      }
-
-      const menu = new MenuSelect((value) => {
-        if (value) this.bridge()?.sendAgentCommand('set_config_option', value, configOption.id);
-      }, configOption.name || configOption.id);
-      menu.element.dataset.configId = configOption.id;
-      menu.setItems(
-        configOption.options.map((item) => ({
-          value: item.value,
-          label: item.name || item.value,
-          title: item.description || ''
-        })),
-        typeof configOption.currentValue === 'string' ? configOption.currentValue : '');
-      this.configSelects.set(configOption.id, menu);
-      label.appendChild(menu.element);
-      host.appendChild(label);
-    });
+  private composerCommandMenuProps(): ComposerCommandMenuProps {
+    const items = this.visibleCommands.map((command, index) => ({
+      id: this.commandOptionId(index),
+      source: command.source,
+      name: command.name,
+      label: command.label
+    }));
+    return {
+      id: this.commandMenuId(),
+      open: this.commandMenuOpen,
+      activeId: items[this.commandIndex]?.id ?? '',
+      items,
+      onHighlight: (id) => {
+        const nextIndex = items.findIndex((item) => item.id === id);
+        if (nextIndex < 0 || nextIndex === this.commandIndex) return;
+        this.commandIndex = nextIndex;
+        this.renderComposerIsland();
+      },
+      onSelect: (id) => {
+        const index = items.findIndex((item) => item.id === id);
+        const command = this.visibleCommands[index];
+        if (command) this.applyCommand(command);
+      },
+      onDismiss: () => this.hideCommandMenu()
+    };
   }
 
-  private syncConfigOptionDisabledState(): void {
+  private composerControlsProps(): ComposerControlsProps {
     const disabled = this.configControlsDisabled();
-    this.configOptionsHost?.querySelectorAll<HTMLButtonElement>('button').forEach((control) => {
-      control.disabled = disabled;
-    });
-    this.configSelects.forEach((menu) => menu.setDisabled(disabled));
+    return {
+      mode: {
+        id: 'mode',
+        role: 'mode',
+        label: 'mode',
+        title: this.assistantName + ' Agent mode',
+        value: this.currentModeId,
+        items: this.modes.map((mode) => ({
+          value: mode.id,
+          label: mode.name || mode.id,
+          title: mode.description || ''
+        })),
+        disabled: disabled || this.modes.length === 0 || this.hasConfigOption('mode'),
+        hidden: this.hasConfigOption('mode'),
+        onValueChange: (value) => this.handleModeSelected(value)
+      },
+      configs: this.configOptions.map((configOption) => {
+        const label = configOption.name || configOption.id;
+        const title = configOption.description || label;
+        const toggleValues = this.toggleValues(configOption);
+        if (configOption.type === 'boolean' || toggleValues) {
+          const checked = configOption.type === 'boolean'
+            ? configOption.currentValue === true
+            : configOption.currentValue === toggleValues?.enabled;
+          return {
+            kind: 'switch' as const,
+            id: configOption.id,
+            label,
+            title,
+            checked,
+            disabled,
+            onCheckedChange: (next: boolean) => {
+              const value = configOption.type === 'boolean'
+                ? next
+                : next ? toggleValues!.enabled : toggleValues!.disabled;
+              this.bridge()?.sendAgentCommand('set_config_option', value, configOption.id);
+            }
+          };
+        }
+        return {
+          kind: 'select' as const,
+          id: configOption.id,
+          label,
+          title,
+          value: typeof configOption.currentValue === 'string' ? configOption.currentValue : '',
+          items: configOption.options.map((item) => ({
+            value: item.value,
+            label: item.name || item.value,
+            title: item.description || ''
+          })),
+          disabled,
+          onValueChange: (value: string) => {
+            if (value) this.bridge()?.sendAgentCommand('set_config_option', value, configOption.id);
+          }
+        };
+      })
+    };
   }
 
   private toggleValues(configOption: ComposerConfigOption): { enabled: string; disabled: string } | null {
@@ -773,118 +634,52 @@ export class ComposerController implements FeatureController {
     return null;
   }
 
-  private syncFallbackModeVisibility(): void {
-    const modeLabel = this.modeSelect?.element.closest('label') as HTMLElement | null;
-    if (!modeLabel) return;
-    modeLabel.hidden = this.hasConfigOption('mode');
-  }
-
   // --- Attachments ---------------------------------------------------------
 
-  private wireAttachments(): void {
-    this.lastSubmittedDraft = null;
-    if (!this.panel || !this.attachmentStrip) return;
-
-    this.on(this.panel, 'paste', (event) => {
-      if (!this.runtimeReady() || !this.supportsImage || this.isBusy || this.isRestoring) return;
-      const clipboard = event as ClipboardEvent;
-      const files = Array.from(clipboard.clipboardData?.items || [])
-        .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
-        .map((item) => item.getAsFile())
-        .filter((file): file is File => !!file);
-      if (files.length > 0) {
-        clipboard.preventDefault();
-        this.handleAttachmentFiles(files);
-      }
-    });
-
-    this.on(this.panel, 'dragover', (event) => {
-      if (!this.runtimeReady() || !this.supportsImage || this.isBusy || this.isRestoring) return;
-      const drag = event as DragEvent;
-      if (Array.from(drag.dataTransfer?.items || []).some((item) => item.kind === 'file')) {
-        drag.preventDefault();
-      }
-    });
-
-    this.on(this.panel, 'drop', (event) => {
-      if (!this.runtimeReady() || !this.supportsImage || this.isBusy || this.isRestoring) return;
-      const drag = event as DragEvent;
-      const files = Array.from(drag.dataTransfer?.files || []).filter((file) => file.type.startsWith('image/'));
-      if (files.length > 0) {
-        drag.preventDefault();
-        this.handleAttachmentFiles(files);
-      }
-    });
-
-    if (this.imagePreview) {
-      this.on(this.imagePreview, 'cancel', (event) => {
-        event.preventDefault();
-        this.hideImagePreview();
-      });
-      this.on(this.imagePreview, 'click', (event) => {
-        if (event.target === this.imagePreview) this.hideImagePreview();
-      });
-    }
-    this.on(this.imagePreviewClose, 'click', () => this.hideImagePreview());
-  }
-
-  private handleAttachmentFiles(files: File[]): void {
-    const images = files.filter((file) => file && file.type && file.type.startsWith('image/'));
-    if (!this.supportsImage) {
-      this.host.appendSystemMessage(this.workspaceId, 'Current ACP Agent does not support image input.');
+  private handleAttachmentSnapshot(items: AttachmentSnapshotItem[]): void {
+    if (
+      items.length === this.attachmentSnapshot.length &&
+      items.every((item, index) => {
+        const current = this.attachmentSnapshot[index];
+        return current?.id === item.id && current.url === item.url;
+      })
+    ) {
       return;
     }
-    if (images.length === 0) return;
-
-    const allowedTypes = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
-    const maxSingle = 20 * 1024 * 1024;
-    const maxTotal = 50 * 1024 * 1024;
-    const maxCount = 5;
-    let currentTotal = this.pendingAttachments.reduce((sum, item) => sum + (item.size || 0), 0);
-
-    for (const file of images) {
-      if (!allowedTypes.has(file.type)) {
-        this.host.appendSystemMessage(this.workspaceId, 'Only PNG, JPEG, WebP, and GIF images are supported.');
-        continue;
-      }
-      if (file.size > maxSingle) {
-        this.host.appendSystemMessage(this.workspaceId, file.name + ' is larger than 20MB.');
-        continue;
-      }
-      if (this.pendingAttachments.length >= maxCount) {
-        this.host.appendSystemMessage(this.workspaceId, 'You can attach at most 5 images at once.');
-        break;
-      }
-      if (currentTotal + file.size > maxTotal) {
-        this.host.appendSystemMessage(this.workspaceId, 'Images in one message must total 50MB or less.');
-        break;
-      }
-      currentTotal += file.size;
-      this.uploadAttachmentFile(file);
-    }
+    this.attachmentSnapshot = items.slice();
+    this.renderPendingAttachments();
   }
 
-  private uploadAttachmentFile(file: File): void {
-    const clientId = 'att-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+  private handlePreparedAttachment(prepared: PreparedAttachment): void {
+    if (this.pendingAttachments.some((item) => item.clientId === prepared.clientId)) return;
+
+    const file = prepared.file;
     const item: PendingAttachment = {
-      clientId,
-      id: '',
+      clientId: prepared.clientId,
+      retryKey: prepared.retryKey,
+      file,
+      id: prepared.serverAttachmentId ?? '',
       fileName: file.name || 'image',
       mimeType: file.type,
       size: file.size,
-      status: 'uploading',
-      url: URL.createObjectURL(file),
-      localPreviewUrl: true
+      status: prepared.serverAttachmentId ? 'uploaded' : 'uploading',
+      url: prepared.previewUrl,
+      localPreviewUrl: false
     };
     this.pendingAttachments.push(item);
     this.renderPendingAttachments();
 
+    if (prepared.serverAttachmentId) return;
+
     const reader = new FileReader();
+    this.attachmentReaders.set(item.clientId, reader);
     reader.onload = () => {
+      this.attachmentReaders.delete(item.clientId);
+      if (!this.pendingAttachments.some((entry) => entry.clientId === item.clientId)) return;
       const dataUrl = String(reader.result || '');
       const comma = dataUrl.indexOf(',');
       this.bridge()?.uploadAgentAttachment({
-        clientId,
+        clientId: item.clientId,
         fileName: item.fileName,
         mimeType: item.mimeType,
         size: item.size,
@@ -892,9 +687,21 @@ export class ComposerController implements FeatureController {
       });
     };
     reader.onerror = () => {
-      this.markAttachmentReadError(clientId, 'Failed to read image file.');
+      this.attachmentReaders.delete(item.clientId);
+      this.markAttachmentReadError(item.clientId, 'Failed to read image file.');
     };
     reader.readAsDataURL(file);
+  }
+
+  private handleAttachmentConstraintError(message: string): void {
+    const normalized = message === 'All files exceed the maximum size.'
+      ? 'Images must be 20MB or smaller.'
+      : message === 'Too many files. Some were not added.'
+      ? 'You can attach at most 5 images at once.'
+      : message === 'No files match the accepted types.'
+      ? 'Only image attachments are supported.'
+      : message;
+    this.host.appendSystemMessage(this.workspaceId, normalized);
   }
 
   private handleAttachmentUploaded(raw: RawHostMessage): void {
@@ -936,44 +743,24 @@ export class ComposerController implements FeatureController {
   }
 
   private renderPendingAttachments(): void {
-    const strip = this.attachmentStrip;
-    if (!strip) return;
-    strip.hidden = this.pendingAttachments.length === 0;
-    this.renderAttachmentsReact();
+    this.renderComposerIsland();
   }
 
-  // ----- React composer islands ---------------------------------------------
+  // ----- React composer island ----------------------------------------------
   //
-  // Three independent roots (single-owner rule): the attachment strip pills,
-  // the attach action row and the command hint text. Host visibility
-  // attributes stay controller-owned.
+  // One island owns the whole composer subtree. The props below merge the
+  // former attachment-strip / attach-actions / command-hint islands into one
+  // React projection; the loader preserves the latest props until mount.
 
   private attachmentStripProps(): AttachmentStripProps {
     return {
       attachments: this.pendingAttachments.map((attachment) => ({
         clientId: attachment.clientId,
-        fileName: attachment.fileName,
-        status: attachment.status,
-        url: attachment.url
+        status: attachment.status
       })),
-      onPreview: (url) => this.showImagePreview(url),
-      onRemove: (clientId) => this.removePendingAttachment(clientId)
+      readOnly: this.configControlsDisabled(),
+      onPreview: (url) => this.showImagePreview(url)
     };
-  }
-
-  private renderAttachmentsReact(): void {
-    const host = this.attachmentStrip;
-    if (!host) return;
-    this.attachmentsIsland ??= createIslandLoader<AttachmentStripProps>({
-      name: 'composer-attachments',
-      load: async () => {
-        const mod = await import('./composerIsland.js');
-        return (islandHost, reportFailure) =>
-          mod.mountAttachmentStripIsland(islandHost, reportFailure);
-      },
-      host
-    });
-    this.attachmentsIsland.render(this.attachmentStripProps());
   }
 
   private composerActionsProps(): ComposerActionsProps {
@@ -983,39 +770,78 @@ export class ComposerController implements FeatureController {
       attachTitle: this.supportsImage
         ? (this.runtimeReady() ? 'Attach images' : 'Install the Agent runtime before attaching images')
         : 'Current ACP Agent does not support image input',
-      canPick: this.runtimeReady() && this.supportsImage && !this.isBusy && !this.isRestoring,
-      onFiles: (files) => this.handleAttachmentFiles(files)
+      canPick: this.runtimeReady() && this.supportsImage && !this.isBusy && !this.isRestoring
     };
   }
 
-  private renderActionsReact(): void {
-    const host = this.panel?.querySelector<HTMLElement>('.agent-composer-actions') ?? null;
+  private renderComposerIsland(): void {
+    const host = this.composerHost;
     if (!host) return;
-    this.actionsIsland ??= createIslandLoader<ComposerActionsProps>({
-      name: 'composer-actions',
+    this.composerIsland ??= createIslandLoader<ComposerViewProps>({
+      name: 'composer',
       load: async () => {
         const mod = await import('./composerIsland.js');
         return (islandHost, reportFailure) =>
-          mod.mountComposerActionsIsland(islandHost, reportFailure);
+          mod.mountComposerIsland(islandHost, reportFailure);
       },
       host
     });
-    this.actionsIsland.render(this.composerActionsProps());
-  }
-
-  private renderHintReact(text: string): void {
-    const host = this.commandHint;
-    if (!host) return;
-    this.hintIsland ??= createIslandLoader<CommandHintProps>({
-      name: 'command-hint',
-      load: async () => {
-        const mod = await import('./composerIsland.js');
-        return (islandHost, reportFailure) =>
-          mod.mountCommandHintIsland(islandHost, reportFailure);
+    this.composerIsland.render({
+      attachmentBridge: {
+        readOnly: this.configControlsDisabled() || !this.supportsImage,
+        resetToken: this.attachmentResetToken,
+        restoreToken: this.attachmentRestoreToken,
+        restoreItems: this.attachmentRestoreItems,
+        onSnapshot: (items) => this.handleAttachmentSnapshot(items),
+        onPrepared: (item) => this.handlePreparedAttachment(item),
+        onRemoved: (clientId) => this.removePendingAttachment(clientId),
+        onError: (message) => this.handleAttachmentConstraintError(message)
       },
-      host
+      attachments: this.attachmentStripProps(),
+      actions: this.composerActionsProps(),
+      attachmentsVisible:
+        this.attachmentSnapshot.length > 0 && this.modeTransitionPrompt === null,
+      commands: this.composerCommandMenuProps(),
+      controls: this.composerControlsProps(),
+      draft: {
+        initialDraft: this.draftText,
+        draftToken: this.draftToken,
+        focusToken: this.focusToken,
+        disabled: !this.runtimeReady() || this.isRestoring || this.isTranscriptOnly,
+        busy: this.isBusy,
+        placeholder: this.isTranscriptOnly
+          ? 'Read-only transcript - create a new Agent tab to continue'
+          : !this.runtimeReady()
+          ? 'Install the Agent runtime to start messaging'
+          : 'Message ' + this.assistantName + ' Agent - / for commands',
+        submitDisabled: !this.runtimeReady() || this.isRestoring || this.isTranscriptOnly,
+        submitLabel: this.isRestoring
+          ? 'Loading'
+          : this.isTranscriptOnly
+          ? 'Read only'
+          : this.isBusy
+          ? 'Stop'
+          : 'Send',
+        submitTitle: this.isRestoring
+          ? 'ACP history is loading'
+          : this.isTranscriptOnly
+          ? 'Create a new Agent tab to continue'
+          : this.isBusy
+          ? 'Stop ' + this.assistantName
+          : 'Send message',
+        onDraftChange: (text) => this.handleDraftChange(text),
+        onSubmit: (message) => this.submit(message.text, message.files.length),
+        onCancel: () => this.cancel()
+      },
+      hint: { text: this.hintText, visible: this.hintVisible },
+      modeTransitionPrompt: this.modeTransitionPrompt,
+      preview: {
+        requestToken: this.imagePreviewRequestToken,
+        closeToken: this.imagePreviewCloseToken,
+        src: this.imagePreviewSrc
+      },
+      onReady: () => this.handleComposerReady()
     });
-    this.hintIsland.render({ text });
   }
 
   /**
@@ -1105,69 +931,74 @@ export class ComposerController implements FeatureController {
 
   private removePendingAttachment(clientId: string): void {
     const index = this.pendingAttachments.findIndex((attachment) => attachment.clientId === clientId);
+    const reader = this.attachmentReaders.get(clientId);
+    if (reader) {
+      reader.abort();
+      this.attachmentReaders.delete(clientId);
+    }
     if (index < 0) return;
-    const [item] = this.pendingAttachments.splice(index, 1);
-    if (item.localPreviewUrl && item.url) URL.revokeObjectURL(item.url);
+    this.pendingAttachments.splice(index, 1);
     this.renderPendingAttachments();
   }
 
   private pendingAttachmentIds(): string[] {
-    return this.pendingAttachments
-      .filter((attachment) => attachment.status === 'uploaded' && attachment.id)
+    return this.attachmentSnapshot
+      .map((snapshot) => this.pendingAttachments.find((item) => item.clientId === snapshot.id))
+      .filter((attachment): attachment is PendingAttachment =>
+        !!attachment && attachment.status === 'uploaded' && !!attachment.id)
       .map((attachment) => attachment.id);
   }
 
   private attachmentsReady(): boolean {
-    return !this.pendingAttachments.some((attachment) => attachment.status === 'uploading');
+    return this.attachmentSnapshot.every((snapshot) => {
+      const attachment = this.pendingAttachments.find((item) => item.clientId === snapshot.id);
+      return !!attachment && attachment.status !== 'uploading';
+    });
   }
 
   private clearPendingAttachments(): void {
-    for (const item of this.pendingAttachments) {
-      if (item.localPreviewUrl && item.url) URL.revokeObjectURL(item.url);
-    }
+    for (const reader of this.attachmentReaders.values()) reader.abort();
+    this.attachmentReaders.clear();
     this.pendingAttachments = [];
+    this.attachmentSnapshot = [];
+    this.attachmentRestoreItems = [];
+    this.attachmentResetToken += 1;
+    this.hideImagePreview();
     this.renderPendingAttachments();
   }
 
   private restoreSubmittedDraft(): void {
-    if (!this.lastSubmittedDraft || !this.input) return;
-    this.input.value = this.lastSubmittedDraft.text || '';
-    this.pendingAttachments = (this.lastSubmittedDraft.attachments || []).slice();
+    if (!this.lastSubmittedDraft) return;
+    this.draftText = this.lastSubmittedDraft.text || '';
+    this.draftToken += 1;
+    this.pendingAttachments = [];
+    this.attachmentSnapshot = [];
+    this.attachmentRestoreItems = this.lastSubmittedDraft.attachments.slice();
+    this.attachmentRestoreToken += 1;
     this.lastSubmittedDraft = null;
-    this.resizeInput();
     this.renderPendingAttachments();
   }
 
   private showImagePreview(url: string): void {
-    if (!this.imagePreview || !this.imagePreviewImg || !url) return;
-    this.imagePreviewReturnFocus = document.activeElement;
-    this.imagePreviewImg.src = url;
-    if (!this.imagePreview.open) this.imagePreview.showModal();
-    this.imagePreviewClose?.focus();
+    if (!url) return;
+    this.imagePreviewSrc = url;
+    this.imagePreviewRequestToken += 1;
+    this.renderComposerIsland();
   }
 
   private hideImagePreview(): void {
-    if (!this.imagePreview || !this.imagePreviewImg) return;
-    if (this.imagePreview.open) this.imagePreview.close();
-    this.imagePreviewImg.removeAttribute('src');
-    const returnFocus = this.imagePreviewReturnFocus as HTMLElement | null;
-    this.imagePreviewReturnFocus = null;
-    if (returnFocus?.isConnected && typeof returnFocus.focus === 'function') returnFocus.focus();
+    if (!this.imagePreviewSrc) return;
+    this.imagePreviewSrc = '';
+    this.imagePreviewCloseToken += 1;
   }
 
   private syncAttachmentControls(): void {
-    this.renderActionsReact();
+    this.renderComposerIsland();
   }
 
   // --- Helpers -------------------------------------------------------------
 
   private bridge(): AgentBridgePort | null {
     return this.host.bridgeFor(this.workspaceId);
-  }
-
-  private on(node: HTMLElement | null, type: string, handler: (event: Event) => void): void {
-    if (!node) return;
-    node.addEventListener(type, handler as EventListener);
-    this.cleanup.push(() => node.removeEventListener(type, handler as EventListener));
   }
 }

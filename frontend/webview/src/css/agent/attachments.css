@@ -2,14 +2,14 @@
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    /* Top/side inset comes from composer.css so the strip follows the card's
-     * content column; this rule only lays out the pills. */
 }
 
 .agent-attachments-strip[hidden] {
     display: none;
 }
 
+/* Timeline message attachments retain the legacy non-removable tile. The
+ * Composer attachment chrome is owned by PromptInput and styled in TSX. */
 .agent-attachment-shell {
     display: inline-flex;
     align-items: center;
@@ -51,8 +51,6 @@
     background: var(--background);
 }
 
-/* Placeholder for attachments whose backing file is gone (e.g. history-loaded
- * threads): the pill keeps the filename, the glyph replaces the thumbnail. */
 .agent-attachment-glyph {
     box-sizing: border-box;
     padding: 3px;
@@ -88,147 +86,9 @@
     cursor: default;
 }
 
-.agent-attachment-remove {
-    flex: 0 0 18px;
-    width: 18px;
-    height: 18px;
-    display: grid;
-    place-items: center;
-    box-sizing: border-box;
-    padding: 0;
-    border: 0;
-    border-radius: 50%;
-    background: transparent;
-    color: var(--muted-foreground);
-    cursor: pointer;
-    font-size: 12px;
-    line-height: 1;
-}
-
-.agent-attachment-remove:hover {
-    background: var(--accent);
-    color: var(--foreground);
-}
-
-.agent-attach {
-    flex: 0 0 32px;
-    width: 32px;
-    height: 32px;
-    display: grid;
-    place-items: center;
-    position: relative;
-    box-sizing: border-box;
-    border: 1px solid transparent;
-    border-radius: var(--agent-radius-control);
-    padding: 0;
-    background: transparent;
-    color: var(--muted-foreground);
-    cursor: pointer;
-    font: inherit;
-    font-size: 0;
-    line-height: 0;
-}
-
-.agent-attach::before,
-.agent-attach::after {
-    content: "";
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    background: currentColor;
-    border-radius: 999px;
-    transform: translate(-50%, -50%);
-}
-
-.agent-attach::before {
-    width: 12px;
-    height: 2px;
-}
-
-.agent-attach::after {
-    width: 2px;
-    height: 12px;
-}
-
-.agent-attach:hover {
-    border-color: var(--border);
-    background: var(--accent);
-    color: var(--foreground);
-}
-
-.agent-attach:disabled {
-    opacity: 0.48;
-    cursor: default;
-}
-
 .agent-message-attachments {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
     margin: 0 0 3px;
-}
-
-.agent-image-preview {
-    position: fixed;
-    inset: 0;
-    width: 100vw;
-    height: 100vh;
-    max-width: none;
-    max-height: none;
-    box-sizing: border-box;
-    display: grid;
-    place-items: center;
-    margin: 0;
-    padding: var(--agent-space-8);
-    border: 0;
-    background: transparent;
-    z-index: var(--agent-layer-dialog);
-}
-
-.agent-image-preview::backdrop {
-    background: color-mix(in srgb, var(--agent-overlay) 76%, transparent);
-}
-
-.agent-image-preview:not([open]) {
-    display: none;
-}
-
-.agent-image-preview img {
-    max-width: min(92vw, 1200px);
-    max-height: 88vh;
-    border-radius: var(--agent-radius-card);
-    box-shadow: var(--agent-shadow-dialog);
-    object-fit: contain;
-}
-
-.agent-image-preview-close {
-    position: fixed;
-    top: var(--agent-space-4);
-    right: var(--agent-space-4);
-    width: 44px;
-    height: 44px;
-    display: grid;
-    place-items: center;
-    border: 1px solid var(--border);
-    border-radius: var(--agent-radius-control);
-    background: var(--card);
-    color: var(--foreground);
-    cursor: pointer;
-}
-
-/* SVG icon, not a text glyph: the × character sits on the font baseline, so a
- * text button can never be truly centred (and the UI font is user-themable). */
-.agent-image-preview-close-icon {
-    display: block;
-    width: 16px;
-    height: 16px;
-}
-
-.agent-image-preview-close:hover {
-    background: var(--accent);
-}
-
-.agent-image-preview-close:focus-visible {
-    outline: 2px solid var(--ring);
-    outline-offset: 2px;
 }

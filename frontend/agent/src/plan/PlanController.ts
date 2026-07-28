@@ -22,6 +22,7 @@ import type {
   WorkspacePlanState
 } from '../contracts/workspace-state.js';
 import { createIslandLoader, type IslandLoader } from '../core/islandHost.js';
+import type { WorkspaceToolbarController } from '../workspace/WorkspaceToolbarController.js';
 
 /** The seam the controller needs from the workspace host. */
 export interface PlanHost {
@@ -44,12 +45,10 @@ export class PlanController implements FeatureController {
   private readonly workspaceId: string;
   private readonly host: PlanHost;
   private readonly callbacks: PlanControllerCallbacks;
+  private readonly toolbar: WorkspaceToolbarController;
 
   private panel: HTMLElement | null = null;
   private planCard: HTMLElement | null = null;
-  private planPanel: HTMLElement | null = null;
-  private planToggle: HTMLElement | null = null;
-  private planToggleUnread: HTMLElement | null = null;
 
   // preferredVisible is workspace-local user intent. narrowOverride is a
   // temporary responsive value: null means wide mode, boolean means narrow.
@@ -58,16 +57,21 @@ export class PlanController implements FeatureController {
   private unread = false;
   private lastPlanRef: WorkspacePlanState = EMPTY_PLAN;
 
-  // React owns plan-panel children. Visibility and responsive state stay with
-  // this controller because they affect the surrounding shell.
+  // React owns every plan-card child (the island renders the whole card
+  // shell). Visibility and responsive state stay with this controller because
+  // they affect the surrounding shell.
   private planIsland: IslandLoader<WorkspacePlanState> | null = null;
 
-  private readonly cleanup: Array<() => void> = [];
-
-  constructor(workspaceId: string, host: PlanHost, callbacks?: PlanControllerCallbacks) {
+  constructor(
+    workspaceId: string,
+    host: PlanHost,
+    callbacks: PlanControllerCallbacks | undefined,
+    toolbar: WorkspaceToolbarController
+  ) {
     this.workspaceId = workspaceId;
     this.host = host;
     this.callbacks = callbacks ?? {};
+    this.toolbar = toolbar;
   }
 
   mount(): void {
@@ -75,11 +79,7 @@ export class PlanController implements FeatureController {
     if (!panel) return;
     this.panel = panel;
     this.planCard = role(panel, 'plan-card');
-    this.planPanel = role(panel, 'plan-panel');
-    this.planToggle = role(panel, 'plan-toggle');
-    this.planToggleUnread = role(panel, 'plan-toggle-unread');
 
-    this.on(this.planToggle, 'click', () => this.requestVisible(!this.effectiveVisible()));
     this.renderPlan(EMPTY_PLAN);
     this.applyVisibility();
   }
@@ -98,7 +98,6 @@ export class PlanController implements FeatureController {
   }
 
   dispose(): void {
-    for (const off of this.cleanup.splice(0)) off();
     this.planIsland?.dispose();
     this.planIsland = null;
     this.panel = null;
@@ -135,7 +134,7 @@ export class PlanController implements FeatureController {
   }
 
   focusToggle(): void {
-    this.planToggle?.focus();
+    this.toolbar.focusPlanToggle();
   }
 
   private applyVisibility(): void {
@@ -143,14 +142,9 @@ export class PlanController implements FeatureController {
     const visible = this.effectiveVisible();
     if (visible) this.unread = false;
     if (this.planCard) this.planCard.hidden = !visible;
-    if (this.planToggle) {
-      this.planToggle.setAttribute('aria-expanded', String(visible));
-      // The explicit aria-label overrides any inner span's label, so the
-      // unread state must be part of the button's own accessible name.
-      this.planToggle.setAttribute('aria-label',
-        this.unread ? 'Toggle Plan card, plan updated' : 'Toggle Plan card');
-    }
-    if (this.planToggleUnread) this.planToggleUnread.hidden = !this.unread;
+    // The toolbar renders aria-expanded/aria-label/the unread dot from this
+    // single push; no DOM toggle lookup remains here.
+    this.toolbar.setPlanState(visible, this.unread);
   }
 
   // --- Plan rendering ---------------------------------------------------------
@@ -167,7 +161,7 @@ export class PlanController implements FeatureController {
   }
 
   private renderPlan(plan: WorkspacePlanState): void {
-    const host = this.planPanel;
+    const host = this.planCard;
     if (!host) return;
     this.planIsland ??= createIslandLoader<WorkspacePlanState>({
       name: 'plan-card',
@@ -202,15 +196,5 @@ export class PlanController implements FeatureController {
   private syncEffectiveVisibility(previous: boolean): void {
     this.applyVisibility();
     if (this.effectiveVisible() !== previous) this.callbacks.onVisibilityChanged?.();
-  }
-
-  private on<K extends keyof HTMLElementEventMap>(
-    node: HTMLElement | null,
-    type: K,
-    handler: (event: HTMLElementEventMap[K]) => void
-  ): void {
-    if (!node) return;
-    node.addEventListener(type, handler as EventListener);
-    this.cleanup.push(() => node.removeEventListener(type, handler as EventListener));
   }
 }

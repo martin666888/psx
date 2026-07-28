@@ -1,7 +1,10 @@
-/* History list content (CP4 area 4) renders through HistoryList.tsx with
-   Tailwind/shadcn classes; this file keeps only the dock chrome owned by
-   HistoryDockController (bar, search, filter, refresh, content scroller,
-   resizer) and the open animation. */
+/* History dock chrome renders through HistoryDockView.tsx: the top bar
+   controls are shadcn components (Input, Select, Button) and the content
+   scroller's box model is Tailwind. This file keeps what utilities do not
+   express — the dock's absolute frame, the two-row bar grid, the Firefox
+   scrollbar properties of the single scroll node (the webkit skin lives in
+   scrollbars.css keyed off the same class), the resizer affordance and the
+   open animation. */
 
 /* --- Global History dock (singleton, left column) -------------------------- */
 
@@ -36,66 +39,7 @@
     border-bottom: 1px solid var(--agent-border);
 }
 
-.agent-history-search {
-    grid-column: 1 / -1;
-    min-width: 0;
-    padding: 5px 8px;
-    border: 1px solid var(--agent-border);
-    border-radius: var(--agent-radius-input);
-    background: var(--agent-surface-raised);
-    color: var(--agent-text);
-    font: inherit;
-    font-size: 12px;
-}
-
-.agent-history-provider-filter {
-    min-width: 0;
-    max-width: 100%;
-    padding: 5px 6px;
-    border: 1px solid var(--agent-border);
-    border-radius: var(--agent-radius-input);
-    background: var(--agent-surface-raised);
-    color: var(--agent-text);
-    font: inherit;
-    font-size: 12px;
-}
-
-.agent-history-search:focus-visible,
-.agent-history-provider-filter:focus-visible {
-    border-color: var(--agent-accent);
-    outline: 2px solid var(--agent-focus-ring);
-    outline-offset: -1px;
-}
-
-.agent-history-refresh {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 5px;
-    border: 1px solid var(--agent-border);
-    border-radius: var(--agent-radius-control);
-    background: var(--agent-surface-raised);
-    color: var(--agent-text);
-    cursor: pointer;
-    font: inherit;
-    font-size: 12px;
-}
-
-.agent-history-refresh:hover {
-    border-color: var(--agent-border-strong);
-    background: var(--agent-hover);
-}
-
-.agent-history-refresh svg {
-    display: block;
-}
-
 .agent-history-dock-content {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-x: hidden;
-    overflow-y: auto;
-    padding: var(--agent-space-2);
     scrollbar-color: var(--agent-scrollbar) var(--agent-bg);
     scrollbar-width: thin;
 }

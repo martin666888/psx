@@ -1,5 +1,12 @@
 # PSX 自动化测试指南
 
+> Process-safety rule: run every verification command sequentially. Do not run
+> typecheck, lint, Vitest, frontend build/verification, or `tools/test.ps1` at
+> the same time. Vitest is intentionally pinned to one worker
+> (`fileParallelism: false`, `maxWorkers: 1`) because this repository's
+> jsdom/React harness mutates process-wide browser globals. After an interrupted
+> Web test, verify that no test-owned `node` process remains before retrying.
+
 PSX 的测试体系采用“本地优先、CI 兼容”的分层结构。自动化测试不会登录真实 Claude/Kimi，不会消耗模型额度，也不会访问 `%USERPROFILE%\.psx`；所有测试工作目录、日志、覆盖率和报告都位于仓库内的 `TestResults/`。
 
 ## 分层结构

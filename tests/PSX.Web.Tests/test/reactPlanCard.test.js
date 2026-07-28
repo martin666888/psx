@@ -44,7 +44,7 @@ async function settle(app, predicate, run) {
 
 test('plan entries, fallback text and empty state render in place', async () => {
   const { app, panel } = await fixture();
-  const host = role(panel, 'plan-panel');
+  const host = role(panel, 'plan-card');
   await settle(app, () => host.querySelectorAll('.agent-plan-item').length === 3, () => app.handle(event(ENTRIES)));
   assert.deepEqual(
     [...host.querySelectorAll('.agent-plan-content')].map((node) => node.textContent),
@@ -69,7 +69,7 @@ test('plan entries, fallback text and empty state render in place', async () => 
 
 test('updates preserve existing row nodes', async () => {
   const { app, panel } = await fixture();
-  const host = role(panel, 'plan-panel');
+  const host = role(panel, 'plan-card');
   await settle(app, () => host.querySelectorAll('.agent-plan-item').length === 3, () => app.handle(event(ENTRIES)));
   const before = [...host.querySelectorAll('.agent-plan-item')];
   const updated = [
@@ -89,28 +89,30 @@ test('updates preserve existing row nodes', async () => {
 
 test('a hidden update raises unread without forcing the card open', async () => {
   const { app, panel } = await fixture();
-  role(panel, 'plan-toggle').click();
+  // The plan toggle renders through the workspace toolbar island.
+  await settle(app, () => !!role(panel, 'plan-toggle'), () => {});
+  await act(async () => role(panel, 'plan-toggle').click());
   assert.equal(role(panel, 'plan-card').hidden, true);
   await settle(
     app,
-    () => !!role(panel, 'plan-panel').querySelector('.agent-plan-list'),
+    () => !!role(panel, 'plan-card').querySelector('.agent-plan-list'),
     () => app.handle(event([{ content: 'Hidden update', status: 'pending' }]))
   );
-  assert.equal(role(panel, 'plan-toggle-unread').hidden, false);
+  await settle(app, () => role(panel, 'plan-toggle-unread')?.hidden === false, () => {});
   assert.equal(role(panel, 'plan-card').hidden, true);
-  role(panel, 'plan-toggle').click();
+  await act(async () => role(panel, 'plan-toggle').click());
   assert.equal(role(panel, 'plan-card').hidden, false);
-  assert.equal(role(panel, 'plan-toggle-unread').hidden, true);
+  await settle(app, () => role(panel, 'plan-toggle-unread')?.hidden === true, () => {});
 });
 
 test('closing the workspace unmounts plan content', async () => {
   const { app, panel } = await fixture();
   await settle(
     app,
-    () => !!role(panel, 'plan-panel').querySelector('.agent-plan-list'),
+    () => !!role(panel, 'plan-card').querySelector('.agent-plan-list'),
     () => app.handle(event(ENTRIES))
   );
-  const host = role(panel, 'plan-panel');
+  const host = role(panel, 'plan-card');
   await act(async () => app.handle({ type: 'agent_workspace_closed', workspaceId: WS }));
   assert.equal(host.childElementCount, 0);
   assert.equal(host.dataset.islandState, undefined);

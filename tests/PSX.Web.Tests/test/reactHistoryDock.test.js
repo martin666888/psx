@@ -13,7 +13,6 @@ import {
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const WS = '77777777-7777-4777-8777-777777777777';
-await appModule('history/historyIsland.js');
 
 const thread = (overrides) => ({
   threadId: 't',
@@ -34,6 +33,10 @@ const THREADS = [
 
 async function fixture() {
   const runtime = installAgentRuntime();
+  // Warm the island module only after the jsdom globals exist: react-dom
+  // probes input-event support at first evaluation, and the controlled
+  // search box needs the real input-event path (not the no-op polyfill).
+  await appModule('history/historyIsland.js');
   installBreakpoint(true);
   document.body.innerHTML = `<div id="agents"></div>${agentTemplateMarkup()}`;
   window.localStorage.setItem('psx.agent.historyDockOpen', '1');
@@ -44,10 +47,17 @@ async function fixture() {
     template: document.getElementById('agent-workspace-template')
   });
   createAgentWorkspace(app, WS);
+  const content = () => document.querySelector('[data-role="history-content"]');
+  // The dock chrome renders through the history-dock React island; wait for
+  // its first commit before tests start querying inside it.
+  for (let i = 0; i < 100 && !content(); i++) {
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 5)));
+  }
+  assert.ok(content(), 'history dock island did not mount');
   return {
     app,
     posted: runtime.postedMessages,
-    content: () => document.querySelector('[data-role="history-content"]')
+    content
   };
 }
 
@@ -72,7 +82,8 @@ test('loading, grouped list and empty states render semantically', async () => {
   );
   assert.equal(content().querySelectorAll('.agent-history-group').length, 2);
   assert.equal(content().querySelectorAll('.agent-history-item').length, 3);
-  assert.equal(content().dataset.islandState, 'mounted');
+  // The island host is the dock host element the portal renders into.
+  assert.equal(document.querySelector('[data-role="history-dock-host"]').dataset.islandState, 'mounted');
 
   await settle(
     () => {
@@ -115,9 +126,14 @@ test('show-more, folding and search update the React list', async () => {
   await act(async () => content().querySelector('.agent-history-group-header').click());
   assert.equal(content().querySelector('.agent-history-group').dataset.folded, 'true');
 
+  // Drive the controlled search box the way a browser keystroke would: the
+  // native prototype setter bypasses React's instance value tracker, so the
+  // following input event registers as a real change (same pattern as
+  // tools/screenshot-baseline.mjs).
   const search = document.querySelector('[data-role="history-search"]');
+  const setValue = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
   await act(async () => {
-    search.value = 'Task 3';
+    setValue.call(search, 'Task 3');
     search.dispatchEvent(new Event('input', { bubbles: true }));
   });
   assert.equal(content().querySelector('.agent-history-group').dataset.folded, 'false');

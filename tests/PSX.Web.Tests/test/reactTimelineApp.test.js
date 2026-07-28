@@ -6,6 +6,7 @@ import { act } from 'react';
 import {
   mountAgentApp,
   createAgentWorkspace,
+  composerReady,
   modeTransitionEvent,
   appModule
 } from './agentHarness.js';
@@ -33,23 +34,25 @@ async function fixture(workspaceId = WS) {
 
 test('a streaming turn reaches the wired React timeline', async () => {
   const { app, panel } = await fixture();
-  const thread = panel.querySelector('[data-role="thread"]');
+  // [data-role="thread"] is rendered by the React Conversation inside the
+  // conversation-host island; look it up lazily until the island mounts.
+  const thread = () => panel.querySelector('[data-role="thread"]');
   await settle(
     () => {
       app.handle({ type: 'user_message', workspaceId: WS, text: 'question' });
       app.handle({ type: 'assistant_delta', workspaceId: WS, text: 'answer' });
       app.handle({ type: 'run_finished', workspaceId: WS });
     },
-    () => !!thread.querySelector('.agent-message-assistant')
+    () => !!thread()?.querySelector('.agent-message-assistant')
   );
-  assert.match(thread.querySelector('.agent-message-user').textContent, /question/);
-  assert.equal(thread.querySelector('.agent-message-assistant .agent-message-body').dataset.raw, 'answer');
-  assert.equal(thread.dataset.islandState, 'mounted');
+  assert.match(thread().querySelector('.agent-message-user').textContent, /question/);
+  assert.equal(thread().querySelector('.agent-message-assistant .agent-message-body').dataset.raw, 'answer');
+  assert.equal(panel.querySelector('[data-role="conversation-host"]').dataset.islandState, 'mounted');
 });
 
 test('permission response uses the unchanged bridge payload', async () => {
   const { app, panel, runtime } = await fixture();
-  const thread = panel.querySelector('[data-role="thread"]');
+  const thread = () => panel.querySelector('[data-role="thread"]');
   await settle(
     () => app.handle({
       type: 'permission_request',
@@ -61,27 +64,31 @@ test('permission response uses the unchanged bridge payload', async () => {
         { optionId: 'reject', name: 'Reject', kind: 'reject_once' }
       ]
     }),
-    () => !!thread.querySelector('[data-option-id="allow"]')
+    () => !!thread()?.querySelector('[data-option-id="allow"]')
   );
-  await act(async () => thread.querySelector('[data-option-id="allow"]').click());
+  await act(async () => thread().querySelector('[data-option-id="allow"]').click());
   assert.deepEqual(runtime.postedMessages.at(-1), {
     type: 'agent_permission_response',
     workspaceId: WS,
     requestId: 'p1',
     value: 'allow'
   });
-  assert.equal(thread.querySelector('[data-request-id="p1"]').dataset.decisionState, 'disabled');
+  assert.equal(thread().querySelector('[data-request-id="p1"]').dataset.decisionState, 'disabled');
 });
 
 test('mode transition owns the composer prompt and restores it after resolution', async () => {
   const { app, panel, runtime } = await fixture();
+  // The prompt controller is imperative and drops events whose composer shell
+  // is not rendered yet; the ComposerView island (3-0) renders that shell
+  // asynchronously, so wait for its first commit before raising the request.
+  await composerReady(panel);
   await settle(
     () => app.handle(modeTransitionEvent({ workspaceId: WS })),
-    () => !panel.querySelector('[data-role="mode-transition-prompt"]').hidden
+    () => panel.querySelector('[data-role="mode-transition-prompt"]')?.hidden === false
   );
   const prompt = panel.querySelector('[data-role="mode-transition-prompt"]');
   assert.equal(panel.querySelector('[data-role="input-row"]').hidden, true);
-  prompt.querySelector('[data-option-id="approve"]').click();
+  await act(async () => prompt.querySelector('[data-option-id="approve"]').click());
   assert.deepEqual(runtime.postedMessages.at(-1), {
     type: 'agent_permission_response',
     workspaceId: WS,

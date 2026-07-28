@@ -1,36 +1,36 @@
-.agent-thread::-webkit-scrollbar,
+.agent-thread-scroll::-webkit-scrollbar,
 .agent-composer textarea::-webkit-scrollbar,
 .agent-message-body pre::-webkit-scrollbar,
 .agent-tool pre::-webkit-scrollbar,
 .agent-decision pre::-webkit-scrollbar,
 .agent-tool-card-content::-webkit-scrollbar,
 .agent-plan-panel::-webkit-scrollbar,
-.agent-command-menu::-webkit-scrollbar,
+.agent-command-menu-scroll::-webkit-scrollbar,
 .agent-history-dock-content::-webkit-scrollbar {
     width: 8px;
     height: 8px;
 }
 
-.agent-thread::-webkit-scrollbar-track,
+.agent-thread-scroll::-webkit-scrollbar-track,
 .agent-composer textarea::-webkit-scrollbar-track,
 .agent-message-body pre::-webkit-scrollbar-track,
 .agent-tool pre::-webkit-scrollbar-track,
 .agent-decision pre::-webkit-scrollbar-track,
 .agent-tool-card-content::-webkit-scrollbar-track,
 .agent-plan-panel::-webkit-scrollbar-track,
-.agent-command-menu::-webkit-scrollbar-track,
+.agent-command-menu-scroll::-webkit-scrollbar-track,
 .agent-history-dock-content::-webkit-scrollbar-track {
     background: var(--agent-bg);
 }
 
-.agent-thread::-webkit-scrollbar-thumb,
+.agent-thread-scroll::-webkit-scrollbar-thumb,
 .agent-composer textarea::-webkit-scrollbar-thumb,
 .agent-message-body pre::-webkit-scrollbar-thumb,
 .agent-tool pre::-webkit-scrollbar-thumb,
 .agent-decision pre::-webkit-scrollbar-thumb,
 .agent-tool-card-content::-webkit-scrollbar-thumb,
 .agent-plan-panel::-webkit-scrollbar-thumb,
-.agent-command-menu::-webkit-scrollbar-thumb,
+.agent-command-menu-scroll::-webkit-scrollbar-thumb,
 .agent-history-dock-content::-webkit-scrollbar-thumb {
     background: var(--agent-scrollbar);
     border-radius: 999px;

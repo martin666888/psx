@@ -5,6 +5,17 @@ import { afterAll } from 'vitest';
 
 process.env.TZ ||= 'UTC';
 
+// jsdom ships no ResizeObserver; use-stick-to-bottom (AI Elements
+// Conversation) needs one. A no-op stub is enough: scroll metrics in jsdom
+// are all zero, so stick-to-bottom simply stays at the bottom.
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}
+
 // Island loaders import their React module dynamically after a host event.
 // A test file may legitimately finish while such an import is still in
 // flight; give pending dynamic imports one macrotask window to settle so the

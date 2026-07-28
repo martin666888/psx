@@ -2,7 +2,12 @@
 //
 // React is the single renderer for the toolbar meta line, Context usage and
 // runtime card. This controller derives props from AgentWorkspaceState and
-// owns the bridge intents emitted by those components.
+// owns the bridge intents emitted by those components. The session meta slice
+// is pushed to the WorkspaceToolbarController (the toolbar island's single
+// writer); Context usage keeps its own island, portaling into the
+// context-usage host that the ComposerView island (3-0) renders inside the
+// composer footer — so the host node appears asynchronously and is resolved
+// lazily on every render.
 
 import type { AgentBridgePort } from '../contracts/bridge-port.js';
 import type { FeatureController } from '../contracts/feature-controller.js';
@@ -11,6 +16,7 @@ import type { AgentWorkspaceState, WorkspaceRuntimeState } from '../contracts/wo
 import { createIslandLoader, type IslandLoader } from '../core/islandHost.js';
 import { computeContextUsageView, formatStatus } from './sessionFormat.js';
 import type { ContextUsageProps, SessionMetaProps } from './SessionToolbar.js';
+import type { WorkspaceToolbarController } from './WorkspaceToolbarController.js';
 
 export interface SessionRuntimeHost {
   getPanel(workspaceId: string): HTMLElement | null;
@@ -24,27 +30,30 @@ function role(panel: HTMLElement, name: string): HTMLElement | null {
 export class SessionRuntimeController implements FeatureController {
   private readonly workspaceId: string;
   private readonly host: SessionRuntimeHost;
+  private readonly toolbar: WorkspaceToolbarController;
 
   private panel: HTMLElement | null = null;
-  private sessionMetaHost: HTMLElement | null = null;
   private contextUsageHost: HTMLElement | null = null;
   private runtimeHost: HTMLElement | null = null;
   private runtimeState = 'missing';
   private runtimeIsland: IslandLoader<WorkspaceRuntimeState> | null = null;
-  private sessionMetaIsland: IslandLoader<SessionMetaProps> | null = null;
   private contextUsageIsland: IslandLoader<ContextUsageProps> | null = null;
+  // The ComposerView island (3-0) renders the context-usage host
+  // asynchronously, so the latest props are stashed and replayed once the
+  // host node appears (see watchContextUsageHost).
+  private contextUsageProps: ContextUsageProps | null = null;
+  private contextUsageObserver: MutationObserver | null = null;
 
-  constructor(workspaceId: string, host: SessionRuntimeHost) {
+  constructor(workspaceId: string, host: SessionRuntimeHost, toolbar: WorkspaceToolbarController) {
     this.workspaceId = workspaceId;
     this.host = host;
+    this.toolbar = toolbar;
   }
 
   mount(): void {
     const panel = this.host.getPanel(this.workspaceId);
     if (!panel) return;
     this.panel = panel;
-    this.sessionMetaHost = role(panel, 'session-meta-host');
-    this.contextUsageHost = role(panel, 'context-usage-host');
     this.runtimeHost = role(panel, 'runtime-host');
   }
 
@@ -65,14 +74,13 @@ export class SessionRuntimeController implements FeatureController {
   }
 
   dispose(): void {
+    this.stopWatchingContextUsageHost();
+    this.contextUsageProps = null;
     this.runtimeIsland?.dispose();
     this.runtimeIsland = null;
-    this.sessionMetaIsland?.dispose();
-    this.sessionMetaIsland = null;
     this.contextUsageIsland?.dispose();
     this.contextUsageIsland = null;
     this.panel = null;
-    this.sessionMetaHost = null;
     this.contextUsageHost = null;
     this.runtimeHost = null;
   }
@@ -99,28 +107,26 @@ export class SessionRuntimeController implements FeatureController {
       session.contextCostAmount,
       session.contextCostCurrency
     );
-    this.renderSessionMeta(meta);
+    this.toolbar.setSessionProps(meta);
     this.renderContextUsage({ view: usage });
   }
 
-  private renderSessionMeta(meta: SessionMetaProps): void {
-    const host = this.sessionMetaHost;
-    if (!host) return;
-    this.sessionMetaIsland ??= createIslandLoader<SessionMetaProps>({
-      name: 'session-meta',
-      load: async () => {
-        const mod = await import('./sessionIsland.js');
-        return (islandHost, reportFailure) =>
-          mod.mountSessionMetaIsland(islandHost, reportFailure);
-      },
-      host
-    });
-    this.sessionMetaIsland.render(meta);
-  }
-
   private renderContextUsage(props: ContextUsageProps): void {
-    const host = this.contextUsageHost;
-    if (!host) return;
+    this.contextUsageProps = props;
+    // The ComposerView island (3-0) renders the context-usage host, so it may
+    // appear after this controller's mount or be replaced by an island retry:
+    // resolve it lazily and rebuild the island loader on node identity change.
+    const host = this.panel ? role(this.panel, 'context-usage-host') : null;
+    if (host !== this.contextUsageHost) {
+      this.contextUsageIsland?.dispose();
+      this.contextUsageIsland = null;
+      this.contextUsageHost = host;
+    }
+    if (!host) {
+      this.watchContextUsageHost();
+      return;
+    }
+    this.stopWatchingContextUsageHost();
     this.contextUsageIsland ??= createIslandLoader<ContextUsageProps>({
       name: 'context-usage',
       load: async () => {
@@ -131,6 +137,25 @@ export class SessionRuntimeController implements FeatureController {
       host
     });
     this.contextUsageIsland.render(props);
+  }
+
+  /** The ComposerView island renders the host asynchronously; observe the
+   * panel until the node appears, then replay the stashed props so an
+   * agent_state that beat the island's first commit is not lost. */
+  private watchContextUsageHost(): void {
+    if (this.contextUsageObserver || !this.panel) return;
+    const panel = this.panel;
+    this.contextUsageObserver = new MutationObserver(() => {
+      if (this.panel !== panel || !role(panel, 'context-usage-host')) return;
+      this.stopWatchingContextUsageHost();
+      if (this.contextUsageProps) this.renderContextUsage(this.contextUsageProps);
+    });
+    this.contextUsageObserver.observe(panel, { childList: true, subtree: true });
+  }
+
+  private stopWatchingContextUsageHost(): void {
+    this.contextUsageObserver?.disconnect();
+    this.contextUsageObserver = null;
   }
 
   private renderRuntime(runtime: WorkspaceRuntimeState): void {

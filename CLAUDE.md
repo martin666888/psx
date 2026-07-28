@@ -56,6 +56,8 @@ powershell -ExecutionPolicy Bypass -File tools/build-release.ps1
 
 **Automated tests are repository-local** — `tests/PSX.Tests` covers C# unit/integration/desktop behavior, `tests/PSX.Web.Tests` covers production frontend and bridge contracts, and the Fake Agent/npm/Desktop Probe projects cover process boundaries. Use `tools/test.ps1 -Suite Fast` during development and `-Suite Full` before release; tests must never access the user's real `%USERPROFILE%\.psx`.
 
+**Test commands must run sequentially.** Never run typecheck, lint, Vitest, frontend build/verification, or `tools/test.ps1` concurrently. The Web tests intentionally set `fileParallelism: false` and `maxWorkers: 1` because the jsdom/React harness mutates process-wide browser globals; parallel workers have caused memory exhaustion, orphaned Node processes, and workstation freezes. Keep the single-worker Vitest configuration. After a failed or interrupted Web test, check that no test-owned `node` processes remain before starting another gate.
+
 **SDK pinning** — `global.json` pins `9.0.300` with `rollForward: latestMajor` (allows resolving to the 10.0.x SDK). Target framework is `net10.0-windows`. Theme colors and fonts can be previewed and confirmed at runtime; other manual `psx.ini` changes still require a restart.
 
 ---

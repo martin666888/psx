@@ -11,6 +11,12 @@ import type { AgentHistoryThread, AgentProviderCatalogItem } from '../contracts/
 
 export const UNKNOWN_WORKSPACE_GROUP = 'Unknown workspace';
 
+/** Dock resize geometry shared by the controller (clamp + persistence) and
+ * the React view (resizer aria value triple + keyboard Home/End targets). */
+export const HISTORY_DOCK_MIN_WIDTH = 220;
+export const HISTORY_DOCK_MAX_WIDTH = 420;
+export const HISTORY_DOCK_DEFAULT_WIDTH = 280;
+
 export interface HistoryThreadView extends AgentHistoryThread {
   providerDisplay: string;
 }
