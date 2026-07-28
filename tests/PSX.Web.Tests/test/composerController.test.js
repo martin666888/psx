@@ -143,6 +143,46 @@ test('ComposerController renders composer controls from modes and config options
   assert.equal(panel.querySelectorAll('.agent-config-switch').length, 2);
 });
 
+test('ComposerController preserves an agent-confirmed config selection when submitting', async () => {
+  const { app, panelFor, runtime } = await mountAgentApp();
+  createAgentWorkspace(app, WS);
+  app.handle(stateEvent(WS, false));
+  app.handle(configEvent(WS));
+  const panel = panelFor(WS);
+  await composerReady(panel);
+
+  const updatedConfig = configEvent(WS);
+  updatedConfig.options[0].currentValue = 'low';
+  app.handle(updatedConfig);
+
+  const configTrigger = panel.querySelector('button[data-config-id="verbosity"]');
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (configTrigger.getAttribute('aria-label') === 'Verbosity: Low') break;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.equal(configTrigger.getAttribute('aria-label'), 'Verbosity: Low');
+
+  const postedBeforeSubmit = runtime.postedMessages.length;
+  const input = panel.querySelector('[data-role="input"]');
+  input.value = 'keep the selected model';
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  panel.querySelector('[data-role="send"]').click();
+
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (runtime.postedMessages.slice(postedBeforeSubmit).some((message) => message.type === 'agent_submit')) break;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  const submittedMessages = runtime.postedMessages.slice(postedBeforeSubmit);
+  assert.equal(submittedMessages.some((message) => message.type === 'agent_submit'), true);
+  assert.equal(
+    submittedMessages.some(
+      (message) => message.type === 'agent_command' && message.command === 'set_config_option'
+    ),
+    false
+  );
+  assert.equal(configTrigger.getAttribute('aria-label'), 'Verbosity: Low');
+});
+
 test('ComposerController submits native booleans and legacy binary selects without changing their values', async () => {
   const { app, panelFor, runtime } = await mountAgentApp();
   createAgentWorkspace(app, WS);

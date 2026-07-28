@@ -102,7 +102,7 @@ test('draftToken projection waits for compositionend and applies the newest rest
   await waitFor(() => input.value === 'recover me');
 });
 
-test('rejected slash validation restores the controlled draft after form reset', async () => {
+test('rejected slash validation restores the controlled draft after rejected submission', async () => {
   const { app, panel, runtime } = await fixture();
   app.handle({ type: 'agent_commands', workspaceId: WS, ready: true, commands: [] });
   await setDraft(panel, '/unknown');

@@ -749,11 +749,9 @@ export const PromptInput = ({
           return (formData.get("message") as string) || "";
         })();
 
-    // Reset form immediately after capturing text to avoid race condition
-    // where user input during async blob conversion would be lost
-    if (!usingProvider) {
-      form.reset();
-    }
+    // Do not reset the whole form here. PSX owns the controlled draft and
+    // clears attachments after a successful submit; resetting would also
+    // restore nested Radix Select controls to their mount-time values.
 
     // Convert blob URLs only for consumers that need serializable file parts.
     // PSX's AttachmentBridge already reconstructs/uploads the File and opts
