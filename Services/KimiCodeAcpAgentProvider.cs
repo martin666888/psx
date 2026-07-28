@@ -19,7 +19,10 @@ public sealed class KimiCodeAcpAgentProvider : IAcpAgentProvider
         Key: "acp-kimi",
         DisplayName: "Kimi Code",
         AssistantName: "Kimi",
-        LegacyKeys: Array.Empty<string>());
+        LegacyKeys: Array.Empty<string>())
+    {
+        IconKey = "kimi"
+    };
 
     public IAcpAgentRuntime Runtime { get; }
 

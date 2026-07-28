@@ -236,6 +236,16 @@
     min-height: 0;
 }
 
+/* Keep the floating return-to-bottom control centred on the same collision-
+ * aware reading column as messages and Composer, including when History
+ * shifts that column away from the workspace viewport centre. */
+.agent-thread-scroll-button {
+    left: calc(
+        max(0px, var(--agent-reading-column-start)) +
+        var(--agent-reading-column-max) / 2
+    );
+}
+
 /* The single scroll node inside the Conversation. */
 .agent-thread-scroll {
     overflow-x: hidden;

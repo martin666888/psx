@@ -10,7 +10,6 @@ public partial class TabItemViewModel : ObservableObject
     public Guid SessionId { get; }
     public WorkspaceKind Kind { get; }
     public string IconKey { get; }
-    public string IconGlyph => Kind == WorkspaceKind.Terminal ? ">_" : "✦";
 
     [ObservableProperty]
     private string _title = "Terminal";

@@ -23,6 +23,12 @@ The portable release redistributes:
   under `frontend/agent/src/components/ai-elements/` (same SOURCES.md).
 - Radix UI — MIT; see `licenses/radix-ui/LICENSE`.
 - Lucide icons — ISC; see `licenses/lucide/LICENSE`.
+- Lobe Icons static SVG brand marks — MIT; see `licenses/lobe-icons/LICENSE`.
+  The pinned `claude.svg` and `kimi.svg` assets from
+  `@lobehub/icons-static-svg@1.94.0` are retained under
+  `Assets/AgentIcons/lobehub-1.94.0/` and converted to WPF geometry for the
+  TabBar. Claude and Kimi names and marks remain trademarks of their
+  respective owners.
 - Tailwind CSS — MIT; see `licenses/tailwindcss/LICENSE`.
 - ACP seed manifests — the adapter is Apache-2.0; see `licenses/acp/LICENSE`.
 - Kimi Code ACP runtime — bundled under `tools/kimi/`; MIT. See

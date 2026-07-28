@@ -232,7 +232,7 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
         {
             WorkspaceId = workspaceId,
             Kind = WorkspaceKind.Agent,
-            IconKey = "agent",
+            IconKey = provider?.Descriptor.IconKey ?? "agent",
             Title = thread.Messages.Count == 0
                 ? provider?.Descriptor.DisplayName ?? thread.Provider
                 : thread.Title,

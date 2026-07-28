@@ -91,7 +91,7 @@ export class SessionRuntimeController implements FeatureController {
       statusText: formatStatus(session.status),
       status: session.status,
       cwd: session.cwd || 'cwd not set',
-      sessionLabel: session.sessionId ? 'session ' + session.sessionId.slice(0, 8) : 'no session',
+      sessionLabel: session.sessionId ? 'session: ' + session.sessionId : 'no session',
       changeCwdDisabled:
         !session.isDraft || session.busy || session.isRestoring || session.isTranscriptOnly,
       changeCwdTitle: session.isDraft

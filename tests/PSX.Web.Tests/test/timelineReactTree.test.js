@@ -78,7 +78,10 @@ test('streaming renders messages, thinking, tools, attachments and completion st
   assert.match(view.host.querySelector('.agent-message-user').textContent, /hello md/);
   assert.equal(view.host.querySelector('.message-attachment-tile').textContent, 'shot.png');
   assert.equal(view.host.querySelector('.agent-thinking-block').getAttribute('aria-busy'), 'false');
-  assert.equal(view.host.querySelector('.agent-tool-card').dataset.state, 'done');
+  const toolCard = view.host.querySelector('.agent-tool-card');
+  assert.equal(toolCard.dataset.state, 'done');
+  assert.ok(toolCard.classList.contains('border-0'), 'grouped tool rows do not render divider borders');
+  assert.ok(view.host.querySelector('.agent-run-group-body').classList.contains('gap-1'));
   assert.equal(view.host.querySelector('.agent-message-assistant .agent-message-body').dataset.raw, 'Hi **there**');
   assert.ok(view.host.querySelector('.agent-copy-button'));
   assert.match(view.host.textContent, /done/);

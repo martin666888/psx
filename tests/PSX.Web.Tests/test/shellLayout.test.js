@@ -135,12 +135,18 @@ test('shell: retired layout tokens are gone from every agent stylesheet', () => 
 
 test('shell: composer and conversation share the same reading-column rules', () => {
   const composer = readCss('composer.css');
+  const shell = readCss('shell.css');
   const view = fs.readFileSync(
     path.join(repositoryRoot, 'frontend', 'agent', 'src', 'composer', 'ComposerView.tsx'),
     'utf8'
   );
   assert.match(composer, /width: var\(--agent-reading-column-max\)/);
   assert.match(composer, /margin-left: max\(0px, var\(--agent-reading-column-start\)\)/);
+  assert.match(
+    shell,
+    /\.agent-thread-scroll-button\s*\{[\s\S]*?left:\s*calc\(\s*max\(0px, var\(--agent-reading-column-start\)\)\s*\+\s*var\(--agent-reading-column-max\) \/ 2\s*\)/,
+    'return-to-bottom button is centred on the collision-aware reading column'
+  );
   // The old three-column composer grid is gone. Footer geometry moved with
   // the React-owned Composer subtree and no longer has a parallel CSS owner.
   assert.ok(!composer.includes('grid-template-columns'), 'composer grid retired');

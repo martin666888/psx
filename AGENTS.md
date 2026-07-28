@@ -23,7 +23,7 @@ After changing web frontend files, run `npm.cmd run build:web`, commit the gener
 
 ### Test process safety
 
-Run verification commands sequentially, never concurrently. In particular, do not launch typecheck, lint, Vitest, build, `verify:web`, or `tools/test.ps1` in parallel tool calls. The Web test harness mutates process-wide browser globals and must remain single-worker: keep `fileParallelism: false` and `maxWorkers: 1` in `tests/PSX.Web.Tests/vitest.config.ts`. After an interrupted or failed Web test, confirm no test-owned `node` processes remain before retrying. Do not weaken this constraint to reduce gate duration; parallel Vitest workers have exhausted workstation memory and left orphaned processes.
+Run verification commands sequentially, never concurrently. In particular, do not launch typecheck, lint, Vitest, build, `verify:web`, or `tools/test.ps1` in parallel tool calls. C# tests must remain non-parallel through `[assembly: DoNotParallelize]` in `tests/PSX.Tests/MSTestSettings.cs`. The Web test harness mutates process-wide browser globals and must remain single-worker: keep `fileParallelism: false` and `maxWorkers: 1` in `tests/PSX.Web.Tests/vitest.config.ts`. After an interrupted or failed Web test, confirm no test-owned `node` processes remain before retrying. Do not weaken this constraint to reduce gate duration; parallel tests have exhausted workstation memory and left orphaned processes.
 
 ## Coding Style & Naming Conventions
 

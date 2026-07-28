@@ -54,7 +54,7 @@ test('session status, cwd, session id and context bands update semantically', as
   await settle(app, panel, stateEvent());
   assert.equal(panel.querySelector('[data-role="status"]').dataset.status, 'ready');
   assert.equal(panel.querySelector('[data-role="cwd"]').textContent, '/tmp/project');
-  assert.match(panel.querySelector('[data-role="session"]').textContent, /abcdef12/);
+  assert.equal(panel.querySelector('[data-role="session"]').textContent, 'session: abcdef123456');
   assert.equal(panel.querySelector('[data-role="context-used"]').dataset.contextState, 'accent');
   assert.match(panel.querySelector('[data-role="context-used"]').getAttribute('aria-label'), /4\.2K/);
 
@@ -72,6 +72,16 @@ test('session status, cwd, session id and context bands update semantically', as
     contextWindowTokens: 100
   });
   assert.equal(panel.querySelector('[data-role="context-used"]').dataset.contextState, 'error');
+});
+
+test('provider-prefixed ACP session ids remain complete', async () => {
+  const { app, panel } = await fixture();
+  const kimiSessionId = 'session_238e83a7-7a98-4c6f-92c4-123456789abc';
+  await settle(app, panel, stateEvent({ sessionId: kimiSessionId }));
+  assert.equal(
+    panel.querySelector('[data-role="session"]').textContent,
+    'session: ' + kimiSessionId
+  );
 });
 
 test('draft Change button emits pick_cwd and locks after session start', async () => {

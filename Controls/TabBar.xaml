@@ -5,6 +5,11 @@
              xmlns:models="clr-namespace:PSX.Models"
              Height="40">
     <UserControl.Resources>
+        <local:ProviderIconConverter x:Key="ProviderIconConverter"
+                                     DefaultIcon="{StaticResource AgentIconGeometry.Agent}"
+                                     ClaudeIcon="{StaticResource AgentIconGeometry.Claude}"
+                                     KimiIcon="{StaticResource AgentIconGeometry.Kimi}"/>
+
         <Style x:Key="TabItemContainerStyle" TargetType="Border">
             <Setter Property="Background" Value="{DynamicResource WindowBackgroundBrush}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
@@ -49,9 +54,9 @@
                                               StrokeEndLineCap="Round"
                                               StrokeLineJoin="Round"
                                               Stretch="Uniform"/>
-                                        <!-- Agent: four-point sparkle (filled). -->
+                                        <!-- Agent: provider brand mark with a generic fallback. -->
                                         <Path x:Name="AgentIcon"
-                                              Data="M6,0.8 L7.3,4.7 L11.2,6 L7.3,7.3 L6,11.2 L4.7,7.3 L0.8,6 L4.7,4.7 Z"
+                                              Data="{Binding IconKey, Converter={StaticResource ProviderIconConverter}}"
                                               Fill="{DynamicResource AccentBrush}"
                                               Stretch="Uniform"
                                               Visibility="Collapsed"/>
@@ -61,12 +66,6 @@
                                                Foreground="{TemplateBinding Foreground}"
                                                TextTrimming="CharacterEllipsis"
                                                MaxWidth="150"/>
-                                    <TextBlock x:Name="AgentStateMarker"
-                                               Margin="7,0,0,0"
-                                               Text="●"
-                                               FontSize="8"
-                                               Foreground="{DynamicResource TextDimBrush}"
-                                               Visibility="Collapsed"/>
                                 </StackPanel>
                             </Border>
                             <Border x:Name="ActiveIndicator"
@@ -84,25 +83,6 @@
                             <DataTrigger Binding="{Binding IsActive}" Value="True">
                                 <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
                                 <Setter TargetName="ActiveIndicator" Property="Background" Value="{DynamicResource AccentBrush}"/>
-                            </DataTrigger>
-                            <DataTrigger Binding="{Binding AgentState}" Value="{x:Static models:AgentWorkspaceState.Running}">
-                                <Setter TargetName="AgentStateMarker" Property="Visibility" Value="Visible"/>
-                                <Setter TargetName="AgentStateMarker" Property="Foreground" Value="{DynamicResource AccentBrush}"/>
-                            </DataTrigger>
-                            <DataTrigger Binding="{Binding AgentState}" Value="{x:Static models:AgentWorkspaceState.WaitingForInput}">
-                                <Setter TargetName="AgentStateMarker" Property="Visibility" Value="Visible"/>
-                                <Setter TargetName="AgentStateMarker" Property="Foreground" Value="{DynamicResource WarningBrush}"/>
-                            </DataTrigger>
-                            <DataTrigger Binding="{Binding AgentState}" Value="{x:Static models:AgentWorkspaceState.WaitingForPermission}">
-                                <Setter TargetName="AgentStateMarker" Property="Visibility" Value="Visible"/>
-                                <Setter TargetName="AgentStateMarker" Property="Foreground" Value="{DynamicResource WarningBrush}"/>
-                            </DataTrigger>
-                            <DataTrigger Binding="{Binding AgentState}" Value="{x:Static models:AgentWorkspaceState.Error}">
-                                <Setter TargetName="AgentStateMarker" Property="Visibility" Value="Visible"/>
-                                <Setter TargetName="AgentStateMarker" Property="Foreground" Value="{DynamicResource ErrorBrush}"/>
-                            </DataTrigger>
-                            <DataTrigger Binding="{Binding AgentState}" Value="{x:Static models:AgentWorkspaceState.TranscriptOnly}">
-                                <Setter TargetName="AgentStateMarker" Property="Visibility" Value="Visible"/>
                             </DataTrigger>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}"/>

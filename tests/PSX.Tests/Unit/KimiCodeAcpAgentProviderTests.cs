@@ -18,6 +18,7 @@ public sealed class KimiCodeAcpAgentProviderTests
             Assert.AreEqual("acp-kimi", provider.Descriptor.Key);
             Assert.AreEqual("Kimi Code", provider.Descriptor.DisplayName);
             Assert.AreEqual("Kimi", provider.Descriptor.AssistantName);
+            Assert.AreEqual("kimi", provider.Descriptor.IconKey);
             Assert.HasCount(0, provider.Descriptor.LegacyKeys);
         }
     }
@@ -153,9 +154,18 @@ public sealed class KimiCodeAcpAgentProviderTests
 
         // Claude keeps the full client surface, including fs read/write, so this
         // guards against a provider-agnostic change accidentally dropping it.
+        Assert.AreEqual("claude", claude.Descriptor.IconKey);
         Assert.IsTrue(claude.ClientCapabilities.FileSystemReadText);
         Assert.IsTrue(claude.ClientCapabilities.FileSystemWriteText);
         Assert.IsTrue(claude.ClientCapabilities.Terminal);
+    }
+
+    [TestMethod]
+    public void Descriptor_WithoutBrandIcon_UsesGenericAgentFallback()
+    {
+        var descriptor = new AgentDescriptor("custom", "Custom", "Custom", []);
+
+        Assert.AreEqual("agent", descriptor.IconKey);
     }
 
     [TestMethod]

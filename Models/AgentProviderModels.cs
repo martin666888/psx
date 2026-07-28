@@ -4,7 +4,10 @@ public sealed record AgentDescriptor(
     string Key,
     string DisplayName,
     string AssistantName,
-    IReadOnlyCollection<string> LegacyKeys);
+    IReadOnlyCollection<string> LegacyKeys)
+{
+    public string IconKey { get; init; } = "agent";
+}
 
 /// <summary>
 /// Data-driven description of the ACP <c>clientCapabilities</c> a provider wants

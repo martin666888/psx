@@ -2,7 +2,8 @@
 
 > Process-safety rule: run every verification command sequentially. Do not run
 > typecheck, lint, Vitest, frontend build/verification, or `tools/test.ps1` at
-> the same time. Vitest is intentionally pinned to one worker
+> the same time. C# tests are assembly-level non-parallel, and Vitest is
+> intentionally pinned to one worker
 > (`fileParallelism: false`, `maxWorkers: 1`) because this repository's
 > jsdom/React harness mutates process-wide browser globals. After an interrupted
 > Web test, verify that no test-owned `node` process remains before retrying.

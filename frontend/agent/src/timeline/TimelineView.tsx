@@ -260,7 +260,7 @@ function ToolCardView({
   const label = TOOL_STATE_LABELS[card.state] || TOOL_STATE_LABELS.done;
   return (
     <Tool
-      className={'agent-tool-card agent-tool-card-' + card.state + ' border-x-0 border-b-0 mb-0 rounded-none'}
+      className={'agent-tool-card agent-tool-card-' + card.state + ' mb-0 rounded-none border-0'}
       data-tool-id={card.toolCallId}
       data-state={card.state}
       open={open}
@@ -272,7 +272,7 @@ function ToolCardView({
         state={TOOL_UI_STATE[card.state] ?? 'output-available'}
         badge={label}
         titleClassName="agent-tool-card-summary text-left"
-        className="agent-tool-card-header group px-0"
+        className="agent-tool-card-header group rounded-md px-1 hover:bg-muted/50"
       />
       {/* forceMount keeps closed outputs in the DOM (the old <details> body
           was always present) for replay tooling and text search. */}
@@ -314,7 +314,7 @@ function ToolGroup({ item }: { item: ToolGroupItem }): JSX.Element {
         </div>
       </TaskTrigger>
       <TaskContent forceMount className="data-[state=closed]:hidden">
-        <div className="agent-run-group-body flex flex-col">
+        <div className="agent-run-group-body flex flex-col gap-1">
           {item.cards.map((card) => (
             <ToolCardView key={card.toolCallId} card={card} />
           ))}

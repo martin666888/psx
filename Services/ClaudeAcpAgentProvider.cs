@@ -18,7 +18,10 @@ public sealed class ClaudeAcpAgentProvider : IAcpAgentProvider
         Key: "acp-claude",
         DisplayName: "Claude Code",
         AssistantName: "Claude",
-        LegacyKeys: new[] { "claude-cli" });
+        LegacyKeys: new[] { "claude-cli" })
+    {
+        IconKey = "claude"
+    };
 
     public IAcpAgentRuntime Runtime { get; }
 

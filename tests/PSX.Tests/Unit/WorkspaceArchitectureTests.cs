@@ -81,6 +81,52 @@ public sealed class AgentProviderRegistryTests
 public sealed class AgentWorkspaceCoordinatorTests
 {
     [TestMethod]
+    public async Task CreateAndRestore_PropagateProviderIconKeyToWorkspace()
+    {
+        using var workspace = TestWorkspace.Create(nameof(CreateAndRestore_PropagateProviderIconKeyToWorkspace));
+        var store = new AgentThreadStore(Path.Combine(workspace.Path, "store"));
+        var bridge = new RecordingAgentBridgeService();
+        var provider = new TestProvider(
+            "branded",
+            "Branded Agent",
+            new CountingRuntime(workspace.Path),
+            [],
+            "brand-icon");
+        var registry = new AgentProviderRegistry(
+            [provider],
+            new AgentProviderOptions { DefaultProviderKey = "branded" });
+        using var history = new AgentHistoryCatalog();
+        var factory = new AgentWorkspaceFactory(
+            bridge,
+            new NullTabManagementService(),
+            new NullTerminalBridgeService(),
+            store,
+            new NullAgentDirectoryPicker(),
+            registry);
+        using var coordinator = new AgentWorkspaceCoordinator(
+            bridge, store, registry, factory, history);
+
+        var createdWorkspaceId = await coordinator.CreateAsync("branded", workspace.Path);
+
+        Assert.IsNotNull(createdWorkspaceId);
+        Assert.AreEqual(
+            "brand-icon",
+            coordinator.Workspaces.Single(item => item.WorkspaceId == createdWorkspaceId).IconKey);
+
+        var restoredThread = store.CreateThread(workspace.Path);
+        restoredThread.Provider = "branded";
+        restoredThread.Messages.Add(new AgentMessage { Role = "user", Text = "saved" });
+        store.SaveThread(restoredThread);
+
+        var restoredWorkspaceId = await coordinator.OpenThreadAsync(restoredThread.ThreadId);
+
+        Assert.IsNotNull(restoredWorkspaceId);
+        Assert.AreEqual(
+            "brand-icon",
+            coordinator.Workspaces.Single(item => item.WorkspaceId == restoredWorkspaceId).IconKey);
+    }
+
+    [TestMethod]
     public async Task CreateAsync_SixthAgentIsRejectedWithoutAffectingTerminalContract()
     {
         using var workspace = TestWorkspace.Create(nameof(CreateAsync_SixthAgentIsRejectedWithoutAffectingTerminalContract));
@@ -226,6 +272,7 @@ public sealed class AgentWorkspaceCoordinatorTests
 
         Assert.IsNotNull(workspaceId);
         Assert.AreEqual(AgentWorkspaceState.TranscriptOnly, coordinator.Workspaces.Single().AgentState);
+        Assert.AreEqual("agent", coordinator.Workspaces.Single().IconKey);
         Assert.AreEqual(0, runtime.ProcessSpecCount);
         Assert.IsFalse(bridge.Events.Any(message =>
             message.GetProperty("type").GetString() == "runtime_status"
@@ -396,6 +443,8 @@ public sealed class WorkspaceManagerTests
         using var manager = new WorkspaceManager(terminals, agents, bridge);
         var first = (await manager.CreateTerminalAsync())!.Value;
 
+        Assert.AreEqual("terminal", manager.Workspaces.Single().IconKey);
+
         await manager.CloseAsync(first);
 
         Assert.HasCount(1, manager.Workspaces);
@@ -446,9 +495,13 @@ internal sealed class TestProvider(
     string key,
     string displayName,
     IAcpAgentRuntime runtime,
-    IReadOnlyCollection<string> legacyKeys) : IAcpAgentProvider
+    IReadOnlyCollection<string> legacyKeys,
+    string iconKey = "agent") : IAcpAgentProvider
 {
-    public AgentDescriptor Descriptor { get; } = new(key, displayName, displayName, legacyKeys);
+    public AgentDescriptor Descriptor { get; } = new(key, displayName, displayName, legacyKeys)
+    {
+        IconKey = iconKey
+    };
     public IAcpAgentRuntime Runtime { get; } = runtime;
     public AcpClientCapabilityProfile ClientCapabilities { get; } = new()
     {
