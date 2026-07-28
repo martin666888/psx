@@ -158,6 +158,43 @@ test('replay folds history groups per runId and the ready system row for empty t
   assert.match(emptyList[0].text, /^Ready\. Claude will start/);
 });
 
+test('replay keeps tool cards when assistant text interleaves inside the same runId', () => {
+  // Fragmented histories (assistant text between tool rows of one run) must
+  // never drop tool cards: after an assistant row breaks the group, a later
+  // tool row with the SAME runId starts a fresh group.
+  const projection = fold([
+    [
+      'agent_thread_loaded',
+      {
+        clear: true,
+        messages: [
+          { role: 'user', text: 'hi' },
+          { role: 'tool', runId: 'r1', toolCallId: 't1', summary: 'call 1', toolOutput: 'a', toolStatus: 'completed' },
+          { role: 'assistant', text: 'partial answer' },
+          { role: 'tool', runId: 'r1', toolCallId: 't2', summary: 'call 2', toolOutput: 'b', toolStatus: 'completed' },
+          { role: 'tool', runId: 'r1', toolCallId: 't3', summary: 'call 3', toolOutput: 'c', toolStatus: 'completed' },
+          { role: 'assistant', text: 'final answer' }
+        ]
+      }
+    ]
+  ]);
+  const list = items(projection);
+  assert.deepEqual(
+    list.map((item) => item.type),
+    ['message', 'tool', 'message', 'tool', 'message']
+  );
+  const groups = list.filter((item) => item.type === 'tool');
+  assert.equal(groups[0].cards.length, 1);
+  assert.equal(groups[0].cards[0].toolCallId, 't1');
+  assert.equal(groups[1].cards.length, 2, 'post-interruption cards regroup instead of vanishing');
+  assert.deepEqual(
+    groups[1].cards.map((card) => card.toolCallId),
+    ['t2', 't3']
+  );
+  const allCards = groups.flatMap((group) => group.cards.map((card) => card.toolCallId));
+  assert.deepEqual(allCards, ['t1', 't2', 't3'], 'no tool card is silently dropped');
+});
+
 test('agent_cleared resets the model and appends the cleared system row', () => {
   const projection = fold([
     ['user_message', { text: 'q' }],

@@ -879,7 +879,12 @@ export class TimelineProjection {
         this.appendHistoryToolCard(msg);
         continue;
       }
+      // Any non-tool row breaks the current history group. Also forget the
+      // run id: a later tool row with the SAME runId must start a fresh
+      // group instead of matching lastRunId while historyGroup is null —
+      // that combination silently dropped tool cards.
       this.historyGroup = null;
+      lastRunId = null;
       if (role === 'tool') {
         this.appendInlineTool(asString(msg.name) || 'Tool', asString(msg.text), 'done');
       } else if (role === 'system') {
