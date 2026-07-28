@@ -14,6 +14,11 @@ import { decisionOptionClass } from '../decisions/decisionPresentation.js';
 import type { DecisionItem, DecisionOptionVM } from './timelineViewModel.js';
 import { CopyButton, useDetailsOpen } from './TimelineView.js';
 import { Button } from '../components/ui/button.js';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger
+} from '../components/ui/collapsible.js';
 import { Input } from '../components/ui/input.js';
 import { Textarea } from '../components/ui/textarea.js';
 import { ChevronRightIcon } from 'lucide-react';
@@ -39,6 +44,7 @@ function PermissionQuestionCard({
   // external resolve/cancel leaves the user's toggle alone.
   const ref = useDetailsOpen(!item.collapsed);
   const disabled = item.decisionState !== 'active';
+  const [rawInputOpen, setRawInputOpen] = useState(false);
   const resolvedId = item.selectedOptionId;
   const resolvedName = item.selectedOptionName;
   const selected =
@@ -77,13 +83,21 @@ function PermissionQuestionCard({
         </div>
       </summary>
       <div className="agent-decision-body relative px-3 pb-3">
-        <details className="agent-decision-raw-input group/raw mt-2.5 border-y">
-          <summary className="agent-decision-raw-input-summary flex cursor-pointer select-none list-none items-center gap-2 px-3 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:bg-accent [&::-webkit-details-marker]:hidden">
-            <ChevronRightIcon className="size-2.5 shrink-0 transition-transform group-open/raw:rotate-90" aria-hidden="true" />
+        <Collapsible
+          className="agent-decision-raw-input group/raw mt-2.5"
+          open={rawInputOpen}
+          onOpenChange={setRawInputOpen}
+        >
+          <CollapsibleTrigger className="agent-decision-raw-input-summary flex cursor-pointer select-none items-center gap-2 px-3 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:bg-accent">
+            <ChevronRightIcon className="size-2.5 shrink-0 transition-transform group-data-[state=open]/raw:rotate-90" aria-hidden="true" />
             Raw Input
-          </summary>
-          <pre className="agent-decision-raw-input-content m-0 whitespace-pre-wrap break-words border-t bg-background p-3 font-mono text-xs leading-normal">{item.text}</pre>
-        </details>
+          </CollapsibleTrigger>
+          {/* forceMount keeps the collapsed raw payload in the DOM (old
+              <details> semantics) for text search and replay tooling. */}
+          <CollapsibleContent forceMount className="data-[state=closed]:hidden">
+            <pre className="agent-decision-raw-input-content m-0 whitespace-pre-wrap break-words bg-background p-3 font-mono text-xs leading-normal">{item.text}</pre>
+          </CollapsibleContent>
+        </Collapsible>
         <div className="agent-decision-actions mt-2.5 flex flex-wrap gap-2">
           {item.options.length === 0 ? (
             <div className="agent-decision-status agent-decision-options-error mt-0 flex-[1_1_100%] text-xs text-destructive">

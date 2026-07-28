@@ -10,7 +10,7 @@
 // Decision cards (permission/question/elicitation/mode-transition) live in
 // TimelineDecisions.tsx and render inside the same tree.
 
-import { useLayoutEffect, useRef, useState, type JSX, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type JSX, type ReactNode } from 'react';
 import {
   TOOL_STATE_LABELS,
   type DecisionItem,
@@ -191,6 +191,39 @@ function ThinkingRowView({ item }: { item: ThinkingItem }): JSX.Element {
   return <ThinkingBlock item={item} />;
 }
 
+/** Live elapsed-seconds readout next to the streaming "Thinking..." shimmer.
+ *  The vendored Reasoning only computes its duration once streaming ends, so
+ *  the running state gets its own 1s ticker; the block mounts with the
+ *  thinking row, which makes mount time the thinking start time. */
+function ThinkingElapsed(): JSX.Element {
+  const startRef = useRef(Date.now());
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startRef.current) / 1000));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return <span className="ml-1 tabular-nums">{elapsed}s</span>;
+}
+
+/** ReasoningTrigger message with a live timer while streaming; once the
+ *  stream ends it falls back to the upstream duration wording. */
+const getLiveThinkingMessage = (isStreaming: boolean, duration?: number): ReactNode => {
+  if (isStreaming || duration === 0) {
+    return (
+      <>
+        <Shimmer duration={1}>Thinking...</Shimmer>
+        <ThinkingElapsed />
+      </>
+    );
+  }
+  if (duration === undefined) {
+    return <p>Thought for a few seconds</p>;
+  }
+  return <p>Thought for {duration} seconds</p>;
+};
+
 function ThinkingBlock({ item }: { item: ThinkingItem }): JSX.Element {
   const [open, setOpen] = useProjectionOpen(item.running);
   return (
@@ -205,7 +238,7 @@ function ThinkingBlock({ item }: { item: ThinkingItem }): JSX.Element {
       defaultOpen={false}
       aria-busy={item.running ? 'true' : 'false'}
     >
-      <ReasoningTrigger />
+      <ReasoningTrigger getThinkingMessage={getLiveThinkingMessage} />
       {/* forceMount keeps the collapsed transcript in the DOM (old <details>
           semantics) for text search and replay tooling. */}
       <ReasoningContent forceMount className="data-[state=closed]:hidden">
@@ -464,7 +497,14 @@ const MessageRow = function MessageRow({
       role="article"
     >
       {showLabel ? (
-        <div className="agent-message-label font-semibold text-[13px] text-muted-foreground">{ariaLabel}</div>
+        <div
+          className={
+            'agent-message-label font-semibold text-[13px] text-muted-foreground' +
+            (isUser ? ' self-end text-right' : '')
+          }
+        >
+          {ariaLabel}
+        </div>
       ) : null}
       {isUser ? (
         <UserMessageBody item={item} callbacks={callbacks} />
