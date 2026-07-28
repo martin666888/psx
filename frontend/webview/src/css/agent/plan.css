@@ -114,7 +114,8 @@
     text-decoration-thickness: 1px;
 }
 
-.agent-plan-fallback {
-    font-size: clamp(11px, calc(var(--agent-font-size) * 0.8), 18px);
+.agent-plan-document {
+    font-size: clamp(11px, calc(var(--agent-font-size) * 0.85), 18px);
     line-height: 1.5;
+    overflow-wrap: anywhere;
 }

@@ -218,6 +218,23 @@ internal sealed class FakeAcpAgent
             return;
         }
 
+        // A plan update that carries only a document (no checklist entries)
+        // must reach the frontend in document mode instead of being dropped.
+        if (text.Contains("plan document", StringComparison.OrdinalIgnoreCase))
+        {
+            WriteSessionUpdate(new
+            {
+                sessionUpdate = "plan",
+                content = new object[]
+                {
+                    new { type = "text", text = "## Approach\n\nRefactor first, then test." }
+                }
+            });
+            WriteAssistantChunk("Plan document sent.");
+            CompletePrompt(id, new { stopReason = "end_turn" });
+            return;
+        }
+
         WriteSessionUpdate(new
         {
             sessionUpdate = "available_commands_update",

@@ -2694,6 +2694,8 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
         var entries = ReadPlanEntries(update);
         var text = FormatPlanText(entries, update);
+        if (entries.Count == 0 && string.IsNullOrWhiteSpace(text))
+            return;
         UpsertPlanMessage(replay.Messages, replay.CurrentRunId, entries, text);
     }
 
@@ -3069,10 +3071,12 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             ? "plan-" + Guid.NewGuid().ToString("N")
             : _currentRunId;
         var entries = ReadPlanEntries(update);
-        if (entries.Count == 0)
-            return;
-
         var text = FormatPlanText(entries, update);
+        // Tolerant plan handling: a provider may send a full plan document
+        // without a checklist. Only a payload with neither entries nor any
+        // readable text is dropped.
+        if (entries.Count == 0 && string.IsNullOrWhiteSpace(text))
+            return;
 
         UpsertPlanMessage(_currentThread.Messages, runId, entries, text);
         SaveCurrentThread();
@@ -3649,13 +3653,75 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     private static string FormatPlanText(IReadOnlyList<AgentPlanEntry> entries, JsonElement fallback)
     {
         if (entries.Count == 0)
-            return fallback.GetRawText();
+            return ReadPlanDocumentText(fallback);
 
         return string.Join(Environment.NewLine, entries.Select(entry =>
         {
             var status = string.IsNullOrWhiteSpace(entry.Status) ? "" : $"[{entry.Status}] ";
             return "- " + status + entry.Content;
         }));
+    }
+
+    /// <summary>
+    /// Extracts a human-readable plan document from a plan update that has no
+    /// checklist entries. Providers differ in where they put the document
+    /// (plain string fields or ACP content blocks); anything unreadable
+    /// returns an empty string so the caller can drop the update instead of
+    /// surfacing raw JSON.
+    /// </summary>
+    private static string ReadPlanDocumentText(JsonElement update)
+    {
+        if (update.ValueKind != JsonValueKind.Object)
+            return "";
+
+        foreach (var propertyName in new[] { "text", "markdown", "document", "plan", "description" })
+        {
+            if (update.TryGetProperty(propertyName, out var value)
+                && value.ValueKind == JsonValueKind.String
+                && !string.IsNullOrWhiteSpace(value.GetString()))
+            {
+                return value.GetString()!.Trim();
+            }
+        }
+
+        if (!update.TryGetProperty("content", out var content))
+            return "";
+
+        if (content.ValueKind == JsonValueKind.String)
+            return content.GetString()?.Trim() ?? "";
+
+        if (content.ValueKind != JsonValueKind.Array)
+            return "";
+
+        var parts = new List<string>();
+        foreach (var item in content.EnumerateArray())
+        {
+            if (item.ValueKind == JsonValueKind.String)
+            {
+                var raw = item.GetString();
+                if (!string.IsNullOrWhiteSpace(raw))
+                    parts.Add(raw.Trim());
+                continue;
+            }
+
+            var itemType = GetString(item, "type");
+            string? blockText = null;
+            if (itemType == "text")
+            {
+                blockText = GetString(item, "text");
+            }
+            else if (itemType == "content"
+                && item.TryGetProperty("content", out var block)
+                && GetString(block, "type") == "text")
+            {
+                blockText = GetString(block, "text");
+            }
+
+            if (!string.IsNullOrWhiteSpace(blockText))
+                parts.Add(blockText.Trim());
+        }
+
+        return string.Join(Environment.NewLine + Environment.NewLine, parts);
     }
 
     private static string ReadPlanEntryContent(JsonElement entry)

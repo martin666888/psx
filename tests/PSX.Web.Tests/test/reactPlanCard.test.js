@@ -42,7 +42,7 @@ async function settle(app, predicate, run) {
   assert.ok(predicate(), 'plan island did not settle');
 }
 
-test('plan entries, fallback text and empty state render in place', async () => {
+test('plan entries, document mode and empty state render in place', async () => {
   const { app, panel } = await fixture();
   const host = role(panel, 'plan-card');
   await settle(app, () => host.querySelectorAll('.agent-plan-item').length === 3, () => app.handle(event(ENTRIES)));
@@ -53,12 +53,17 @@ test('plan entries, fallback text and empty state render in place', async () => 
   assert.equal(host.querySelector('.agent-plan-item').dataset.priority, 'high');
   assert.equal(host.dataset.islandState, 'mounted');
 
+  // A plan update without entries is a full plan document: it renders
+  // through the safe Markdown pipeline instead of a raw <pre> dump.
   await settle(
     app,
-    () => !!host.querySelector('.agent-plan-fallback'),
-    () => app.handle(event([], { text: 'Refactor first, then test.' }))
+    () => !!host.querySelector('.agent-plan-document'),
+    () => app.handle(event([], { text: '## Approach\n\nRefactor first, then **test**.' }))
   );
-  assert.equal(host.querySelector('.agent-plan-fallback').textContent, 'Refactor first, then test.');
+  const document_ = host.querySelector('.agent-plan-document');
+  assert.ok(document_.querySelector('h2'), 'markdown headings render in document mode');
+  assert.ok(document_.querySelector('strong'), 'inline markdown renders in document mode');
+  assert.match(document_.textContent, /Refactor first, then test\./);
   await settle(
     app,
     () => !!host.querySelector('.agent-plan-empty'),

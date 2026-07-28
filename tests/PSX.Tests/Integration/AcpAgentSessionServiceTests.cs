@@ -297,6 +297,31 @@ public sealed class AcpAgentSessionServiceTests
     }
 
     [TestMethod]
+    public async Task PlanUpdate_WithoutEntries_ReachesFrontendAsDocument()
+    {
+        using var fixture = new FakeAcpSessionFixture(nameof(PlanUpdate_WithoutEntries_ReachesFrontendAsDocument));
+
+        await fixture.Service.SubmitMessageAsync("send the plan document please");
+        await fixture.Bridge.WaitForEventAsync("run_finished");
+
+        // Entry-less plan updates used to be dropped wholesale; they must now
+        // surface as a document-mode plan with readable text (never raw JSON).
+        var plan = await fixture.Bridge.WaitForEventAsync(
+            "plan_update",
+            message => (message.GetProperty("text").GetString() ?? "").Contains("Refactor first"));
+        var planText = plan.GetProperty("text").GetString() ?? "";
+        Assert.AreEqual(0, plan.GetProperty("entries").GetArrayLength());
+        StringAssert.Contains(planText, "## Approach");
+        Assert.DoesNotContain("sessionUpdate", planText,
+            "document text must be extracted from content blocks, not raw JSON");
+
+        var thread = fixture.LoadOnlyVisibleThread();
+        var planMessage = thread.Messages.Single(message => message.Role == "plan");
+        StringAssert.Contains(planMessage.Text, "Refactor first, then test.");
+        Assert.AreEqual(0, planMessage.PlanEntries?.Count ?? 0);
+    }
+
+    [TestMethod]
     public async Task UnknownProviderThread_RemainsTranscriptOnlyWithoutLaunchingAgent()
     {
         using var fixture = new FakeAcpSessionFixture(nameof(UnknownProviderThread_RemainsTranscriptOnlyWithoutLaunchingAgent));

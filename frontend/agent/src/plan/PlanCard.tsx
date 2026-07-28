@@ -14,6 +14,7 @@
 import type { JSX } from 'react';
 import type { WorkspacePlanState } from '../contracts/workspace-state.js';
 import { planStatusClass, planStatusLabel } from '../core/plan.js';
+import { renderMarkdown } from '../core/markdown.js';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.js';
 import { TaskItem } from '../components/ai-elements/task.js';
 import { CheckCircle2Icon, CircleDotIcon, CircleIcon } from 'lucide-react';
@@ -38,10 +39,14 @@ function PlanBody({ plan }: PlanCardProps): JSX.Element {
     return <div className="agent-plan-empty text-[13px] text-muted-foreground">No active plan</div>;
   }
   if (plan.entries.length === 0) {
+    // Document mode: a plan without checklist entries is a full plan
+    // document — render it through the shared safe Markdown pipeline
+    // instead of dumping preformatted text.
     return (
-      <pre className="agent-plan-fallback m-0 whitespace-pre-wrap font-mono text-muted-foreground">
-        {plan.fallbackText || 'No plan items.'}
-      </pre>
+      <div
+        className="agent-plan-document agent-message-body px-3 pb-3 text-[13px] leading-normal"
+        dangerouslySetInnerHTML={{ __html: renderMarkdown(plan.fallbackText || 'No plan items.') }}
+      ></div>
     );
   }
   return (
