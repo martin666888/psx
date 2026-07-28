@@ -52,10 +52,10 @@ public sealed class AcpAuthRequiredTests
     }
 
     [TestMethod]
-    public async Task SessionLoad_AuthRequired_RecoversAndReplaysHistory()
+    public async Task SessionLoad_AuthRequired_RecoversAndRestoresSession()
     {
         using var fixture = new FakeAcpSessionFixture(
-            nameof(SessionLoad_AuthRequired_RecoversAndReplaysHistory),
+            nameof(SessionLoad_AuthRequired_RecoversAndRestoresSession),
             scenario: "auth:load:recover");
         var historical = fixture.Store.CreateThread(fixture.Workspace.Path);
         historical.Provider = "fake-acp";
@@ -66,16 +66,26 @@ public sealed class AcpAuthRequiredTests
         fixture.BindToThread(historical);
         await fixture.Service.RestoreAsync();
 
+        // The silent authenticate must let session/load succeed; the locally
+        // saved transcript stays authoritative and is never overwritten by
+        // the replayed chunks.
+        await fixture.Bridge.WaitForEventAsync(
+            "command_result",
+            message => (message.GetProperty("text").GetString() ?? "").Contains("ACP session history restored"));
+
         var loaded = await fixture.Bridge.WaitForEventAsync(
             "agent_thread_loaded",
             message => message.GetProperty("threadId").GetString() == historical.ThreadId
                 && message.GetProperty("messages").EnumerateArray().Any(item =>
-                    item.GetProperty("role").GetString() == "user"
-                    && item.GetProperty("text").GetString() == "Historical user"));
+                    item.GetProperty("role").GetString() == "assistant"
+                    && item.GetProperty("text").GetString() == "Local transcript"));
 
-        Assert.IsTrue(loaded.GetProperty("messages").EnumerateArray().Any(item =>
-            item.GetProperty("role").GetString() == "assistant"
-            && item.GetProperty("text").GetString() == "Historical assistant before tool."));
+        Assert.IsFalse(loaded.GetProperty("messages").EnumerateArray().Any(item =>
+            (item.GetProperty("text").GetString() ?? "").Contains("Historical")));
+
+        var persisted = fixture.Store.LoadThread(historical.ThreadId);
+        Assert.AreEqual(1, persisted?.Messages.Count);
+        Assert.AreEqual("Local transcript", persisted?.Messages[0].Text);
     }
 
     [TestMethod]

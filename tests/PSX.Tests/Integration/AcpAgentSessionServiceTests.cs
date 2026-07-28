@@ -182,12 +182,25 @@ public sealed class AcpAgentSessionServiceTests
     }
 
     [TestMethod]
-    public async Task LoadThread_ReplaysHistoryAndInterruptsPendingModeTransition()
+    public async Task LoadThread_KeepsLocalTranscriptAndInterruptsPendingModeTransition()
     {
-        using var fixture = new FakeAcpSessionFixture(nameof(LoadThread_ReplaysHistoryAndInterruptsPendingModeTransition));
+        using var fixture = new FakeAcpSessionFixture(nameof(LoadThread_KeepsLocalTranscriptAndInterruptsPendingModeTransition));
         var historical = fixture.Store.CreateThread(fixture.Workspace.Path);
         historical.Provider = "fake-acp";
         historical.AcpSessionId = "fake-history-session";
+        historical.Messages.Add(new AgentMessage { Role = "user", Text = "Local user", RunId = "run-1" });
+        historical.Messages.Add(new AgentMessage { Role = "thinking", Text = "Local thought", RunId = "run-1" });
+        historical.Messages.Add(new AgentMessage
+        {
+            Role = "tool",
+            Name = "Bash",
+            RunId = "run-1",
+            ToolCallId = "local-tool",
+            ToolOutput = "out",
+            ToolStatus = "completed",
+            Summary = "run ls"
+        });
+        historical.Messages.Add(new AgentMessage { Role = "assistant", Text = "Local answer", RunId = "run-1" });
         historical.Messages.Add(new AgentMessage
         {
             Role = "mode_transition",
@@ -202,6 +215,49 @@ public sealed class AcpAgentSessionServiceTests
 
         fixture.BindToThread(historical);
         await fixture.Service.RestoreAsync();
+
+        // The locally saved transcript is authoritative: the ACP replay only
+        // restores the agent-side session, and the pending decision flips to
+        // interrupted because it can no longer be answered.
+        var loaded = await fixture.Bridge.WaitForEventAsync(
+            "agent_thread_loaded",
+            message => message.GetProperty("threadId").GetString() == historical.ThreadId
+                && message.GetProperty("messages").EnumerateArray().Any(item =>
+                    item.GetProperty("role").GetString() == "mode_transition"
+                    && item.GetProperty("decisionState").GetString() == "interrupted"));
+
+        var messages = loaded.GetProperty("messages").EnumerateArray().ToArray();
+        CollectionAssert.AreEqual(
+            new[] { "user", "thinking", "tool", "assistant", "mode_transition" },
+            messages.Select(message => message.GetProperty("role").GetString()).ToArray(),
+            "the aggregated local transcript must survive the ACP replay untouched");
+        Assert.AreEqual("Local answer", messages.Single(message => message.GetProperty("role").GetString() == "assistant").GetProperty("text").GetString());
+        Assert.IsFalse(messages.Any(message => (message.GetProperty("text").GetString() ?? "").Contains("Historical")),
+            "replayed chunks must never overwrite the local archive");
+
+        await fixture.Bridge.WaitForEventAsync(
+            "command_result",
+            message => (message.GetProperty("text").GetString() ?? "").Contains("ACP session history restored"));
+
+        var persisted = fixture.Store.LoadThread(historical.ThreadId);
+        Assert.AreEqual(
+            "interrupted",
+            persisted?.Messages.Single(message => message.Role == "mode_transition").DecisionState);
+        Assert.AreEqual(5, persisted?.Messages.Count, "no replayed messages may be appended to the archive");
+    }
+
+    [TestMethod]
+    public async Task LoadThread_EmptyLocalTranscript_RebuildsAggregatedHistory()
+    {
+        using var fixture = new FakeAcpSessionFixture(nameof(LoadThread_EmptyLocalTranscript_RebuildsAggregatedHistory));
+        var historical = fixture.Store.CreateThread(fixture.Workspace.Path);
+        historical.Provider = "fake-acp";
+        historical.AcpSessionId = "fake-history-session";
+        fixture.Store.SaveThread(historical);
+
+        fixture.BindToThread(historical);
+        await fixture.Service.RestoreAsync();
+
         var loaded = await fixture.Bridge.WaitForEventAsync(
             "agent_thread_loaded",
             message => message.GetProperty("threadId").GetString() == historical.ThreadId
@@ -209,28 +265,35 @@ public sealed class AcpAgentSessionServiceTests
                     item.GetProperty("role").GetString() == "user"
                     && item.GetProperty("text").GetString() == "Historical user"));
 
+        // The rebuilt transcript must match the live persistence shape:
+        // user → thinking (combined) → tools → assistant (single message per
+        // turn), never assistant fragments interleaved with tool rows.
         var messages = loaded.GetProperty("messages").EnumerateArray().ToArray();
-        Assert.IsTrue(messages.Any(message => message.GetProperty("role").GetString() == "user"
-            && message.GetProperty("text").GetString() == "Historical user"));
-        var thinking = messages.Single(message => message.GetProperty("role").GetString() == "thinking");
+        var roles = messages.Select(message => message.GetProperty("role").GetString()).ToArray();
+        Assert.AreEqual("user", roles[0]);
+        Assert.AreEqual("thinking", roles[1]);
+        var thinking = messages[1];
         Assert.AreEqual("Historical thought one.Historical thought two.", thinking.GetProperty("text").GetString());
-        Assert.AreEqual("thinking", messages[1].GetProperty("role").GetString());
         Assert.AreEqual(
             messages[0].GetProperty("runId").GetString(),
             thinking.GetProperty("runId").GetString());
+
+        var assistants = messages
+            .Where(message => message.GetProperty("role").GetString() == "assistant")
+            .Select(message => message.GetProperty("text").GetString())
+            .ToArray();
         CollectionAssert.AreEqual(
-            new[] { "Historical assistant before tool.", "Historical assistant after tool." },
-            messages.Where(message => message.GetProperty("role").GetString() == "assistant")
-                .Select(message => message.GetProperty("text").GetString()).ToArray());
-        var snapshot = messages.Single(message => message.GetProperty("role").GetString() == "mode_transition");
-        Assert.AreEqual("interrupted", snapshot.GetProperty("decisionState").GetString());
-        Assert.IsFalse(messages.Any(message => message.GetProperty("role").GetString() == "tool"
-            && message.GetProperty("toolCallId").GetString() == "stored-tool"));
+            new[] { "Historical assistant before tool.Historical assistant after tool." },
+            assistants,
+            "the turn's assistant text folds into one message even around tool calls");
+
+        var toolIndex = Array.IndexOf(roles, "tool");
+        var assistantIndex = Array.FindIndex(roles, role => role == "assistant");
+        Assert.IsTrue(toolIndex >= 0 && toolIndex < assistantIndex,
+            "tools sit between thinking and the assistant text inside the turn");
 
         var persisted = fixture.Store.LoadThread(historical.ThreadId);
-        Assert.AreEqual(
-            "interrupted",
-            persisted?.Messages.Single(message => message.Role == "mode_transition").DecisionState);
+        Assert.AreEqual(messages.Length, persisted?.Messages.Count);
     }
 
     [TestMethod]

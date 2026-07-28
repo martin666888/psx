@@ -102,6 +102,8 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         public Dictionary<string, string> ToolOutputs { get; } = new();
         public Dictionary<string, string> ToolSummaries { get; } = new();
         public Dictionary<string, string> ToolRunIds { get; } = new();
+        public Dictionary<string, string> ToolStatuses { get; } = new();
+        public List<string> ToolOrder { get; } = new();
         public string? CurrentRunId { get; set; }
         public int TurnIndex { get; set; }
     }
@@ -1689,6 +1691,13 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     {
         await EnsureTransportAsync(cancellationToken).ConfigureAwait(false);
 
+        // The locally persisted transcript is authoritative: the live pipeline
+        // saved it in its aggregated per-turn shape (user → thinking → tools →
+        // assistant). When it exists, session/load only re-establishes the
+        // agent-side session context — the replayed chunk stream must never
+        // overwrite the archive, because providers may replay injected context
+        // as user chunks and fragment assistant text around tool events.
+        var hasLocalTranscript = _currentThread.Messages.Count > 0;
         var modeTransitionSnapshots = _currentThread.Messages
             .Where(message => message.Role == "mode_transition")
             .Select(ModeTransitionSnapshotMerger.CloneMessage)
@@ -1714,6 +1723,23 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             _transportRecoveryRequired = false;
             CaptureModes(loadResult);
             CaptureConfigOptions(loadResult);
+
+            if (hasLocalTranscript)
+            {
+                // Keep the archive. A still-pending mode transition cannot be
+                // answered after a reload, so mark it interrupted locally.
+                if (ModeTransitionSnapshotMerger.InterruptPending(_currentThread))
+                {
+                    SaveCurrentThread();
+                    await SendThreadLoadedAsync(clear: true).ConfigureAwait(false);
+                }
+
+                await SendSessionReadyAsync().ConfigureAwait(false);
+                return true;
+            }
+
+            // No local archive (e.g. a thread imported by session id only):
+            // rebuild the transcript from the replayed chunk stream.
             FinishReplayHistory(replay);
             ModeTransitionSnapshotMerger.Merge(replay.Messages, modeTransitionSnapshots);
             ThinkingMessageNormalizer.Normalize(replay.Messages);
@@ -2561,8 +2587,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         if (string.IsNullOrEmpty(text))
             return;
 
-        FlushReplayThinking(replay);
-        FlushReplayAssistant(replay);
+        FlushReplayTurn(replay);
         if (replay.Messages.LastOrDefault()?.Role == "user")
         {
             replay.Messages[^1].Text += text;
@@ -2604,7 +2629,9 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     private static void CaptureReplayToolCall(ReplayHistoryState replay, JsonElement update)
     {
-        FlushReplayAssistant(replay);
+        // Do NOT flush the assistant buffer here: replayed turns must keep the
+        // live persistence shape (one assistant message per turn), so tool
+        // events only record data and everything is emitted at the turn end.
         if (string.IsNullOrWhiteSpace(replay.CurrentRunId))
             replay.CurrentRunId = $"history-{++replay.TurnIndex}";
 
@@ -2619,15 +2646,16 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         replay.ToolOutputs[toolCallId] = FormatToolOutput(update);
         replay.ToolSummaries[toolCallId] = BuildToolSummary(name, input, update);
         replay.ToolRunIds[toolCallId] = replay.CurrentRunId;
+        if (!replay.ToolOrder.Contains(toolCallId))
+            replay.ToolOrder.Add(toolCallId);
 
         var status = GetString(update, "status");
         if (status is "completed" or "failed")
-            FinishReplayTool(replay, toolCallId, status);
+            replay.ToolStatuses[toolCallId] = status;
     }
 
     private static void CaptureReplayToolUpdate(ReplayHistoryState replay, JsonElement update)
     {
-        FlushReplayAssistant(replay);
         if (string.IsNullOrWhiteSpace(replay.CurrentRunId))
             replay.CurrentRunId = $"history-{++replay.TurnIndex}";
 
@@ -2643,6 +2671,8 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             replay.ToolSummaries[toolCallId] = BuildToolSummary(replay.ToolNames[toolCallId], replay.ToolInputs[toolCallId], update);
         if (!replay.ToolRunIds.ContainsKey(toolCallId))
             replay.ToolRunIds[toolCallId] = replay.CurrentRunId;
+        if (!replay.ToolOrder.Contains(toolCallId))
+            replay.ToolOrder.Add(toolCallId);
 
         var output = FormatToolOutput(update);
         if (!string.IsNullOrWhiteSpace(output))
@@ -2654,12 +2684,11 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
         var status = GetString(update, "status");
         if (status is "completed" or "failed")
-            FinishReplayTool(replay, toolCallId, status);
+            replay.ToolStatuses[toolCallId] = status;
     }
 
     private static void UpsertReplayPlan(ReplayHistoryState replay, JsonElement update)
     {
-        FlushReplayAssistant(replay);
         if (string.IsNullOrWhiteSpace(replay.CurrentRunId))
             replay.CurrentRunId = $"history-{++replay.TurnIndex}";
 
@@ -2670,10 +2699,23 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     private static void FinishReplayHistory(ReplayHistoryState replay)
     {
+        FlushReplayTurn(replay);
+    }
+
+    /// <summary>
+    /// Emits everything buffered for the current replayed turn in the live
+    /// persistence order — thinking first, then the turn's tools in the order
+    /// they appeared (unfinished ones included, so they stay in their own
+    /// turn instead of piling up at the end of the whole replay), then the
+    /// single combined assistant message.
+    /// </summary>
+    private static void FlushReplayTurn(ReplayHistoryState replay)
+    {
         FlushReplayThinking(replay);
+        foreach (var toolCallId in replay.ToolOrder.ToArray())
+            EmitReplayTool(replay, toolCallId);
+        replay.ToolOrder.Clear();
         FlushReplayAssistant(replay);
-        foreach (var toolCallId in replay.ToolNames.Keys.ToArray())
-            FinishReplayTool(replay, toolCallId, "done");
     }
 
     private static void FlushReplayThinking(ReplayHistoryState replay)
@@ -2714,13 +2756,14 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         replay.AssistantBuffer.Clear();
     }
 
-    private static void FinishReplayTool(ReplayHistoryState replay, string toolCallId, string status)
+    private static void EmitReplayTool(ReplayHistoryState replay, string toolCallId)
     {
         var name = replay.ToolNames.TryGetValue(toolCallId, out var n) ? n : "Tool";
         var input = replay.ToolInputs.TryGetValue(toolCallId, out var i) ? i : "";
         var output = replay.ToolOutputs.TryGetValue(toolCallId, out var o) ? o : "";
         var summary = replay.ToolSummaries.TryGetValue(toolCallId, out var s) ? s : name;
         var runId = replay.ToolRunIds.TryGetValue(toolCallId, out var r) ? r : replay.CurrentRunId;
+        var status = replay.ToolStatuses.TryGetValue(toolCallId, out var st) ? st : "done";
 
         replay.Messages.Add(new AgentMessage
         {
@@ -2741,6 +2784,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         replay.ToolOutputs.Remove(toolCallId);
         replay.ToolSummaries.Remove(toolCallId);
         replay.ToolRunIds.Remove(toolCallId);
+        replay.ToolStatuses.Remove(toolCallId);
     }
 
     private async Task FinishToolAsync(string toolCallId, string status)
