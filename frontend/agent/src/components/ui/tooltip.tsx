@@ -4,6 +4,9 @@ import * as React from "react"
 import { Tooltip as TooltipPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
+// PSX local modification: portal inside the .agent-ui variable boundary so
+// the themed shadcn variables keep resolving (body has none of them).
+import { getPortalContainer } from "../../ui/portalContainer.js"
 
 function TooltipProvider({
   delayDuration = 0,
@@ -37,7 +40,7 @@ function TooltipContent({
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Content>) {
   return (
-    <TooltipPrimitive.Portal>
+    <TooltipPrimitive.Portal container={getPortalContainer()}>
       <TooltipPrimitive.Content
         data-slot="tooltip-content"
         sideOffset={sideOffset}

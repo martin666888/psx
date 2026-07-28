@@ -4,6 +4,9 @@ import * as React from "react"
 import { HoverCard as HoverCardPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
+// PSX local modification: portal inside the .agent-ui variable boundary so
+// the themed shadcn variables keep resolving (body has none of them).
+import { getPortalContainer } from "../../ui/portalContainer.js"
 
 function HoverCard({
   ...props
@@ -26,7 +29,7 @@ function HoverCardContent({
   ...props
 }: React.ComponentProps<typeof HoverCardPrimitive.Content>) {
   return (
-    <HoverCardPrimitive.Portal data-slot="hover-card-portal">
+    <HoverCardPrimitive.Portal container={getPortalContainer()} data-slot="hover-card-portal">
       <HoverCardPrimitive.Content
         data-slot="hover-card-content"
         align={align}

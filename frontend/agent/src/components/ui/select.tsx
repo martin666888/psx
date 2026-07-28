@@ -3,6 +3,9 @@ import * as SelectPrimitive from "@radix-ui/react-select"
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+// PSX local modification: portal inside the .agent-ui variable boundary so
+// the themed shadcn variables keep resolving (body has none of them).
+import { getPortalContainer } from "../../ui/portalContainer.js"
 
 function Select({
   ...props
@@ -55,7 +58,7 @@ function SelectContent({
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>) {
   return (
-    <SelectPrimitive.Portal>
+    <SelectPrimitive.Portal container={getPortalContainer()}>
       <SelectPrimitive.Content
         data-slot="select-content"
         className={cn(

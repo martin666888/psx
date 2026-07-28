@@ -64,8 +64,7 @@ function PermissionQuestionCard({
       onOpenChange={setOpen}
       className={
         'agent-decision agent-decision-' + item.kind +
-        ' group/decision mb-3.5 w-full rounded-lg border text-card-foreground' +
-        (item.kind === 'permission' ? ' border-amber-600/50 bg-amber-600/5' : ' bg-card') +
+        ' group/decision mb-3.5 w-full rounded-lg border bg-card text-card-foreground' +
         (disabled ? ' agent-decision-disabled opacity-80' : '')
       }
       data-decision-state={disabled ? 'disabled' : 'active'}
@@ -111,9 +110,9 @@ function PermissionQuestionCard({
           ) : null}
           {ordered.map((option) => {
             const isSelected = selected === option;
-            // legacy completeDecisionCard strips semantics from the selected
-            // button only; hidden losers keep theirs.
-            const semantic = isSelected ? '' : decisionOptionClass(option);
+            // Neutral outline pills matching the elicitation card style; the
+            // ACP option kind stays on data-option-kind for tooling instead
+            // of a semantic color tint.
             return (
               <Button
                 key={option.optionId || option.name}
@@ -122,12 +121,12 @@ function PermissionQuestionCard({
                 size="sm"
                 className={
                   'agent-decision-option min-h-8 max-w-full cursor-pointer whitespace-normal break-words rounded-full px-4 py-1 text-xs leading-normal hover:bg-accent disabled:cursor-default' +
-                  (semantic ? ' ' + semantic : '') +
                   (isSelected
                     ? ' agent-decision-option-selected border-border bg-muted text-muted-foreground'
                     : ' disabled:opacity-70')
                 }
                 data-option-id={option.optionId}
+                data-option-kind={option.kind}
                 aria-pressed={isSelected ? 'true' : 'false'}
                 hidden={!!selected && !isSelected}
                 disabled={disabled}
@@ -445,24 +444,36 @@ function ElicitationCard({
   };
 
   const safeUrl = url ? safeHref(url) : '';
+  // legacy contract shared with PermissionQuestionCard: a local answer folds
+  // the card (projection sets collapsed); external cancel leaves the toggle.
+  const [open, setOpen] = useProjectionOpen(!item.collapsed);
   return (
-    <section
+    <Collapsible
+      open={open}
+      onOpenChange={setOpen}
       className={
-        'agent-decision agent-decision-elicitation mb-3.5 w-full overflow-hidden rounded-lg border bg-card p-0 text-card-foreground' +
+        'agent-decision agent-decision-elicitation group/elicitation mb-3.5 w-full overflow-hidden rounded-lg border bg-card p-0 text-card-foreground' +
         (disabled ? ' agent-decision-disabled opacity-80' : '')
       }
       data-decision-state={disabled ? 'disabled' : 'active'}
       data-request-id={item.requestId || undefined}
     >
-      <div className="agent-decision-header flex items-center justify-between gap-2 border-b bg-muted/50 px-3 py-2">
+      <CollapsibleTrigger className="agent-decision-header flex w-full cursor-pointer select-none items-center justify-between gap-2 border-b bg-muted/50 px-3 py-2 text-left">
         <div className="flex min-w-0 items-center gap-2">
+          <ChevronRightIcon
+            className="size-3 shrink-0 text-muted-foreground transition-transform group-data-[state=open]/elicitation:rotate-90"
+            aria-hidden="true"
+          />
           <InfoIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
           <div className="agent-decision-title text-[13px] font-bold">{item.title}</div>
         </div>
-        {!disabled ? (
-          <div className="agent-decision-header-status shrink-0 text-xs text-muted-foreground">Waiting for input</div>
-        ) : null}
-      </div>
+        <div className="agent-decision-header-status shrink-0 text-xs text-muted-foreground">
+          {disabled ? item.statusText : 'Waiting for input'}
+        </div>
+      </CollapsibleTrigger>
+      {/* forceMount keeps the collapsed form in the DOM (old <details>
+          semantics) for text search and replay tooling. */}
+      <CollapsibleContent forceMount className="data-[state=closed]:hidden">
       <div className="agent-decision-body p-3">
       <div className="agent-decision-subtitle break-words text-sm leading-normal">{item.elicitationMessage}</div>
       <form className="agent-elicitation-form mt-3 grid gap-3" noValidate>
@@ -606,7 +617,8 @@ function ElicitationCard({
       </div>
       {disabled && item.statusText ? <div className="agent-decision-status mt-2.5 text-xs text-muted-foreground">{item.statusText}</div> : null}
       </div>
-    </section>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 

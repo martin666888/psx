@@ -13,6 +13,7 @@ import type { AgentBridgePort } from '../contracts/bridge-port.js';
 import type { SessionRuntimeHost } from './SessionRuntimeController.js';
 import type { PlanHost } from '../plan/PlanController.js';
 import { applyShadcnTheme } from '../ui/themeAdapter.js';
+import { setPortalContainer } from '../ui/portalContainer.js';
 
 /** The one terminal-view method the host toggles when switching workspaces. */
 interface TerminalViewToggle {
@@ -69,6 +70,9 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
     // applyShadcnTheme re-applies it (idempotent) with themed values once the
     // first settings event arrives.
     this.container.classList.add('agent-ui');
+    // Radix portals must mount inside the boundary to see the themed
+    // variables (a body-mounted tooltip/popup renders unstyled).
+    setPortalContainer(this.container);
   }
 
   createWorkspace(workspaceId: string): void {

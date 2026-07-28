@@ -3,6 +3,9 @@ import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { XIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+// PSX local modification: portal inside the .agent-ui variable boundary so
+// the themed shadcn variables keep resolving (body has none of them).
+import { getPortalContainer } from "../../ui/portalContainer.js"
 
 function Dialog({
   ...props
@@ -19,7 +22,7 @@ function DialogTrigger({
 function DialogPortal({
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Portal>) {
-  return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />
+  return <DialogPrimitive.Portal container={getPortalContainer()} data-slot="dialog-portal" {...props} />
 }
 
 function DialogClose({

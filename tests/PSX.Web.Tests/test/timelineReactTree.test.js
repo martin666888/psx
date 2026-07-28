@@ -274,6 +274,16 @@ test('elicitation option buttons render title and description and submit the pic
     payload: JSON.stringify({ action: 'accept', content: { mode: 'safe' } }),
     statusText: 'Response sent.'
   }]);
+  // Production TimelineController disables the decision after posting the
+  // response; a local answer folds the card to its header, the header shows
+  // the resolution status and a click re-expands the historical form.
+  view.projection.disableDecision('e3', 'Response sent.');
+  await view.render();
+  const card = view.host.querySelector('.agent-decision-elicitation');
+  assert.equal(card.dataset.state, 'closed');
+  assert.match(card.querySelector('.agent-decision-header-status').textContent, /Response sent/);
+  await act(async () => card.querySelector('.agent-decision-header').click());
+  assert.equal(view.host.querySelector('.agent-decision-elicitation').dataset.state, 'open');
   await view.dispose();
 });
 

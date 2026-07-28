@@ -2,6 +2,9 @@ import * as React from "react"
 import * as PopoverPrimitive from "@radix-ui/react-popover"
 
 import { cn } from "@/lib/utils"
+// PSX local modification: portal inside the .agent-ui variable boundary so
+// the themed shadcn variables keep resolving (body has none of them).
+import { getPortalContainer } from "../../ui/portalContainer.js"
 
 function Popover({
   ...props
@@ -22,7 +25,7 @@ function PopoverContent({
   ...props
 }: React.ComponentProps<typeof PopoverPrimitive.Content>) {
   return (
-    <PopoverPrimitive.Portal>
+    <PopoverPrimitive.Portal container={getPortalContainer()}>
       <PopoverPrimitive.Content
         data-slot="popover-content"
         align={align}

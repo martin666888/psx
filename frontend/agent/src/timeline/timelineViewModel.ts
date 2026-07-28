@@ -353,11 +353,14 @@ export class TimelineProjection {
     if (item.kind === 'mode_transition') item.headerState = 'Sending';
   }
 
-  /** External hook: a locally-resolved elicitation (legacy disableDecisionCard). */
+  /** External hook: a locally-resolved elicitation (legacy disableDecisionCard).
+   *  Collapses the card like selectDecisionOption: only a local answer folds
+   *  the form; external cancels leave the user's toggle alone. */
   disableDecision(requestId: string, statusText: string): void {
     const item = this.findDecision(requestId);
     if (!item || item.decisionState !== 'active') return;
     item.decisionState = 'disabled';
+    item.collapsed = true;
     item.statusText = statusText;
   }
 
