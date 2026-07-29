@@ -325,7 +325,9 @@ export function reduceWorkspaceState(
           state: RUNTIME_UPDATE_STATES.has(rawState) ? rawState : 'idle',
           message: asString(raw.message),
           currentVersion: asString(raw.currentVersion),
-          pendingVersion: asString(raw.pendingVersion)
+          pendingVersion: asString(raw.pendingVersion),
+          versionLabel: asString(raw.versionLabel),
+          versionDetail: asString(raw.versionDetail)
         }
       };
     }

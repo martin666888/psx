@@ -36,12 +36,17 @@ export interface WorkspaceRuntimeState {
 
 /** Toolbar Update button state folded from runtime_update_status.
  * States: idle | checking | up_to_date | staged_restart_required |
- * unsupported | failed. */
+ * unsupported | failed. currentVersion/pendingVersion are the raw product
+ * versions; versionLabel is the toolbar-facing product string
+ * (e.g. "Claude Code v2.1.0", '' = render no version) and versionDetail is
+ * the tooltip-only ACP/runtime technical string. */
 export interface WorkspaceRuntimeUpdateState {
   state: string;
   message: string;
   currentVersion: string;
   pendingVersion: string;
+  versionLabel: string;
+  versionDetail: string;
 }
 
 /** A single normalized Plan entry (mirrors core/plan.ts PlanEntry). */
@@ -165,7 +170,9 @@ export function createInitialWorkspaceState(workspaceId: string): AgentWorkspace
       state: 'idle',
       message: '',
       currentVersion: '',
-      pendingVersion: ''
+      pendingVersion: '',
+      versionLabel: '',
+      versionDetail: ''
     },
     timeline: [],
     composer: {

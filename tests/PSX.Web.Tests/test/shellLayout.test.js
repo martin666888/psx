@@ -119,6 +119,94 @@ test('shell: the toolbar Update button follows runtime_update_status states', as
   assert.equal(update().disabled, false);
 });
 
+// The resident product version label sits beside the Update button; ACP
+// details stay tooltip-only, and no version text renders when unknown.
+test('shell: the toolbar shows the product version label and tooltip details', async () => {
+  const { app, panelFor } = await mountAgentApp();
+  createAgentWorkspace(app, WS);
+  const panel = panelFor(WS);
+  await toolbarReady(panel);
+
+  const update = () => role(panel, 'update');
+  const version = () => role(panel, 'update-version');
+  async function until(predicate, message) {
+    for (let attempt = 0; attempt < 200 && !predicate(); attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.ok(predicate(), message);
+  }
+
+  // Product label renders; ACP adapter detail is tooltip-only, never in the
+  // resident label text.
+  app.handle({
+    type: 'runtime_update_status',
+    workspaceId: WS,
+    state: 'up_to_date',
+    message: '',
+    currentVersion: '2.1.0',
+    pendingVersion: '',
+    versionLabel: 'Claude Code v2.1.0',
+    versionDetail: 'ACP adapter 1.0.0'
+  });
+  await until(() => version() && version().textContent === 'Claude Code v2.1.0', 'product version renders');
+  assert.match(update().title, /Current: 2\.1\.0/);
+  assert.match(update().title, /ACP adapter 1\.0\.0/);
+  assert.ok(!version().textContent.includes('ACP'), 'ACP detail stays out of the resident label');
+
+  // Staged: still shows the current version, folds the pending version into
+  // the tooltip and keeps the Restart label.
+  app.handle({
+    type: 'runtime_update_status',
+    workspaceId: WS,
+    state: 'staged_restart_required',
+    message: '',
+    currentVersion: '2.1.0',
+    pendingVersion: '2.2.0',
+    versionLabel: 'Claude Code v2.1.0',
+    versionDetail: 'ACP adapter 1.0.0 \u2192 1.1.0'
+  });
+  await until(() => update().dataset.updateState === 'staged_restart_required', 'staged renders');
+  assert.equal(version().textContent, 'Claude Code v2.1.0', 'staged keeps the current version label');
+  assert.match(update().title, /Update ready: 2\.2\.0/);
+
+  // Failed keeps the current version label and adds the reason to the tooltip.
+  app.handle({
+    type: 'runtime_update_status',
+    workspaceId: WS,
+    state: 'failed',
+    message: 'network unreachable',
+    currentVersion: '2.1.0',
+    pendingVersion: '',
+    versionLabel: 'Claude Code v2.1.0',
+    versionDetail: 'ACP adapter 1.0.0'
+  });
+  await until(() => update().dataset.updateState === 'failed', 'failed renders');
+  assert.equal(version().textContent, 'Claude Code v2.1.0');
+  assert.match(update().title, /network unreachable/);
+
+  // Unknown / uninstalled: no version label element at all (never v0/Unknown).
+  app.handle({
+    type: 'runtime_update_status',
+    workspaceId: WS,
+    state: 'install_required',
+    message: '',
+    currentVersion: '',
+    pendingVersion: '',
+    versionLabel: '',
+    versionDetail: ''
+  });
+  await until(() => update().dataset.updateState === 'install_required', 'install_required renders');
+  assert.equal(version(), null, 'no version text when the version is unknown');
+
+  // Narrow shells hide the version text but keep the Update button.
+  const shell = readCss('shell.css');
+  assert.match(
+    shell,
+    /#agent-workspace-container\.agent-shell-narrow \.agent-update-version\s*\{\s*display: none/,
+    'narrow shell hides the resident version label'
+  );
+});
+
 test('shell: dock open toggles the canvas dock-open state class', async () => {
   const { app, panelFor } = await mountAgentApp();
   createAgentWorkspace(app, WS);

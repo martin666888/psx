@@ -35,7 +35,9 @@ export class WorkspaceToolbarController implements FeatureController {
     state: 'idle',
     message: '',
     currentVersion: '',
-    pendingVersion: ''
+    pendingVersion: '',
+    versionLabel: '',
+    versionDetail: ''
   };
   private onHistoryToggle: () => void = () => {};
   private onPlanToggle: () => void = () => {};
@@ -139,6 +141,8 @@ export class WorkspaceToolbarController implements FeatureController {
         message: this.runtimeUpdate.message,
         currentVersion: this.runtimeUpdate.currentVersion,
         pendingVersion: this.runtimeUpdate.pendingVersion,
+        versionLabel: this.runtimeUpdate.versionLabel,
+        versionDetail: this.runtimeUpdate.versionDetail,
         onRequest: () =>
           this.host.bridgeFor(this.workspaceId)?.sendAgentCommand('check_runtime_update')
       }

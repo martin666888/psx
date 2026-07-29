@@ -37,6 +37,11 @@ export interface WorkspaceToolbarProps {
     message: string;
     currentVersion: string;
     pendingVersion: string;
+    // Toolbar-facing product string ("Claude Code v2.1.0"); '' hides the
+    // resident version text (uninstalled / transcript-only / unavailable).
+    versionLabel: string;
+    // Tooltip-only ACP/runtime technical detail.
+    versionDetail: string;
     onRequest(): void;
   };
 }
@@ -68,19 +73,29 @@ function updateButtonTitle(update: WorkspaceToolbarProps['update']): string {
   if (update.state === 'unsupported') return 'Updates ship with PSX releases';
   if (update.state === 'install_required') return 'Install the Agent runtime first';
   if (update.state === 'unavailable') return 'Updates are not available for this workspace';
+
+  // Every other state aggregates the same tooltip: the current version, any
+  // staged/pending version, the ACP/runtime technical detail and (on failure)
+  // the backend reason. Blank slices drop out so short states stay terse.
+  const lines: string[] = [];
+  if (update.currentVersion) lines.push('Current: ' + update.currentVersion);
+  if (update.pendingVersion) lines.push('Update ready: ' + update.pendingVersion);
+  if (update.versionDetail) lines.push(update.versionDetail);
+
   if (update.state === 'failed') {
-    return update.message
-      ? 'Update check failed: ' + update.message
-      : 'Update check failed; click to retry';
+    lines.push(
+      update.message ? 'Update check failed: ' + update.message : 'Update check failed; click to retry'
+    );
+  } else if (update.state === 'staged_restart_required') {
+    lines.push(
+      update.pendingVersion
+        ? 'Restart PSX to apply the update.'
+        : 'Update is ready; restart PSX to apply.'
+    );
+  } else {
+    lines.push('Check for Agent runtime updates');
   }
-  if (update.state === 'staged_restart_required') {
-    return update.pendingVersion
-      ? 'Update to ' + update.pendingVersion + ' is ready; restart PSX to apply'
-      : 'Update is ready; restart PSX to apply';
-  }
-  return update.currentVersion
-    ? 'Check for Agent runtime updates (current: ' + update.currentVersion + ')'
-    : 'Check for Agent runtime updates';
+  return lines.join('\n');
 }
 
 function HistoryIcon(): JSX.Element {
@@ -179,6 +194,18 @@ export function WorkspaceToolbar(props: WorkspaceToolbarProps): JSX.Element {
           title={updateButtonTitle(props.update)}
           onClick={props.update.onRequest}
         >
+          {/* Resident product version, hidden below a narrow toolbar and when
+            * there is no known version (never a misleading v0/Unknown). The
+            * Update button itself always stays visible (hiding is driven by
+            * the shell narrow class in shell.css). */}
+          {props.update.versionLabel ? (
+            <span
+              data-role="update-version"
+              className="agent-update-version mr-2 truncate text-muted-foreground"
+            >
+              {props.update.versionLabel}
+            </span>
+          ) : null}
           {updateButtonLabel(props.update.state)}
         </Button>
       </div>

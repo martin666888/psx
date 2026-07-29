@@ -169,6 +169,16 @@
     display: contents;
 }
 
+/* The resident Agent product version sits left of the Update button; narrow
+ * shells hide the text first (the Update button itself always stays). */
+.agent-update-version {
+    max-width: 16ch;
+}
+
+#agent-workspace-container.agent-shell-narrow .agent-update-version {
+    display: none;
+}
+
 .agent-meta {
     min-width: 0;
     display: flex;
