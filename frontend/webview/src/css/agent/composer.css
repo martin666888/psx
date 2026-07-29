@@ -1,7 +1,8 @@
 .agent-composer {
     grid-area: composer;
     position: relative;
-    padding: 0 0 var(--agent-space-4);
+    /* Breathing room between the card and the panel's rounded bottom edge. */
+    padding: 0 0 var(--agent-composer-bottom-space);
     background: transparent;
 }
 
@@ -114,7 +115,8 @@
 
 @media (max-width: 760px) {
     .agent-composer {
-        padding-bottom: var(--agent-space-2);
+        /* Narrow windows keep some breathing room without squeezing input. */
+        padding-bottom: var(--agent-space-3);
     }
 }
 

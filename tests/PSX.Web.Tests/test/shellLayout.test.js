@@ -245,6 +245,21 @@ test('shell: composer and conversation share the same reading-column rules', () 
     /\.agent-composer-card\s*\{[\s\S]*?border:\s*1px solid var\(--agent-border-strong\)/,
     'Composer uses the strong theme border instead of relying on a dark-theme shadow'
   );
+  // Desktop breathing room is the dedicated token (24px); narrow windows use
+  // the smaller spacing step, never zero.
+  assert.match(shell, /--agent-composer-bottom-space: 24px/);
+  assert.match(
+    composer,
+    /\.agent-composer\s*\{[\s\S]*?padding: 0 0 var\(--agent-composer-bottom-space\)/,
+    'Composer bottom padding uses the workbench breathing-room token'
+  );
+  assert.match(
+    composer,
+    /@media \(max-width: 760px\)\s*\{\s*\.agent-composer\s*\{[\s\S]*?padding-bottom: var\(--agent-space-3\)/,
+    'narrow windows reduce but keep the bottom breathing room'
+  );
+  // The lift stays restrained: no heavy dark halo on the composer card.
+  assert.match(shell, /--agent-shadow-composer: 0 6px 18px color-mix\(in srgb, var\(--agent-shadow\) 12%, transparent\)/);
   assert.match(
     shell,
     /\.agent-thread-scroll-button\s*\{[\s\S]*?left:\s*calc\(\s*max\(0px, var\(--agent-reading-column-start\)\)\s*\+\s*var\(--agent-reading-column-max\) \/ 2\s*\)/,

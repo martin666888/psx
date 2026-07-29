@@ -20,11 +20,16 @@
     --agent-radius-context-card: var(--agent-radius-card);
     /* Composer card: the one large-radius surface (borderless soft fill). */
     --agent-radius-composer: 24px;
+    /* Desktop breathing room under the Composer; narrow windows reduce it so
+     * the input area is never squeezed. */
+    --agent-composer-bottom-space: 24px;
     /* Restrained, symmetric panel lift — no wide blurs or gradients. */
     --agent-shadow-canvas: 0 8px 24px color-mix(in srgb, var(--agent-shadow) 16%, transparent);
     --agent-shadow-context-card: 0 6px 20px color-mix(in srgb, var(--agent-shadow) 20%, transparent),
         0 2px 6px color-mix(in srgb, var(--agent-shadow) 14%, transparent);
-    --agent-shadow-composer: 0 10px 28px color-mix(in srgb, var(--agent-shadow) 18%, transparent);
+    /* Lift comes from whitespace, border and the luminance ladder — the
+     * shadow is a soft hint, not a heavy dark halo. */
+    --agent-shadow-composer: 0 6px 18px color-mix(in srgb, var(--agent-shadow) 12%, transparent);
     /* Floating menus / popovers and modal media: the only other elevated layers. */
     --agent-shadow-popover: 0 12px 28px color-mix(in srgb, var(--agent-shadow) 34%, transparent);
     --agent-shadow-dialog: 0 18px 60px color-mix(in srgb, var(--agent-shadow) 50%, transparent);
