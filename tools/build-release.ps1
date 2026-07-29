@@ -206,6 +206,18 @@ $npmCli = Join-Path $nodeDir "node_modules\npm\bin\npm-cli.js"
 # node-pty's native addon requires the machine's C++ build toolchain.
 & $nodeExe $npmCli ci --prefix $kimiTargetDir --omit=dev --include=optional --no-audit --no-fund | Out-Host
 if ($LASTEXITCODE -ne 0) { throw "npm ci for Kimi Code failed (exit $LASTEXITCODE)" }
+
+# Smoke-check the bundled entry actually starts on the portable Node instead
+# of only checking the file exists. Capture output first (no Out-Host pipe:
+# empty output must be detectable), then check the exit code and emptiness.
+$kimiEntry = Join-Path $kimiTargetDir "node_modules\@moonshot-ai\kimi-code\dist\main.mjs"
+if (-not (Test-Path -LiteralPath $kimiEntry -PathType Leaf)) {
+    throw "Bundled Kimi entry is missing: $kimiEntry"
+}
+$kimiSmokeOutput = (& $nodeExe $kimiEntry --version 2>&1 | Out-String).Trim()
+if ($LASTEXITCODE -ne 0) { throw "Bundled Kimi smoke check failed (exit $LASTEXITCODE): $kimiSmokeOutput" }
+if ([string]::IsNullOrWhiteSpace($kimiSmokeOutput)) { throw "Bundled Kimi smoke check produced no output" }
+Write-Host "    Kimi smoke check passed: --version -> $kimiSmokeOutput"
 Write-Host "    Installed Kimi Code into staging/tools/kimi/"
 Write-Host ""
 

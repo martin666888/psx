@@ -211,6 +211,7 @@ internal sealed class FakeNpmScenario
     public bool CreateAdapter { get; set; } = true;
     public bool CreateClaude { get; set; } = true;
     public bool CreateKimi { get; set; }
+    public bool KimiSmokeFails { get; set; }
     public string? AdapterVersion { get; set; }
     public string? ClaudeCodeVersion { get; set; }
     public string? KimiVersion { get; set; }

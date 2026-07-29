@@ -3,6 +3,34 @@ using System.Text.Json;
 if (args.Length < 2)
     return 64;
 
+// `node <staged>/dist/main.mjs --version` — the Kimi staged smoke check.
+// Handled before configuration parsing because args[0] is the package entry
+// file here, not the fake npm configuration path.
+if (args[0].EndsWith(".mjs", StringComparison.OrdinalIgnoreCase) && args.Contains("--version"))
+{
+    var distDirectory = Path.GetDirectoryName(Path.GetFullPath(args[0]));
+    var packageDirectory = distDirectory == null ? null : Path.GetDirectoryName(distDirectory);
+    if (packageDirectory == null)
+        return 1;
+    // Test seam: a marker file forces the smoke check to fail.
+    if (File.Exists(Path.Combine(packageDirectory, "smoke-fail.marker")))
+        return 1;
+    try
+    {
+        using var manifest = JsonDocument.Parse(
+            await File.ReadAllTextAsync(Path.Combine(packageDirectory, "package.json")).ConfigureAwait(false));
+        var packageVersion = manifest.RootElement.GetProperty("version").GetString();
+        if (string.IsNullOrWhiteSpace(packageVersion))
+            return 1;
+        Console.Out.WriteLine(packageVersion);
+        return 0;
+    }
+    catch
+    {
+        return 1;
+    }
+}
+
 var configPath = args[0];
 FakeNpmConfiguration? configuration;
 try
@@ -85,6 +113,13 @@ if (scenario.CreateKimi)
     WriteFile(
         Path.Combine(workingDirectory, "node_modules", "@moonshot-ai", "kimi-code", "dist", "main.mjs"),
         "// fake kimi acp entry");
+    if (scenario.KimiSmokeFails)
+    {
+        // Makes the later `node main.mjs --version` smoke check exit 1.
+        WriteFile(
+            Path.Combine(workingDirectory, "node_modules", "@moonshot-ai", "kimi-code", "smoke-fail.marker"),
+            "fail");
+    }
 }
 
 return scenario.ExitCode;
@@ -117,6 +152,7 @@ internal sealed class FakeNpmScenario
     public bool CreateAdapter { get; set; } = true;
     public bool CreateClaude { get; set; } = true;
     public bool CreateKimi { get; set; }
+    public bool KimiSmokeFails { get; set; }
     public string? AdapterVersion { get; set; }
     public string? ClaudeCodeVersion { get; set; }
     public string? KimiVersion { get; set; }

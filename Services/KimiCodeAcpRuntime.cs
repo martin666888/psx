@@ -32,6 +32,9 @@ public sealed class KimiCodeAcpRuntime : IAcpAgentRuntime
 
     private static readonly TimeSpan DefaultProcessTimeout = TimeSpan.FromMinutes(10);
 
+    /// <summary>Staged-entry <c>--version</c> smoke check budget.</summary>
+    private static readonly TimeSpan SmokeCheckTimeout = TimeSpan.FromSeconds(30);
+
     private static readonly string KimiPackageDirSubpath =
         Path.Combine("node_modules", "@moonshot-ai", "kimi-code");
     private static readonly string KimiPackageJsonSubpath =
@@ -126,7 +129,7 @@ public sealed class KimiCodeAcpRuntime : IAcpAgentRuntime
                 if (ValidateKimiRoot(paths, paths.KimiNextDirectory, requireLockfile: false, out _) != null)
                 {
                     Log("Kimi promote aborted: kimi-next is incomplete; reverting pointer to 'current'.");
-                    WriteActivePointer(paths, ActiveCurrentToken);
+                    TryWriteActivePointer(paths, ActiveCurrentToken);
                 }
                 else
                 {
@@ -135,7 +138,7 @@ public sealed class KimiCodeAcpRuntime : IAcpAgentRuntime
             }
             else if (File.Exists(paths.KimiActivePointerFile))
             {
-                WriteActivePointer(paths, ActiveCurrentToken);
+                TryWriteActivePointer(paths, ActiveCurrentToken);
             }
 
             DropRuntimeCopyWhenBundledIsSameOrNewer(paths);
@@ -232,11 +235,15 @@ public sealed class KimiCodeAcpRuntime : IAcpAgentRuntime
     }
 
     /// <summary>
-    /// Background refresh. Stages <c>npm install @moonshot-ai/kimi-code@latest</c>
-    /// into <c>kimi-next</c> only — never touches the directory the live Agent
-    /// session is reading from. On success with a newer version, flips the
-    /// pointer to "next"; the next PSX launch promotes it. On failure or no
-    /// version change, leaves the active install alone.
+    /// User-requested refresh. Runs a lightweight
+    /// <c>npm view @moonshot-ai/kimi-code@latest version</c> pre-check first:
+    /// only a parseable, strictly newer registry version is staged (pinned to
+    /// that exact version) into <c>kimi-next</c> — never the directory the
+    /// live Agent session is reading from. The staged install must pass
+    /// structure validation, an exact-version check and a portable-Node
+    /// <c>--version</c> smoke check, and the pointer write must succeed,
+    /// before the update is reported as staged; any failure leaves the active
+    /// install untouched.
     /// </summary>
     public async Task<AcpRuntimeOperationResult> RefreshAsync(
         CancellationToken cancellationToken = default)
@@ -260,6 +267,56 @@ public sealed class KimiCodeAcpRuntime : IAcpAgentRuntime
         try
         {
             StatusChanged?.Invoke(BuildStatusText("正在检查更新"));
+
+            // The registry pre-check runs from RuntimeRoot, which may not
+            // exist yet on a first run — a missing working directory fails
+            // process start outright.
+            Directory.CreateDirectory(paths.RuntimeRoot);
+            var view = await RunNpmAsync(
+                paths,
+                paths.RuntimeRoot,
+                $"npm view {KimiPackageName}@latest version",
+                new[] { "view", $"{KimiPackageName}@latest", "version", "--json" },
+                cancellationToken).ConfigureAwait(false);
+            if (view.Kind != AcpRuntimeOperationKind.Success)
+            {
+                StatusChanged?.Invoke(BuildStatusText("更新失败，当前版本可继续使用"));
+                return new AcpRuntimeOperationResult(view.Kind, view.Message, view.ExitCode);
+            }
+
+            var candidate = ParseNpmViewVersion(view.Stdout);
+            var currentVersion = ReadKimiVersion(ResolveActiveKimiRoot(paths));
+            if (!string.IsNullOrWhiteSpace(candidate)
+                && !string.IsNullOrWhiteSpace(currentVersion)
+                && string.Equals(candidate, currentVersion, StringComparison.OrdinalIgnoreCase))
+            {
+                ClearStaleNext(paths);
+                TryWriteActivePointer(paths, ActiveCurrentToken);
+                StatusChanged?.Invoke(BuildStatusText("已是最新版本"));
+                return new AcpRuntimeOperationResult(AcpRuntimeOperationKind.AlreadyReady,
+                    $"Kimi Code {currentVersion} 已是最新版本。");
+            }
+
+            // Unsafe comparisons must fail loudly: the coordinator maps
+            // AlreadyReady to "Up to date", which would disguise "cannot
+            // tell" as "already newest".
+            if (!Version.TryParse(candidate, out var parsedCandidate)
+                || !Version.TryParse(currentVersion, out var parsedCurrent))
+            {
+                Log($"Kimi version comparison is unsafe: registry='{candidate}', current='{currentVersion}'. Not updating.");
+                StatusChanged?.Invoke(BuildStatusText("更新失败，当前版本可继续使用"));
+                return new AcpRuntimeOperationResult(AcpRuntimeOperationKind.Failed,
+                    "无法安全比较 Registry 版本，未执行更新。");
+            }
+
+            if (parsedCandidate < parsedCurrent)
+            {
+                Log($"Registry Kimi {candidate} is older than current {currentVersion}; refusing to downgrade.");
+                StatusChanged?.Invoke(BuildStatusText("已是最新版本"));
+                return new AcpRuntimeOperationResult(AcpRuntimeOperationKind.AlreadyReady,
+                    $"Registry 版本（{candidate}）低于当前版本（{currentVersion}），未执行更新。");
+            }
+
             try
             {
                 if (Directory.Exists(paths.KimiNextDirectory))
@@ -275,17 +332,37 @@ public sealed class KimiCodeAcpRuntime : IAcpAgentRuntime
                     $"Failed to prepare kimi-next: {ex.Message}");
             }
 
-            var updateResult = await RunNpmInstallLatestAsync(paths, cancellationToken).ConfigureAwait(false);
-            if (updateResult.Kind != AcpRuntimeOperationKind.Success)
+            // Pin the exact version the pre-check saw so "latest" cannot
+            // drift between view and install. --engine-strict turns an
+            // engines.node mismatch into a hard error instead of npm's
+            // default warning, protecting the portable Node.
+            var installLabel = $"npm install {KimiPackageName}@{candidate}";
+            StatusChanged?.Invoke(BuildStatusText("正在更新 Kimi Code"));
+            var install = await RunNpmAsync(
+                paths,
+                paths.KimiNextDirectory,
+                installLabel,
+                new[]
+                {
+                    "install",
+                    $"{KimiPackageName}@{candidate}",
+                    "--save-exact",
+                    "--omit=dev",
+                    "--include=optional",
+                    "--engine-strict",
+                    "--no-audit",
+                    "--no-fund"
+                },
+                cancellationToken).ConfigureAwait(false);
+            if (install.Kind != AcpRuntimeOperationKind.Success)
             {
                 StatusChanged?.Invoke(BuildStatusText("更新失败，当前版本可继续使用"));
-                return updateResult;
+                return new AcpRuntimeOperationResult(install.Kind, install.Message, install.ExitCode);
             }
 
-            // Validate the staged install is structurally complete before
-            // flipping the pointer, mirroring the Claude adapter refresh.
-            var stagedError = ValidateKimiRoot(paths, paths.KimiNextDirectory, requireLockfile: false, out _);
-            if (stagedError != null)
+            // ① Structure: manifest, bin entry and entry file all in place.
+            var stagedError = ValidateKimiRoot(paths, paths.KimiNextDirectory, requireLockfile: false, out var stagedEntry);
+            if (stagedError != null || stagedEntry == null)
             {
                 Log($"Post-update validation failed: {stagedError}");
                 StatusChanged?.Invoke(BuildStatusText("更新失败，当前版本可继续使用"));
@@ -293,26 +370,41 @@ public sealed class KimiCodeAcpRuntime : IAcpAgentRuntime
                     $"Updated Kimi Code is incomplete; not switching to it. ({stagedError})");
             }
 
-            var currentVersion = ReadKimiVersion(ResolveActiveKimiRoot(paths));
-            var pendingVersion = ReadKimiVersion(paths.KimiNextDirectory);
-            if (!string.IsNullOrWhiteSpace(currentVersion)
-                && string.Equals(currentVersion, pendingVersion, StringComparison.OrdinalIgnoreCase))
+            // ② The staged install must be exactly the version we asked for.
+            var stagedVersion = ReadKimiVersion(paths.KimiNextDirectory);
+            if (!string.Equals(stagedVersion, candidate, StringComparison.OrdinalIgnoreCase))
             {
-                try { Directory.Delete(paths.KimiNextDirectory, recursive: true); }
-                catch (Exception ex) { Log($"WARN: could not clear unchanged kimi-next: {ex.Message}"); }
-                WriteActivePointer(paths, ActiveCurrentToken);
-                StatusChanged?.Invoke(BuildStatusText("已是最新版本"));
-                return updateResult;
+                Log($"Staged Kimi version '{stagedVersion}' does not match requested '{candidate}'.");
+                StatusChanged?.Invoke(BuildStatusText("更新失败，当前版本可继续使用"));
+                return new AcpRuntimeOperationResult(AcpRuntimeOperationKind.Failed,
+                    $"Staged Kimi Code version ({stagedVersion}) does not match the requested {candidate}; not switching to it.");
             }
 
-            WriteActivePointer(paths, ActiveNextToken);
-            Log("kimi-next updated and verified; active pointer flipped to 'next'. " +
+            // ③ The staged entry must actually start on the portable Node.
+            var smokeError = await RunStagedSmokeCheckAsync(paths, stagedEntry, cancellationToken).ConfigureAwait(false);
+            if (smokeError != null)
+            {
+                Log($"Staged Kimi smoke check failed: {smokeError}");
+                StatusChanged?.Invoke(BuildStatusText("更新失败，当前版本可继续使用"));
+                return new AcpRuntimeOperationResult(AcpRuntimeOperationKind.Failed,
+                    $"Staged Kimi Code failed its start check; not switching to it. ({smokeError})");
+            }
+
+            // ④ The pointer write is the activation step and must be
+            // observable: a swallowed failure here would report a staged
+            // update that never applies.
+            if (!TryWriteActivePointer(paths, ActiveNextToken))
+            {
+                StatusChanged?.Invoke(BuildStatusText("更新失败，当前版本可继续使用"));
+                return new AcpRuntimeOperationResult(AcpRuntimeOperationKind.Failed,
+                    "已下载更新，但无法写入激活指针，未切换版本。");
+            }
+
+            Log($"kimi-next staged at {candidate} and verified; active pointer flipped to 'next'. " +
                 "Next PSX launch will use the new version.");
-            StatusChanged?.Invoke(BuildStatusText(
-                string.IsNullOrWhiteSpace(pendingVersion)
-                    ? "已更新，下次启动生效"
-                    : $"已更新到 Kimi Code {pendingVersion}，下次启动生效"));
-            return updateResult;
+            StatusChanged?.Invoke(BuildStatusText($"已更新到 Kimi Code {candidate}，下次启动生效"));
+            return new AcpRuntimeOperationResult(AcpRuntimeOperationKind.Success,
+                $"{installLabel} completed successfully.");
         }
         finally
         {
@@ -428,11 +520,11 @@ public sealed class KimiCodeAcpRuntime : IAcpAgentRuntime
             {
                 try { Directory.Move(backup, paths.KimiCurrentDirectory); } catch { /* give up */ }
             }
-            WriteActivePointer(paths, ActiveCurrentToken);
+            TryWriteActivePointer(paths, ActiveCurrentToken);
             return;
         }
 
-        WriteActivePointer(paths, ActiveCurrentToken);
+        TryWriteActivePointer(paths, ActiveCurrentToken);
         Log("Kimi promote: kimi-next is now kimi-current.");
         StatusChanged?.Invoke(BuildStatusText());
     }
@@ -468,7 +560,7 @@ public sealed class KimiCodeAcpRuntime : IAcpAgentRuntime
                 Log($"WARN: could not drop {directory}: {ex.Message}");
             }
         }
-        WriteActivePointer(paths, ActiveCurrentToken);
+        TryWriteActivePointer(paths, ActiveCurrentToken);
     }
 
     /// <summary>
@@ -490,8 +582,8 @@ public sealed class KimiCodeAcpRuntime : IAcpAgentRuntime
     private void SeedNextDirectory(RuntimePaths paths)
     {
         // The bundled install doubles as the refresh seed. Copy package.json
-        // and .npmrc only — omitting the pinned lockfile lets
-        // `npm install ...@latest` resolve the newest registry version.
+        // and .npmrc only — omitting the pinned lockfile lets npm resolve the
+        // pinned candidate version freshly.
         foreach (var name in new[] { "package.json", ".npmrc" })
         {
             var source = Path.Combine(paths.BundledKimiDirectory, name);
@@ -503,14 +595,58 @@ public sealed class KimiCodeAcpRuntime : IAcpAgentRuntime
         }
     }
 
-    private async Task<AcpRuntimeOperationResult> RunNpmInstallLatestAsync(
+    private void ClearStaleNext(RuntimePaths paths)
+    {
+        try
+        {
+            if (Directory.Exists(paths.KimiNextDirectory))
+                Directory.Delete(paths.KimiNextDirectory, recursive: true);
+        }
+        catch (Exception ex)
+        {
+            Log($"WARN: could not clear stale kimi-next: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// npm's <c>view … version --json</c> prints the version as a JSON
+    /// string (<c>"0.30.0"</c>). Tolerates a bare unquoted version too.
+    /// </summary>
+    private static string? ParseNpmViewVersion(string stdout)
+    {
+        var trimmed = stdout.Trim();
+        if (trimmed.Length == 0)
+            return null;
+        try
+        {
+            using var document = JsonDocument.Parse(trimmed);
+            return document.RootElement.ValueKind == JsonValueKind.String
+                ? document.RootElement.GetString()
+                : null;
+        }
+        catch
+        {
+            return trimmed.Contains('"') || trimmed.Contains('{') ? null : trimmed;
+        }
+    }
+
+    private sealed record NpmRunOutcome(
+        AcpRuntimeOperationKind Kind,
+        string Message,
+        int? ExitCode,
+        string Stdout);
+
+    private async Task<NpmRunOutcome> RunNpmAsync(
         RuntimePaths paths,
+        string workingDirectory,
+        string label,
+        string[] arguments,
         CancellationToken cancellationToken)
     {
         var startInfo = new ProcessStartInfo
         {
             FileName = paths.PortableNodePath,
-            WorkingDirectory = paths.KimiNextDirectory,
+            WorkingDirectory = workingDirectory,
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -519,19 +655,13 @@ public sealed class KimiCodeAcpRuntime : IAcpAgentRuntime
             StandardErrorEncoding = Encoding.UTF8,
         };
 
-        // Same flags as the build-time staging install: --include=optional
-        // pulls in the win32-x64 prebuilt native components; the seeded
-        // .npmrc constrains os/cpu so nothing else is installed.
+        // Same flag policy as the build-time staging install: the seeded
+        // .npmrc constrains os/cpu so nothing besides win32-x64 is pulled in.
         startInfo.ArgumentList.Add(paths.PortableNpmCliPath!);
-        startInfo.ArgumentList.Add("install");
-        startInfo.ArgumentList.Add($"{KimiPackageName}@latest");
-        startInfo.ArgumentList.Add("--include=optional");
-        startInfo.ArgumentList.Add("--no-audit");
-        startInfo.ArgumentList.Add("--no-fund");
+        foreach (var argument in arguments)
+            startInfo.ArgumentList.Add(argument);
 
-        var label = $"npm install {KimiPackageName}@latest";
-        Log($"Starting: {label} in {paths.KimiNextDirectory}");
-        StatusChanged?.Invoke(BuildStatusText("正在更新 Kimi Code"));
+        Log($"Starting: {label} in {workingDirectory}");
 
         Process? process;
         try
@@ -541,14 +671,14 @@ public sealed class KimiCodeAcpRuntime : IAcpAgentRuntime
         catch (Exception ex)
         {
             Log($"Failed to start {label}: {ex}");
-            return new AcpRuntimeOperationResult(AcpRuntimeOperationKind.Failed,
-                $"Failed to start {label}: {ex.Message}");
+            return new NpmRunOutcome(AcpRuntimeOperationKind.Failed,
+                $"Failed to start {label}: {ex.Message}", null, "");
         }
 
         if (process == null)
         {
-            return new AcpRuntimeOperationResult(AcpRuntimeOperationKind.Failed,
-                $"{label} did not start.");
+            return new NpmRunOutcome(AcpRuntimeOperationKind.Failed,
+                $"{label} did not start.", null, "");
         }
         using var processLifetime = process;
 
@@ -566,15 +696,15 @@ public sealed class KimiCodeAcpRuntime : IAcpAgentRuntime
         {
             TryKill(process);
             Log($"{label} timed out after {_processTimeout.TotalMinutes:0.##} minutes.");
-            return new AcpRuntimeOperationResult(AcpRuntimeOperationKind.Failed,
-                $"{label} timed out.");
+            return new NpmRunOutcome(AcpRuntimeOperationKind.Failed,
+                $"{label} timed out.", null, "");
         }
         catch (OperationCanceledException)
         {
             TryKill(process);
             Log($"{label} was cancelled.");
-            return new AcpRuntimeOperationResult(AcpRuntimeOperationKind.Cancelled,
-                $"{label} was cancelled.");
+            return new NpmRunOutcome(AcpRuntimeOperationKind.Cancelled,
+                $"{label} was cancelled.", null, "");
         }
 
         var stdout = await stdoutTask.ConfigureAwait(false);
@@ -592,12 +722,78 @@ public sealed class KimiCodeAcpRuntime : IAcpAgentRuntime
             var kind = LooksLikeNetworkError(stderr)
                 ? AcpRuntimeOperationKind.NetworkUnavailable
                 : AcpRuntimeOperationKind.Failed;
-            return new AcpRuntimeOperationResult(kind,
-                $"{label} failed with exit code {exitCode}.", exitCode);
+            return new NpmRunOutcome(kind,
+                $"{label} failed with exit code {exitCode}.", exitCode, stdout);
         }
 
-        return new AcpRuntimeOperationResult(AcpRuntimeOperationKind.Success,
-            $"{label} completed successfully.");
+        return new NpmRunOutcome(AcpRuntimeOperationKind.Success,
+            $"{label} completed successfully.", exitCode, stdout);
+    }
+
+    /// <summary>
+    /// Runs the staged entry once with <c>--version</c> on the portable Node.
+    /// Returns null when it exits 0 within <see cref="SmokeCheckTimeout"/>,
+    /// otherwise a human-readable failure reason. Guards against a package
+    /// whose files installed fine but whose entry cannot start at all (for
+    /// example an engines mismatch that slipped past npm).
+    /// </summary>
+    private async Task<string?> RunStagedSmokeCheckAsync(
+        RuntimePaths paths,
+        string entryPath,
+        CancellationToken cancellationToken)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = paths.PortableNodePath,
+            WorkingDirectory = Path.GetDirectoryName(entryPath)!,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
+        };
+        startInfo.ArgumentList.Add(entryPath);
+        startInfo.ArgumentList.Add("--version");
+
+        Process? process;
+        try
+        {
+            process = Process.Start(startInfo);
+        }
+        catch (Exception ex)
+        {
+            return $"failed to start the staged entry: {ex.Message}";
+        }
+        if (process == null)
+            return "the staged entry process did not start";
+        using var processLifetime = process;
+
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(SmokeCheckTimeout);
+        try
+        {
+            await process.WaitForExitAsync(timeoutCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            TryKill(process);
+            return $"--version did not finish within {SmokeCheckTimeout.TotalSeconds:0} seconds";
+        }
+
+        var stdout = (await stdoutTask.ConfigureAwait(false)).Trim();
+        var stderr = (await stderrTask.ConfigureAwait(false)).Trim();
+        if (process.ExitCode != 0)
+        {
+            Log($"Staged smoke check stderr:\n{stderr}");
+            return $"--version exited with code {process.ExitCode}";
+        }
+
+        Log($"Staged smoke check passed: --version -> {stdout}");
+        return null;
     }
 
     private static void TryKill(Process process)
@@ -633,7 +829,13 @@ public sealed class KimiCodeAcpRuntime : IAcpAgentRuntime
         }
     }
 
-    private void WriteActivePointer(RuntimePaths paths, string token)
+    /// <summary>
+    /// Writes the active pointer atomically. Best-effort callers (startup
+    /// promote, bundled fallback) may ignore the result, but the refresh
+    /// activation step must observe a failure instead of reporting a staged
+    /// update that never applies.
+    /// </summary>
+    private bool TryWriteActivePointer(RuntimePaths paths, string token)
     {
         try
         {
@@ -641,10 +843,12 @@ public sealed class KimiCodeAcpRuntime : IAcpAgentRuntime
             var tmp = paths.KimiActivePointerFile + ".tmp";
             File.WriteAllText(tmp, token);
             File.Move(tmp, paths.KimiActivePointerFile, overwrite: true);
+            return true;
         }
         catch (Exception ex)
         {
             Log($"Failed to write Kimi active pointer '{token}': {ex}");
+            return false;
         }
     }
 
