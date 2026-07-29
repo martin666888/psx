@@ -52,7 +52,9 @@
 }
 
 /* The resizer straddles the dock's right border into the panel gap; it must
- * never be clipped by the rounded corners (the dock keeps overflow visible). */
+ * never be clipped by the rounded corners (the dock keeps overflow visible).
+ * It draws no affordance line of its own — the dock's border already marks
+ * the edge and the col-resize cursor signals draggability. */
 .agent-history-dock-resizer {
     position: absolute;
     top: 0;
@@ -60,24 +62,6 @@
     right: -4px;
     width: 7px;
     cursor: col-resize;
-}
-
-.agent-history-dock-resizer::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 3px;
-    width: 1px;
-    /* The dock's own border already draws the edge; the affordance line only
-     * appears on hover/drag so the panel edge stays a single hairline. */
-    background: transparent;
-}
-
-.agent-history-dock-resizer:hover::before,
-.agent-history-dock-resizer:focus-visible::before,
-.agent-history-dock-resizing .agent-history-dock-resizer::before {
-    background: var(--agent-border-strong);
 }
 
 .agent-history-dock-resizer:focus-visible {
