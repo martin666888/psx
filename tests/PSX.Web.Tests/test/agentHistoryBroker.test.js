@@ -93,11 +93,14 @@ test('history store: agent_threads normalization falls back to unknown when prov
 test('history store: agent_providers payload folds into the global provider catalog', () => {
   const { store } = makeRig();
   store.applyProviders(normalizeProviderCatalog([
-    { key: 'claude-code', displayName: 'Claude Code', assistantName: 'Claude', isDefault: true },
+    { key: 'claude-code', displayName: 'Claude Code', assistantName: 'Claude', isDefault: true, iconKey: 'claude' },
+    { key: 'kimi-code', displayName: 'Kimi Code', assistantName: 'Kimi', isDefault: false, iconKey: '  ' },
     { displayName: 'keyless entry is dropped' }
   ]));
   assert.deepEqual(store.getState().providers, [
-    { key: 'claude-code', displayName: 'Claude Code', assistantName: 'Claude', isDefault: true }
+    { key: 'claude-code', displayName: 'Claude Code', assistantName: 'Claude', isDefault: true, iconKey: 'claude' },
+    // Blank/missing icon keys normalize to the generic 'agent' mark.
+    { key: 'kimi-code', displayName: 'Kimi Code', assistantName: 'Kimi', isDefault: false, iconKey: 'agent' }
   ]);
 });
 

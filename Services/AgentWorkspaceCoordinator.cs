@@ -118,7 +118,8 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
             provider.Descriptor.Key,
             provider.Descriptor.DisplayName,
             provider.Descriptor.AssistantName,
-            ReferenceEquals(provider, _providerRegistry.DefaultProvider))).ToArray();
+            ReferenceEquals(provider, _providerRegistry.DefaultProvider),
+            provider.Descriptor.IconKey)).ToArray();
 
     public event EventHandler<AgentWorkspaceEventArgs>? WorkspaceCreated;
     public event EventHandler<AgentWorkspaceEventArgs>? WorkspaceChanged;
@@ -386,7 +387,8 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
                 key = provider.Key,
                 displayName = provider.DisplayName,
                 assistantName = provider.AssistantName,
-                isDefault = provider.IsDefault
+                isDefault = provider.IsDefault,
+                iconKey = provider.IconKey
             }).ToArray()
         });
     }

@@ -18,6 +18,7 @@ import {
 } from './historyModel.js';
 import { Badge } from '../components/ui/badge.js';
 import { Button } from '../components/ui/button.js';
+import { ProviderIcon } from '../components/ProviderIcon.js';
 import { FolderIcon, FolderOpenIcon } from 'lucide-react';
 
 interface HistoryThreadView {
@@ -25,6 +26,7 @@ interface HistoryThreadView {
   title: string;
   updatedAt: string;
   providerDisplay: string;
+  providerIcon: string;
 }
 
 interface HistoryGroupView {
@@ -84,7 +86,7 @@ function ThreadRow(
     <button
       type="button"
       className={
-        'agent-history-item grid w-full gap-0.5 rounded-md p-2 text-left transition-colors hover:bg-accent' +
+        'agent-history-item flex w-full items-start gap-2 rounded-md p-2 text-left transition-colors hover:bg-accent' +
         (isActive ? ' bg-muted' : '')
       }
       data-thread-id={thread.threadId || ''}
@@ -95,7 +97,15 @@ function ThreadRow(
         if (thread.threadId) onOpenThread(thread.threadId);
       }}
     >
-      <span className="agent-history-heading flex min-w-0 items-baseline gap-2">
+      {/* Fixed 20px decorative icon slot: titles never shift when the brand
+        * mark changes, and the provider name stays text-only for a11y. */}
+      <span
+        className="agent-history-provider-icon mt-px inline-flex size-5 shrink-0 items-center justify-center text-muted-foreground [&>svg]:size-4"
+        aria-hidden="true"
+      >
+        <ProviderIcon iconKey={thread.providerIcon} />
+      </span>
+      <span className="agent-history-heading flex min-w-0 flex-1 items-baseline gap-2">
         <strong className="min-w-0 flex-1 truncate font-medium text-[13px]">{titleText}</strong>
         {isActive && (
           <Badge className="agent-history-current shrink-0 rounded-full text-[10px]" variant="secondary">

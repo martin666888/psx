@@ -19,6 +19,7 @@ export const HISTORY_DOCK_DEFAULT_WIDTH = 280;
 
 export interface HistoryThreadView extends AgentHistoryThread {
   providerDisplay: string;
+  providerIcon: string;
 }
 
 export interface HistoryGroupView {
@@ -60,6 +61,14 @@ export function providerDisplayName(providers: readonly AgentProviderCatalogItem
   return match && match.displayName ? match.displayName : key;
 }
 
+/** Provider key → brand icon key via the catalog. Unknown providers,
+ * read-only transcripts and catalog entries without an icon all fall back to
+ * the generic 'agent' mark — never a provider-name string check. */
+export function providerIconKey(providers: readonly AgentProviderCatalogItem[], key: string): string {
+  const match = providers.find((provider) => provider.key === key);
+  return match && match.iconKey ? match.iconKey : 'agent';
+}
+
 /** Groups threads by normalized cwd. Groups sort by latest activity desc,
  * threads inside a group sort by updatedAt desc (the C# "u" timestamp format
  * is lexicographically sortable), and the group's display path comes from its
@@ -86,7 +95,8 @@ export function buildHistoryGroups(
       path: displayPath,
       threads: sorted.map((thread) => ({
         ...thread,
-        providerDisplay: providerDisplayName(providers, thread.providerKey)
+        providerDisplay: providerDisplayName(providers, thread.providerKey),
+        providerIcon: providerIconKey(providers, thread.providerKey)
       }))
     });
   }

@@ -16,13 +16,15 @@ export interface AgentHistoryThread {
   providerKey: string;
 }
 
-/** One entry of the global agent_providers catalog (display mapping is a
- * later step; this step only stores the raw fields). */
+/** One entry of the global agent_providers catalog. iconKey selects the
+ * brand mark rendered in History rows; unknown or missing keys fall back to
+ * the generic 'agent' icon (never a provider-name string check). */
 export interface AgentProviderCatalogItem {
   key: string;
   displayName: string;
   assistantName: string;
   isDefault: boolean;
+  iconKey: string;
 }
 
 /** A failed load_thread action. This is independent from the catalog request

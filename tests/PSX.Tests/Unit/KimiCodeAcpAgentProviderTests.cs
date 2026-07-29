@@ -127,6 +127,10 @@ public sealed class KimiCodeAcpAgentProviderTests
         Assert.AreEqual("Kimi Code", kimiItem!.DisplayName);
         Assert.IsFalse(kimiItem.IsDefault);
         Assert.IsTrue(catalog.Single(item => item.Key == "acp-claude").IsDefault);
+        // The catalog carries each provider's brand icon key; providers that
+        // never set one fall back to the generic "agent" mark.
+        Assert.AreEqual("kimi", kimiItem.IconKey);
+        Assert.AreEqual("agent", catalog.Single(item => item.Key == "acp-claude").IconKey);
 
         await coordinator.ShutdownAsync();
     }

@@ -41,7 +41,8 @@ public sealed record AgentProviderCatalogItem(
     string Key,
     string DisplayName,
     string AssistantName,
-    bool IsDefault);
+    bool IsDefault,
+    string IconKey = "agent");
 
 public sealed class AgentProviderOptions
 {

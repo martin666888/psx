@@ -348,7 +348,7 @@ public sealed class AgentWorkspaceCoordinatorTests
         var bridge = new RecordingAgentBridgeService();
         var runtime = new CountingRuntime(workspace.Path);
         var first = new TestProvider("first", "First Agent", runtime, []);
-        var second = new TestProvider("second", "Second Agent", runtime, []);
+        var second = new TestProvider("second", "Second Agent", runtime, [], iconKey: "kimi");
         var registry = new AgentProviderRegistry(
             [first, second],
             new AgentProviderOptions { DefaultProviderKey = "second" });
@@ -373,6 +373,11 @@ public sealed class AgentWorkspaceCoordinatorTests
         Assert.IsFalse(providers[0].GetProperty("isDefault").GetBoolean());
         Assert.AreEqual("second", providers[1].GetProperty("key").GetString());
         Assert.IsTrue(providers[1].GetProperty("isDefault").GetBoolean());
+        // Brand icons ride the catalog: descriptor IconKey when set, the
+        // generic "agent" fallback otherwise. The frontend never branches on
+        // provider names.
+        Assert.AreEqual("agent", providers[0].GetProperty("iconKey").GetString());
+        Assert.AreEqual("kimi", providers[1].GetProperty("iconKey").GetString());
     }
 
     [TestMethod]

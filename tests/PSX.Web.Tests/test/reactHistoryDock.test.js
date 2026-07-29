@@ -115,6 +115,48 @@ test('clicking a row emits the exact load_thread bridge command', async () => {
   });
 });
 
+test('rows carry catalog-driven provider brand icons with the agent fallback', async () => {
+  const { app, content, posted } = await fixture();
+  await settle(
+    () => {
+      app.handle({
+        type: 'agent_providers',
+        providers: [
+          { key: 'claude-code', displayName: 'Claude Code', assistantName: 'Claude', isDefault: true, iconKey: 'claude' },
+          { key: 'kimi-code', displayName: 'Kimi Code', assistantName: 'Kimi', isDefault: false, iconKey: 'kimi' }
+        ]
+      });
+      app.handle({
+        type: 'agent_threads',
+        workspaceId: WS,
+        threads: [
+          thread({ threadId: 'c1', provider: 'claude-code', updatedAt: '2026-07-20 10:00:00Z' }),
+          thread({ threadId: 'k1', provider: 'kimi-code', updatedAt: '2026-07-19 10:00:00Z' }),
+          thread({ threadId: 'u1', provider: 'legacy-provider', updatedAt: '2026-07-18 10:00:00Z' })
+        ]
+      });
+    },
+    () => !!content().querySelector('[data-thread-id="u1"]')
+  );
+
+  const iconFor = (threadId) =>
+    content().querySelector(`[data-thread-id="${threadId}"] .agent-history-provider-icon svg`);
+  assert.equal(iconFor('c1').dataset.icon, 'claude', 'Claude thread renders the Claude mark');
+  assert.equal(iconFor('k1').dataset.icon, 'kimi', 'Kimi thread renders the Kimi mark');
+  assert.equal(iconFor('u1').dataset.icon, 'agent', 'unknown provider falls back to the generic mark');
+  // Decorative slot: fixed size, hidden from the accessibility tree (the row
+  // label already names the provider).
+  for (const threadId of ['c1', 'k1', 'u1']) {
+    const slot = content().querySelector(`[data-thread-id="${threadId}"] .agent-history-provider-icon`);
+    assert.equal(slot.getAttribute('aria-hidden'), 'true');
+    assert.ok(slot.classList.contains('shrink-0'), 'icon slot must not collapse under long titles');
+  }
+  // The icon column must not break row activation.
+  await act(async () => content().querySelector('[data-thread-id="k1"]').click());
+  assert.equal(posted.at(-1).command, 'load_thread');
+  assert.equal(posted.at(-1).value, 'k1');
+});
+
 test('show-more, folding and search update the React list', async () => {
   const many = Array.from({ length: 7 }, (_, i) =>
     thread({ threadId: 'm' + i, title: 'Task ' + i, updatedAt: `2026-07-${19 - i} 10:00:00Z` })

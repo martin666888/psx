@@ -55,7 +55,10 @@ export function normalizeProviderCatalog(value: unknown): AgentProviderCatalogIt
       key: nonEmptyTrimmed(item.key) ?? '',
       displayName: asString(item.displayName),
       assistantName: asString(item.assistantName),
-      isDefault: item.isDefault === true
+      isDefault: item.isDefault === true,
+      // Missing or blank icon keys normalize to the generic 'agent' mark so
+      // rows always have a stable icon slot.
+      iconKey: nonEmptyTrimmed(item.iconKey) ?? 'agent'
     }));
 }
 
