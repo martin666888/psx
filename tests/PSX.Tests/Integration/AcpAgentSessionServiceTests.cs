@@ -66,6 +66,42 @@ public sealed class AcpAgentSessionServiceTests
     }
 
     [TestMethod]
+    public async Task RuntimeUpdateFailure_SnapshotReachesWorkspacesCreatedLater()
+    {
+        using var fixture = new FakeAcpSessionFixture(nameof(RuntimeUpdateFailure_SnapshotReachesWorkspacesCreatedLater));
+        fixture.Runtime.RefreshResultKind = AcpRuntimeOperationKind.Failed;
+
+        fixture.Bridge.RaiseCommand("check_runtime_update");
+        await fixture.Bridge.WaitForEventAsync(
+            "runtime_update_status",
+            message => message.GetProperty("state").GetString() == "failed");
+
+        // A workspace created after the failed run must read the coordinator
+        // snapshot (state and message) instead of defaulting back to idle.
+        var lateBridge = new RecordingAgentBridgeService();
+        var lateThread = fixture.Store.CreateThread(fixture.Workspace.Path);
+        lateThread.Provider = fixture.Provider.Descriptor.Key;
+        fixture.Store.SaveThread(lateThread);
+        using var lateService = new AcpAgentSessionService(
+            Guid.NewGuid(),
+            lateBridge,
+            new NullTabManagementService(),
+            new NullTerminalBridgeService(),
+            fixture.Store,
+            new NullAgentDirectoryPicker(),
+            fixture.Registry,
+            fixture.Provider,
+            lateThread,
+            fixture.RuntimeCoordinator);
+
+        lateBridge.RaiseCommand("state");
+        var snapshot = await lateBridge.WaitForEventAsync(
+            "runtime_update_status",
+            message => message.GetProperty("state").GetString() == "failed");
+        Assert.AreEqual("Fake ACP refresh finished.", snapshot.GetProperty("message").GetString());
+    }
+
+    [TestMethod]
     public async Task CheckRuntimeUpdate_StagedUpdate_PublishesRestartRequired()
     {
         using var fixture = new FakeAcpSessionFixture(nameof(CheckRuntimeUpdate_StagedUpdate_PublishesRestartRequired));

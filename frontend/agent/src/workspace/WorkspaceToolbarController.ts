@@ -136,6 +136,7 @@ export class WorkspaceToolbarController implements FeatureController {
       },
       update: {
         state: this.runtimeUpdate.state,
+        message: this.runtimeUpdate.message,
         currentVersion: this.runtimeUpdate.currentVersion,
         pendingVersion: this.runtimeUpdate.pendingVersion,
         onRequest: () =>

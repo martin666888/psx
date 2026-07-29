@@ -40,9 +40,9 @@ public sealed class AgentProviderRegistryTests
     }
 
     [TestMethod]
-    public async Task RuntimeCoordinator_SharedRuntime_PreparesAndRefreshesOnce()
+    public async Task RuntimeCoordinator_Startup_PreparesWithoutTouchingNpm()
     {
-        using var workspace = TestWorkspace.Create(nameof(RuntimeCoordinator_SharedRuntime_PreparesAndRefreshesOnce));
+        using var workspace = TestWorkspace.Create(nameof(RuntimeCoordinator_Startup_PreparesWithoutTouchingNpm));
         var runtime = new CountingRuntime(workspace.Path);
         var first = new TestProvider("first", "First", runtime, []);
         var second = new TestProvider("second", "Second", runtime, []);
@@ -52,10 +52,55 @@ public sealed class AgentProviderRegistryTests
         using var coordinator = new AgentRuntimeCoordinator(registry);
 
         await coordinator.PrepareForStartupAsync();
-        await coordinator.RefreshReadyAsync();
 
+        // Startup promotes staged directories locally and nothing else:
+        // updates are strictly user-triggered, so npm is never reached here.
         Assert.AreEqual(1, runtime.PrepareCount);
-        Assert.AreEqual(1, runtime.RefreshCount);
+        Assert.AreEqual(0, runtime.RefreshCount);
+    }
+
+    [TestMethod]
+    public async Task RuntimeCoordinator_PendingUpdateStaged_ShortCircuitsWithoutRefreshing()
+    {
+        using var workspace = TestWorkspace.Create(nameof(RuntimeCoordinator_PendingUpdateStaged_ShortCircuitsWithoutRefreshing));
+        var runtime = new CountingRuntime(workspace.Path) { HasPendingUpdate = true };
+        var registry = new AgentProviderRegistry(
+            [new TestProvider("first", "First", runtime, [])],
+            new AgentProviderOptions { DefaultProviderKey = "first" });
+        using var coordinator = new AgentRuntimeCoordinator(registry);
+        var states = new List<string>();
+        coordinator.UpdateStatusChanged += (_, args) => states.Add(args.State);
+
+        var result = await coordinator.RequestUpdateAsync(runtime);
+
+        Assert.AreEqual(AcpRuntimeOperationKind.AlreadyReady, result.Kind);
+        Assert.AreEqual(0, runtime.RefreshCount, "a staged update must never trigger another npm run");
+        CollectionAssert.AreEqual(new[] { "staged_restart_required" }, states);
+        Assert.AreEqual("staged_restart_required", coordinator.GetUpdateSnapshot(runtime)?.State);
+    }
+
+    [TestMethod]
+    public async Task RuntimeCoordinator_KeepsOutcomeSnapshotForLateWorkspaces()
+    {
+        using var workspace = TestWorkspace.Create(nameof(RuntimeCoordinator_KeepsOutcomeSnapshotForLateWorkspaces));
+        var runtime = new CountingRuntime(workspace.Path)
+        {
+            RefreshResult = new AcpRuntimeOperationResult(AcpRuntimeOperationKind.Failed, "npm exploded")
+        };
+        var registry = new AgentProviderRegistry(
+            [new TestProvider("first", "First", runtime, [])],
+            new AgentProviderOptions { DefaultProviderKey = "first" });
+        using var coordinator = new AgentRuntimeCoordinator(registry);
+
+        Assert.IsNull(coordinator.GetUpdateSnapshot(runtime));
+        await coordinator.RequestUpdateAsync(runtime);
+
+        // A workspace created after the run reads the process-wide outcome
+        // instead of defaulting back to idle.
+        var snapshot = coordinator.GetUpdateSnapshot(runtime);
+        Assert.AreEqual("failed", snapshot?.State);
+        Assert.AreEqual("npm exploded", snapshot?.Message);
+        Assert.IsFalse(coordinator.IsUpdateInFlight(runtime), "the in-flight entry must be released on failure");
     }
 
     [TestMethod]
@@ -539,18 +584,21 @@ internal sealed class CountingRuntime(string root) : IAcpAgentRuntime
     public int PrepareCount { get; private set; }
     public int RefreshCount { get; private set; }
     public int ProcessSpecCount { get; private set; }
+    public bool HasPendingUpdate { get; set; }
+    public AcpRuntimeOperationResult RefreshResult { get; set; } =
+        new(AcpRuntimeOperationKind.AlreadyReady, "Ready");
     public string LogPath => Path.Combine(root, "runtime.log");
     public bool SupportsSelfUpdate => true;
     public bool IsReady() => true;
     public string BuildStatusText(string? suffix = null) => suffix ?? "Ready";
     public RuntimeVersionSnapshot GetVersionSnapshot() =>
-        new(CurrentVersion: "1.0.0", PendingVersion: null, HasPendingUpdate: false);
+        new(CurrentVersion: "1.0.0", PendingVersion: HasPendingUpdate ? "1.1.0" : null, HasPendingUpdate: HasPendingUpdate);
     public Task<AcpRuntimeOperationResult> EnsureInstalledAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult(new AcpRuntimeOperationResult(AcpRuntimeOperationKind.AlreadyReady, "Ready"));
     public Task<AcpRuntimeOperationResult> RefreshAsync(CancellationToken cancellationToken = default)
     {
         RefreshCount++;
-        return Task.FromResult(new AcpRuntimeOperationResult(AcpRuntimeOperationKind.AlreadyReady, "Ready"));
+        return Task.FromResult(RefreshResult);
     }
     public Task PrepareForStartupAsync(CancellationToken cancellationToken = default)
     {

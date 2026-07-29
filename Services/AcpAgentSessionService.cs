@@ -1027,24 +1027,27 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     /// <summary>
     /// Startup/state snapshot for the toolbar Update button: unsupported for
-    /// bundled runtimes, install-required before the runtime exists, staged
-    /// when a previous refresh is waiting for a restart, idle otherwise.
+    /// bundled runtimes, install-required before the runtime exists, then the
+    /// live lifecycle (checking / staged), then the coordinator's process-wide
+    /// outcome snapshot so a workspace created or re-activated after an update
+    /// finished still shows failed / up_to_date, idle otherwise.
     /// </summary>
     private Task PublishRuntimeUpdateSnapshotAsync()
     {
-        string state;
         if (!_runtime.SupportsSelfUpdate)
-            state = "unsupported";
-        else if (!IsAgentRuntimeReady())
-            state = "install_required";
-        else
-        {
-            state = _runtimeCoordinator.IsUpdateInFlight(_runtime)
-                ? "checking"
-                : _runtime.GetVersionSnapshot().HasPendingUpdate ? "staged_restart_required" : "idle";
-        }
+            return PublishRuntimeUpdateStatusAsync("unsupported");
+        if (!IsAgentRuntimeReady())
+            return PublishRuntimeUpdateStatusAsync("install_required");
+        if (_runtimeCoordinator.IsUpdateInFlight(_runtime))
+            return PublishRuntimeUpdateStatusAsync("checking");
+        if (_runtime.GetVersionSnapshot().HasPendingUpdate)
+            return PublishRuntimeUpdateStatusAsync("staged_restart_required");
 
-        return PublishRuntimeUpdateStatusAsync(state);
+        var snapshot = _runtimeCoordinator.GetUpdateSnapshot(_runtime);
+        if (snapshot is { State: "failed" or "up_to_date" })
+            return PublishRuntimeUpdateStatusAsync(snapshot.State, snapshot.Message);
+
+        return PublishRuntimeUpdateStatusAsync("idle");
     }
 
     private Task PublishRuntimeUpdateStatusAsync(string state, string? message = null)

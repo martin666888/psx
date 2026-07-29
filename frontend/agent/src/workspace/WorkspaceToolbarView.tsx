@@ -33,6 +33,8 @@ export interface WorkspaceToolbarProps {
     // idle | checking | up_to_date | staged_restart_required | unsupported
     // | install_required | unavailable | failed
     state: string;
+    // Backend outcome detail; shown as the tooltip for failed checks.
+    message: string;
     currentVersion: string;
     pendingVersion: string;
     onRequest(): void;
@@ -66,6 +68,11 @@ function updateButtonTitle(update: WorkspaceToolbarProps['update']): string {
   if (update.state === 'unsupported') return 'Updates ship with PSX releases';
   if (update.state === 'install_required') return 'Install the Agent runtime first';
   if (update.state === 'unavailable') return 'Updates are not available for this workspace';
+  if (update.state === 'failed') {
+    return update.message
+      ? 'Update check failed: ' + update.message
+      : 'Update check failed; click to retry';
+  }
   if (update.state === 'staged_restart_required') {
     return update.pendingVersion
       ? 'Update to ' + update.pendingVersion + ' is ready; restart PSX to apply'

@@ -106,6 +106,13 @@ test('shell: the toolbar Update button follows runtime_update_status states', as
   assert.equal(update().disabled, true);
   assert.equal(update().title, 'Updates are not available for this workspace');
 
+  app.handle({ type: 'runtime_update_status', workspaceId: WS, state: 'failed', message: 'npm exit code 1: network unreachable', currentVersion: '1.2.3', pendingVersion: '' });
+  await until(() => update().dataset.updateState === 'failed', 'failed state renders');
+  assert.equal(update().textContent, 'Retry update');
+  assert.equal(update().disabled, false);
+  // The backend failure reason surfaces as the tooltip so the user sees why.
+  assert.match(update().title, /network unreachable/);
+
   app.handle({ type: 'runtime_update_status', workspaceId: WS, state: 'up_to_date', message: '', currentVersion: '1.2.3', pendingVersion: '' });
   await until(() => update().dataset.updateState === 'up_to_date', 'up_to_date state renders');
   assert.equal(update().textContent, 'Up to date');

@@ -120,19 +120,10 @@ public partial class MainWindow : Window
 
         try
         {
+            // Startup only promotes locally staged updates into place. It must
+            // never touch npm or the network: runtime updates are strictly
+            // user-triggered from the Agent toolbar.
             await _agentRuntimeCoordinator.PrepareForStartupAsync().ConfigureAwait(false);
-
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await _agentRuntimeCoordinator.RefreshReadyAsync().ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine("ACP runtime background refresh failed: " + ex);
-                }
-            });
         }
         catch (Exception ex)
         {
