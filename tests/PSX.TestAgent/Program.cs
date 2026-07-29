@@ -31,15 +31,27 @@ internal sealed class FakeAcpAgent
     // path must fall back to force-resetting the transport after its grace.
     private readonly bool _ignoreCancel;
 
+    // "resume" advertises sessionCapabilities.resume and serves session/resume
+    // (session/load then fails loudly so tests prove which path ran).
+    // "resume:notfound" advertises the capability but answers session/resume
+    // with -32601 so the client must fall back to session/load exactly once.
+    private readonly bool _advertiseResume;
+    private readonly bool _resumeMethodMissing;
+
     public FakeAcpAgent()
     {
         var scenario = Environment.GetEnvironmentVariable("PSX_TEST_AGENT_SCENARIO") ?? "default";
         _ignoreCancel = string.Equals(scenario, "ignorecancel", StringComparison.OrdinalIgnoreCase);
+        _advertiseResume = scenario is "resume" or "resume:notfound";
+        _resumeMethodMissing = scenario == "resume:notfound";
         var parts = scenario.Split(':');
         if (parts.Length == 3 && parts[0] == "auth")
         {
             _authGate = parts[1];
             _authMode = parts[2];
+            // Gating session/resume only makes sense when it is advertised.
+            if (_authGate == "resume")
+                _advertiseResume = true;
         }
         else
         {
@@ -139,7 +151,14 @@ internal sealed class FakeAcpAgent
                 {
                     protocolVersion = 1,
                     agentInfo = new { name = "PSX Fake ACP Agent", version = "1.0-test" },
-                    agentCapabilities = new { promptCapabilities = new { image = true } },
+                    agentCapabilities = _advertiseResume
+                        ? (object)new
+                        {
+                            promptCapabilities = new { image = true },
+                            // Spec shape: capability presence with an empty object.
+                            sessionCapabilities = new { resume = new { } }
+                        }
+                        : new { promptCapabilities = new { image = true } },
                     authMethods = _authGate.Length > 0
                         ? new object[] { new { id = "login", name = "Log in", description = "Terminal auth" } }
                         : Array.Empty<object>()
@@ -168,8 +187,36 @@ internal sealed class FakeAcpAgent
                     WriteError(id, -32000, "Authentication required");
                     break;
                 }
+                if (_advertiseResume && !_resumeMethodMissing && _authGate != "resume")
+                {
+                    // Resume is implemented in this scenario: a session/load
+                    // here means the client picked the wrong restore path.
+                    WriteError(id, -32050, "session/load must not be used when resume is supported");
+                    break;
+                }
                 await ReplayHistoryAsync(parameters).ConfigureAwait(false);
                 WriteResult(id, SessionResult(GetString(parameters, "sessionId", "fake-session-loaded")));
+                break;
+            case "session/resume":
+                if (ShouldFailAuth("session/resume"))
+                {
+                    WriteError(id, -32000, "Authentication required");
+                    break;
+                }
+                if (_resumeMethodMissing)
+                {
+                    WriteError(id, -32601, "Method not found");
+                    break;
+                }
+                // Per spec, resume restores context without replaying history;
+                // control updates may still arrive as ordinary notifications.
+                WriteSessionUpdate(new
+                {
+                    sessionUpdate = "available_commands_update",
+                    availableCommands = new[] { new { name = "/resumed", description = "Resumed command" } }
+                });
+                WriteSessionUpdate(new { sessionUpdate = "usage_update", used = 888, size = 50_000 });
+                WriteResult(id, new { });
                 break;
             case "session/prompt":
                 if (ShouldFailAuth("session/prompt"))
@@ -423,6 +470,16 @@ internal sealed class FakeAcpAgent
             sessionUpdate = "plan",
             entries = new[] { new { content = "Historical step", status = "completed", priority = "medium" } }
         });
+        // Control updates interleaved with the replay: a client that keeps its
+        // local transcript must still apply these instead of dropping them
+        // together with the content chunks.
+        WriteSessionUpdate(new
+        {
+            sessionId,
+            sessionUpdate = "available_commands_update",
+            availableCommands = new[] { new { name = "/replayed", description = "Replayed command" } }
+        });
+        WriteSessionUpdate(new { sessionId, sessionUpdate = "usage_update", used = 777, size = 50_000 });
         await Task.Yield();
     }
 
@@ -489,6 +546,7 @@ internal sealed class FakeAcpAgent
         {
             "new" => "session/new",
             "load" => "session/load",
+            "resume" => "session/resume",
             "prompt" => "session/prompt",
             _ => ""
         };

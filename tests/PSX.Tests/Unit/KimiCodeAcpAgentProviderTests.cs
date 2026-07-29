@@ -40,13 +40,13 @@ public sealed class KimiCodeAcpAgentProviderTests
     }
 
     [TestMethod]
-    public void CreateLoadSessionParameters_CarriesSessionIdCwdAndEmptyMcpServers()
+    public void CreateRestoreSessionParameters_CarriesSessionIdCwdAndEmptyMcpServers()
     {
         var provider = CreateProvider(out var workspace);
         using (workspace)
         {
             using var json = JsonSerializer.SerializeToDocument(
-                provider.CreateLoadSessionParameters("session-123", "C:/projects/app"));
+                provider.CreateRestoreSessionParameters("session-123", "C:/projects/app"));
             var root = json.RootElement;
 
             Assert.AreEqual("session-123", root.GetProperty("sessionId").GetString());

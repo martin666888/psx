@@ -50,7 +50,7 @@ public sealed class KimiCodeAcpAgentProvider : IAcpAgentProvider
         };
     }
 
-    public object CreateLoadSessionParameters(string sessionId, string workingDirectory)
+    public object CreateRestoreSessionParameters(string sessionId, string workingDirectory)
     {
         return new
         {

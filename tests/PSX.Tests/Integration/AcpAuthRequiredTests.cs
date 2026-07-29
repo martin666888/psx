@@ -89,6 +89,33 @@ public sealed class AcpAuthRequiredTests
     }
 
     [TestMethod]
+    public async Task SessionResume_AuthRequired_RecoversAndRestoresSession()
+    {
+        // The agent advertises resume and gates session/resume behind -32000:
+        // the silent authenticate must recover the resume path itself instead
+        // of falling back to session/load or degrading to transcript_only.
+        using var fixture = new FakeAcpSessionFixture(
+            nameof(SessionResume_AuthRequired_RecoversAndRestoresSession),
+            scenario: "auth:resume:recover");
+        var historical = fixture.Store.CreateThread(fixture.Workspace.Path);
+        historical.Provider = "fake-acp";
+        historical.AcpSessionId = "fake-history-session";
+        historical.Messages.Add(new AgentMessage { Role = "assistant", Text = "Local transcript" });
+        fixture.Store.SaveThread(historical);
+
+        fixture.BindToThread(historical);
+        await fixture.Service.RestoreAsync();
+
+        await fixture.Bridge.WaitForEventAsync(
+            "agent_state",
+            message => message.GetProperty("status").GetString() == "restored");
+
+        var persisted = fixture.Store.LoadThread(historical.ThreadId);
+        Assert.AreEqual(1, persisted?.Messages.Count);
+        Assert.AreEqual("Local transcript", persisted?.Messages[0].Text);
+    }
+
+    [TestMethod]
     public async Task SessionNew_AuthPersistentlyFails_StaysAuthRequiredWithoutCommittingMessage()
     {
         using var fixture = new FakeAcpSessionFixture(

@@ -46,7 +46,7 @@ public sealed class ClaudeAcpAgentProvider : IAcpAgentProvider
         };
     }
 
-    public object CreateLoadSessionParameters(string sessionId, string workingDirectory)
+    public object CreateRestoreSessionParameters(string sessionId, string workingDirectory)
     {
         return new
         {

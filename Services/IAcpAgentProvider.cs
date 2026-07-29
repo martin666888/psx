@@ -16,7 +16,13 @@ public interface IAcpAgentProvider
 
     object CreateNewSessionParameters(string workingDirectory);
 
-    object CreateLoadSessionParameters(string sessionId, string workingDirectory);
+    /// <summary>
+    /// Parameters for restoring an existing agent-side session. ACP gives
+    /// <c>session/load</c> and <c>session/resume</c> the same shape
+    /// (<c>sessionId</c>, <c>cwd</c>, <c>mcpServers</c>), so one factory
+    /// serves both restore paths.
+    /// </summary>
+    object CreateRestoreSessionParameters(string sessionId, string workingDirectory);
 
     bool IsCommandVisible(string normalizedCommand);
 

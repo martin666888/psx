@@ -146,8 +146,9 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     private IReadOnlyList<AcpConfigOption> _configOptions = Array.Empty<AcpConfigOption>();
     private string? _currentModeId;
     private bool _isRunning;
-    private bool _isLoadingHistory;
+    private SessionRestoreMode _restoreMode;
     private bool _supportsImage = true;
+    private bool _supportsSessionResume;
     private ReplayHistoryState? _replayHistory;
     private CancellationTokenSource? _runCts;
     private CancellationTokenSource? _runRequestCts;
@@ -1757,6 +1758,27 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         await SendSessionReadyAsync().ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// How incoming <c>session/update</c> notifications are treated while a
+    /// restore request (<c>session/load</c> or <c>session/resume</c>) is in
+    /// flight.
+    /// </summary>
+    private enum SessionRestoreMode
+    {
+        /// <summary>No restore in flight: updates flow through the live pipeline.</summary>
+        None,
+
+        /// <summary>No local transcript: replay chunks are aggregated to rebuild it.</summary>
+        ReplayTranscript,
+
+        /// <summary>
+        /// The local transcript is authoritative: only control updates
+        /// (commands, usage, config, mode, title) are applied; content replay
+        /// is dropped on arrival.
+        /// </summary>
+        ControlOnly
+    }
+
     private async Task<bool> LoadAcpHistoryAsync(
         string sessionId,
         CancellationToken cancellationToken = default)
@@ -1765,8 +1787,8 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
         // The locally persisted transcript is authoritative: the live pipeline
         // saved it in its aggregated per-turn shape (user → thinking → tools →
-        // assistant). When it exists, session/load only re-establishes the
-        // agent-side session context — the replayed chunk stream must never
+        // assistant). When it exists, the restore request only re-establishes
+        // the agent-side session context — replayed content must never
         // overwrite the archive, because providers may replay injected context
         // as user chunks and fragment assistant text around tool events.
         var hasLocalTranscript = _currentThread.Messages.Count > 0;
@@ -1775,39 +1797,41 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             .Select(ModeTransitionSnapshotMerger.CloneMessage)
             .ToArray();
         var replay = new ReplayHistoryState();
-        _isLoadingHistory = true;
-        // With a local transcript the replayed chunk stream is dropped on
-        // arrival instead of being accumulated: large sessions otherwise pay
-        // full CPU and memory for a replay state that is discarded anyway.
+        // With a local transcript only control updates are applied and content
+        // replay is dropped on arrival: large sessions otherwise pay full CPU
+        // and memory for a replay state that is discarded anyway.
+        _restoreMode = hasLocalTranscript
+            ? SessionRestoreMode.ControlOnly
+            : SessionRestoreMode.ReplayTranscript;
         _replayHistory = hasLocalTranscript ? null : replay;
         _status = "restoring";
         await PublishStateAsync().ConfigureAwait(false);
 
         try
         {
-            var loadResult = await SendWithAuthRetryAsync(
-                token => _transport!.SendRequestAsync(
-                    "session/load",
-                    _provider.CreateLoadSessionParameters(sessionId, _workingDirectory),
-                    TimeSpan.FromSeconds(45),
-                    GetEffectiveCancellationToken(token)),
-                cancellationToken).ConfigureAwait(false);
+            var restoreResult = await SendRestoreRequestAsync(sessionId, hasLocalTranscript, cancellationToken)
+                .ConfigureAwait(false);
 
             _acpSessionId = sessionId;
             _sessionIdForTransportRecovery = null;
             _transportRecoveryRequired = false;
-            CaptureModes(loadResult);
-            CaptureConfigOptions(loadResult);
+            // session/resume succeeds with an empty result object; it must not
+            // clear the modes a session/load result would have carried.
+            if (restoreResult.ValueKind == JsonValueKind.Object && restoreResult.TryGetProperty("modes", out _))
+                CaptureModes(restoreResult);
+            CaptureConfigOptions(restoreResult);
 
             if (hasLocalTranscript)
             {
                 // Keep the archive. A still-pending mode transition cannot be
                 // answered after a reload, so mark it interrupted locally.
-                if (ModeTransitionSnapshotMerger.InterruptPending(_currentThread))
-                {
-                    SaveCurrentThread();
+                var interrupted = ModeTransitionSnapshotMerger.InterruptPending(_currentThread);
+                // One unified persist for everything ControlOnly captured in
+                // memory (usage, mode, title) plus the interruption above,
+                // instead of a disk write per control update.
+                SaveCurrentThread();
+                if (interrupted)
                     await SendThreadLoadedAsync(clear: true).ConfigureAwait(false);
-                }
 
                 await SendSessionReadyAsync().ConfigureAwait(false);
                 return true;
@@ -1838,9 +1862,51 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         }
         finally
         {
-            _isLoadingHistory = false;
+            _restoreMode = SessionRestoreMode.None;
             _replayHistory = null;
         }
+    }
+
+    /// <summary>
+    /// Sends the restore request for an existing agent-side session. With a
+    /// local transcript and a declared resume capability this uses
+    /// <c>session/resume</c>, which re-establishes the session without any
+    /// history replay; everything else uses <c>session/load</c>. Only a
+    /// <c>-32601 Method not found</c> from an agent that advertised resume
+    /// without implementing it falls back to load — auth failures, timeouts
+    /// and missing sessions propagate unchanged into the existing restore
+    /// error handling.
+    /// </summary>
+    private async Task<JsonElement> SendRestoreRequestAsync(
+        string sessionId,
+        bool hasLocalTranscript,
+        CancellationToken cancellationToken)
+    {
+        if (hasLocalTranscript && _supportsSessionResume)
+        {
+            try
+            {
+                return await SendWithAuthRetryAsync(
+                    token => _transport!.SendRequestAsync(
+                        "session/resume",
+                        _provider.CreateRestoreSessionParameters(sessionId, _workingDirectory),
+                        TimeSpan.FromSeconds(45),
+                        GetEffectiveCancellationToken(token)),
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (AcpJsonRpcException exception) when (exception.Code == AcpJsonRpcException.MethodNotFoundCode)
+            {
+                // Advertised but unimplemented: defensive one-shot fallback.
+            }
+        }
+
+        return await SendWithAuthRetryAsync(
+            token => _transport!.SendRequestAsync(
+                "session/load",
+                _provider.CreateRestoreSessionParameters(sessionId, _workingDirectory),
+                TimeSpan.FromSeconds(45),
+                GetEffectiveCancellationToken(token)),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task EnsureTransportAsync(CancellationToken cancellationToken = default)
@@ -1901,6 +1967,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
                 _adapterVersion = ReadNestedString(initResult, "agentInfo", "version");
                 _supportsImage = ReadNestedBool(initResult, "agentCapabilities", "promptCapabilities", "image") ?? false;
+                _supportsSessionResume = SupportsSessionResume(initResult);
                 _authMethods = ParseAuthMethods(initResult);
                 _currentThread.AdapterVersion = _adapterVersion;
                 SaveCurrentThread();
@@ -2467,13 +2534,18 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     private async Task HandleSessionUpdateAsync(JsonElement update)
     {
-        if (_isLoadingHistory)
+        switch (_restoreMode)
         {
-            // During session/load the update stream is replay, never live: it
-            // is either accumulated (no local transcript) or dropped outright.
-            if (_replayHistory != null)
-                await HandleReplaySessionUpdateAsync(update, _replayHistory).ConfigureAwait(false);
-            return;
+            // During a restore request the update stream is replay, never
+            // live: it is either aggregated to rebuild a missing transcript or
+            // reduced to control updates when the local archive is
+            // authoritative.
+            case SessionRestoreMode.ReplayTranscript:
+                await HandleReplaySessionUpdateAsync(update, _replayHistory!).ConfigureAwait(false);
+                return;
+            case SessionRestoreMode.ControlOnly:
+                await HandleControlOnlySessionUpdateAsync(update).ConfigureAwait(false);
+                return;
         }
 
         var updateType = GetString(update, "sessionUpdate");
@@ -2507,17 +2579,10 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 await SendConfigOptionsAsync().ConfigureAwait(false);
                 break;
             case "current_mode_update":
-                _currentModeId = GetString(update, "currentModeId");
-                _currentThread.ModeId = _currentModeId;
-                SaveCurrentThread();
-                await SendModesAsync().ConfigureAwait(false);
+                await ApplyCurrentModeUpdateAsync(update, persist: true).ConfigureAwait(false);
                 break;
             case "session_info_update":
-                if (update.TryGetProperty("title", out var title) && title.ValueKind == JsonValueKind.String)
-                {
-                    _currentThread.Title = title.GetString() ?? _currentThread.Title;
-                    SaveCurrentThread();
-                }
+                ApplySessionInfoUpdate(update, persist: true);
                 break;
         }
     }
@@ -2554,15 +2619,61 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             case "config_option_update":
                 break;
             case "current_mode_update":
-                _currentModeId = GetString(update, "currentModeId");
-                _currentThread.ModeId = _currentModeId;
-                await SendModesAsync().ConfigureAwait(false);
+                await ApplyCurrentModeUpdateAsync(update, persist: false).ConfigureAwait(false);
                 break;
             case "session_info_update":
-                if (update.TryGetProperty("title", out var title) && title.ValueKind == JsonValueKind.String)
-                    _currentThread.Title = title.GetString() ?? _currentThread.Title;
+                ApplySessionInfoUpdate(update, persist: false);
                 break;
         }
+    }
+
+    /// <summary>
+    /// Applies a control update while the local transcript is authoritative:
+    /// commands, usage, config, mode and title still flow to the frontend and
+    /// the in-memory thread, but content replay is dropped and nothing is
+    /// persisted per update — the restore path saves the thread once when the
+    /// restore request completes.
+    /// </summary>
+    private async Task HandleControlOnlySessionUpdateAsync(JsonElement update)
+    {
+        switch (GetString(update, "sessionUpdate"))
+        {
+            case "available_commands_update":
+                await SendAvailableCommandsAsync(update).ConfigureAwait(false);
+                break;
+            case "usage_update":
+                await HandleUsageUpdateAsync(update, persist: false).ConfigureAwait(false);
+                break;
+            case "config_option_update":
+                CaptureConfigOptions(update);
+                await SendConfigOptionsAsync().ConfigureAwait(false);
+                break;
+            case "current_mode_update":
+                await ApplyCurrentModeUpdateAsync(update, persist: false).ConfigureAwait(false);
+                break;
+            case "session_info_update":
+                ApplySessionInfoUpdate(update, persist: false);
+                break;
+        }
+    }
+
+    private Task ApplyCurrentModeUpdateAsync(JsonElement update, bool persist)
+    {
+        _currentModeId = GetString(update, "currentModeId");
+        _currentThread.ModeId = _currentModeId;
+        if (persist)
+            SaveCurrentThread();
+        return SendModesAsync();
+    }
+
+    private void ApplySessionInfoUpdate(JsonElement update, bool persist)
+    {
+        if (!update.TryGetProperty("title", out var title) || title.ValueKind != JsonValueKind.String)
+            return;
+
+        _currentThread.Title = title.GetString() ?? _currentThread.Title;
+        if (persist)
+            SaveCurrentThread();
     }
 
     private async Task HandleToolCallAsync(JsonElement update)
@@ -2940,7 +3051,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         });
     }
 
-    private Task HandleUsageUpdateAsync(JsonElement update)
+    private Task HandleUsageUpdateAsync(JsonElement update, bool persist = true)
     {
         var used = TryGetLong(update, "used");
         if (used is null or < 0)
@@ -2957,7 +3068,8 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             _currentThread.ContextCostCurrency = _currentThread.ContextCostAmount.HasValue ? currency : null;
         }
 
-        SaveCurrentThread();
+        if (persist)
+            SaveCurrentThread();
         return _bridgeService.SendEventAsync(new
         {
             type = "agent_usage_update",
@@ -3930,6 +4042,20 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         return current.HasValue && current.Value.ValueKind == JsonValueKind.True ? true
             : current.HasValue && current.Value.ValueKind == JsonValueKind.False ? false
             : null;
+    }
+
+    /// <summary>
+    /// ACP declares resume support through the presence of
+    /// <c>agentCapabilities.sessionCapabilities.resume</c> — the spec shows an
+    /// empty object, and a bare <c>true</c> is also accepted. Absence,
+    /// <c>null</c> and <c>false</c> all mean unsupported, so this is an
+    /// existence check rather than the bool-only reader.
+    /// </summary>
+    internal static bool SupportsSessionResume(JsonElement initResult)
+    {
+        var resume = ReadNestedElement(initResult, "agentCapabilities", "sessionCapabilities", "resume");
+        return resume.HasValue
+            && resume.Value.ValueKind is JsonValueKind.Object or JsonValueKind.True;
     }
 
     private static JsonElement? ReadNestedElement(JsonElement element, params string[] path)

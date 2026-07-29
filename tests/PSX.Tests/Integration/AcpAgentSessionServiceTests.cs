@@ -352,6 +352,104 @@ public sealed class AcpAgentSessionServiceTests
     }
 
     [TestMethod]
+    public async Task Restore_LoadWithLocalTranscript_KeepsControlUpdatesWhileDroppingReplay()
+    {
+        using var fixture = new FakeAcpSessionFixture(nameof(Restore_LoadWithLocalTranscript_KeepsControlUpdatesWhileDroppingReplay));
+        var historical = CreateRestorableThread(fixture);
+
+        fixture.BindToThread(historical);
+        await fixture.Service.RestoreAsync();
+
+        await fixture.Bridge.WaitForEventAsync(
+            "agent_state",
+            message => message.GetProperty("status").GetString() == "restored");
+
+        // Control updates interleaved with the replay must survive even though
+        // the content chunks are dropped: commands, then usage.
+        await fixture.Bridge.WaitForEventAsync(
+            "agent_commands",
+            message => message.GetProperty("commands").EnumerateArray()
+                .Any(command => command.GetProperty("name").GetString() == "/replayed"));
+        await fixture.Bridge.WaitForEventAsync(
+            "agent_usage_update",
+            message => message.GetProperty("contextUsedTokens").GetInt64() == 777);
+
+        // The archive is untouched and the control state was persisted by the
+        // single unified save when the restore request completed.
+        var persisted = fixture.Store.LoadThread(historical.ThreadId);
+        Assert.AreEqual(2, persisted?.Messages.Count);
+        Assert.IsFalse(persisted!.Messages.Any(message => (message.Text ?? "").Contains("Historical")));
+        Assert.AreEqual(777L, persisted.ContextUsedTokens!.Value);
+    }
+
+    [TestMethod]
+    public async Task Restore_WithResumeCapability_UsesSessionResumeAndKeepsControlUpdates()
+    {
+        // The "resume" scenario answers session/load with an error, so a
+        // successful restore proves the client picked session/resume.
+        using var fixture = new FakeAcpSessionFixture(
+            nameof(Restore_WithResumeCapability_UsesSessionResumeAndKeepsControlUpdates),
+            scenario: "resume");
+        var historical = CreateRestorableThread(fixture);
+
+        fixture.BindToThread(historical);
+        await fixture.Service.RestoreAsync();
+
+        await fixture.Bridge.WaitForEventAsync(
+            "agent_state",
+            message => message.GetProperty("status").GetString() == "restored");
+        await fixture.Bridge.WaitForEventAsync(
+            "agent_commands",
+            message => message.GetProperty("commands").EnumerateArray()
+                .Any(command => command.GetProperty("name").GetString() == "/resumed"));
+        await fixture.Bridge.WaitForEventAsync(
+            "agent_usage_update",
+            message => message.GetProperty("contextUsedTokens").GetInt64() == 888);
+
+        var persisted = fixture.Store.LoadThread(historical.ThreadId);
+        Assert.AreEqual(2, persisted?.Messages.Count, "resume must not replay or append any history");
+        Assert.AreEqual(888L, persisted!.ContextUsedTokens!.Value);
+    }
+
+    [TestMethod]
+    public async Task Restore_ResumeAdvertisedButNotImplemented_FallsBackToSessionLoadOnce()
+    {
+        // The agent advertises sessionCapabilities.resume but answers
+        // session/resume with -32601: only this exact error may fall back to
+        // session/load, which then completes the restore in ControlOnly mode.
+        using var fixture = new FakeAcpSessionFixture(
+            nameof(Restore_ResumeAdvertisedButNotImplemented_FallsBackToSessionLoadOnce),
+            scenario: "resume:notfound");
+        var historical = CreateRestorableThread(fixture);
+
+        fixture.BindToThread(historical);
+        await fixture.Service.RestoreAsync();
+
+        await fixture.Bridge.WaitForEventAsync(
+            "agent_state",
+            message => message.GetProperty("status").GetString() == "restored");
+        await fixture.Bridge.WaitForEventAsync(
+            "agent_commands",
+            message => message.GetProperty("commands").EnumerateArray()
+                .Any(command => command.GetProperty("name").GetString() == "/replayed"));
+
+        var persisted = fixture.Store.LoadThread(historical.ThreadId);
+        Assert.AreEqual(2, persisted?.Messages.Count);
+        Assert.IsFalse(persisted!.Messages.Any(message => (message.Text ?? "").Contains("Historical")));
+    }
+
+    private static AgentThread CreateRestorableThread(FakeAcpSessionFixture fixture)
+    {
+        var historical = fixture.Store.CreateThread(fixture.Workspace.Path);
+        historical.Provider = "fake-acp";
+        historical.AcpSessionId = "fake-history-session";
+        historical.Messages.Add(new AgentMessage { Role = "user", Text = "Local user", RunId = "run-1" });
+        historical.Messages.Add(new AgentMessage { Role = "assistant", Text = "Local answer", RunId = "run-1" });
+        fixture.Store.SaveThread(historical);
+        return historical;
+    }
+
+    [TestMethod]
     public async Task LoadThread_EmptyLocalTranscript_RebuildsAggregatedHistory()
     {
         using var fixture = new FakeAcpSessionFixture(nameof(LoadThread_EmptyLocalTranscript_RebuildsAggregatedHistory));

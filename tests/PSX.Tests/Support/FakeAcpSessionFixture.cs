@@ -232,7 +232,7 @@ internal sealed class FakeAcpProvider(
 
     public object CreateNewSessionParameters(string workingDirectory) => new { cwd = workingDirectory };
 
-    public object CreateLoadSessionParameters(string sessionId, string workingDirectory) =>
+    public object CreateRestoreSessionParameters(string sessionId, string workingDirectory) =>
         new { sessionId, cwd = workingDirectory };
 
     public bool IsCommandVisible(string normalizedCommand) => true;

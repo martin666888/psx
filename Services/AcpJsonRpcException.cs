@@ -19,6 +19,13 @@ public sealed class AcpJsonRpcException : Exception
     /// </summary>
     public const int AuthRequiredCode = -32000;
 
+    /// <summary>
+    /// Standard JSON-RPC "Method not found". Seen when an agent advertises a
+    /// capability (such as <c>session/resume</c>) without implementing the
+    /// method; the session layer may fall back once on exactly this code.
+    /// </summary>
+    public const int MethodNotFoundCode = -32601;
+
     public int Code { get; }
 
     /// <summary>Raw JSON of the error's <c>data</c> field, when present.</summary>
