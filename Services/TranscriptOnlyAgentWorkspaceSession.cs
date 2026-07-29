@@ -58,9 +58,9 @@ internal sealed class TranscriptOnlyAgentWorkspaceSession : IAgentWorkspaceSessi
         }
     }
 
-    public Task PublishStateAsync()
+    public async Task PublishStateAsync()
     {
-        return _bridge.SendEventAsync(new
+        await _bridge.SendEventAsync(new
         {
             type = "agent_state",
             cwd = _thread.Cwd,
@@ -79,6 +79,22 @@ internal sealed class TranscriptOnlyAgentWorkspaceSession : IAgentWorkspaceSessi
             contextCostAmount = _thread.ContextCostAmount,
             contextCostCurrency = _thread.ContextCostCurrency,
             store = _threadStore.RootDirectory
+        }).ConfigureAwait(false);
+        // A saved transcript has no live runtime; disable the toolbar Update
+        // button instead of letting a click bounce off the read-only error.
+        await PublishRuntimeUpdateUnavailableAsync().ConfigureAwait(false);
+    }
+
+    private Task PublishRuntimeUpdateUnavailableAsync()
+    {
+        return _bridge.SendEventAsync(new
+        {
+            type = "runtime_update_status",
+            providerKey = _thread.Provider,
+            state = "unavailable",
+            message = "This saved transcript is read-only.",
+            currentVersion = "",
+            pendingVersion = ""
         });
     }
 
@@ -127,6 +143,9 @@ internal sealed class TranscriptOnlyAgentWorkspaceSession : IAgentWorkspaceSessi
                 break;
             case "activate":
                 await PublishStateAsync().ConfigureAwait(false);
+                break;
+            case "check_runtime_update":
+                await PublishRuntimeUpdateUnavailableAsync().ConfigureAwait(false);
                 break;
             case "history":
                 await ListThreadsAsync().ConfigureAwait(false);

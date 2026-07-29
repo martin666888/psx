@@ -96,6 +96,16 @@ test('shell: the toolbar Update button follows runtime_update_status states', as
   assert.equal(update().disabled, true);
   assert.equal(update().title, 'Updates ship with PSX releases');
 
+  app.handle({ type: 'runtime_update_status', workspaceId: WS, state: 'install_required', message: '', currentVersion: '', pendingVersion: '' });
+  await until(() => update().dataset.updateState === 'install_required', 'install_required state renders');
+  assert.equal(update().disabled, true);
+  assert.equal(update().title, 'Install the Agent runtime first');
+
+  app.handle({ type: 'runtime_update_status', workspaceId: WS, state: 'unavailable', message: '', currentVersion: '', pendingVersion: '' });
+  await until(() => update().dataset.updateState === 'unavailable', 'unavailable state renders');
+  assert.equal(update().disabled, true);
+  assert.equal(update().title, 'Updates are not available for this workspace');
+
   app.handle({ type: 'runtime_update_status', workspaceId: WS, state: 'up_to_date', message: '', currentVersion: '1.2.3', pendingVersion: '' });
   await until(() => update().dataset.updateState === 'up_to_date', 'up_to_date state renders');
   assert.equal(update().textContent, 'Up to date');

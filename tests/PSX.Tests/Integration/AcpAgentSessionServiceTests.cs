@@ -46,6 +46,22 @@ public sealed class AcpAgentSessionServiceTests
     }
 
     [TestMethod]
+    public async Task CheckRuntimeUpdate_RuntimeNotInstalled_PublishesInstallRequiredWithoutRefreshing()
+    {
+        using var fixture = new FakeAcpSessionFixture(nameof(CheckRuntimeUpdate_RuntimeNotInstalled_PublishesInstallRequiredWithoutRefreshing));
+        fixture.Runtime.SetReady(false);
+
+        fixture.Bridge.RaiseCommand("check_runtime_update");
+
+        await fixture.Bridge.WaitForEventAsync(
+            "runtime_update_status",
+            message => message.GetProperty("state").GetString() == "install_required");
+        Assert.IsFalse(fixture.Bridge.Events.Any(message =>
+            EventType(message) == "runtime_update_status"
+            && message.GetProperty("state").GetString() is "checking" or "up_to_date"));
+    }
+
+    [TestMethod]
     public async Task CheckRuntimeUpdate_BundledRuntime_PublishesUnsupportedWithoutRefreshing()
     {
         using var fixture = new FakeAcpSessionFixture(nameof(CheckRuntimeUpdate_BundledRuntime_PublishesUnsupportedWithoutRefreshing));

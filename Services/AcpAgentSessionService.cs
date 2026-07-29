@@ -1010,6 +1010,15 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             return;
         }
 
+        // A missing runtime cannot be refreshed: AcpRuntimeManager.RefreshAsync
+        // reports AlreadyReady ("skipping") in that case, which must not be
+        // presented as "up to date". Install comes first.
+        if (!IsAgentRuntimeReady())
+        {
+            await PublishRuntimeUpdateStatusAsync("install_required").ConfigureAwait(false);
+            return;
+        }
+
         lock (_runtimeUpdateLock)
         {
             if (_runtimeUpdateInProgress)
@@ -1041,14 +1050,16 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     /// <summary>
     /// Startup/state snapshot for the toolbar Update button: unsupported for
-    /// bundled runtimes, staged when a previous refresh is waiting for a
-    /// restart, idle otherwise.
+    /// bundled runtimes, install-required before the runtime exists, staged
+    /// when a previous refresh is waiting for a restart, idle otherwise.
     /// </summary>
     private Task PublishRuntimeUpdateSnapshotAsync()
     {
         string state;
         if (!_runtime.SupportsSelfUpdate)
             state = "unsupported";
+        else if (!IsAgentRuntimeReady())
+            state = "install_required";
         else
         {
             bool updateInProgress;

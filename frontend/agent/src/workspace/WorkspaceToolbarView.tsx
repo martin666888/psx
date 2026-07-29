@@ -30,13 +30,22 @@ export interface WorkspaceToolbarProps {
     toggleRef: RefObject<HTMLButtonElement | null>;
   };
   update: {
-    // idle | checking | up_to_date | staged_restart_required | unsupported | failed
+    // idle | checking | up_to_date | staged_restart_required | unsupported
+    // | install_required | unavailable | failed
     state: string;
     currentVersion: string;
     pendingVersion: string;
     onRequest(): void;
   };
 }
+
+const UPDATE_DISABLED_STATES: ReadonlySet<string> = new Set([
+  'unsupported',
+  'install_required',
+  'unavailable',
+  'checking',
+  'staged_restart_required'
+]);
 
 function updateButtonLabel(state: string): string {
   switch (state) {
@@ -55,6 +64,8 @@ function updateButtonLabel(state: string): string {
 
 function updateButtonTitle(update: WorkspaceToolbarProps['update']): string {
   if (update.state === 'unsupported') return 'Updates ship with PSX releases';
+  if (update.state === 'install_required') return 'Install the Agent runtime first';
+  if (update.state === 'unavailable') return 'Updates are not available for this workspace';
   if (update.state === 'staged_restart_required') {
     return update.pendingVersion
       ? 'Update to ' + update.pendingVersion + ' is ready; restart PSX to apply'
@@ -157,11 +168,7 @@ export function WorkspaceToolbar(props: WorkspaceToolbarProps): JSX.Element {
           variant="ghost"
           size="sm"
           className="h-7 border border-input text-xs"
-          disabled={
-            props.update.state === 'unsupported' ||
-            props.update.state === 'checking' ||
-            props.update.state === 'staged_restart_required'
-          }
+          disabled={UPDATE_DISABLED_STATES.has(props.update.state)}
           title={updateButtonTitle(props.update)}
           onClick={props.update.onRequest}
         >

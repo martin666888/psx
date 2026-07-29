@@ -288,6 +288,11 @@ public sealed class AgentWorkspaceCoordinatorTests
             message.GetProperty("type").GetString() == "agent_state"
             && message.GetProperty("workspaceId").GetString() == workspaceId.Value.ToString()
             && message.GetProperty("status").GetString() == "transcript_only"));
+        // The toolbar Update button must be disabled for saved transcripts.
+        Assert.IsTrue(bridge.Events.Any(message =>
+            message.GetProperty("type").GetString() == "runtime_update_status"
+            && message.GetProperty("workspaceId").GetString() == workspaceId.Value.ToString()
+            && message.GetProperty("state").GetString() == "unavailable"));
     }
 
     [TestMethod]

@@ -41,6 +41,8 @@ const RUNTIME_UPDATE_STATES: ReadonlySet<string> = new Set([
   'up_to_date',
   'staged_restart_required',
   'unsupported',
+  'install_required',
+  'unavailable',
   'failed'
 ]);
 
