@@ -162,8 +162,6 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     private bool _runtimeInstallInProgress;
     private string _runtimeInstallState = "missing";
     private string _runtimeInstallMessage = "Agent runtime is not installed.";
-    private readonly object _runtimeUpdateLock = new();
-    private bool _runtimeUpdateInProgress;
     private bool _restoreBlockedByRuntime;
     private bool _disposed;
     private IReadOnlyList<AcpAuthMethod> _authMethods = Array.Empty<AcpAuthMethod>();
@@ -229,6 +227,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         _bridgeService.CommandReceived += OnCommandReceived;
         _bridgeService.AttachmentUploadReceived += OnAttachmentUploadReceived;
         _runtime.StatusChanged += OnRuntimeStatusChanged;
+        _runtimeCoordinator.UpdateStatusChanged += OnRuntimeUpdateStatusChanged;
     }
 
     public Guid WorkspaceId { get; }
@@ -845,14 +844,6 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     private void OnRuntimeStatusChanged(string message)
     {
-        bool updateInProgress;
-        lock (_runtimeUpdateLock)
-        {
-            updateInProgress = _runtimeUpdateInProgress;
-        }
-        if (updateInProgress)
-            _ = PublishRuntimeUpdateStatusAsync("checking", message);
-
         lock (_runtimeInstallLock)
         {
             if (!_runtimeInstallInProgress)
@@ -999,9 +990,9 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     /// <summary>
     /// User-requested update check. The runtime coordinator single-flights
-    /// concurrent requests per runtime, so multiple tabs sharing one runtime
-    /// trigger at most one npm run; every requesting tab still gets its own
-    /// <c>runtime_update_status</c> event sequence.
+    /// concurrent requests per runtime and broadcasts every lifecycle state,
+    /// so all tabs sharing one runtime stay in sync and trigger at most one
+    /// npm run.
     /// </summary>
     private async Task CheckRuntimeUpdateAsync()
     {
@@ -1020,33 +1011,17 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             return;
         }
 
-        lock (_runtimeUpdateLock)
-        {
-            if (_runtimeUpdateInProgress)
-                return;
-            _runtimeUpdateInProgress = true;
-        }
+        // Progress and outcome reach this workspace (and every other one
+        // sharing the runtime) through OnRuntimeUpdateStatusChanged; failures
+        // are converted into a "failed" broadcast by the coordinator.
+        await _runtimeCoordinator.RequestUpdateAsync(_runtime).ConfigureAwait(false);
+    }
 
-        try
-        {
-            await PublishRuntimeUpdateStatusAsync("checking").ConfigureAwait(false);
-            var result = await _runtimeCoordinator.RequestUpdateAsync(_runtime).ConfigureAwait(false);
-            var state = result.Kind is AcpRuntimeOperationKind.Success or AcpRuntimeOperationKind.AlreadyReady
-                ? (_runtime.GetVersionSnapshot().HasPendingUpdate ? "staged_restart_required" : "up_to_date")
-                : "failed";
-            await PublishRuntimeUpdateStatusAsync(state, result.Message).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            await PublishRuntimeUpdateStatusAsync("failed", ex.Message).ConfigureAwait(false);
-        }
-        finally
-        {
-            lock (_runtimeUpdateLock)
-            {
-                _runtimeUpdateInProgress = false;
-            }
-        }
+    private void OnRuntimeUpdateStatusChanged(object? sender, RuntimeUpdateStatusChangedEventArgs args)
+    {
+        if (!ReferenceEquals(args.Runtime, _runtime) || _disposed)
+            return;
+        _ = PublishRuntimeUpdateStatusAsync(args.State, args.Message);
     }
 
     /// <summary>
@@ -1063,12 +1038,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             state = "install_required";
         else
         {
-            bool updateInProgress;
-            lock (_runtimeUpdateLock)
-            {
-                updateInProgress = _runtimeUpdateInProgress;
-            }
-            state = updateInProgress
+            state = _runtimeCoordinator.IsUpdateInFlight(_runtime)
                 ? "checking"
                 : _runtime.GetVersionSnapshot().HasPendingUpdate ? "staged_restart_required" : "idle";
         }
@@ -4001,6 +3971,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         _bridgeService.CommandReceived -= OnCommandReceived;
         _bridgeService.AttachmentUploadReceived -= OnAttachmentUploadReceived;
         _runtime.StatusChanged -= OnRuntimeStatusChanged;
+        _runtimeCoordinator.UpdateStatusChanged -= OnRuntimeUpdateStatusChanged;
         try { _serviceLifetimeCts.Cancel(); } catch { }
         try { _runCts?.Cancel(); } catch { }
         try { _runRequestCts?.Cancel(); } catch { }

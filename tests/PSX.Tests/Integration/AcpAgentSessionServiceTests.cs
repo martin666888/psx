@@ -31,6 +31,41 @@ public sealed class AcpAgentSessionServiceTests
     }
 
     [TestMethod]
+    public async Task CheckRuntimeUpdate_BroadcastsToEveryWorkspaceSharingTheRuntime()
+    {
+        using var fixture = new FakeAcpSessionFixture(nameof(CheckRuntimeUpdate_BroadcastsToEveryWorkspaceSharingTheRuntime));
+        var passiveBridge = new RecordingAgentBridgeService();
+        var passiveThread = fixture.Store.CreateThread(fixture.Workspace.Path);
+        passiveThread.Provider = fixture.Provider.Descriptor.Key;
+        fixture.Store.SaveThread(passiveThread);
+        using var passiveService = new AcpAgentSessionService(
+            Guid.NewGuid(),
+            passiveBridge,
+            new NullTabManagementService(),
+            new NullTerminalBridgeService(),
+            fixture.Store,
+            new NullAgentDirectoryPicker(),
+            fixture.Registry,
+            fixture.Provider,
+            passiveThread,
+            fixture.RuntimeCoordinator);
+
+        fixture.Bridge.RaiseCommand("check_runtime_update");
+
+        await fixture.Bridge.WaitForEventAsync(
+            "runtime_update_status",
+            message => message.GetProperty("state").GetString() == "up_to_date");
+        // The workspace that never clicked Update mirrors the same lifecycle
+        // through the coordinator broadcast.
+        await passiveBridge.WaitForEventAsync(
+            "runtime_update_status",
+            message => message.GetProperty("state").GetString() == "checking");
+        await passiveBridge.WaitForEventAsync(
+            "runtime_update_status",
+            message => message.GetProperty("state").GetString() == "up_to_date");
+    }
+
+    [TestMethod]
     public async Task CheckRuntimeUpdate_StagedUpdate_PublishesRestartRequired()
     {
         using var fixture = new FakeAcpSessionFixture(nameof(CheckRuntimeUpdate_StagedUpdate_PublishesRestartRequired));
