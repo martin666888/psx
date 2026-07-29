@@ -304,9 +304,6 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
       this.setVar(root, '--agent-decision-primary-text', a.decisionPrimaryText);
       this.setVar(root, '--agent-stop-btn', a.stopBtn);
       this.setVar(root, '--agent-stop-btn-hover', a.stopBtnHover);
-      this.setVar(root, '--agent-allow-color', a.allowColor);
-      this.setVar(root, '--agent-deny-color', a.denyColor);
-      this.setVar(root, '--agent-caution-color', a.cautionColor);
       this.setVar(root, '--agent-permission-bg', a.permissionBg);
       this.setVar(root, '--agent-permission-border', a.permissionBorder);
       this.setVar(root, '--agent-elicitation-bg', a.elicitationBg);

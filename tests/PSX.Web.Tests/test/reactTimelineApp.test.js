@@ -66,6 +66,9 @@ test('permission response uses the unchanged bridge payload', async () => {
     }),
     () => !!thread()?.querySelector('[data-option-id="allow"]')
   );
+  const permissionGroup = thread().querySelector('.agent-decision-option-pills');
+  assert.ok(permissionGroup.classList.contains('flex-wrap'));
+  assert.ok(permissionGroup.querySelector('[data-option-id="allow"]').classList.contains('rounded-full'));
   await act(async () => thread().querySelector('[data-option-id="allow"]').click());
   assert.deepEqual(runtime.postedMessages.at(-1), {
     type: 'agent_permission_response',
@@ -73,7 +76,9 @@ test('permission response uses the unchanged bridge payload', async () => {
     requestId: 'p1',
     value: 'allow'
   });
-  assert.equal(thread().querySelector('[data-request-id="p1"]').dataset.decisionState, 'disabled');
+  const permissionCard = thread().querySelector('[data-request-id="p1"]');
+  assert.equal(permissionCard.dataset.decisionState, 'disabled');
+  assert.equal(permissionCard.querySelectorAll('[data-option-id]').length, 1);
 });
 
 test('mode transition card options approve directly from the timeline', async () => {
@@ -85,6 +90,9 @@ test('mode transition card options approve directly from the timeline', async ()
   );
   const card = thread().querySelector('.agent-mode-transition');
   const option = card.querySelector('[data-option-id="approve"]');
+  assert.ok(card.querySelector('.agent-mode-transition-options').classList.contains('flex-wrap'));
+  assert.ok(option.classList.contains('rounded-full'));
+  assert.equal(option.classList.contains('agent-btn-allow'), false);
   // Live approvals are clickable in the card itself, mirroring the composer
   // prompt (second entry point, same agent_permission_response payload).
   assert.equal(option.disabled, false);
@@ -111,6 +119,12 @@ test('mode transition owns the composer prompt and restores it after resolution'
   );
   const prompt = panel.querySelector('[data-role="mode-transition-prompt"]');
   assert.equal(panel.querySelector('[data-role="input-row"]').hidden, true);
+  const promptOptions = prompt.querySelector('.agent-composer-decision-options');
+  assert.ok(promptOptions.classList.contains('flex-wrap'));
+  assert.ok(promptOptions.querySelector('[data-option-id="approve"]').classList.contains('rounded-full'));
+  const stopButton = prompt.querySelector('button[title^="Stop "]');
+  assert.ok(stopButton.classList.contains('rounded-full'));
+  assert.equal(stopButton.classList.contains('bg-destructive'), false);
   await act(async () => prompt.querySelector('[data-option-id="approve"]').click());
   assert.deepEqual(runtime.postedMessages.at(-1), {
     type: 'agent_permission_response',
@@ -129,6 +143,39 @@ test('mode transition owns the composer prompt and restores it after resolution'
   });
   assert.equal(prompt.hidden, true);
   assert.equal(panel.querySelector('[data-role="input-row"]').hidden, false);
+});
+
+test('document permission renders Markdown in the timeline without opening the composer prompt', async () => {
+  const { app, panel, runtime } = await fixture();
+  await composerReady(panel);
+  const thread = () => panel.querySelector('[data-role="thread"]');
+  await settle(
+    () => app.handle({
+      type: 'permission_request',
+      workspaceId: WS,
+      presentation: 'document',
+      requestId: 'kimi-plan-1',
+      toolCallId: 'kimi-tool-1',
+      title: 'ExitPlanMode',
+      documentText: '# Kimi plan\n\n1. Review\n2. Implement',
+      options: [{ optionId: 'approve', name: 'Approve', kind: 'allow_once' }]
+    }),
+    () => !!thread()?.querySelector('.agent-document-permission [data-option-id="approve"]')
+  );
+  const card = thread().querySelector('.agent-document-permission');
+  assert.match(card.textContent, /Kimi plan/);
+  assert.match(card.textContent, /Review/);
+  assert.doesNotMatch(card.textContent, /"toolCallId"/);
+  assert.equal(panel.querySelector('[data-role="mode-transition-prompt"]')?.hidden, true);
+  assert.equal(panel.querySelector('[data-role="input-row"]').hidden, false);
+
+  await act(async () => card.querySelector('[data-option-id="approve"]').click());
+  assert.deepEqual(runtime.postedMessages.at(-1), {
+    type: 'agent_permission_response',
+    workspaceId: WS,
+    requestId: 'kimi-plan-1',
+    value: 'approve'
+  });
 });
 
 test('workspace switching preserves independent React roots and state', async () => {

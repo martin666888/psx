@@ -24,7 +24,7 @@ function asMessageArray(value: unknown): RawHostMessage[] {
 
 // Faithful ports of _modeTransitionStateLabel / _modeTransitionStatusText for
 // the non-active states C# actually persists: selected / cancelled /
-// interrupted (ModeTransitionSnapshotMerger folds pending/sending into
+// interrupted (DocumentDecisionSnapshotMerger folds pending/sending into
 // interrupted on save).
 function modeTransitionHeaderLabel(state: string): string {
   if (state === 'selected') return 'Selected';
@@ -135,11 +135,13 @@ export interface DecisionOptionVM {
 export interface DecisionItem {
   type: 'decision';
   id: string;
-  kind: 'permission' | 'question' | 'elicitation' | 'mode_transition';
+  kind: 'permission' | 'question' | 'elicitation' | 'mode_transition' | 'document_permission';
   requestId: string;
   title: string;
   /** Raw input JSON / message / document markdown depending on kind. */
   text: string;
+  /** Explicit technical tool input for document decisions; never a toolCall fallback. */
+  rawText: string;
   options: DecisionOptionVM[];
   /** active | disabled */
   decisionState: 'active' | 'disabled';
@@ -149,11 +151,11 @@ export interface DecisionItem {
   selectedOptionName: string;
   /** Status line for cancelled/interrupted cards ('' hides it). */
   statusText: string;
-  /** mode_transition: Pending / Selected / Cancelled / Interrupted header state. */
+  /** Document decisions: Pending / Selected / Cancelled / Interrupted header state. */
   headerState: string;
-  /** mode_transition: the replaced tool card id (legacy data-tool-call-id). */
+  /** Document decision: the replaced tool card id. */
   toolCallId: string;
-  /** mode_transition replay cards render already-resolved. */
+  /** Document-decision replay cards render already-resolved. */
   historical: boolean;
   /** elicitation raw schema payload (form rendering source). */
   schema: RawHostMessage | null;
@@ -250,7 +252,7 @@ export class TimelineProjection {
         this.hideThinking();
         this.finalizeRunGroup();
         this.currentTurnId = null;
-        this.interruptModeTransition('This request is no longer active.');
+        this.interruptDocumentDecisions('This request is no longer active.');
         return true;
       case 'tool_started':
         this.ensureRunGroup(asString(raw.runId));
@@ -294,7 +296,7 @@ export class TimelineProjection {
         );
         return true;
       case 'run_failed':
-        this.interruptModeTransition('The request ended before a selection was completed.');
+        this.interruptDocumentDecisions('The request ended before a selection was completed.');
         this.hideThinking();
         if (this.currentGroup) {
           this.currentGroup.error = true;
@@ -315,7 +317,9 @@ export class TimelineProjection {
       // --- decisions domain (same thread subtree, same React tree) ---------
       case 'permission_request':
         if (raw.presentation === 'mode_transition' && raw.documentText) {
-          this.appendModeTransition(raw, false);
+          this.appendDocumentDecision(raw, false, 'mode_transition');
+        } else if (raw.presentation === 'document' && raw.documentText) {
+          this.appendDocumentDecision(raw, false, 'document_permission');
         } else {
           this.appendDecision(raw, 'permission', assistantName);
         }
@@ -346,7 +350,9 @@ export class TimelineProjection {
     item.collapsed = true;
     item.selectedOptionId = optionId;
     item.selectedOptionName = optionName;
-    if (item.kind === 'mode_transition') item.headerState = 'Sending';
+    if (item.kind === 'mode_transition' || item.kind === 'document_permission') {
+      item.headerState = 'Sending';
+    }
   }
 
   /** External hook: a locally-resolved elicitation (legacy disableDecisionCard).
@@ -648,6 +654,7 @@ export class TimelineProjection {
       title:
         asString(raw.title) || (kind === 'permission' ? 'Permission request' : assistantName + ' question'),
       text: asString(raw.text) || '{}',
+      rawText: '',
       options,
       decisionState: 'active',
       collapsed: false,
@@ -670,6 +677,7 @@ export class TimelineProjection {
       requestId: asString(raw.requestId),
       title: assistantName + ' Agent needs input',
       text: '',
+      rawText: '',
       options: [],
       decisionState: 'active',
       collapsed: false,
@@ -684,17 +692,20 @@ export class TimelineProjection {
     });
   }
 
-  private appendModeTransition(raw: RawHostMessage, historical: boolean): void {
-    if (!historical) {
+  private appendDocumentDecision(
+    raw: RawHostMessage,
+    historical: boolean,
+    kind: 'mode_transition' | 'document_permission'
+  ): void {
+    if (!historical && kind === 'mode_transition') {
       // legacy: a newer pending transition interrupts the older one.
       this.interruptModeTransition('A newer mode transition request replaced this one.');
     }
     if (!historical && asString(raw.toolCallId)) {
-      this.removeToolCardForModeTransition(asString(raw.toolCallId));
+      this.removeToolCardForDocumentDecision(asString(raw.toolCallId));
     }
     if (!this.currentTurnId && historical) this.startTurn();
-    // C# persists decisionState as selected / cancelled / interrupted
-    // (ModeTransitionSnapshotMerger folds pending/sending into interrupted).
+    // C# persists selected / cancelled / interrupted document decisions.
     const storedState = asString(raw.decisionState) || (historical ? 'interrupted' : 'pending');
     const options = asMessageArray(raw.options).map((option) => ({
       optionId: asString(option.optionId),
@@ -705,10 +716,11 @@ export class TimelineProjection {
     this.append({
       type: 'decision',
       id: this.nextId('dec'),
-      kind: 'mode_transition',
+      kind,
       requestId: asString(raw.requestId),
       title: asString(raw.title) || asString(raw.name) || 'Review the proposed direction',
       text: asString(raw.documentText) || asString(raw.text),
+      rawText: asString(raw.text),
       options,
       decisionState: historical ? 'disabled' : 'active',
       collapsed: false,
@@ -723,8 +735,8 @@ export class TimelineProjection {
     });
   }
 
-  /** legacy removeToolCardForModeTransition: drop the replaced tool card. */
-  private removeToolCardForModeTransition(toolCallId: string): void {
+  /** Drop the tool card replaced by a document decision. */
+  private removeToolCardForDocumentDecision(toolCallId: string): void {
     if (!toolCallId) return;
     for (const row of this.rows) {
       if (row.item.type === 'tool' && row.item.variant === 'run-group') {
@@ -741,7 +753,7 @@ export class TimelineProjection {
     const item = this.findDecision(requestId);
     if (!item) return;
     item.decisionState = 'disabled';
-    if (item.kind === 'mode_transition') {
+    if (item.kind === 'mode_transition' || item.kind === 'document_permission') {
       item.selectedOptionId = optionId;
       item.headerState = 'Selected';
       item.statusText = optionName ? 'Selected: ' + optionName : 'Selection recorded.';
@@ -756,7 +768,7 @@ export class TimelineProjection {
     const item = this.findDecision(requestId);
     if (!item) return;
     item.decisionState = 'disabled';
-    if (item.kind === 'mode_transition') {
+    if (item.kind === 'mode_transition' || item.kind === 'document_permission') {
       item.headerState = 'Cancelled';
       item.statusText = text;
       return;
@@ -765,11 +777,19 @@ export class TimelineProjection {
   }
 
   private interruptModeTransition(text: string): void {
+    this.interruptDocumentDecisions(text, 'mode_transition');
+  }
+
+  private interruptDocumentDecisions(
+    text: string,
+    kind?: 'mode_transition' | 'document_permission'
+  ): void {
     for (const row of this.rows) {
       const item = row.item;
       if (
         item.type === 'decision' &&
-        item.kind === 'mode_transition' &&
+        (item.kind === 'mode_transition' || item.kind === 'document_permission') &&
+        (!kind || item.kind === kind) &&
         item.decisionState === 'active'
       ) {
         item.decisionState = 'disabled';
@@ -848,10 +868,10 @@ export class TimelineProjection {
         lastRunId = null;
         continue;
       }
-      if (role === 'mode_transition') {
+      if (role === 'mode_transition' || role === 'document_permission') {
         this.historyGroup = null;
         if (!this.currentTurnId) this.startTurn();
-        this.appendModeTransition(
+        this.appendDocumentDecision(
           {
             requestId: asString(msg.requestId),
             toolCallId: asString(msg.toolCallId),
@@ -861,7 +881,8 @@ export class TimelineProjection {
             selectedOptionId: asString(msg.selectedOptionId),
             decisionState: asString(msg.decisionState) || 'interrupted'
           },
-          true
+          true,
+          role
         );
         lastRunId = null;
         continue;

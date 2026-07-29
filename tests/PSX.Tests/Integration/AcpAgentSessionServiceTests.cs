@@ -254,15 +254,16 @@ public sealed class AcpAgentSessionServiceTests
     }
 
     [TestMethod]
-    public async Task OrdinaryPermission_WithMarkdownContentRemainsAnOrdinaryPermission()
+    public async Task OrdinaryPermission_WithMarkdownContentUsesDocumentPresentationWithoutModeTransitionSemantics()
     {
-        using var fixture = new FakeAcpSessionFixture(nameof(OrdinaryPermission_WithMarkdownContentRemainsAnOrdinaryPermission));
+        using var fixture = new FakeAcpSessionFixture(nameof(OrdinaryPermission_WithMarkdownContentUsesDocumentPresentationWithoutModeTransitionSemantics));
 
         await fixture.Service.SubmitMessageAsync("ordinary permission");
         var permission = await fixture.Bridge.WaitForEventAsync("permission_request");
 
-        Assert.AreEqual(JsonValueKind.Null, permission.GetProperty("presentation").ValueKind);
+        Assert.AreEqual("document", permission.GetProperty("presentation").GetString());
         Assert.AreEqual("execute", permission.GetProperty("toolKind").GetString());
+        Assert.AreEqual("# Markdown command details", permission.GetProperty("documentText").GetString());
         CollectionAssert.AreEqual(
             new[] { "run-once", "cancel" },
             permission.GetProperty("options").EnumerateArray()
@@ -276,8 +277,61 @@ public sealed class AcpAgentSessionServiceTests
 
         var thread = fixture.LoadOnlyVisibleThread();
         Assert.IsFalse(thread.Messages.Any(message => message.Role == "mode_transition"));
+        var snapshot = thread.Messages.Single(message => message.Role == "document_permission");
+        Assert.AreEqual("selected", snapshot.DecisionState);
+        Assert.AreEqual("run-once", snapshot.SelectedOptionId);
         Assert.IsTrue(thread.Messages.Any(message => message.Role == "assistant"
             && message.Text == "Ordinary permission result: run-once"));
+    }
+
+    [TestMethod]
+    public async Task DocumentPermission_WithoutKindRendersMarkdownAndPersistsSelectedSnapshot()
+    {
+        using var fixture = new FakeAcpSessionFixture(nameof(DocumentPermission_WithoutKindRendersMarkdownAndPersistsSelectedSnapshot));
+
+        await fixture.Service.SubmitMessageAsync("document permission");
+        var permission = await fixture.Bridge.WaitForEventAsync("permission_request");
+
+        Assert.AreEqual("document", permission.GetProperty("presentation").GetString());
+        Assert.AreEqual("ExitPlanMode", permission.GetProperty("title").GetString());
+        Assert.AreEqual(
+            "# Kimi plan\n\n1. Review the request\n2. Implement the change\n\nPlan saved for approval.",
+            (permission.GetProperty("documentText").GetString() ?? "").Replace("\r\n", "\n"));
+        Assert.AreEqual(JsonValueKind.Null, permission.GetProperty("text").ValueKind);
+        CollectionAssert.AreEqual(
+            new[] { "approve", "revise", "reject" },
+            permission.GetProperty("options").EnumerateArray()
+                .Select(option => option.GetProperty("optionId").GetString()).ToArray());
+
+        fixture.Bridge.RaiseCommand(
+            "agent_permission_response",
+            permission.GetProperty("requestId").GetString(),
+            "approve");
+        await fixture.Bridge.WaitForEventAsync("permission_resolved");
+        await fixture.Bridge.WaitForEventAsync("run_finished");
+
+        var thread = fixture.LoadOnlyVisibleThread();
+        var snapshot = thread.Messages.Single(message => message.Role == "document_permission");
+        Assert.AreEqual("selected", snapshot.DecisionState);
+        Assert.AreEqual("approve", snapshot.SelectedOptionId);
+        Assert.AreEqual(3, snapshot.DecisionOptions?.Count);
+        Assert.IsFalse(thread.Messages.Any(message => message.Role == "tool"
+            && message.ToolCallId == "tool-document-permission"));
+    }
+
+    [TestMethod]
+    public async Task DocumentPermission_IsCancelledAndPersistedWhenTheRunStops()
+    {
+        using var fixture = new FakeAcpSessionFixture(nameof(DocumentPermission_IsCancelledAndPersistedWhenTheRunStops));
+
+        await fixture.Service.SubmitMessageAsync("document permission");
+        await fixture.Bridge.WaitForEventAsync("permission_request");
+        await fixture.Service.CancelAsync();
+        await fixture.Bridge.WaitForEventAsync("run_finished");
+
+        var snapshot = fixture.LoadOnlyVisibleThread().Messages
+            .Single(message => message.Role == "document_permission");
+        Assert.AreEqual("cancelled", snapshot.DecisionState);
     }
 
     [TestMethod]
@@ -348,6 +402,16 @@ public sealed class AcpAgentSessionServiceTests
             DecisionState = "pending",
             DecisionOptions = [new AgentDecisionOption { OptionId = "approve", Name = "Approve", Kind = "allow_once" }]
         });
+        historical.Messages.Add(new AgentMessage
+        {
+            Role = "document_permission",
+            Name = "ExitPlanMode",
+            Text = "# Stored Kimi plan",
+            RequestId = "stored-document-request",
+            ToolCallId = "stored-document-tool",
+            DecisionState = "pending",
+            DecisionOptions = [new AgentDecisionOption { OptionId = "approve", Name = "Approve", Kind = "allow_once" }]
+        });
         fixture.Store.SaveThread(historical);
 
         fixture.BindToThread(historical);
@@ -358,14 +422,14 @@ public sealed class AcpAgentSessionServiceTests
         // interrupted because it can no longer be answered.
         var loaded = await fixture.Bridge.WaitForEventAsync(
             "agent_thread_loaded",
-            message => message.GetProperty("threadId").GetString() == historical.ThreadId
+                message => message.GetProperty("threadId").GetString() == historical.ThreadId
                 && message.GetProperty("messages").EnumerateArray().Any(item =>
-                    item.GetProperty("role").GetString() == "mode_transition"
+                    item.GetProperty("role").GetString() == "document_permission"
                     && item.GetProperty("decisionState").GetString() == "interrupted"));
 
         var messages = loaded.GetProperty("messages").EnumerateArray().ToArray();
         CollectionAssert.AreEqual(
-            new[] { "user", "thinking", "tool", "assistant", "mode_transition" },
+            new[] { "user", "thinking", "tool", "assistant", "mode_transition", "document_permission" },
             messages.Select(message => message.GetProperty("role").GetString()).ToArray(),
             "the aggregated local transcript must survive the ACP replay untouched");
         Assert.AreEqual("Local answer", messages.Single(message => message.GetProperty("role").GetString() == "assistant").GetProperty("text").GetString());
@@ -384,7 +448,10 @@ public sealed class AcpAgentSessionServiceTests
         Assert.AreEqual(
             "interrupted",
             persisted?.Messages.Single(message => message.Role == "mode_transition").DecisionState);
-        Assert.AreEqual(5, persisted?.Messages.Count, "no replayed messages may be appended to the archive");
+        Assert.AreEqual(
+            "interrupted",
+            persisted?.Messages.Single(message => message.Role == "document_permission").DecisionState);
+        Assert.AreEqual(6, persisted?.Messages.Count, "no replayed messages may be appended to the archive");
     }
 
     [TestMethod]

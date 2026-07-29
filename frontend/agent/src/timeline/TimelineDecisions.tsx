@@ -10,7 +10,7 @@ import {
   type ElicitationProperty
 } from '../core/elicitation.js';
 import { renderMarkdown, safeHref } from '../core/markdown.js';
-import { decisionOptionClass } from '../decisions/decisionPresentation.js';
+import { DecisionOptionPills } from '../decisions/DecisionOptionPills.js';
 import type { DecisionItem, DecisionOptionVM } from './timelineViewModel.js';
 import { CopyButton, useProjectionOpen } from './TimelineView.js';
 import { Button } from '../components/ui/button.js';
@@ -56,8 +56,6 @@ function PermissionQuestionCard({
     : item.kind === 'permission'
     ? assistantName + ' Agent needs your approval before continuing.'
     : assistantName + ' Agent is waiting for your answer.';
-  // Selected option leads the row; the rest hide (legacy completeDecisionCard).
-  const ordered = selected ? [selected, ...item.options.filter((option) => option !== selected)] : item.options;
   return (
     <Collapsible
       open={open}
@@ -102,43 +100,26 @@ function PermissionQuestionCard({
             <pre className="agent-decision-raw-input-content m-0 whitespace-pre-wrap break-words bg-background p-3 font-mono text-xs leading-normal">{item.text}</pre>
           </CollapsibleContent>
         </Collapsible>
-        <div className="agent-decision-actions mt-2.5 flex flex-wrap gap-2">
+        <div className="agent-decision-actions mt-2.5">
           {item.options.length === 0 ? (
             <div className="agent-decision-status agent-decision-options-error mt-0 flex-[1_1_100%] text-xs text-destructive">
               The Agent did not provide any response options.
             </div>
           ) : null}
-          {ordered.map((option) => {
-            const isSelected = selected === option;
-            // Neutral outline pills matching the elicitation card style; the
-            // ACP option kind stays on data-option-kind for tooling instead
-            // of a semantic color tint.
-            return (
-              <Button
-                key={option.optionId || option.name}
-                type="button"
-                variant="outline"
-                size="sm"
-                className={
-                  'agent-decision-option min-h-8 max-w-full cursor-pointer whitespace-normal break-words rounded-full px-4 py-1 text-xs leading-normal hover:bg-accent disabled:cursor-default' +
-                  (isSelected
-                    ? ' agent-decision-option-selected border-border bg-muted text-muted-foreground'
-                    : ' disabled:opacity-70')
-                }
-                data-option-id={option.optionId}
-                data-option-kind={option.kind}
-                aria-pressed={isSelected ? 'true' : 'false'}
-                hidden={!!selected && !isSelected}
-                disabled={disabled}
-                onClick={() => {
-                  if (item.decisionState !== 'active') return;
-                  callbacks.onDecisionOption(item, option);
-                }}
-              >
-                {option.name}
-              </Button>
-            );
-          })}
+          {item.options.length > 0 ? (
+            <DecisionOptionPills
+              options={item.options}
+              selectedOptionId={selected?.optionId}
+              disabled={disabled}
+              ariaLabel={item.kind === 'permission' ? 'Choose a permission response' : 'Choose an answer'}
+              className="agent-decision-option-list"
+              buttonClassName="agent-decision-option"
+              onSelect={(option) => {
+                if (item.decisionState !== 'active') return;
+                callbacks.onDecisionOption(item, option);
+              }}
+            />
+          ) : null}
         </div>
         {disabled && !selected && item.statusText ? (
           <div className="agent-decision-status mt-2.5 text-xs text-muted-foreground">{item.statusText}</div>
@@ -149,14 +130,16 @@ function PermissionQuestionCard({
   );
 }
 
-function ModeTransitionCard({
+function DocumentDecisionCard({
   item,
   callbacks
 }: {
   item: DecisionItem;
   callbacks: DecisionCallbacks;
 }): JSX.Element {
+  const isModeTransition = item.kind === 'mode_transition';
   const pending = item.decisionState === 'active';
+  const [technicalDetailsOpen, setTechnicalDetailsOpen] = useState(false);
   // Uncontrolled: historical cards start collapsed, live ones start open;
   // afterwards the user toggles freely (legacy openedOnce-on-mount semantics).
   const statusText = item.statusText
@@ -171,7 +154,10 @@ function ModeTransitionCard({
     : 'This request is no longer active.';
   return (
     <section
-      className="agent-mode-transition mb-5 w-full overflow-hidden rounded-lg border bg-card text-card-foreground"
+      className={
+        'agent-mode-transition agent-document-decision mb-5 w-full overflow-hidden rounded-lg border bg-card text-card-foreground' +
+        (isModeTransition ? '' : ' agent-document-permission')
+      }
       data-decision-state={pending ? 'active' : 'disabled'}
       data-request-id={item.requestId || undefined}
       data-tool-call-id={item.toolCallId || undefined}
@@ -185,7 +171,7 @@ function ModeTransitionCard({
       <Collapsible defaultOpen={!item.historical} className="agent-mode-transition-details group/mt bg-background">
         <CollapsibleTrigger className="agent-mode-transition-summary flex w-full cursor-pointer select-none items-center gap-2 px-4 py-2 text-left text-xs font-semibold text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
           <ChevronRightIcon className="size-2.5 shrink-0 transition-transform group-data-[state=open]/mt:rotate-90" aria-hidden="true" />
-          Proposal details
+          {isModeTransition ? 'Proposal details' : 'Document details'}
         </CollapsibleTrigger>
         {/* forceMount keeps the collapsed proposal in the DOM (old <details>
             semantics) for text search and replay tooling. */}
@@ -197,40 +183,43 @@ function ModeTransitionCard({
         <div className="agent-message-actions agent-mode-transition-document-actions m-0 px-4 pb-3">
           <CopyButton getText={() => item.text} copyText={callbacks.copyText} />
         </div>
+        {!isModeTransition && item.rawText && item.rawText !== item.text ? (
+          <Collapsible
+            className="agent-document-permission-technical-details group/document-details border-t"
+            open={technicalDetailsOpen}
+            onOpenChange={setTechnicalDetailsOpen}
+          >
+            <CollapsibleTrigger className="flex w-full cursor-pointer select-none items-center gap-2 px-4 py-2 text-left text-xs font-semibold text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
+              <ChevronRightIcon className="size-2.5 shrink-0 transition-transform group-data-[state=open]/document-details:rotate-90" aria-hidden="true" />
+              Technical details
+            </CollapsibleTrigger>
+            <CollapsibleContent forceMount className="data-[state=closed]:hidden">
+              <pre className="m-0 whitespace-pre-wrap break-words border-t bg-background px-4 py-3 font-mono text-xs leading-normal">{item.rawText}</pre>
+            </CollapsibleContent>
+          </Collapsible>
+        ) : null}
         <div className="agent-mode-transition-decision border-t px-4 pt-3">
-          <div className="agent-mode-transition-decision-label mb-2 text-xs font-semibold text-muted-foreground">Choose how to continue</div>
-          <div className="agent-mode-transition-options grid gap-2" role="group" aria-label="Choose how to continue">
-            {item.options.length === 0 ? (
-              <div className="agent-mode-transition-error rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs leading-normal text-destructive">
-                The ACP Agent did not provide any response options.
-              </div>
-            ) : (
-              item.options.map((option) => (
-                <Button
-                  key={option.optionId || option.name}
-                  type="button"
-                  variant="outline"
-                  className={
-                    'agent-mode-transition-option min-h-10 w-full min-w-0 cursor-pointer whitespace-normal break-words px-3 py-2 text-left text-xs font-semibold leading-snug disabled:cursor-default' +
-                    (decisionOptionClass(option) ? ' ' + decisionOptionClass(option) : '') +
-                    (option.optionId === item.selectedOptionId
-                      ? ' agent-mode-transition-option-selected border-ring bg-accent'
-                      : ' disabled:opacity-70')
-                  }
-                  data-option-id={option.optionId}
-                  data-option-kind={option.kind}
-                  aria-pressed={option.optionId === item.selectedOptionId ? 'true' : 'false'}
-                  disabled={!pending}
-                  onClick={() => {
-                    if (item.decisionState !== 'active') return;
-                    callbacks.onDecisionOption(item, option);
-                  }}
-                >
-                  {option.name}
-                </Button>
-              ))
-            )}
+          <div className="agent-mode-transition-decision-label mb-2 text-xs font-semibold text-muted-foreground">
+            {isModeTransition ? 'Choose how to continue' : 'Choose a response'}
           </div>
+          {item.options.length === 0 ? (
+            <div className="agent-mode-transition-error rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs leading-normal text-destructive">
+              The ACP Agent did not provide any response options.
+            </div>
+          ) : (
+            <DecisionOptionPills
+              options={item.options}
+              selectedOptionId={item.selectedOptionId}
+              disabled={!pending}
+              ariaLabel={isModeTransition ? 'Choose how to continue' : 'Choose a response'}
+              className="agent-mode-transition-options"
+              buttonClassName="agent-mode-transition-option"
+              onSelect={(option) => {
+                if (item.decisionState !== 'active') return;
+                callbacks.onDecisionOption(item, option);
+              }}
+            />
+          )}
         </div>
         <div className="agent-mode-transition-status min-h-[17px] px-4 pt-2 pb-3 text-xs leading-snug text-muted-foreground" aria-live="polite">
           {statusText}
@@ -635,8 +624,8 @@ export function DecisionCard({
   assistantName: string;
   callbacks: DecisionCallbacks;
 }): JSX.Element {
-  if (item.kind === 'mode_transition') {
-    return <ModeTransitionCard item={item} callbacks={callbacks} />;
+  if (item.kind === 'mode_transition' || item.kind === 'document_permission') {
+    return <DocumentDecisionCard item={item} callbacks={callbacks} />;
   }
   if (item.kind === 'elicitation') {
     return <ElicitationCard item={item} callbacks={callbacks} />;

@@ -5,7 +5,7 @@ namespace PSX.Tests.Unit;
 
 [TestClass]
 [TestCategory("Unit")]
-public sealed class ModeTransitionSnapshotMergerTests
+public sealed class DocumentDecisionSnapshotMergerTests
 {
     [TestMethod]
     [DataRow("pending", "interrupted")]
@@ -17,7 +17,7 @@ public sealed class ModeTransitionSnapshotMergerTests
     {
         var source = CreateTransition("request-1", "tool-1", sourceState);
 
-        var clone = ModeTransitionSnapshotMerger.CloneMessage(source);
+        var clone = DocumentDecisionSnapshotMerger.CloneMessage(source);
 
         Assert.AreEqual(expectedState, clone.DecisionState);
         Assert.AreEqual("mode_transition", clone.Role);
@@ -37,7 +37,7 @@ public sealed class ModeTransitionSnapshotMergerTests
         };
         var snapshot = CreateTransition("request-1", "tool-1", "selected");
 
-        ModeTransitionSnapshotMerger.Merge(replay, [snapshot]);
+        DocumentDecisionSnapshotMerger.Merge(replay, [snapshot]);
 
         Assert.HasCount(2, replay);
         var transition = replay.Single(message => message.Role == "mode_transition");
@@ -51,7 +51,7 @@ public sealed class ModeTransitionSnapshotMergerTests
     {
         var replay = new List<AgentMessage> { new() { Role = "assistant", Text = "Before" } };
 
-        ModeTransitionSnapshotMerger.Merge(replay, [CreateTransition("request-1", "tool-1", "pending")]);
+        DocumentDecisionSnapshotMerger.Merge(replay, [CreateTransition("request-1", "tool-1", "pending")]);
 
         Assert.HasCount(2, replay);
         Assert.AreEqual("interrupted", replay[1].DecisionState);
@@ -64,11 +64,29 @@ public sealed class ModeTransitionSnapshotMergerTests
         var pending = CreateTransition("request-1", "tool-1", "pending");
         var selected = CreateTransition("request-1", "tool-1", "selected");
 
-        ModeTransitionSnapshotMerger.Merge(replay, [pending, selected]);
+        DocumentDecisionSnapshotMerger.Merge(replay, [pending, selected]);
 
         Assert.HasCount(1, replay);
         Assert.AreEqual("selected", replay[0].DecisionState);
         Assert.AreEqual("tool-1", replay[0].ToolCallId);
+    }
+
+    [TestMethod]
+    public void Merge_PreservesDocumentPermissionRoleAndReplacesItsToolCard()
+    {
+        var replay = new List<AgentMessage>
+        {
+            new() { Role = "tool", ToolCallId = "kimi-plan", RunId = "replayed-run", Text = "raw tool" }
+        };
+        var document = CreateTransition("kimi-request", "kimi-plan", "selected");
+        document.Role = "document_permission";
+
+        DocumentDecisionSnapshotMerger.Merge(replay, [document]);
+
+        Assert.HasCount(1, replay);
+        Assert.AreEqual("document_permission", replay[0].Role);
+        Assert.AreEqual("replayed-run", replay[0].RunId);
+        Assert.AreEqual("selected", replay[0].DecisionState);
     }
 
     [TestMethod]
@@ -81,18 +99,20 @@ public sealed class ModeTransitionSnapshotMergerTests
                 CreateTransition("pending", "tool-1", "pending"),
                 CreateTransition("sending", "tool-2", "sending"),
                 CreateTransition("selected", "tool-3", "selected"),
+                new() { Role = "document_permission", DecisionState = "pending" },
                 new() { Role = "tool", DecisionState = "pending" }
             ]
         };
 
-        var changed = ModeTransitionSnapshotMerger.InterruptPending(thread);
+        var changed = DocumentDecisionSnapshotMerger.InterruptPending(thread);
 
         Assert.IsTrue(changed);
         Assert.AreEqual("interrupted", thread.Messages[0].DecisionState);
         Assert.AreEqual("interrupted", thread.Messages[1].DecisionState);
         Assert.AreEqual("selected", thread.Messages[2].DecisionState);
-        Assert.AreEqual("pending", thread.Messages[3].DecisionState);
-        Assert.IsFalse(ModeTransitionSnapshotMerger.InterruptPending(thread));
+        Assert.AreEqual("interrupted", thread.Messages[3].DecisionState);
+        Assert.AreEqual("pending", thread.Messages[4].DecisionState);
+        Assert.IsFalse(DocumentDecisionSnapshotMerger.InterruptPending(thread));
     }
 
     private static AgentMessage CreateTransition(string requestId, string toolCallId, string state)

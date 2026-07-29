@@ -96,7 +96,7 @@ public sealed class ThinkingMessageNormalizerTests
             SelectedOptionId = "approve"
         };
 
-        ModeTransitionSnapshotMerger.Merge(messages, [snapshot]);
+        DocumentDecisionSnapshotMerger.Merge(messages, [snapshot]);
         ThinkingMessageNormalizer.Normalize(messages);
 
         CollectionAssert.AreEqual(

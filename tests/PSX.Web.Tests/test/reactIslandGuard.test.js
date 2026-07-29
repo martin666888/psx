@@ -140,4 +140,41 @@ describe('lazy React-island loading guard', () => {
     }
     assert.deepEqual(findings, []);
   });
+
+  it('keeps ACP approval choices on the shared neutral pill style', () => {
+    const forbidden = [
+      'decisionOptionClass',
+      'agent-btn-allow',
+      'agent-btn-reject',
+      'agent-btn-always-allow',
+      '--agent-allow-color',
+      '--agent-deny-color',
+      '--agent-caution-color'
+    ];
+    const findings = [];
+    const roots = [agentSrc, path.join(repositoryRoot, 'frontend', 'webview', 'src')];
+    for (const root of roots) {
+      for (const abs of walkFiles(root, /\.(?:ts|tsx|js|css)$/)) {
+        const source = fs.readFileSync(abs, 'utf8');
+        for (const token of forbidden) {
+          if (source.includes(token)) {
+            findings.push(path.relative(repositoryRoot, abs).replaceAll('\\', '/') + ': ' + token);
+          }
+        }
+      }
+    }
+
+    const timelineSource = fs.readFileSync(
+      path.join(agentSrc, 'timeline', 'TimelineDecisions.tsx'),
+      'utf8'
+    );
+    const composerSource = fs.readFileSync(
+      path.join(agentSrc, 'composer', 'ModeTransitionPrompt.tsx'),
+      'utf8'
+    );
+    assert.deepEqual(findings, []);
+    assert.match(timelineSource, /DecisionOptionPills/);
+    assert.match(composerSource, /DecisionOptionPills/);
+    assert.doesNotMatch(composerSource, /variant=["']destructive["']/);
+  });
 });

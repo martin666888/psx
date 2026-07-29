@@ -119,7 +119,10 @@ test('historical mode transitions map selected, cancelled and interrupted states
     toolCallId: 'tc-' + index,
     name: 'Plan',
     text: '# Proposal',
-    decisionOptions: [{ optionId: 'approve', name: 'Approve', kind: 'allow_once' }],
+    decisionOptions: [
+      { optionId: 'approve', name: 'Approve', kind: 'allow_once' },
+      { optionId: 'revise', name: 'Revise', kind: 'reject_once' }
+    ],
     selectedOptionId: decisionState === 'selected' ? 'approve' : '',
     decisionState
   }));
@@ -133,6 +136,51 @@ test('historical mode transitions map selected, cancelled and interrupted states
     ['Selected', 'Cancelled', 'Interrupted']
   );
   assert.equal(cards[0].querySelector('[data-option-id="approve"]').getAttribute('aria-pressed'), 'true');
+  assert.equal(cards[0].querySelectorAll('[data-option-id]').length, 1);
+  assert.equal(cards[1].querySelectorAll('[data-option-id]').length, 2);
+  assert.equal(cards[2].querySelectorAll('[data-option-id]').length, 2);
+  assert.ok([...cards[1].querySelectorAll('[data-option-id]')].every((button) => button.disabled));
+  assert.ok([...cards[2].querySelectorAll('[data-option-id]')].every((button) => button.disabled));
+  await view.dispose();
+});
+
+test('document permissions render Markdown, preserve explicit technical details and stay interactive', async () => {
+  const chosen = [];
+  const view = await renderEvents([
+    ['permission_request', {
+      requestId: 'kimi-doc',
+      presentation: 'document',
+      title: 'ExitPlanMode',
+      toolCallId: 'kimi-tool',
+      documentText: '# Plan\n\n- Review\n- Implement\n\n```ts\nconst safe = true;\n```',
+      text: '{"path":"plan.md"}',
+      options: [
+        { optionId: 'approve', name: 'Approve', kind: 'allow_once' },
+        { optionId: 'revise', name: 'Revise', kind: 'reject_once' },
+        { optionId: 'reject', name: 'Reject and Exit', kind: 'reject_once' }
+      ]
+    }]
+  ], {
+    onDecisionOption: (item, option) => chosen.push([item.requestId, option.optionId])
+  });
+  const card = view.host.querySelector('.agent-document-permission');
+  assert.ok(card);
+  assert.match(card.querySelector('.agent-mode-transition-document').innerHTML, /<h1>Plan<\/h1>/);
+  assert.match(card.querySelector('.agent-mode-transition-document').innerHTML, /<ul>/);
+  assert.match(card.querySelector('.agent-mode-transition-document').innerHTML, /<pre><code/);
+  assert.match(card.textContent, /Document details/);
+  assert.match(card.textContent, /Technical details/);
+  assert.doesNotMatch(card.textContent, /toolCallId/);
+  assert.ok(card.querySelector('.agent-mode-transition-options').classList.contains('flex-wrap'));
+  assert.equal(card.querySelector('.agent-mode-transition-options').classList.contains('grid-cols-3'), false);
+  assert.ok(card.querySelector('[data-option-id="approve"]').classList.contains('rounded-full'));
+  assert.equal(card.querySelector('[data-option-id="approve"]').classList.contains('agent-btn-allow'), false);
+  assert.equal(card.querySelector('[data-option-id="revise"]').classList.contains('agent-btn-reject'), false);
+
+  await act(async () => card.querySelector('.agent-document-permission-technical-details button').click());
+  assert.match(card.textContent, /"path":"plan.md"/);
+  await act(async () => card.querySelector('[data-option-id="approve"]').click());
+  assert.deepEqual(chosen, [['kimi-doc', 'approve']]);
   await view.dispose();
 });
 

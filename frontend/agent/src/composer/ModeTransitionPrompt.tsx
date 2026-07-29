@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, type JSX } from 'react';
 import { Button } from '../components/ui/button.js';
+import { DecisionOptionPills } from '../decisions/DecisionOptionPills.js';
 
 export interface ComposerModeTransitionOptionVM {
   optionId: string;
   name: string;
   kind: string;
-  semanticClass: string;
 }
 
 export interface ComposerModeTransitionPromptVM {
@@ -65,9 +65,9 @@ export function ModeTransitionPrompt({
         <Button
           ref={stopRef}
           type="button"
-          variant="destructive"
+          variant="outline"
           size="sm"
-          className="min-w-[72px] shrink-0 text-xs"
+          className="min-w-[72px] shrink-0 rounded-full text-xs"
           disabled={stopping}
           title={'Stop ' + prompt.assistantName}
           onClick={() => {
@@ -81,37 +81,28 @@ export function ModeTransitionPrompt({
         </Button>
       </div>
 
-      <div className="grid gap-[var(--agent-space-2)]" role="group" aria-label="Choose how to continue">
-        {prompt.interactive ? (
-          prompt.options.map((option, index) => (
-            <Button
-              key={option.optionId}
-              ref={index === 0 ? firstOptionRef : undefined}
-              type="button"
-              variant="outline"
-              className={
-                'agent-composer-decision-option min-h-9 h-auto w-full min-w-0 justify-start whitespace-normal break-words px-[var(--agent-space-3)] py-[var(--agent-space-2)] text-left text-xs font-semibold leading-[1.4]' +
-                (option.semanticClass ? ' ' + option.semanticClass : '')
-              }
-              data-option-id={option.optionId}
-              data-option-kind={option.kind}
-              disabled={optionsLocked}
-              onClick={() => {
-                if (optionsLocked) return;
-                setDecisionState('sending');
-                setStatus('Sending ' + option.name + '…');
-                prompt.onRespond(option.optionId);
-              }}
-            >
-              {option.name}
-            </Button>
-          ))
-        ) : (
+      {prompt.interactive ? (
+        <DecisionOptionPills
+          options={prompt.options}
+          disabled={optionsLocked}
+          ariaLabel="Choose how to continue"
+          className="agent-composer-decision-options"
+          buttonClassName="agent-composer-decision-option"
+          firstOptionRef={firstOptionRef}
+          onSelect={(option) => {
+            if (optionsLocked) return;
+            setDecisionState('sending');
+            setStatus('Sending ' + option.name + '…');
+            prompt.onRespond(option.optionId);
+          }}
+        />
+      ) : (
+        <div role="group" aria-label="Choose how to continue">
           <div className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs leading-normal text-destructive">
             {prompt.errorText}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       <div
         className={

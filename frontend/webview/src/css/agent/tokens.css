@@ -26,9 +26,6 @@
     --agent-code-block-text: #f3ead7;
     --agent-code-block-border: #514d3f;
     /* 决策按钮 */
-    --agent-allow-color: #4ade80;
-    --agent-deny-color: #f87171;
-    --agent-caution-color: #facc15;
     /* 遮罩/阴影/focus */
     --agent-overlay: #000000;
     --agent-shadow: #000000;

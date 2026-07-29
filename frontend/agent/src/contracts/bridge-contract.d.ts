@@ -187,6 +187,23 @@ interface AgentModeTransitionRequestEvent extends AgentWorkspaceEventBase {
     options: AgentDecisionOptionPayload[];
 }
 
+/**
+ * permission_request with presentation 'document' — a structured document
+ * supplied by an ACP Agent without claiming the switch_mode protocol
+ * semantics. It remains an ordinary ACP permission response.
+ */
+interface AgentDocumentPermissionRequestEvent extends AgentWorkspaceEventBase {
+    type: 'permission_request';
+    presentation: 'document';
+    requestId: string;
+    toolCallId: string;
+    title?: string;
+    /** Explicit tool input, when the Agent supplied one; never a toolCall JSON fallback. */
+    text?: string;
+    documentText: string;
+    options: AgentDecisionOptionPayload[];
+}
+
 /** Agent events other than the permission_request variants modeled above.
  * Kept free of 'permission_request' so narrowing on `type` can never fall
  * back to a wide branch without requestId/presentation. (Terminal, settings
@@ -258,12 +275,13 @@ interface AgentGlobalHostEvent extends BridgeInboundMessageBase {
 }
 
 /** Every event AgentThreadManager.handleEvent may receive. Narrowing on
- * `type === 'permission_request'` yields exactly the two concrete variants
+ * `type === 'permission_request'` yields the concrete presentation variants
  * above; narrowing on `presentation` then separates them. */
 type AgentEvent =
     | AgentGenericEvent
     | AgentPermissionRequestEvent
-    | AgentModeTransitionRequestEvent;
+    | AgentModeTransitionRequestEvent
+    | AgentDocumentPermissionRequestEvent;
 
 /** Every event the C# host may post to the frontend. */
 type BridgeInboundMessage =

@@ -343,6 +343,47 @@ internal sealed class FakeAcpAgent
             }).ConfigureAwait(false);
             WriteAssistantChunk($"Empty permission result: {ReadPermissionOption(permission)}");
         }
+        else if (text.Contains("document permission", StringComparison.OrdinalIgnoreCase))
+        {
+            WriteSessionUpdate(new
+            {
+                sessionUpdate = "tool_call",
+                toolCallId = "tool-document-permission",
+                title = "ExitPlanMode",
+                status = "in_progress"
+            });
+            var permission = await SendClientRequestAsync("session/request_permission", new
+            {
+                sessionId = GetString(parameters, "sessionId", "fake-session-new"),
+                toolCall = new
+                {
+                    toolCallId = "tool-document-permission",
+                    title = "ExitPlanMode",
+                    status = "pending",
+                    content = new object[]
+                    {
+                        new { type = "text", text = "# Kimi plan\n\n1. Review the request\n2. Implement the change" },
+                        new { type = "text", text = "Plan saved for approval." }
+                    }
+                },
+                options = new[]
+                {
+                    new { optionId = "approve", name = "Approve", kind = "allow_once" },
+                    new { optionId = "revise", name = "Revise", kind = "reject_once" },
+                    new { optionId = "reject", name = "Reject and Exit", kind = "reject_once" }
+                }
+            }).ConfigureAwait(false);
+
+            var optionId = ReadPermissionOption(permission);
+            WriteSessionUpdate(new
+            {
+                sessionUpdate = "tool_call_update",
+                toolCallId = "tool-document-permission",
+                title = "ExitPlanMode",
+                status = "completed"
+            });
+            WriteAssistantChunk($"Document permission result: {optionId}");
+        }
         else if (text.Contains("ordinary permission", StringComparison.OrdinalIgnoreCase))
         {
             var permission = await SendClientRequestAsync("session/request_permission", new

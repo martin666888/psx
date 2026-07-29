@@ -45,12 +45,21 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         public string Description { get; init; } = "";
     }
 
+    private enum PermissionPresentation
+    {
+        Ordinary,
+        Document,
+        ModeTransition
+    }
+
     private sealed class PendingPermission
     {
         public TaskCompletionSource<string> Completion { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         public IReadOnlyList<AgentDecisionOption> Options { get; init; } = Array.Empty<AgentDecisionOption>();
-        public bool IsModeTransition { get; init; }
+        public PermissionPresentation Presentation { get; init; }
+        public bool IsDocumentDecision => Presentation is PermissionPresentation.Document or PermissionPresentation.ModeTransition;
+        public bool IsModeTransition => Presentation == PermissionPresentation.ModeTransition;
     }
 
     private sealed class PendingElicitation
@@ -132,7 +141,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     private readonly Dictionary<string, string> _toolSummaries = new();
     private readonly Dictionary<string, string> _toolOutputs = new();
     private readonly HashSet<string> _startedToolCallIds = new();
-    private readonly HashSet<string> _modeTransitionToolCallIds = new();
+    private readonly HashSet<string> _documentDecisionToolCallIds = new();
     private readonly Dictionary<string, string> _availableAgentCommands = new(StringComparer.OrdinalIgnoreCase);
     private AgentThread _currentThread;
     private AcpJsonRpcTransport? _transport;
@@ -347,8 +356,8 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             if (_pendingPermissions.TryRemove(item.Key, out var pending))
             {
                 pending.Completion.TrySetResult("__cancelled__");
-                if (pending.IsModeTransition)
-                    UpdateModeTransitionState(item.Key, "cancelled");
+                if (pending.IsDocumentDecision)
+                    UpdateDocumentDecisionState(item.Key, pending.Presentation, "cancelled");
                 await _bridgeService.SendEventAsync(new
                 {
                     type = "permission_cancelled",
@@ -1526,7 +1535,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             _toolSummaries.Clear();
             _toolOutputs.Clear();
             _startedToolCallIds.Clear();
-            _modeTransitionToolCallIds.Clear();
+            _documentDecisionToolCallIds.Clear();
             _currentRunId = Guid.NewGuid().ToString();
             _runCts = cts;
             _runRequestCts = requestCts;
@@ -1795,9 +1804,9 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         // overwrite the archive, because providers may replay injected context
         // as user chunks and fragment assistant text around tool events.
         var hasLocalTranscript = _currentThread.Messages.Count > 0;
-        var modeTransitionSnapshots = _currentThread.Messages
-            .Where(message => message.Role == "mode_transition")
-            .Select(ModeTransitionSnapshotMerger.CloneMessage)
+        var documentDecisionSnapshots = _currentThread.Messages
+            .Where(DocumentDecisionSnapshotMerger.IsDocumentDecision)
+            .Select(DocumentDecisionSnapshotMerger.CloneMessage)
             .ToArray();
         var replay = new ReplayHistoryState();
         // With a local transcript only control updates are applied and content
@@ -1828,7 +1837,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             {
                 // Keep the archive. A still-pending mode transition cannot be
                 // answered after a reload, so mark it interrupted locally.
-                var interrupted = ModeTransitionSnapshotMerger.InterruptPending(_currentThread);
+                var interrupted = DocumentDecisionSnapshotMerger.InterruptPending(_currentThread);
                 // One unified persist for everything ControlOnly captured in
                 // memory (usage, mode, title) plus the interruption above,
                 // instead of a disk write per control update.
@@ -1843,7 +1852,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             // No local archive (e.g. a thread imported by session id only):
             // rebuild the transcript from the replayed chunk stream.
             FinishReplayHistory(replay);
-            ModeTransitionSnapshotMerger.Merge(replay.Messages, modeTransitionSnapshots);
+            DocumentDecisionSnapshotMerger.Merge(replay.Messages, documentDecisionSnapshots);
             ThinkingMessageNormalizer.Normalize(replay.Messages);
 
             if (replay.Messages.Count > 0)
@@ -2179,11 +2188,15 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         var toolKind = GetString(toolCall, "kind");
         var toolStatus = GetString(toolCall, "status");
         var documentText = AcpPermissionPolicy.ReadDocument(toolCall);
-        var isModeTransition = AcpPermissionPolicy.IsModeTransition(toolKind, documentText);
+        var presentation = AcpPermissionPolicy.IsModeTransition(toolKind, documentText)
+            ? PermissionPresentation.ModeTransition
+            : !string.IsNullOrWhiteSpace(documentText)
+                ? PermissionPresentation.Document
+                : PermissionPresentation.Ordinary;
         var pending = new PendingPermission
         {
             Options = options,
-            IsModeTransition = isModeTransition
+            Presentation = presentation
         };
         _pendingPermissions[requestId] = pending;
 
@@ -2195,6 +2208,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
         // 提取工具输入参数：尝试多个可能的字段
         var toolInput = "";
+        string? explicitToolInput = null;
         if (toolCall.ValueKind != JsonValueKind.Undefined)
         {
             if (toolCall.TryGetProperty("rawInput", out var rawInput))
@@ -2202,14 +2216,17 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 toolInput = rawInput.ValueKind == JsonValueKind.String
                     ? rawInput.GetString() ?? ""
                     : rawInput.GetRawText();
+                explicitToolInput = toolInput;
             }
             else if (toolCall.TryGetProperty("input", out var input))
             {
                 toolInput = input.GetRawText();
+                explicitToolInput = toolInput;
             }
             else if (toolCall.TryGetProperty("arguments", out var args))
             {
                 toolInput = args.GetRawText();
+                explicitToolInput = toolInput;
             }
             else
             {
@@ -2218,12 +2235,13 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             }
         }
 
-        if (isModeTransition)
+        if (pending.IsDocumentDecision)
         {
             if (!string.IsNullOrWhiteSpace(toolCallId))
-                _modeTransitionToolCallIds.Add(toolCallId);
+                _documentDecisionToolCallIds.Add(toolCallId);
 
-            UpsertModeTransitionMessage(
+            UpsertDocumentDecisionMessage(
+                pending.Presentation,
                 requestId,
                 toolCallId,
                 title,
@@ -2237,12 +2255,17 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             type = "permission_request",
             requestId,
             title,
-            text = toolInput,
-            presentation = isModeTransition ? "mode_transition" : null,
+            text = pending.IsDocumentDecision ? explicitToolInput : toolInput,
+            presentation = pending.Presentation switch
+            {
+                PermissionPresentation.ModeTransition => "mode_transition",
+                PermissionPresentation.Document => "document",
+                _ => null
+            },
             toolCallId,
             toolKind,
             toolStatus,
-            documentText = isModeTransition ? documentText : null,
+            documentText = pending.IsDocumentDecision ? documentText : null,
             options = options.Select(option => new
             {
                 optionId = option.OptionId,
@@ -2254,8 +2277,8 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         if (options.Length == 0)
         {
             _pendingPermissions.TryRemove(requestId, out _);
-            if (isModeTransition)
-                UpdateModeTransitionState(requestId, "cancelled");
+            if (pending.IsDocumentDecision)
+                UpdateDocumentDecisionState(requestId, pending.Presentation, "cancelled");
             await _bridgeService.SendEventAsync(new
             {
                 type = "permission_cancelled",
@@ -2268,16 +2291,16 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         var selected = await pending.Completion.Task.ConfigureAwait(false);
         if (selected == "__cancelled__")
         {
-            if (isModeTransition)
-                UpdateModeTransitionState(requestId, "cancelled");
+            if (pending.IsDocumentDecision)
+                UpdateDocumentDecisionState(requestId, pending.Presentation, "cancelled");
             return new { outcome = new { outcome = "cancelled" } };
         }
 
         var selectedOption = AcpPermissionPolicy.FindOfferedOption(pending.Options, selected);
         if (selectedOption == null)
         {
-            if (isModeTransition)
-                UpdateModeTransitionState(requestId, "cancelled");
+            if (pending.IsDocumentDecision)
+                UpdateDocumentDecisionState(requestId, pending.Presentation, "cancelled");
 
             await _bridgeService.SendEventAsync(new
             {
@@ -2289,8 +2312,8 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         }
 
         selected = selectedOption.OptionId;
-        if (isModeTransition)
-            UpdateModeTransitionState(requestId, "selected", selected);
+        if (pending.IsDocumentDecision)
+            UpdateDocumentDecisionState(requestId, pending.Presentation, "selected", selected);
 
         await _bridgeService.SendEventAsync(new
         {
@@ -2682,7 +2705,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     private async Task HandleToolCallAsync(JsonElement update)
     {
         var reportedToolCallId = GetString(update, "toolCallId");
-        if (ShouldSuppressModeTransitionTool(reportedToolCallId))
+        if (ShouldSuppressDocumentDecisionTool(reportedToolCallId))
         {
             CleanupToolTracking(reportedToolCallId);
             return;
@@ -2711,7 +2734,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     private async Task HandleToolCallUpdateAsync(JsonElement update)
     {
         var reportedToolCallId = GetString(update, "toolCallId");
-        if (ShouldSuppressModeTransitionTool(reportedToolCallId))
+        if (ShouldSuppressDocumentDecisionTool(reportedToolCallId))
         {
             CleanupToolTracking(reportedToolCallId);
             return;
@@ -2983,7 +3006,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     private async Task FinishToolAsync(string toolCallId, string status)
     {
-        if (ShouldSuppressModeTransitionTool(toolCallId))
+        if (ShouldSuppressDocumentDecisionTool(toolCallId))
         {
             CleanupToolTracking(toolCallId);
             return;
@@ -3004,10 +3027,10 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         }).ConfigureAwait(false);
     }
 
-    private bool ShouldSuppressModeTransitionTool(string toolCallId)
+    private bool ShouldSuppressDocumentDecisionTool(string toolCallId)
     {
         return !string.IsNullOrWhiteSpace(toolCallId)
-               && _modeTransitionToolCallIds.Contains(toolCallId);
+               && _documentDecisionToolCallIds.Contains(toolCallId);
     }
 
     private void CleanupToolTracking(string toolCallId)
@@ -3431,7 +3454,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     private void ApplyThread(AgentThread thread)
     {
-        if (ModeTransitionSnapshotMerger.InterruptPending(thread))
+        if (DocumentDecisionSnapshotMerger.InterruptPending(thread))
             _threadStore.SaveThread(thread);
 
         ClearAvailableAgentCommands();
@@ -3449,7 +3472,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         _toolSummaries.Clear();
         _toolOutputs.Clear();
         _startedToolCallIds.Clear();
-        _modeTransitionToolCallIds.Clear();
+        _documentDecisionToolCallIds.Clear();
         _currentRunId = null;
     }
 
@@ -3763,7 +3786,8 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         }
     }
 
-    private void UpsertModeTransitionMessage(
+    private void UpsertDocumentDecisionMessage(
+        PermissionPresentation presentation,
         string requestId,
         string toolCallId,
         string title,
@@ -3771,8 +3795,9 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         IReadOnlyList<AgentDecisionOption> options,
         string state)
     {
+        var role = GetDocumentDecisionRole(presentation);
         var index = _currentThread.Messages.FindLastIndex(message =>
-            message.Role == "mode_transition"
+            message.Role == role
             && (string.Equals(message.RequestId, requestId, StringComparison.Ordinal)
                 || (!string.IsNullOrWhiteSpace(toolCallId)
                     && string.Equals(message.ToolCallId, toolCallId, StringComparison.Ordinal))));
@@ -3787,14 +3812,14 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         var existing = index >= 0 ? _currentThread.Messages[index] : null;
         var message = new AgentMessage
         {
-            Role = "mode_transition",
+            Role = role,
             Name = title,
             Text = documentText,
             RunId = existing?.RunId ?? _currentRunId,
             ToolCallId = toolCallId,
             RequestId = requestId,
             DecisionState = state,
-            DecisionOptions = options.Select(ModeTransitionSnapshotMerger.CloneOption).ToList(),
+            DecisionOptions = options.Select(DocumentDecisionSnapshotMerger.CloneOption).ToList(),
             CreatedAt = existing?.CreatedAt ?? DateTimeOffset.Now
         };
 
@@ -3807,17 +3832,22 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         {
             _currentThread.Messages.RemoveAll(candidate =>
                 !ReferenceEquals(candidate, message)
-                && candidate.Role == "tool"
+                && candidate.Role is "tool" or "mode_transition" or "document_permission"
                 && string.Equals(candidate.ToolCallId, toolCallId, StringComparison.Ordinal));
         }
 
         SaveCurrentThread();
     }
 
-    private void UpdateModeTransitionState(string requestId, string state, string? selectedOptionId = null)
+    private void UpdateDocumentDecisionState(
+        string requestId,
+        PermissionPresentation presentation,
+        string state,
+        string? selectedOptionId = null)
     {
+        var role = GetDocumentDecisionRole(presentation);
         var message = _currentThread.Messages.FindLast(candidate =>
-            candidate.Role == "mode_transition"
+            candidate.Role == role
             && string.Equals(candidate.RequestId, requestId, StringComparison.Ordinal));
         if (message == null)
             return;
@@ -3825,6 +3855,16 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         message.DecisionState = state;
         message.SelectedOptionId = selectedOptionId;
         SaveCurrentThread();
+    }
+
+    private static string GetDocumentDecisionRole(PermissionPresentation presentation)
+    {
+        return presentation switch
+        {
+            PermissionPresentation.ModeTransition => "mode_transition",
+            PermissionPresentation.Document => "document_permission",
+            _ => throw new ArgumentOutOfRangeException(nameof(presentation), presentation, "Only document presentations have transcript snapshots.")
+        };
     }
 
     private static List<AgentPlanEntry> ReadPlanEntries(JsonElement update)

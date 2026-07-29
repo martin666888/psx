@@ -2,7 +2,12 @@ using PSX.Models;
 
 namespace PSX.Services;
 
-internal static class ModeTransitionSnapshotMerger
+/// <summary>
+/// Preserves locally-rendered document decisions across ACP history replay.
+/// Mode transitions are one document-decision presentation; generic document
+/// permissions are another and deliberately keep their distinct transcript role.
+/// </summary>
+internal static class DocumentDecisionSnapshotMerger
 {
     public static AgentDecisionOption CloneOption(AgentDecisionOption option)
     {
@@ -14,11 +19,16 @@ internal static class ModeTransitionSnapshotMerger
         };
     }
 
+    public static bool IsDocumentDecision(AgentMessage message)
+    {
+        return message.Role is "mode_transition" or "document_permission";
+    }
+
     public static AgentMessage CloneMessage(AgentMessage message)
     {
         return new AgentMessage
         {
-            Role = "mode_transition",
+            Role = message.Role,
             Name = message.Name,
             Text = message.Text,
             RunId = message.RunId,
@@ -40,7 +50,7 @@ internal static class ModeTransitionSnapshotMerger
             var message = CloneMessage(snapshot);
             var index = !string.IsNullOrWhiteSpace(message.ToolCallId)
                 ? replayMessages.FindLastIndex(candidate =>
-                    candidate.Role is "tool" or "mode_transition"
+                    candidate.Role is "tool" or "mode_transition" or "document_permission"
                     && string.Equals(candidate.ToolCallId, message.ToolCallId, StringComparison.Ordinal))
                 : -1;
 
@@ -58,7 +68,7 @@ internal static class ModeTransitionSnapshotMerger
             {
                 replayMessages.RemoveAll(candidate =>
                     !ReferenceEquals(candidate, message)
-                    && candidate.Role is "tool" or "mode_transition"
+                    && candidate.Role is "tool" or "mode_transition" or "document_permission"
                     && string.Equals(candidate.ToolCallId, message.ToolCallId, StringComparison.Ordinal));
             }
         }
@@ -67,7 +77,7 @@ internal static class ModeTransitionSnapshotMerger
     public static bool InterruptPending(AgentThread thread)
     {
         var changed = false;
-        foreach (var message in thread.Messages.Where(message => message.Role == "mode_transition"))
+        foreach (var message in thread.Messages.Where(IsDocumentDecision))
         {
             if (message.DecisionState is not ("pending" or "sending"))
                 continue;

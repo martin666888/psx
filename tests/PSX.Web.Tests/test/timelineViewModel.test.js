@@ -249,6 +249,36 @@ test('a live mode transition replaces its tool card and is interrupted by run_fi
   assert.equal(transition.statusText, 'This request is no longer active.');
 });
 
+test('a document permission renders its document, replaces its tool card and is not a mode transition', () => {
+  const projection = fold([
+    ['user_message', { text: 'q' }],
+    ['tool_started', { runId: 'r1', toolCallId: 'kimi-tool', name: 'ExitPlanMode', input: 'raw tool' }],
+    [
+      'permission_request',
+      {
+        requestId: 'kimi-1',
+        presentation: 'document',
+        title: 'ExitPlanMode',
+        documentText: '# Kimi plan\n\n1. Review',
+        text: '',
+        toolCallId: 'kimi-tool',
+        options: [{ optionId: 'approve', name: 'Approve', kind: 'allow_once' }]
+      }
+    ]
+  ]);
+  const list = items(projection);
+  const group = list.find((item) => item.type === 'tool' && item.variant === 'run-group');
+  assert.equal(group.cards.length, 0);
+  const document = list.find((item) => item.type === 'decision');
+  assert.equal(document.kind, 'document_permission');
+  assert.equal(document.text, '# Kimi plan\n\n1. Review');
+  assert.equal(document.rawText, '');
+
+  projection.apply('run_failed', {}, NAME);
+  assert.equal(document.decisionState, 'disabled');
+  assert.equal(document.headerState, 'Interrupted');
+});
+
 test('historical mode transitions replay with the real C# decisionState values', () => {
   // C# persists selected / cancelled / interrupted (never "resolved").
   const replay = (decisionState, selectedOptionId) =>
@@ -287,6 +317,35 @@ test('historical mode transitions replay with the real C# decisionState values',
   const interrupted = items(replay('interrupted', '')).find((item) => item.type === 'decision');
   assert.equal(interrupted.headerState, 'Interrupted');
   assert.equal(interrupted.statusText, 'This request is no longer active.');
+});
+
+test('historical document permissions replay as disabled document decisions', () => {
+  const projection = fold([
+    [
+      'agent_thread_loaded',
+      {
+        clear: true,
+        messages: [
+          { role: 'user', text: 'go' },
+          {
+            role: 'document_permission',
+            requestId: 'kimi-history',
+            name: 'ExitPlanMode',
+            text: '# Saved plan',
+            decisionOptions: [{ optionId: 'approve', name: 'Approve' }],
+            selectedOptionId: 'approve',
+            decisionState: 'selected'
+          }
+        ]
+      }
+    ]
+  ]);
+  const document = items(projection).find((item) => item.type === 'decision');
+  assert.equal(document.kind, 'document_permission');
+  assert.equal(document.historical, true);
+  assert.equal(document.decisionState, 'disabled');
+  assert.equal(document.headerState, 'Selected');
+  assert.equal(document.selectedOptionId, 'approve');
 });
 
 test('normalizeToolState mirrors the legacy status buckets', () => {

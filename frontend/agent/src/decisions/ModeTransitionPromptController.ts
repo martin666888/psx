@@ -6,7 +6,6 @@ import type { FeatureController } from '../contracts/feature-controller.js';
 import type { AgentWorkspaceEvent, RawHostMessage } from '../contracts/host-events.js';
 import type { AgentWorkspaceState } from '../contracts/workspace-state.js';
 import type { ComposerModeTransitionPromptVM } from '../composer/ModeTransitionPrompt.js';
-import { decisionOptionClass } from './decisionPresentation.js';
 
 export interface ModeTransitionPromptHost {
   getPanel(workspaceId: string): HTMLElement | null;
@@ -86,8 +85,7 @@ export class ModeTransitionPromptController implements FeatureController {
         return {
           optionId,
           name: asString(option.name) || optionId || 'Select',
-          kind: asString(option.kind),
-          semanticClass: decisionOptionClass(option)
+          kind: asString(option.kind)
         };
       })
       .filter((option) => !!option.optionId);
