@@ -197,7 +197,7 @@ function ModeTransitionCard({
         <div className="agent-message-actions agent-mode-transition-document-actions m-0 px-4 pb-3">
           <CopyButton getText={() => item.text} copyText={callbacks.copyText} />
         </div>
-        <div className="agent-mode-transition-decision border-t px-4 pt-3 [&[hidden]]:hidden" hidden={pending}>
+        <div className="agent-mode-transition-decision border-t px-4 pt-3">
           <div className="agent-mode-transition-decision-label mb-2 text-xs font-semibold text-muted-foreground">Choose how to continue</div>
           <div className="agent-mode-transition-options grid gap-2" role="group" aria-label="Choose how to continue">
             {item.options.length === 0 ? (
@@ -220,7 +220,11 @@ function ModeTransitionCard({
                   data-option-id={option.optionId}
                   data-option-kind={option.kind}
                   aria-pressed={option.optionId === item.selectedOptionId ? 'true' : 'false'}
-                  disabled
+                  disabled={!pending}
+                  onClick={() => {
+                    if (item.decisionState !== 'active') return;
+                    callbacks.onDecisionOption(item, option);
+                  }}
                 >
                   {option.name}
                 </Button>

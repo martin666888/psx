@@ -97,7 +97,9 @@ export class TimelineController implements FeatureController {
 
   private resolveDecision(item: DecisionItem, option: DecisionOptionVM): void {
     if (!item.requestId) return;
-    if (item.kind === 'permission') {
+    if (item.kind === 'permission' || item.kind === 'mode_transition') {
+      // Mode transitions are ACP permission requests presented as a plan
+      // document; the backend awaits the same agent_permission_response.
       this.bridge()?.sendAgentPermissionResponse(item.requestId, option.optionId);
     } else if (item.kind === 'question') {
       this.bridge()?.sendAgentQuestionResponse(item.requestId, option.optionId);

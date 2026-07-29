@@ -76,6 +76,29 @@ test('permission response uses the unchanged bridge payload', async () => {
   assert.equal(thread().querySelector('[data-request-id="p1"]').dataset.decisionState, 'disabled');
 });
 
+test('mode transition card options approve directly from the timeline', async () => {
+  const { app, panel, runtime } = await fixture();
+  const thread = () => panel.querySelector('[data-role="thread"]');
+  await settle(
+    () => app.handle(modeTransitionEvent({ workspaceId: WS })),
+    () => !!thread()?.querySelector('.agent-mode-transition [data-option-id="approve"]')
+  );
+  const card = thread().querySelector('.agent-mode-transition');
+  const option = card.querySelector('[data-option-id="approve"]');
+  // Live approvals are clickable in the card itself, mirroring the composer
+  // prompt (second entry point, same agent_permission_response payload).
+  assert.equal(option.disabled, false);
+  await act(async () => option.click());
+  assert.deepEqual(runtime.postedMessages.at(-1), {
+    type: 'agent_permission_response',
+    workspaceId: WS,
+    requestId: 'request-1',
+    value: 'approve'
+  });
+  assert.equal(card.dataset.decisionState, 'disabled');
+  assert.equal(card.querySelector('[data-option-id="approve"]').disabled, true);
+});
+
 test('mode transition owns the composer prompt and restores it after resolution', async () => {
   const { app, panel, runtime } = await fixture();
   // The prompt controller is imperative and drops events whose composer shell
