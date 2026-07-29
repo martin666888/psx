@@ -64,12 +64,13 @@ Agent 前端只有 React 渲染路径。Web 前端源码位于 `frontend/webview
 
 以下行为依赖账号、网络、模型版本、服务端状态或主观视觉判断，不应放入稳定自动化门禁：
 
-1. 安装真实 ACP runtime，完成 Claude 登录；如果未来启用 Kimi provider，也完成对应登录。
+1. 安装真实 ACP runtime，完成 Claude 登录；同时完成 Kimi Code 的登录验收。
 2. 发起真实普通对话，确认流式文本、Thinking、Tool Activity、上下文用量和文件编辑结果。
 3. 进入 Plan 模式并触发 `switch_mode`，确认正文 Markdown、复制、折叠、Composer 位置的动态 ACP 选项和最终选择状态。
 4. 分别验证允许、拒绝、Stop、新请求替换旧决策，以及应用重启后的 selected/cancelled/interrupted 历史显示。
 5. 验证网络中断、登录过期、额度不足和 provider 进程异常时的错误文案与恢复路径。
 6. 在深色/浅色主题、最小窗口和高 DPI 下检查布局、滚动、键盘焦点与可读性。
 7. 阅读列人工验收（jsdom 不做布局，此项必须人工）：在 900 / 1000 / 1240 / 1440 / 1800px 窗口宽度下，分别开关 History dock 和 Plan 卡片，用 WebView DevTools 对对话内容列与 Composer 输入行做 `getBoundingClientRect()` 测量。无 History 时，两者在 `920px` 舒适宽度内居中，直到触及视口边距才缩窄；History 打开且空间足够时，两者保持 `920px`，仅在会碰撞时向右让出 dock + 16px，右侧不得出现镜像 dock 宽度的留白；当前 History 宽度导致 `dock + 16px + 920px + 24px` 放不下时，History 应临时收起、阅读列宽度不得跳变，放大后恢复保存的偏好。Plan overlay 开/关不得引起对话区任何重排。验证 <1000px 时 History 保持左侧 dock、Plan 保持内容高度卡片，二者自动收起且手动打开时互斥。
+8. 手动更新流程（真实 registry，不可自动化）：启动 PSX 后确认无任何 npm 进程被拉起（启动只推广已 staged 目录）；在 Claude 与 Kimi 各自的 Agent Tab 点击 Update，确认 Checking → 结果（Up to date / Restart to update）生命周期在同 runtime 的多个 Tab 同步显示，且新建 Tab 能看到上一次结果；断网后点击 Update 应显示 Retry update，Tooltip 展示后端失败原因，恢复网络后重试成功；Kimi 有新版本时确认下载落入 `runtime/kimi-next`、重启后推广到 `runtime/kimi-current` 并可正常对话（node-pty 等 prebuilt 组件无需本机编译）；升级 PSX 到含同版或更新 bundled Kimi 的包后，确认 runtime 副本被丢弃并回落 bundled。
 
 人工验收前先运行 `-Suite Full`，这样人工步骤只负责真实服务与体验层，不重复验证可自动化的协议和状态机。

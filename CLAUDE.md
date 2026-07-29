@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this project is
 
-PSX is a Windows desktop terminal shell (C# + WPF + WebView2 + xterm.js + ConPTY) for running AI Agent CLIs and dev tools. Two coexisting views share one window: a `Terminal` view (real ConPTY shells via xterm.js) and an `Agent` view backed by the Agent Client Protocol. Agent mode uses a curated provider architecture; Claude Code is currently the only registered/default provider. Multi-tab, themeable, persistent threads.
+PSX is a Windows desktop terminal shell (C# + WPF + WebView2 + xterm.js + ConPTY) for running AI Agent CLIs and dev tools. Two coexisting views share one window: a `Terminal` view (real ConPTY shells via xterm.js) and an `Agent` view backed by the Agent Client Protocol. Agent mode uses a curated provider architecture; Claude Code (default) and Kimi Code are the registered production providers. Runtime updates are strictly user-triggered from the Agent toolbar (startup only promotes an already-staged update locally, never touching the network); Claude Code updates through the `runtime/acp-current`/`acp-next` staging model and Kimi Code through `runtime/kimi-current`/`kimi-next` with the bundled `tools/kimi` baseline as fallback. Multi-tab, themeable, persistent threads.
 
 Project-level interface rules live in `.interface-design/system.md`. Read and follow them before changing WPF or WebView2 UI.
 
@@ -93,7 +93,7 @@ Output is batched in `Services/ConPtyService.ReadOutputLoopAsync`: `8ms` flush i
 
 Provider identity and compatibility policy live in `IAcpAgentProvider`. Runtime installation, update and process launch descriptions live in `IAcpAgentRuntime`; `AgentRuntimeCoordinator` deduplicates shared runtime work while each Agent Workspace starts an independent process. `AcpJsonRpcTransport` accepts an `AcpProcessSpec` and knows only how to run a process and exchange JSON-RPC over stdio. Provider, Thread and an established session's CWD are never swapped inside a live instance. Do not add provider-name conditionals to the shared engine.
 
-`ClaudeAcpAgentProvider` is currently the only registered/default provider. It owns the `acp-claude` identity, the legacy `claude-cli` alias, command filtering, ACP session parameters and the native `claude --resume` Terminal profile. `AcpRuntimeManager` currently implements `IAcpAgentRuntime` for the bundled Node + `@agentclientprotocol/claude-agent-acp` runtime. Unknown thread providers open transcript-only and must never be restored through Claude.
+`ClaudeAcpAgentProvider` (default) and `KimiCodeAcpAgentProvider` are the registered production providers. Claude owns the `acp-claude` identity, the legacy `claude-cli` alias, command filtering, ACP session parameters and the native `claude --resume` Terminal profile; `AcpRuntimeManager` implements its `IAcpAgentRuntime` for the bundled Node + `@agentclientprotocol/claude-agent-acp` runtime. Kimi owns the `acp-kimi` identity backed by `KimiCodeAcpRuntime` on the bundled `tools/kimi` baseline. Unknown thread providers open transcript-only and must never be restored through the default adapter.
 
 Agent slash commands are allowlisted. `AcpAgentSessionService` is the authoritative gate: it accepts PSX commands plus the current filtered `available_commands_update` catalog, and rejects every other leading `/command` before `session/prompt`. Keep the JS composer validation and the C# gate synchronized; inline `/text` inside a normal prompt is not a command.
 
@@ -105,13 +105,13 @@ Provider identity is sent to the frontend in `agent_state` and `runtime_status`.
 
 Long-running ACP requests (permission prompts, elicitation forms) block on a `TCS` until the JS layer sends a response message back. See `AcpAgentSessionService.PendingPermission.Completion` and the `HandlePermissionRequestAsync` flow. Cancellation is a magic string `"__cancelled__"` — fragile, but it's the only one. Don't add more magic strings; if you need a second one, replace the pattern with an enum.
 
-### 5. ACP runtime: dual-directory install + background refresh
+### 5. ACP runtime: dual-directory install + manual staged updates
 
 `AcpRuntimeManager` is the current Claude implementation of `IAcpAgentRuntime` and owns the installed ACP adapter across two directories:
 - `runtime/acp-current/` — what the live Agent session reads, exclusively
-- `runtime/acp-next/` — where background `npm update` writes
+- `runtime/acp-next/` — where a user-requested update stages
 
-Updates never mutate `acp-current` in place. Background refresh writes to `acp-next`, flips the `acp-active.txt` marker to `"next"`, and the **next PSX launch** promotes `acp-next` → `acp-current` (`TryPromoteNextToCurrentAsync`). This eliminates the half-updated `node_modules` hazard. If you see code paths trying to fall back from `acp-current` to `tools/acp/`, that's intentional hard refusal — version skew.
+Updates never mutate `acp-current` in place and are strictly user-triggered from the Agent toolbar — PSX startup only promotes an already-staged `acp-next` → `acp-current` (`TryPromoteNextToCurrentAsync`) and never touches npm or the network. A user-requested refresh writes to `acp-next`, flips the `acp-active.txt` marker to `"next"`, and the **next PSX launch** applies it. This eliminates the half-updated `node_modules` hazard. `KimiCodeAcpRuntime` mirrors the same model with `runtime/kimi-current`/`kimi-next`/`kimi-active.txt`, plus an `npm view` version pre-check, an exact-version `--engine-strict` install, a staged `--version` smoke check, and a bundled `tools/kimi` fallback whenever the bundled version is the same or newer. If you see code paths trying to fall back from `acp-current` to `tools/acp/`, that's intentional hard refusal — version skew.
 
 When `runtime/acp-current/` is missing, Agent mode publishes `runtime_status: missing` and disables the composer. The `install_runtime` command is the only normal path to `EnsureInstalledCoreAsync`; it seeds from `tools/acp-seed/` and runs `npm ci --include=optional` after explicit confirmation. `cancel_runtime_install` cancels npm and terminates its process tree. `EnsureTransportAsync` never installs implicitly. The installed runtime stays beside `PSX.exe`, so the same extracted directory reuses it and a new directory needs a new install.
 
