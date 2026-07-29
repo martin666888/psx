@@ -107,10 +107,6 @@ public sealed class WorkspaceManager : IWorkspaceManager
 
         if (workspace.Kind == WorkspaceKind.Terminal)
         {
-            // The Agent coordinator owns the active Agent runtime status. A
-            // Terminal activation must clear it so later runtime updates from
-            // a hidden Agent cannot make the native status bar reappear.
-            _agents.DeactivateRuntimeStatus();
             await _terminalTabs.SwitchTabAsync(workspaceId).ConfigureAwait(false);
             await _bridge.SendEventAsync(new
             {

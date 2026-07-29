@@ -15,19 +15,6 @@ public sealed class AgentWorkspaceClosedEventArgs : EventArgs
     public Guid WorkspaceId { get; init; }
 }
 
-/// <summary>
-/// The runtime status that belongs to the currently active Agent Workspace.
-/// A null WorkspaceId and Message clear the native status bar, for example
-/// when the user switches to a Terminal Workspace.
-/// </summary>
-public sealed class ActiveRuntimeStatusChangedEventArgs : EventArgs
-{
-    public Guid? WorkspaceId { get; init; }
-    public string? ProviderKey { get; init; }
-    public string? ProviderDisplayName { get; init; }
-    public string? Message { get; init; }
-}
-
 public interface IAgentWorkspaceCoordinator : IDisposable
 {
     IReadOnlyList<WorkspaceDescriptor> Workspaces { get; }
@@ -35,7 +22,6 @@ public interface IAgentWorkspaceCoordinator : IDisposable
     Task<Guid?> CreateAsync(string providerKey, string? workingDirectory = null);
     Task<Guid?> OpenThreadAsync(string threadId);
     Task ActivateAsync(Guid workspaceId);
-    void DeactivateRuntimeStatus();
     Task CloseAsync(Guid workspaceId, WorkspaceCloseReason reason);
     Task ShutdownAsync();
     Guid? FindOpenThread(string threadId);
@@ -45,7 +31,6 @@ public interface IAgentWorkspaceCoordinator : IDisposable
     event EventHandler<AgentWorkspaceEventArgs>? WorkspaceChanged;
     event EventHandler<AgentWorkspaceClosedEventArgs>? WorkspaceClosed;
     event EventHandler<Guid>? WorkspaceActivationRequested;
-    event EventHandler<ActiveRuntimeStatusChangedEventArgs>? ActiveRuntimeStatusChanged;
 }
 
 public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
@@ -78,13 +63,13 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
     private readonly ConcurrentDictionary<Guid, Entry> _entries = new();
     private readonly ConcurrentDictionary<string, Guid> _openThreads = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _shutdownLock = new();
+    // Guards the shared-runtime install-completion dedup set. The bottom
+    // status-bar projection is gone; runtime status now surfaces only in the
+    // main-content install card and the toolbar Update button.
     private readonly object _runtimeStatusLock = new();
     private readonly List<RuntimeStatusSubscription> _runtimeStatusSubscriptions = [];
-    private readonly Dictionary<IAcpAgentRuntime, string?> _runtimeStatusMessages =
-        new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<IAcpAgentRuntime> _readyRuntimeNotifications =
         new(ReferenceEqualityComparer.Instance);
-    private Guid? _activeAgentWorkspaceId;
     private Task? _shutdownTask;
     private bool _disposed;
 
@@ -125,7 +110,6 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
     public event EventHandler<AgentWorkspaceEventArgs>? WorkspaceChanged;
     public event EventHandler<AgentWorkspaceClosedEventArgs>? WorkspaceClosed;
     public event EventHandler<Guid>? WorkspaceActivationRequested;
-    public event EventHandler<ActiveRuntimeStatusChangedEventArgs>? ActiveRuntimeStatusChanged;
 
     public async Task<Guid?> CreateAsync(string providerKey, string? workingDirectory = null)
     {
@@ -301,10 +285,6 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
         if (!_entries.TryGetValue(workspaceId, out var entry) || entry.Closing)
             return Task.CompletedTask;
 
-        lock (_runtimeStatusLock)
-            _activeAgentWorkspaceId = workspaceId;
-
-        PublishActiveRuntimeStatus(entry);
         WorkspaceActivationRequested?.Invoke(this, workspaceId);
         return _rootBridge.SendEventAsync(new
         {
@@ -314,30 +294,10 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
         });
     }
 
-    public void DeactivateRuntimeStatus()
-    {
-        lock (_runtimeStatusLock)
-            _activeAgentWorkspaceId = null;
-
-        ActiveRuntimeStatusChanged?.Invoke(this, new ActiveRuntimeStatusChangedEventArgs());
-    }
-
     public async Task CloseAsync(Guid workspaceId, WorkspaceCloseReason reason)
     {
         if (!_entries.TryGetValue(workspaceId, out var entry) || entry.Closing)
             return;
-
-        var wasActive = false;
-        lock (_runtimeStatusLock)
-        {
-            if (_activeAgentWorkspaceId == workspaceId)
-            {
-                _activeAgentWorkspaceId = null;
-                wasActive = true;
-            }
-        }
-        if (wasActive)
-            ActiveRuntimeStatusChanged?.Invoke(this, new ActiveRuntimeStatusChangedEventArgs());
 
         entry.Closing = true;
         _entries.TryRemove(workspaceId, out _);
@@ -610,7 +570,11 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
 
     private void OnRuntimeStatusChanged(IAcpAgentRuntime runtime, string message)
     {
-        Entry? activeEntry = null;
+        // The bottom status bar no longer mirrors runtime status. This
+        // subscription remains solely to detect an install completing and
+        // fan the readiness out to every workspace sharing the runtime so
+        // their sessions resume — deduped so one install notifies once.
+        _ = message;
         var notifyRuntimeReady = false;
         var runtimeReady = false;
         try
@@ -624,23 +588,12 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
 
         lock (_runtimeStatusLock)
         {
-            _runtimeStatusMessages[runtime] = message;
             if (runtimeReady)
                 notifyRuntimeReady = _readyRuntimeNotifications.Add(runtime);
             else
                 _readyRuntimeNotifications.Remove(runtime);
-
-            if (_activeAgentWorkspaceId is { } activeWorkspaceId
-                && _entries.TryGetValue(activeWorkspaceId, out var entry)
-                && !entry.Closing
-                && UsesRuntime(entry, runtime))
-            {
-                activeEntry = entry;
-            }
         }
 
-        if (activeEntry != null)
-            PublishActiveRuntimeStatus(activeEntry);
         if (notifyRuntimeReady)
             _ = NotifyRuntimeReadySafelyAsync(runtime);
     }
@@ -685,48 +638,10 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
         }
     }
 
-    private void PublishActiveRuntimeStatus(Entry entry)
-    {
-        var provider = _providerRegistry.Find(entry.Descriptor.ProviderKey);
-        if (provider == null)
-        {
-            ActiveRuntimeStatusChanged?.Invoke(this, new ActiveRuntimeStatusChangedEventArgs());
-            return;
-        }
-
-        string? message;
-        lock (_runtimeStatusLock)
-        {
-            if (!_runtimeStatusMessages.TryGetValue(provider.Runtime, out message))
-                message = TryBuildRuntimeStatusText(provider.Runtime);
-        }
-
-        ActiveRuntimeStatusChanged?.Invoke(this, new ActiveRuntimeStatusChangedEventArgs
-        {
-            WorkspaceId = entry.Descriptor.WorkspaceId,
-            ProviderKey = entry.Descriptor.ProviderKey,
-            ProviderDisplayName = entry.Descriptor.ProviderName ?? provider.Descriptor.DisplayName,
-            Message = message
-        });
-    }
-
     private bool UsesRuntime(Entry entry, IAcpAgentRuntime runtime)
     {
         var provider = _providerRegistry.Find(entry.Descriptor.ProviderKey);
         return provider != null && ReferenceEquals(provider.Runtime, runtime);
-    }
-
-    private static string? TryBuildRuntimeStatusText(IAcpAgentRuntime runtime)
-    {
-        try
-        {
-            return runtime.BuildStatusText();
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine("Unable to read Agent runtime status: " + ex);
-            return null;
-        }
     }
 
     public Task ShutdownAsync()
@@ -745,7 +660,6 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
                 subscription.Runtime.StatusChanged -= subscription.Handler;
             _runtimeStatusSubscriptions.Clear();
             _readyRuntimeNotifications.Clear();
-            DeactivateRuntimeStatus();
             _shutdownTask = ShutdownCoreAsync();
             return _shutdownTask;
         }

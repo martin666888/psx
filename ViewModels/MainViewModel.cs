@@ -10,7 +10,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
 {
     private readonly IWorkspaceManager _workspaceManager;
     private bool _disposed;
-    private string? _routineStatus;
     private string? _persistentWarning;
 
     public ObservableCollection<TabItemViewModel> Tabs { get; } = new();
@@ -28,19 +27,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private bool _hasPersistentWarning;
 
     public bool HasStatus => !string.IsNullOrEmpty(StatusMessage);
-
-    public void SetStatus(string? message)
-    {
-        if (_disposed) return;
-        System.Windows.Application.Current.Dispatcher.BeginInvoke(() =>
-        {
-            if (_disposed) return;
-            // Routine status follows the active workspace's runtime. Persistent
-            // startup warnings still take precedence in RefreshStatusMessage.
-            _routineStatus = message;
-            RefreshStatusMessage();
-        });
-    }
 
     public void SetPersistentWarning(string? message)
     {
@@ -62,8 +48,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     private void RefreshStatusMessage()
     {
+        // The bottom bar now carries only persistent startup warnings (for
+        // example a missing WebView2 runtime); routine runtime status moved
+        // to the workspace toolbar. It stays collapsed until a warning fires.
         HasPersistentWarning = !string.IsNullOrWhiteSpace(_persistentWarning);
-        StatusMessage = HasPersistentWarning ? _persistentWarning : _routineStatus;
+        StatusMessage = HasPersistentWarning ? _persistentWarning : null;
         IsStatusVisible = !string.IsNullOrWhiteSpace(StatusMessage);
     }
 
