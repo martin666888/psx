@@ -20,7 +20,9 @@
 .agent-plan-panel::-webkit-scrollbar-track,
 .agent-command-menu-scroll::-webkit-scrollbar-track,
 .agent-history-dock-content::-webkit-scrollbar-track {
-    background: var(--agent-bg);
+    /* Scroll containers now sit on the rounded panel surfaces; a painted
+     * track would read as a strip of workbench backdrop inside the panel. */
+    background: transparent;
 }
 
 .agent-thread-scroll::-webkit-scrollbar-thumb,

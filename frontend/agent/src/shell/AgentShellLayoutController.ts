@@ -27,7 +27,12 @@ export interface AgentShellLayoutHost {
 
 const WIDE_QUERY = '(min-width: 1000px)';
 const READING_MAX_WIDTH = 920;
-const DOCK_GAP = 16;
+// Soft-workbench geometry mirrored from shell.css: the left workbench gutter
+// before the dock, the gap between the two panels, and the right viewport
+// padding the reading column keeps (measured from the viewport edge, so it
+// already covers the right gutter).
+const WORKBENCH_GUTTER = 12;
+const PANEL_GAP = 12;
 const VIEWPORT_PADDING = 24;
 
 export class AgentShellLayoutController {
@@ -82,10 +87,12 @@ export class AgentShellLayoutController {
 
   private historyWouldSqueezeReading(): boolean {
     // Keep the 920px reading column intact whenever it can sit to the right of
-    // the dock with one dock gap and the normal right viewport padding. This
-    // deliberately does not reserve a mirrored History-width strip on the
-    // right: the column is centered when possible and otherwise yields left.
-    const requiredWidth = this.host.historyWidth() + DOCK_GAP + READING_MAX_WIDTH + VIEWPORT_PADDING;
+    // the dock with the workbench gutter, one panel gap and the normal right
+    // viewport padding. This deliberately does not reserve a mirrored
+    // History-width strip on the right: the column is centered when possible
+    // and otherwise yields left.
+    const requiredWidth =
+      WORKBENCH_GUTTER + this.host.historyWidth() + PANEL_GAP + READING_MAX_WIDTH + VIEWPORT_PADDING;
     return this.viewportWidth() < requiredWidth;
   }
 

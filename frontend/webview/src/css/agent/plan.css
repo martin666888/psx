@@ -78,7 +78,7 @@
     overflow-x: hidden;
     overflow-y: auto;
     padding: 12px 14px 18px;
-    scrollbar-color: var(--agent-scrollbar) var(--agent-bg);
+    scrollbar-color: var(--agent-scrollbar) transparent;
     scrollbar-width: thin;
 }
 

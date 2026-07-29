@@ -162,14 +162,15 @@ test('responsive: History yields before it would squeeze the full reading column
   await click(trigger(panel));
   assert.equal(dock().hidden, false, 'History is visible while the full column fits');
 
-  // Default 280px History: 280 + 16px gap + 920px reading + 24px edge = 1240px.
-  breakpoint.setViewportWidth(1239);
+  // Default 280px History: 12px gutter + 280 + 12px panel gap + 920px
+  // reading + 24px edge = 1248px.
+  breakpoint.setViewportWidth(1247);
   assert.equal(dock().hidden, true, 'the dock yields instead of shrinking the reading column');
   assert.equal(container.classList.contains('agent-shell-history-collapsed-for-reading'), true);
   assert.equal(role(panel, 'plan-card').hidden, false, 'Plan stays an independent overlay');
   assert.equal(window.localStorage.getItem('psx.agent.historyDockOpen'), '1', 'responsive collapse is not persisted');
 
-  breakpoint.setViewportWidth(1240);
+  breakpoint.setViewportWidth(1248);
   assert.equal(dock().hidden, false, 'History restores once the full column fits again');
   assert.equal(container.classList.contains('agent-shell-history-collapsed-for-reading'), false);
 });

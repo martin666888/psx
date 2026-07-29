@@ -10,16 +10,19 @@
 
 .agent-history-dock {
     position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
+    /* A free-standing rounded panel: workbench gutter on top/bottom/left,
+     * with the main panel a --agent-panel-gap away on the right. */
+    top: var(--agent-workbench-gutter);
+    bottom: var(--agent-workbench-gutter);
+    left: var(--agent-workbench-gutter);
     z-index: var(--agent-layer-dock);
     display: flex;
     flex-direction: column;
     width: var(--agent-history-width-effective, 280px);
     min-width: 0;
-    border-right: 1px solid var(--agent-border);
-    background: var(--agent-bg);
+    border: 1px solid var(--agent-border);
+    border-radius: var(--agent-workspace-radius);
+    background: var(--agent-canvas-surface);
     color: var(--agent-text);
     font-family: var(--agent-font-ui);
 }
@@ -40,10 +43,16 @@
 }
 
 .agent-history-dock-content {
-    scrollbar-color: var(--agent-scrollbar) var(--agent-bg);
+    scrollbar-color: var(--agent-scrollbar) transparent;
     scrollbar-width: thin;
+    /* The scroll node reaches the panel's bottom corners; round it so the
+     * scrollbar and rows never poke past the panel radius. */
+    border-bottom-left-radius: calc(var(--agent-workspace-radius) - 1px);
+    border-bottom-right-radius: calc(var(--agent-workspace-radius) - 1px);
 }
 
+/* The resizer straddles the dock's right border into the panel gap; it must
+ * never be clipped by the rounded corners (the dock keeps overflow visible). */
 .agent-history-dock-resizer {
     position: absolute;
     top: 0;
@@ -60,7 +69,9 @@
     bottom: 0;
     left: 3px;
     width: 1px;
-    background: var(--agent-border);
+    /* The dock's own border already draws the edge; the affordance line only
+     * appears on hover/drag so the panel edge stays a single hairline. */
+    background: transparent;
 }
 
 .agent-history-dock-resizer:hover::before,
