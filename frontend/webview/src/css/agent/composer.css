@@ -27,7 +27,7 @@
 
 .agent-composer-card {
     overflow: visible;
-    border: 0;
+    border: 1px solid var(--agent-border-strong);
     border-radius: var(--agent-radius-composer);
     background: var(--card);
     box-shadow: var(--agent-shadow-composer);

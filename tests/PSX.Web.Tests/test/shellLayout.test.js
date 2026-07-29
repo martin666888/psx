@@ -182,6 +182,11 @@ test('shell: the Plan card and the runtime card follow the new canvas rules', ()
   assert.ok(!plan.includes('max-height: none'));
   assert.ok(!plan.includes('agent-plan-resizer'), 'resizer styles retired');
   assert.ok(!plan.includes('agent-plan-entry'), 'entry styles retired');
+  assert.match(
+    plan,
+    /\.agent-plan-card\s*\{[\s\S]*?border:\s*1px solid var\(--agent-border-strong\)/,
+    'Plan card uses the strong theme border so its outline survives dark themes'
+  );
 
   const runtime = readCss('runtime.css');
   // The install card rides the same reading column as the conversation.
@@ -213,6 +218,11 @@ test('shell: composer and conversation share the same reading-column rules', () 
   );
   assert.match(composer, /width: var\(--agent-reading-column-max\)/);
   assert.match(composer, /margin-left: max\(0px, var\(--agent-reading-column-start\)\)/);
+  assert.match(
+    composer,
+    /\.agent-composer-card\s*\{[\s\S]*?border:\s*1px solid var\(--agent-border-strong\)/,
+    'Composer uses the strong theme border instead of relying on a dark-theme shadow'
+  );
   assert.match(
     shell,
     /\.agent-thread-scroll-button\s*\{[\s\S]*?left:\s*calc\(\s*max\(0px, var\(--agent-reading-column-start\)\)\s*\+\s*var\(--agent-reading-column-max\) \/ 2\s*\)/,

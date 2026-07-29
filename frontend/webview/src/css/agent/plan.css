@@ -26,7 +26,7 @@
     flex-direction: column;
     max-height: min(60vh, 560px);
     overflow: hidden;
-    border: 1px solid var(--agent-border);
+    border: 1px solid var(--agent-border-strong);
     border-radius: var(--agent-radius-context-card);
     background: var(--agent-surface-raised);
     box-shadow: var(--agent-shadow-context-card);
