@@ -29,7 +29,8 @@ public sealed record AcpRuntimeVersionInfo(
     string? CurrentClaudeCodeVersion,
     string? PendingAcpVersion,
     bool IsInstalled,
-    bool HasPendingUpdate);
+    bool HasPendingUpdate,
+    string? PendingClaudeCodeVersion = null);
 
 /// <summary>
 /// Owns the ACP adapter installation across two directories:
@@ -97,10 +98,25 @@ public sealed class AcpRuntimeManager : IAcpAgentRuntime
     public RuntimeVersionSnapshot GetVersionSnapshot()
     {
         var info = GetVersionInfo();
+        // The toolbar shows the user-recognizable product version (Claude
+        // Code); the ACP adapter versions stay tooltip-only diagnostics.
         return new RuntimeVersionSnapshot(
-            CurrentVersion: info.CurrentAcpVersion,
-            PendingVersion: info.PendingAcpVersion,
-            HasPendingUpdate: info.HasPendingUpdate);
+            CurrentVersion: info.CurrentClaudeCodeVersion,
+            PendingVersion: info.PendingClaudeCodeVersion,
+            HasPendingUpdate: info.HasPendingUpdate)
+        {
+            ProductName = "Claude Code",
+            TechnicalDetails = BuildAcpTechnicalDetails(info)
+        };
+    }
+
+    private static string? BuildAcpTechnicalDetails(AcpRuntimeVersionInfo info)
+    {
+        if (string.IsNullOrWhiteSpace(info.CurrentAcpVersion))
+            return null;
+        return string.IsNullOrWhiteSpace(info.PendingAcpVersion)
+            ? $"ACP adapter {info.CurrentAcpVersion}"
+            : $"ACP adapter {info.CurrentAcpVersion} \u2192 {info.PendingAcpVersion}";
     }
 
     public bool IsReady()
@@ -164,7 +180,8 @@ public sealed class AcpRuntimeManager : IAcpAgentRuntime
             CurrentClaudeCodeVersion: isInstalled ? ReadClaudeCodeVersion(paths.AcpCurrentDirectory) : null,
             PendingAcpVersion: hasPendingUpdate ? ReadPackageVersion(paths.AcpNextDirectory, "@agentclientprotocol", "claude-agent-acp") : null,
             IsInstalled: isInstalled,
-            HasPendingUpdate: hasPendingUpdate);
+            HasPendingUpdate: hasPendingUpdate,
+            PendingClaudeCodeVersion: hasPendingUpdate ? ReadClaudeCodeVersion(paths.AcpNextDirectory) : null);
     }
 
     public string BuildStatusText(string? suffix = null)

@@ -31,6 +31,10 @@ public sealed class KimiCodeAcpRuntimeTests
         Assert.AreEqual(KimiVersion, snapshot.CurrentVersion);
         Assert.IsNull(snapshot.PendingVersion);
         Assert.IsFalse(snapshot.HasPendingUpdate);
+        // Kimi's package version is the product version, so the snapshot
+        // names the product and carries no duplicate technical details.
+        Assert.AreEqual("Kimi Code", snapshot.ProductName);
+        Assert.IsNull(snapshot.TechnicalDetails);
     }
 
     [TestMethod]

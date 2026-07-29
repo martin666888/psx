@@ -146,6 +146,16 @@ public sealed class AcpRuntimeManagerTests
         Assert.IsTrue(version.HasPendingUpdate);
         Assert.AreEqual(fixture.Paths.AcpCurrentDirectory, fixture.Manager.CreateProcessSpec("work").WorkingDirectory);
 
+        // The toolbar snapshot speaks Claude Code product versions; the ACP
+        // adapter pair moves into the technical details string.
+        var staged = fixture.Manager.GetVersionSnapshot();
+        Assert.AreEqual("Claude Code", staged.ProductName);
+        Assert.AreEqual("2.0.0-test", staged.CurrentVersion);
+        Assert.AreEqual("2.1.0-test", staged.PendingVersion);
+        Assert.IsTrue(staged.HasPendingUpdate);
+        StringAssert.Contains(staged.TechnicalDetails!, "ACP adapter 1.0.0");
+        StringAssert.Contains(staged.TechnicalDetails!, "2.0.0");
+
         Assert.IsTrue(await fixture.Manager.TryPromoteNextToCurrentAsync());
         Assert.AreEqual("current", File.ReadAllText(fixture.Paths.AcpActivePointerFile));
         Assert.AreEqual("2.0.0", fixture.Manager.GetVersionInfo().CurrentAcpVersion);
@@ -255,8 +265,12 @@ public sealed class AcpRuntimeManagerTests
         Assert.IsTrue(results.All(result => result.Kind == AcpRuntimeOperationKind.Success));
         var snapshot = fixture.Manager.GetVersionSnapshot();
         Assert.IsTrue(snapshot.HasPendingUpdate);
-        Assert.AreEqual("2.0.0", snapshot.PendingVersion);
-        Assert.AreEqual("1.0.0", snapshot.CurrentVersion);
+        // Product (Claude Code) versions from the fixture manifests; the ACP
+        // adapter 1.0.0 → 2.0.0 pair lives in TechnicalDetails only.
+        Assert.AreEqual("2.1.0-test", snapshot.PendingVersion);
+        Assert.AreEqual("2.0.0-test", snapshot.CurrentVersion);
+        Assert.AreEqual("Claude Code", snapshot.ProductName);
+        StringAssert.Contains(snapshot.TechnicalDetails!, "ACP adapter 1.0.0");
     }
 
     private static FakeNpmScenario Success(string command, string directory, string version) => new()

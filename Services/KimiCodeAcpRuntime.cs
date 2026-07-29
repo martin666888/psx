@@ -91,10 +91,15 @@ public sealed class KimiCodeAcpRuntime : IAcpAgentRuntime
 
         var hasPending = pendingVersion != null
             && !string.Equals(pendingVersion, currentVersion, StringComparison.OrdinalIgnoreCase);
+        // The Kimi package version IS the product version, so TechnicalDetails
+        // stays null (no duplicate display in the toolbar tooltip).
         return new RuntimeVersionSnapshot(
             CurrentVersion: currentVersion,
             PendingVersion: hasPending ? pendingVersion : null,
-            HasPendingUpdate: hasPending);
+            HasPendingUpdate: hasPending)
+        {
+            ProductName = "Kimi Code"
+        };
     }
 
     /// <summary>

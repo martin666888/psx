@@ -5,12 +5,24 @@ namespace PSX.Services;
 /// <summary>
 /// Version facts shared by every runtime for the toolbar Update surface:
 /// what is live now, what is staged for the next launch, and whether a
-/// staged update is waiting for a restart.
+/// staged update is waiting for a restart. Current/Pending carry the
+/// user-recognizable Agent product versions; adapter and runtime package
+/// diagnostics belong in <see cref="TechnicalDetails"/>.
 /// </summary>
 public sealed record RuntimeVersionSnapshot(
     string? CurrentVersion,
     string? PendingVersion,
-    bool HasPendingUpdate);
+    bool HasPendingUpdate)
+{
+    /// <summary>User-facing product name ("Claude Code", "Kimi Code").</summary>
+    public string? ProductName { get; init; }
+
+    /// <summary>
+    /// ACP adapter / runtime package diagnostics for tooltips. Null when the
+    /// technical version equals the product version (no duplicate display).
+    /// </summary>
+    public string? TechnicalDetails { get; init; }
+}
 
 public interface IAcpAgentRuntime : IDisposable
 {

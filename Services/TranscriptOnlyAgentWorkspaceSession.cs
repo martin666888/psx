@@ -94,7 +94,10 @@ internal sealed class TranscriptOnlyAgentWorkspaceSession : IAgentWorkspaceSessi
             state = "unavailable",
             message = "This saved transcript is read-only.",
             currentVersion = "",
-            pendingVersion = ""
+            pendingVersion = "",
+            // Read-only transcripts have no runtime, so no version text.
+            versionLabel = "",
+            versionDetail = ""
         });
     }
 

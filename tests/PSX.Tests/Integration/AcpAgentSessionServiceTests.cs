@@ -22,6 +22,10 @@ public sealed class AcpAgentSessionServiceTests
             "runtime_update_status",
             message => message.GetProperty("state").GetString() == "up_to_date");
         Assert.AreEqual("1.0.0-fake", final.GetProperty("currentVersion").GetString());
+        // The bridge carries the toolbar-facing product label and the
+        // tooltip-only technical detail alongside the raw version pair.
+        Assert.AreEqual("Fake Agent v1.0.0-fake", final.GetProperty("versionLabel").GetString());
+        Assert.AreEqual("ACP adapter 9.9.9-fake", final.GetProperty("versionDetail").GetString());
         var states = fixture.Bridge.Events
             .Where(message => EventType(message) == "runtime_update_status")
             .Select(message => message.GetProperty("state").GetString())

@@ -1069,8 +1069,21 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             state,
             message = message ?? "",
             currentVersion = snapshot.CurrentVersion ?? "",
-            pendingVersion = snapshot.PendingVersion ?? ""
+            pendingVersion = snapshot.PendingVersion ?? "",
+            // User-recognizable product version for the toolbar label; empty
+            // means "render no version text" (never a misleading v0/Unknown).
+            versionLabel = BuildVersionLabel(snapshot),
+            versionDetail = snapshot.TechnicalDetails ?? ""
         });
+    }
+
+    private static string BuildVersionLabel(RuntimeVersionSnapshot snapshot)
+    {
+        if (string.IsNullOrWhiteSpace(snapshot.CurrentVersion))
+            return "";
+        return string.IsNullOrWhiteSpace(snapshot.ProductName)
+            ? $"v{snapshot.CurrentVersion}"
+            : $"{snapshot.ProductName} v{snapshot.CurrentVersion}";
     }
 
     private bool TryHandlePsxSlashCommand(string commandText, out Task task)

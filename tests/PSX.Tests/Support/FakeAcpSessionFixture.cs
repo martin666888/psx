@@ -167,7 +167,11 @@ internal sealed class FakeAcpRuntime(TestWorkspace workspace, bool initiallyRead
         new(
             CurrentVersion: "1.0.0-fake",
             PendingVersion: _refreshed ? StagedVersion : null,
-            HasPendingUpdate: _refreshed && StagedVersion != null);
+            HasPendingUpdate: _refreshed && StagedVersion != null)
+        {
+            ProductName = "Fake Agent",
+            TechnicalDetails = "ACP adapter 9.9.9-fake"
+        };
 
     public string BuildStatusText(string? suffix = null) =>
         suffix ?? (_ready ? "Fake ACP runtime ready." : "Fake ACP runtime is not installed.");
