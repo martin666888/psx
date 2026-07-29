@@ -21,12 +21,12 @@ public sealed class KimiCodeAcpRuntimeTests
     }
 
     [TestMethod]
-    public void VersionSnapshot_BundledInstall_ReportsVersionWithoutSelfUpdate()
+    public void VersionSnapshot_BundledInstall_ReportsBundledVersion()
     {
-        using var workspace = TestWorkspace.Create(nameof(VersionSnapshot_BundledInstall_ReportsVersionWithoutSelfUpdate));
+        using var workspace = TestWorkspace.Create(nameof(VersionSnapshot_BundledInstall_ReportsBundledVersion));
         var runtime = CreateRuntime(workspace.Path);
 
-        Assert.IsFalse(runtime.SupportsSelfUpdate);
+        Assert.IsTrue(runtime.SupportsSelfUpdate);
         var snapshot = runtime.GetVersionSnapshot();
         Assert.AreEqual(KimiVersion, snapshot.CurrentVersion);
         Assert.IsNull(snapshot.PendingVersion);
@@ -131,14 +131,18 @@ public sealed class KimiCodeAcpRuntimeTests
     }
 
     [TestMethod]
-    public async Task RefreshAsync_IsNoOp_ReturnsAlreadyReady()
+    public async Task RefreshAsync_WithoutPortableNpm_FailsWithoutTouchingInstall()
     {
-        using var workspace = TestWorkspace.Create(nameof(RefreshAsync_IsNoOp_ReturnsAlreadyReady));
+        using var workspace = TestWorkspace.Create(nameof(RefreshAsync_WithoutPortableNpm_FailsWithoutTouchingInstall));
         var runtime = CreateRuntime(workspace.Path);
 
+        // The unit bundle has node.exe but no npm-cli.js: refresh must fail
+        // cleanly and leave the bundled install untouched.
         var result = await runtime.RefreshAsync();
 
-        Assert.AreEqual(AcpRuntimeOperationKind.AlreadyReady, result.Kind);
+        Assert.AreEqual(AcpRuntimeOperationKind.Failed, result.Kind);
+        Assert.IsTrue(runtime.IsReady());
+        Assert.IsFalse(Directory.Exists(Path.Combine(workspace.Path, "runtime", "kimi-next")));
     }
 
     // ---- helpers ----

@@ -72,6 +72,21 @@ if (scenario.CreateClaude)
         "fake claude executable");
 }
 
+if (scenario.CreateKimi)
+{
+    WriteJson(
+        Path.Combine(workingDirectory, "node_modules", "@moonshot-ai", "kimi-code", "package.json"),
+        new
+        {
+            name = "@moonshot-ai/kimi-code",
+            version = scenario.KimiVersion ?? "0.30.0",
+            bin = new Dictionary<string, string> { ["kimi"] = "dist/main.mjs" }
+        });
+    WriteFile(
+        Path.Combine(workingDirectory, "node_modules", "@moonshot-ai", "kimi-code", "dist", "main.mjs"),
+        "// fake kimi acp entry");
+}
+
 return scenario.ExitCode;
 
 static void WriteFile(string path, string contents)
@@ -101,6 +116,8 @@ internal sealed class FakeNpmScenario
     public bool Hang { get; set; }
     public bool CreateAdapter { get; set; } = true;
     public bool CreateClaude { get; set; } = true;
+    public bool CreateKimi { get; set; }
     public string? AdapterVersion { get; set; }
     public string? ClaudeCodeVersion { get; set; }
+    public string? KimiVersion { get; set; }
 }

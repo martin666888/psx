@@ -77,6 +77,42 @@ internal sealed class FakeNpmFixture : IDisposable
         File.WriteAllText(Paths.AcpActivePointerFile, value);
     }
 
+    /// <summary>Creates a Kimi runtime that shares this fixture's fake node/npm.</summary>
+    public KimiCodeAcpRuntime CreateKimiRuntime(TimeSpan? processTimeout = null) =>
+        new(Locator, Path.Combine(InstallDirectory, "logs"), processTimeout ?? TimeSpan.FromSeconds(10));
+
+    /// <summary>Installs a structurally valid bundled Kimi baseline under tools/kimi.</summary>
+    public void InstallKimiBundle(string version = "0.29.1")
+    {
+        var bundleRoot = Path.Combine(InstallDirectory, "tools", "kimi");
+        WriteJson(
+            Path.Combine(bundleRoot, "package.json"),
+            new
+            {
+                name = "psx-kimi-runtime",
+                dependencies = new Dictionary<string, string> { ["@moonshot-ai/kimi-code"] = version }
+            });
+        WriteFile(Path.Combine(bundleRoot, ".npmrc"), "os=win32\ncpu=x64\n");
+        WriteFile(Path.Combine(bundleRoot, "package-lock.json"), "{}");
+        CreateKimiInstall(bundleRoot, version);
+    }
+
+    /// <summary>Writes a valid Kimi package tree (manifest + entry) into a root.</summary>
+    public void CreateKimiInstall(string directory, string version)
+    {
+        WriteJson(
+            Path.Combine(directory, "node_modules", "@moonshot-ai", "kimi-code", "package.json"),
+            new
+            {
+                name = "@moonshot-ai/kimi-code",
+                version,
+                bin = new Dictionary<string, string> { ["kimi"] = "dist/main.mjs" }
+            });
+        WriteFile(
+            Path.Combine(directory, "node_modules", "@moonshot-ai", "kimi-code", "dist", "main.mjs"),
+            "// fake kimi acp entry");
+    }
+
     public IReadOnlyList<FakeNpmInvocation> ReadInvocations()
     {
         if (!File.Exists(InvocationLogPath))
@@ -174,8 +210,10 @@ internal sealed class FakeNpmScenario
     public bool Hang { get; set; }
     public bool CreateAdapter { get; set; } = true;
     public bool CreateClaude { get; set; } = true;
+    public bool CreateKimi { get; set; }
     public string? AdapterVersion { get; set; }
     public string? ClaudeCodeVersion { get; set; }
+    public string? KimiVersion { get; set; }
 }
 
 internal sealed class FakeNpmInvocation

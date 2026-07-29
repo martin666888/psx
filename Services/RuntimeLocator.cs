@@ -16,6 +16,9 @@ public sealed class RuntimeLocator
     private const string NodeSubdirectoryName = "node";
     private const string NodeExecutableName = "node.exe";
     private const string KimiSubdirectoryName = "kimi";
+    private const string KimiCurrentSubdirectoryName = "kimi-current";
+    private const string KimiNextSubdirectoryName = "kimi-next";
+    private const string KimiActivePointerFileName = "kimi-active.txt";
     private const string NpmCliRelativePath = "node_modules/npm/bin/npm-cli.js";
     private const string WebView2FixedRuntimeSubdirectoryName = "webview2-fixed";
     private const string WebView2ExecutableName = "msedgewebview2.exe";
@@ -83,6 +86,9 @@ public sealed class RuntimeLocator
             AcpSeedDirectory = Path.Combine(installDirectory, "tools", "acp-seed"),
             InstallDirectory = installDirectory,
             BundledKimiDirectory = Path.Combine(installDirectory, "tools", KimiSubdirectoryName),
+            KimiCurrentDirectory = Path.Combine(runtimeRoot, KimiCurrentSubdirectoryName),
+            KimiNextDirectory = Path.Combine(runtimeRoot, KimiNextSubdirectoryName),
+            KimiActivePointerFile = Path.Combine(runtimeRoot, KimiActivePointerFileName),
         };
     }
 

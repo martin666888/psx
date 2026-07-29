@@ -91,6 +91,29 @@ public sealed record RuntimePaths
     /// never populated by a runtime <c>npm ci</c>. Contains
     /// <c>package-lock.json</c> and <c>node_modules/@moonshot-ai/kimi-code/</c>.
     /// The directory is not guaranteed to exist in a development build.
+    /// It also doubles as the Kimi refresh seed (package.json / .npmrc) and is
+    /// never written to.
     /// </summary>
     public required string BundledKimiDirectory { get; init; }
+
+    /// <summary>
+    /// Self-updated Kimi Code install under the writable <c>runtime/</c> root.
+    /// When structurally valid it takes precedence over
+    /// <see cref="BundledKimiDirectory"/>; deleting it falls back to the
+    /// bundled copy.
+    /// </summary>
+    public required string KimiCurrentDirectory { get; init; }
+
+    /// <summary>
+    /// Staging directory for a background Kimi Code update. Never read by the
+    /// live session; promoted to <see cref="KimiCurrentDirectory"/> on the
+    /// next PSX launch when the pointer says "next".
+    /// </summary>
+    public required string KimiNextDirectory { get; init; }
+
+    /// <summary>
+    /// Pending-update marker for the Kimi runtime, mirroring
+    /// <see cref="AcpActivePointerFile"/> ("current" or "next").
+    /// </summary>
+    public required string KimiActivePointerFile { get; init; }
 }
