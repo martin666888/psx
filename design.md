@@ -34,10 +34,10 @@ The shape language is **Soft Workbench**: continuous, generous corner radii on a
   | `--agent-radius-control` | 8px | buttons, icon buttons, chips, list rows, menu items, inline code |
   | `--agent-radius-input` | 10px | text inputs, search fields, select triggers |
   | `--agent-radius-card` | 14px | tool/decision/runtime/recovery/Plan cards, popovers, menus, tooltips, image previews, code blocks |
-  | `--agent-radius-workspace-canvas` | 18px | the workspace canvas edge (structural, shell.css) |
+  | `--agent-workspace-radius` | 18px | the two soft-workbench panels: History dock + main conversation panel (structural, shell.css) |
   | `--agent-radius-composer` | 24px | the composer card (structural, shell.css) |
 
-- The structural shell tokens `--agent-radius-context-card` / `--agent-radius-workspace-canvas` / `--agent-radius-composer` stay in shell.css and map onto this ladder; component CSS never defines its own radius values.
+- The structural shell tokens `--agent-radius-context-card` / `--agent-workspace-radius` / `--agent-radius-composer` stay in shell.css and map onto this ladder; component CSS never defines its own radius values. The Agent page is a soft workbench: both the History dock and the main panel are free-standing rounded blocks floating on the `--agent-bg` backdrop, spaced by `--agent-workbench-gutter` / `--agent-panel-gap`.
 - Pills (`50%` / `999px`) are reserved for genuinely circular or capsule elements: the send button, switches, status dots, badge dots, scrollbar thumbs.
 - WPF chrome mirrors the ladder through `ControlCornerRadius` (8), `InputCornerRadius` (10), `CardCornerRadius` (14) in `Themes/Dark.xaml`.
 - Borders are 1px. PSX intentionally renders no standalone focus outline.
