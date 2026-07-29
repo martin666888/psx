@@ -70,8 +70,8 @@ public sealed class AcpAuthRequiredTests
         // saved transcript stays authoritative and is never overwritten by
         // the replayed chunks.
         await fixture.Bridge.WaitForEventAsync(
-            "command_result",
-            message => (message.GetProperty("text").GetString() ?? "").Contains("ACP session history restored"));
+            "agent_state",
+            message => message.GetProperty("status").GetString() == "restored");
 
         var loaded = await fixture.Bridge.WaitForEventAsync(
             "agent_thread_loaded",

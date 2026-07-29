@@ -587,7 +587,8 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             {
                 _restoreBlockedByRuntime = false;
                 _status = "restored";
-                await _bridgeService.SendEventAsync(new { type = "command_result", text = "ACP session history restored. Continuing will use this session." }).ConfigureAwait(false);
+                // Session context restore is workspace status, not conversation
+                // content: it reaches the UI through agent_state only.
             }
             else
             {
@@ -1805,7 +1806,10 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             .ToArray();
         var replay = new ReplayHistoryState();
         _isLoadingHistory = true;
-        _replayHistory = replay;
+        // With a local transcript the replayed chunk stream is dropped on
+        // arrival instead of being accumulated: large sessions otherwise pay
+        // full CPU and memory for a replay state that is discarded anyway.
+        _replayHistory = hasLocalTranscript ? null : replay;
         _status = "restoring";
         await PublishStateAsync().ConfigureAwait(false);
 
@@ -2493,9 +2497,12 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     private async Task HandleSessionUpdateAsync(JsonElement update)
     {
-        if (_isLoadingHistory && _replayHistory != null)
+        if (_isLoadingHistory)
         {
-            await HandleReplaySessionUpdateAsync(update, _replayHistory).ConfigureAwait(false);
+            // During session/load the update stream is replay, never live: it
+            // is either accumulated (no local transcript) or dropped outright.
+            if (_replayHistory != null)
+                await HandleReplaySessionUpdateAsync(update, _replayHistory).ConfigureAwait(false);
             return;
         }
 

@@ -302,8 +302,12 @@ public sealed class AcpAgentSessionServiceTests
             "replayed chunks must never overwrite the local archive");
 
         await fixture.Bridge.WaitForEventAsync(
-            "command_result",
-            message => (message.GetProperty("text").GetString() ?? "").Contains("ACP session history restored"));
+            "agent_state",
+            message => message.GetProperty("status").GetString() == "restored");
+        Assert.IsFalse(fixture.Bridge.Events.Any(message =>
+            EventType(message) == "command_result"
+            && (message.GetProperty("text").GetString() ?? "").Contains("restored")),
+            "restore status must not be written into the conversation timeline");
 
         var persisted = fixture.Store.LoadThread(historical.ThreadId);
         Assert.AreEqual(

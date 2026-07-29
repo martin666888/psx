@@ -232,18 +232,18 @@ public sealed class AgentWorkspaceActivationTests
         }
 
         var restoredMessagesBeforeDuplicateReady = fixture.Bridge.Events.Count(message =>
-            message.TryGetProperty("type", out var type) && type.GetString() == "command_result"
-            && message.TryGetProperty("text", out var text)
-            && text.GetString() == "ACP session history restored. Continuing will use this session.");
+            message.TryGetProperty("type", out var type) && type.GetString() == "agent_ready"
+            && message.TryGetProperty("workspaceId", out var id)
+            && (id.GetString() == firstWorkspaceId.ToString() || id.GetString() == secondWorkspaceId.ToString()));
         Assert.AreEqual(2, restoredMessagesBeforeDuplicateReady);
 
         fixture.Runtime.PublishStatus("Fake ACP runtime is still ready.");
         await Task.Yield();
 
         var restoredMessagesAfterDuplicateReady = fixture.Bridge.Events.Count(message =>
-            message.TryGetProperty("type", out var type) && type.GetString() == "command_result"
-            && message.TryGetProperty("text", out var text)
-            && text.GetString() == "ACP session history restored. Continuing will use this session.");
+            message.TryGetProperty("type", out var type) && type.GetString() == "agent_ready"
+            && message.TryGetProperty("workspaceId", out var id)
+            && (id.GetString() == firstWorkspaceId.ToString() || id.GetString() == secondWorkspaceId.ToString()));
         Assert.AreEqual(
             restoredMessagesBeforeDuplicateReady,
             restoredMessagesAfterDuplicateReady,
