@@ -35,12 +35,14 @@ public sealed class SettingsServiceTests
 
         var second = new AppSettings { FontSize = 19, AgentMonoFontFamily = "Second Mono" };
         second.ThemeColors.Accent = "#ABCDEF";
+        second.AgentTheme.WorkbenchTint = "#4ADE8024";
         service.SaveSettings(second);
 
         var loaded = new SettingsService(configPath).ReloadSettings();
         Assert.AreEqual(19, loaded.FontSize);
         Assert.AreEqual("Second Mono", loaded.AgentMonoFontFamily);
         Assert.AreEqual("#abcdef", loaded.ThemeColors.Accent);
+        Assert.AreEqual("#4ade8024", loaded.AgentTheme.WorkbenchTint);
         Assert.IsTrue(File.Exists(configPath + ".bak"));
         Assert.IsFalse(File.Exists(configPath + ".tmp"));
     }

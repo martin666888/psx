@@ -25,14 +25,18 @@
     --agent-composer-bottom-space: 24px;
     /* Restrained, symmetric panel lift — no wide blurs or gradients. */
     --agent-shadow-canvas: 0 8px 24px color-mix(in srgb, var(--agent-shadow) 16%, transparent);
-    --agent-shadow-context-card: 0 6px 20px color-mix(in srgb, var(--agent-shadow) 20%, transparent),
-        0 2px 6px color-mix(in srgb, var(--agent-shadow) 14%, transparent);
+    /* The Plan/context card floats inside the main panel; it matches the
+     * composer's lift exactly so neither card looks heavier than the other. */
+    --agent-shadow-context-card: 0 6px 18px color-mix(in srgb, var(--agent-shadow) 12%, transparent);
     /* Lift comes from whitespace, border and the luminance ladder — the
      * shadow is a soft hint, not a heavy dark halo. */
     --agent-shadow-composer: 0 6px 18px color-mix(in srgb, var(--agent-shadow) 12%, transparent);
     /* Floating menus / popovers and modal media: the only other elevated layers. */
     --agent-shadow-popover: 0 12px 28px color-mix(in srgb, var(--agent-shadow) 34%, transparent);
     --agent-shadow-dialog: 0 18px 60px color-mix(in srgb, var(--agent-shadow) 50%, transparent);
+    /* Optional theme-supplied backdrop tint (RRGGBBAA from [agentTheme]
+     * workbenchTint); transparent by default so themes opt in explicitly. */
+    --agent-workbench-tint: transparent;
 }
 
 #agent-workspace-container {
@@ -49,8 +53,14 @@
     pointer-events: auto;
     /* The workbench backdrop both panels float on. Applied only while an
      * Agent workspace is active so the terminal view underneath stays
-     * visible for Terminal tabs. */
-    background: var(--agent-bg);
+     * visible for Terminal tabs. Themes may add a soft top-down tint wash
+     * (workbenchTint) over the flat base color; a transparent tint leaves
+     * the backdrop exactly --agent-bg. */
+    background:
+        linear-gradient(180deg,
+            var(--agent-workbench-tint),
+            transparent 62%),
+        var(--agent-bg);
 }
 
 #agent-workspace-container.agent-shell-narrow {

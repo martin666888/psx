@@ -311,6 +311,7 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
       this.setVar(root, '--agent-overlay', a.overlay);
       this.setVar(root, '--agent-shadow', a.shadow);
       this.setVar(root, '--agent-focus-ring', a.focusRing);
+      this.setVar(root, '--agent-workbench-tint', a.workbenchTint);
     }
   }
 

@@ -118,6 +118,9 @@ public sealed class AgentThemeColors
     public string Overlay { get; set; } = "#000000";
     public string Shadow { get; set; } = "#000000";
     public string FocusRing { get; set; } = "#5aa6a0";
+    // Optional workbench backdrop tint painted as a top-down gradient behind
+    // the two Agent panels. RRGGBBAA; fully transparent means "no tint".
+    public string WorkbenchTint { get; set; } = "#00000000";
 }
 
 public sealed class TerminalPalette

@@ -268,11 +268,14 @@ test('shell: structural tokens and the centerline mechanism exist in shell.css',
     /\.agent-panel\s*\{[\s\S]*?inset: var\(--agent-workbench-gutter\)[\s\S]*?border: 1px solid var\(--agent-border\);\s*border-radius: var\(--agent-workspace-radius\)/,
     'main panel is a rounded workbench block with gutter, full border and radius'
   );
-  // The workbench backdrop only appears while an Agent workspace is active.
+  // The workbench backdrop only appears while an Agent workspace is active:
+  // an optional theme tint wash over the flat --agent-bg base. The tint token
+  // defaults to transparent so themes opt in via [agentTheme] workbenchTint.
+  assert.ok(shell.includes('--agent-workbench-tint: transparent'));
   assert.match(
     shell,
-    /#agent-workspace-container\.agent-workspace-active\s*\{[\s\S]*?background: var\(--agent-bg\)/,
-    'active container paints the workbench backdrop'
+    /#agent-workspace-container\.agent-workspace-active\s*\{[\s\S]*?linear-gradient\(180deg,\s*var\(--agent-workbench-tint\),\s*transparent 62%\),\s*var\(--agent-bg\)/,
+    'active container paints the tint wash over the workbench backdrop'
   );
   // The toolbar is an in-panel top bar, not a full-window strip.
   assert.match(
@@ -296,6 +299,13 @@ test('shell: the Plan card and the runtime card follow the new canvas rules', ()
     plan,
     /\.agent-plan-card\s*\{[\s\S]*?border:\s*1px solid var\(--agent-border-strong\)/,
     'Plan card uses the strong theme border so its outline survives dark themes'
+  );
+  // The Plan card's lift matches the composer exactly — no heavier halo.
+  const shell = readCss('shell.css');
+  assert.match(
+    shell,
+    /--agent-shadow-context-card: 0 6px 18px color-mix\(in srgb, var\(--agent-shadow\) 12%, transparent\)/,
+    'context-card shadow shares the composer strength'
   );
 
   const runtime = readCss('runtime.css');
