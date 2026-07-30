@@ -1,0 +1,328 @@
+// UsageRequestBroker.ts — the single owner of profile + usage bridge commands.
+//
+// Like the History broker, usage/profile data is global but every command
+// travels through one live Agent workspace picked by the shared
+// WorkspaceChannelSelector. Unlike History (whose responses have no id), every
+// request here carries a requestId and only the matching reply resolves it:
+//   - profile_get / profile_set_* replies echo the requestId; profile
+//     broadcasts (no requestId) still apply through the revision guard.
+//   - usage_report replies must match the in-flight requestId or are dropped
+//     (late scans, superseded refreshes).
+// One 30s timeout per usage attempt (a first full JSONL scan can be slow) plus
+// one retry on another channel, then an inline error.
+
+import type { RawHostMessage } from '../contracts/host-events.js';
+import type {
+  AgentUserProfile,
+  UsageReport,
+  UsageSourceStatus,
+  UsageWindow
+} from '../contracts/agent-usage.js';
+import {
+  WorkspaceChannelSelector,
+  type WorkspaceChannelHost
+} from '../workspace/WorkspaceChannelSelector.js';
+import { UsageStore } from './UsageStore.js';
+
+export interface UsageRequestBrokerOptions {
+  timeoutMs?: number;
+}
+
+const DEFAULT_TIMEOUT_MS = 30000;
+const NO_CHANNEL_TEXT = 'Open an Agent workspace to load usage.';
+const TIMEOUT_TEXT = 'Loading usage timed out.';
+const DEFAULT_ERROR_TEXT = 'Unable to load usage.';
+
+function num(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function numOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function str(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function strOrNull(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+}
+
+export function normalizeProfile(raw: RawHostMessage): AgentUserProfile {
+  return {
+    displayName: str(raw.displayName),
+    avatarDataUrl: strOrNull(raw.avatarDataUrl),
+    revision: num(raw.revision)
+  };
+}
+
+function normalizeWindow(value: unknown): UsageWindow {
+  const w = asRecord(value);
+  const tokens = asRecord(w.tokens);
+  const sections = Array.isArray(w.providerSections) ? w.providerSections : [];
+  return {
+    activeThreads: num(w.activeThreads),
+    turns: num(w.turns),
+    tokens: {
+      input: num(tokens.input),
+      output: num(tokens.output),
+      cacheRead: num(tokens.cacheRead),
+      cacheCreation: num(tokens.cacheCreation)
+    },
+    cacheHitRate: numOrNull(w.cacheHitRate),
+    providerSections: sections.map((rawSection) => {
+      const s = asRecord(rawSection);
+      const exact = s.exactUsage ? asRecord(s.exactUsage) : null;
+      const modelRows = exact && Array.isArray(exact.modelRows) ? exact.modelRows : null;
+      const context = Array.isArray(s.contextSnapshots) ? s.contextSnapshots : null;
+      return {
+        providerKey: str(s.providerKey),
+        iconKey: str(s.iconKey) || 'agent',
+        exactUsage: modelRows
+          ? {
+              modelRows: modelRows.map((rawRow) => {
+                const row = asRecord(rawRow);
+                return {
+                  model: str(row.model) || 'unknown',
+                  input: num(row.input),
+                  output: num(row.output),
+                  cacheRead: num(row.cacheRead),
+                  cacheCreation: num(row.cacheCreation)
+                };
+              })
+            }
+          : null,
+        contextSnapshots: context
+          ? context.map((rawSnap) => {
+              const snap = asRecord(rawSnap);
+              return {
+                threadTitle: str(snap.threadTitle),
+                usedTokens: numOrNull(snap.usedTokens),
+                windowTokens: numOrNull(snap.windowTokens)
+              };
+            })
+          : null,
+        sourceKey: str(s.sourceKey)
+      };
+    })
+  };
+}
+
+export function normalizeUsageReport(value: unknown): UsageReport {
+  const r = asRecord(value);
+  const heatmap = Array.isArray(r.heatmap) ? r.heatmap.map(num) : [];
+  return {
+    heatmap,
+    heatmapStartDate: str(r.heatmapStartDate),
+    today: normalizeWindow(r.today),
+    last7Days: normalizeWindow(r.last7Days),
+    last30Days: normalizeWindow(r.last30Days)
+  };
+}
+
+export function normalizeSources(value: unknown): UsageSourceStatus[] {
+  const list = Array.isArray(value) ? value : [];
+  return list.map((rawSource) => {
+    const s = asRecord(rawSource);
+    const status = str(s.status);
+    return {
+      key: str(s.key),
+      status: status === 'partial' || status === 'unavailable' ? status : 'available',
+      scannedFiles: num(s.scannedFiles),
+      skippedFiles: num(s.skippedFiles),
+      badLines: num(s.badLines),
+      expectedSessions: numOrNull(s.expectedSessions),
+      matchedSessions: numOrNull(s.matchedSessions),
+      parserVersion: str(s.parserVersion),
+      lastScanAt: str(s.lastScanAt),
+      detail: strOrNull(s.detail)
+    };
+  });
+}
+
+export class UsageRequestBroker {
+  private readonly store: UsageStore;
+  private readonly timeoutMs: number;
+  private readonly channels: WorkspaceChannelSelector;
+
+  private counter = 0;
+  private readonly pendingProfileRequests = new Set<string>();
+
+  private usageRequestId = '';
+  private usageChannel = '';
+  private usageValue: 'cached' | 'force' = 'cached';
+  private usageRetried = false;
+  private usageTimer: ReturnType<typeof setTimeout> | null = null;
+  private profileRequested = false;
+  private disposed = false;
+
+  constructor(host: WorkspaceChannelHost, store: UsageStore, options?: UsageRequestBrokerOptions) {
+    this.store = store;
+    this.timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.channels = new WorkspaceChannelSelector(host);
+  }
+
+  // --- Workspace registry hooks ---------------------------------------------
+
+  registerWorkspace(workspaceId: string): void {
+    if (!this.channels.register(workspaceId)) return;
+    // The footer needs the profile before the panel is ever opened: fetch it
+    // once as soon as the first Agent workspace can carry the command.
+    if (!this.profileRequested) {
+      this.profileRequested = true;
+      this.requestProfile();
+    }
+  }
+
+  activateWorkspace(workspaceId: string): void {
+    this.channels.activate(workspaceId);
+  }
+
+  unregisterWorkspace(workspaceId: string): void {
+    if (!this.channels.unregister(workspaceId)) return;
+    if (this.usageChannel && this.usageChannel === workspaceId) {
+      // Carrier closed mid-scan: retry once elsewhere, else report the error.
+      this.clearUsageTimer();
+      const channel = this.channels.pickExcept(workspaceId);
+      if (!this.usageRetried && channel) {
+        this.usageRetried = true;
+        this.sendUsage(channel);
+      } else {
+        this.usageChannel = '';
+        this.usageRequestId = '';
+        this.store.applyUsageError(NO_CHANNEL_TEXT);
+      }
+    }
+  }
+
+  // --- Request entry points ---------------------------------------------------
+
+  requestProfile(): void {
+    if (this.disposed) return;
+    const channel = this.channels.pick('');
+    if (!channel) return;
+    const requestId = this.nextId('p');
+    this.pendingProfileRequests.add(requestId);
+    this.channels.bridgeFor(channel)?.sendAgentCommand('profile_get', undefined, requestId);
+  }
+
+  setDisplayName(name: string): void {
+    this.sendProfileMutation('profile_set_name', name);
+  }
+
+  setAvatar(base64Png: string): void {
+    this.sendProfileMutation('profile_set_avatar', base64Png);
+  }
+
+  /** Panel open uses 'cached'; the Refresh button uses 'force'. Each call
+   * supersedes any in-flight scan (the old requestId's reply is then dropped). */
+  requestUsage(force: boolean): void {
+    if (this.disposed) return;
+    const channel = this.channels.pick('');
+    if (!channel) {
+      this.store.applyUsageError(NO_CHANNEL_TEXT);
+      return;
+    }
+    this.usageValue = force ? 'force' : 'cached';
+    this.usageRetried = false;
+    this.store.applyUsageLoading();
+    this.sendUsage(channel);
+  }
+
+  // --- Response handlers ------------------------------------------------------
+
+  handleProfile(raw: RawHostMessage): void {
+    if (this.disposed) return;
+    const requestId = str(raw.requestId);
+    if (requestId) this.pendingProfileRequests.delete(requestId);
+    // A server-side error leaves the stored revision unchanged; do not apply.
+    if (strOrNull(raw.error)) return;
+    this.store.applyProfile(normalizeProfile(raw));
+  }
+
+  handleUsageReport(raw: RawHostMessage): void {
+    if (this.disposed) return;
+    const requestId = str(raw.requestId);
+    // Only the in-flight request resolves; late/superseded scans are dropped.
+    if (!this.usageRequestId || requestId !== this.usageRequestId) return;
+    this.clearUsageTimer();
+    this.usageRequestId = '';
+    this.usageChannel = '';
+
+    const error = strOrNull(raw.error);
+    if (error || !raw.report) {
+      this.store.applyUsageError(error || DEFAULT_ERROR_TEXT);
+      return;
+    }
+    this.store.applyUsageReport(
+      normalizeUsageReport(raw.report),
+      normalizeSources(raw.sources),
+      str(raw.generatedAt),
+      str(raw.timezone)
+    );
+  }
+
+  dispose(): void {
+    this.disposed = true;
+    this.clearUsageTimer();
+  }
+
+  // --- Internals --------------------------------------------------------------
+
+  private sendProfileMutation(command: string, value: string): void {
+    if (this.disposed) return;
+    const channel = this.channels.pick('');
+    if (!channel) return;
+    const requestId = this.nextId('p');
+    this.pendingProfileRequests.add(requestId);
+    this.channels.bridgeFor(channel)?.sendAgentCommand(command, value, requestId);
+  }
+
+  private sendUsage(channel: string): void {
+    const bridge = this.channels.bridgeFor(channel);
+    if (!bridge) {
+      this.store.applyUsageError(NO_CHANNEL_TEXT);
+      return;
+    }
+    const requestId = this.nextId('u');
+    this.usageRequestId = requestId;
+    this.usageChannel = channel;
+    bridge.sendAgentCommand('usage_report', this.usageValue, requestId);
+    this.usageTimer = setTimeout(() => this.onUsageTimeout(requestId), this.timeoutMs);
+  }
+
+  private onUsageTimeout(requestId: string): void {
+    this.usageTimer = null;
+    if (this.disposed || requestId !== this.usageRequestId) return;
+    const failedChannel = this.usageChannel;
+    this.usageRequestId = '';
+    this.usageChannel = '';
+    if (!this.usageRetried) {
+      this.usageRetried = true;
+      const channel = this.channels.pickExcept(failedChannel)
+        || (this.channels.has(failedChannel) ? failedChannel : '');
+      if (channel) {
+        this.sendUsage(channel);
+        return;
+      }
+    }
+    this.store.applyUsageError(TIMEOUT_TEXT);
+  }
+
+  private clearUsageTimer(): void {
+    if (this.usageTimer !== null) {
+      clearTimeout(this.usageTimer);
+      this.usageTimer = null;
+    }
+  }
+
+  private nextId(prefix: string): string {
+    this.counter += 1;
+    return prefix + this.counter;
+  }
+}

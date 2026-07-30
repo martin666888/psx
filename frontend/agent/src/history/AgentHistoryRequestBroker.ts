@@ -24,6 +24,7 @@
 
 import type { AgentBridgePort } from '../contracts/bridge-port.js';
 import type { RawHostMessage } from '../contracts/host-events.js';
+import { WorkspaceChannelSelector } from '../workspace/WorkspaceChannelSelector.js';
 import { AgentHistoryStore, normalizeHistoryThreads } from './AgentHistoryStore.js';
 
 /** The registry-facing view of the live workspace set the broker needs. */
@@ -51,9 +52,7 @@ export class AgentHistoryRequestBroker {
   private readonly store: AgentHistoryStore;
   private readonly timeoutMs: number;
 
-  private readonly alive = new Set<string>();
-  // Most-recently-activated last; register order otherwise.
-  private readonly activationOrder: string[] = [];
+  private readonly channels: WorkspaceChannelSelector;
 
   private inFlightWorkspaceId = '';
   private inFlightEpoch = 0;
@@ -71,32 +70,24 @@ export class AgentHistoryRequestBroker {
     this.host = host;
     this.store = store;
     this.timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.channels = new WorkspaceChannelSelector(host);
   }
 
   // --- Workspace registry hooks ---------------------------------------------
 
   registerWorkspace(workspaceId: string): void {
-    const id = String(workspaceId || '');
-    if (!id || this.alive.has(id)) return;
-    this.alive.add(id);
-    this.activationOrder.push(id);
+    if (!this.channels.register(workspaceId)) return;
     this.retryDirtyIfPossible();
   }
 
   activateWorkspace(workspaceId: string): void {
-    const id = String(workspaceId || '');
-    if (!this.alive.has(id)) return;
-    const index = this.activationOrder.indexOf(id);
-    if (index >= 0) this.activationOrder.splice(index, 1);
-    this.activationOrder.push(id);
+    if (!this.channels.activate(workspaceId)) return;
     this.retryDirtyIfPossible();
   }
 
   unregisterWorkspace(workspaceId: string): void {
     const id = String(workspaceId || '');
-    if (!this.alive.delete(id)) return;
-    const index = this.activationOrder.indexOf(id);
-    if (index >= 0) this.activationOrder.splice(index, 1);
+    if (!this.channels.unregister(id)) return;
 
     if (this.inFlightWorkspaceId !== id) return;
     // The carrier closed mid-request: end the load, mark dirty, and retry
@@ -110,7 +101,7 @@ export class AgentHistoryRequestBroker {
         return;
       }
     }
-    if (this.alive.size === 0) this.store.applyUnavailable();
+    if (this.channels.size === 0) this.store.applyUnavailable();
     else this.store.applyIdleDirty();
   }
 
@@ -131,7 +122,7 @@ export class AgentHistoryRequestBroker {
    * workspaces) are ignored and never join the coalesced wave. */
   handleInvalidated(senderWorkspaceId: string): void {
     if (this.disposed) return;
-    if (!this.alive.has(senderWorkspaceId) || !this.host.isAlive(senderWorkspaceId)) return;
+    if (!this.channels.has(senderWorkspaceId) || !this.host.isAlive(senderWorkspaceId)) return;
     if (this.invalidationTimer !== null) return;
     this.invalidationTimer = setTimeout(() => {
       this.invalidationTimer = null;
@@ -149,7 +140,7 @@ export class AgentHistoryRequestBroker {
    * `history` command is broker-initiated, so a response with no in-flight
    * request (or from a stale/closed channel) is dropped. */
   handleThreads(workspaceId: string, raw: RawHostMessage): void {
-    if (this.disposed || !this.alive.has(workspaceId)) return;
+    if (this.disposed || !this.channels.has(workspaceId)) return;
     if (!this.inFlightWorkspaceId || this.inFlightWorkspaceId !== workspaceId) return;
     this.clearInFlight();
     this.store.applyThreads(normalizeHistoryThreads(raw.threads));
@@ -158,7 +149,7 @@ export class AgentHistoryRequestBroker {
 
   /** agent_history_error response: same acceptance rules as agent_threads. */
   handleHistoryError(workspaceId: string, raw: RawHostMessage): void {
-    if (this.disposed || !this.alive.has(workspaceId)) return;
+    if (this.disposed || !this.channels.has(workspaceId)) return;
     if (!this.inFlightWorkspaceId || this.inFlightWorkspaceId !== workspaceId) return;
     this.clearInFlight();
     this.refreshQueued = false;
@@ -247,7 +238,7 @@ export class AgentHistoryRequestBroker {
       // Prefer a different channel; the failed one is still a valid retry
       // target when it is the only live workspace.
       const channel = this.pickChannelExcept(failedChannel)
-        || (this.alive.has(failedChannel) ? failedChannel : '');
+        || (this.channels.has(failedChannel) ? failedChannel : '');
       if (channel) {
         this.sendRequest(channel);
         return;
@@ -267,29 +258,10 @@ export class AgentHistoryRequestBroker {
   // --- Channel selection ------------------------------------------------------
 
   private pickChannel(preferred: string): string {
-    if (preferred && this.alive.has(preferred) && this.host.isAlive(preferred)) return preferred;
-    const active = this.host.activeAgentWorkspace();
-    if (active && this.alive.has(active) && this.host.isAlive(active)) return active;
-    for (let index = this.activationOrder.length - 1; index >= 0; index--) {
-      const id = this.activationOrder[index];
-      if (this.alive.has(id) && this.host.isAlive(id)) return id;
-    }
-    for (const id of this.alive) {
-      if (this.host.isAlive(id)) return id;
-    }
-    return '';
+    return this.channels.pick(preferred);
   }
 
   private pickChannelExcept(excluded: string): string {
-    const active = this.host.activeAgentWorkspace();
-    if (active && active !== excluded && this.alive.has(active) && this.host.isAlive(active)) return active;
-    for (let index = this.activationOrder.length - 1; index >= 0; index--) {
-      const id = this.activationOrder[index];
-      if (id !== excluded && this.alive.has(id) && this.host.isAlive(id)) return id;
-    }
-    for (const id of this.alive) {
-      if (id !== excluded && this.host.isAlive(id)) return id;
-    }
-    return '';
+    return this.channels.pickExcept(excluded);
   }
 }

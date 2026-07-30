@@ -31,6 +31,8 @@ import { SessionRuntimeController } from './SessionRuntimeController.js';
 import { WorkspaceToolbarController } from './WorkspaceToolbarController.js';
 import { AgentHistoryStore, normalizeProviderCatalog } from '../history/AgentHistoryStore.js';
 import { AgentHistoryRequestBroker } from '../history/AgentHistoryRequestBroker.js';
+import { UsageStore } from '../usage/UsageStore.js';
+import { UsageRequestBroker } from '../usage/UsageRequestBroker.js';
 import type { HistoryDockController, HistoryDockHost } from '../history/HistoryDockController.js';
 import type { AgentShellLayoutHost } from '../shell/AgentShellLayoutController.js';
 
@@ -40,6 +42,8 @@ export class AgentWorkspaceRegistry {
   private readonly decoder: HostEventDecoder;
   private readonly historyStore: AgentHistoryStore;
   private readonly historyBroker: AgentHistoryRequestBroker;
+  private readonly usageStore: UsageStore;
+  private readonly usageBroker: UsageRequestBroker;
   private historyDock: HistoryDockController | null = null;
   private readonly controllers = new Map<string, AgentWorkspaceController>();
   // Plan controller refs by workspace: the shell layout coordinator needs the
@@ -71,6 +75,17 @@ export class AgentWorkspaceRegistry {
         bridgeFor: (id) => this.host.bridgeFor(id)
       },
       this.historyStore
+    );
+    // Global Usage + profile: one store + one broker for the whole process,
+    // reusing the same live-workspace channel policy as History.
+    this.usageStore = new UsageStore();
+    this.usageBroker = new UsageRequestBroker(
+      {
+        isAlive: (id) => this.controllers.has(id),
+        activeAgentWorkspace: () => this.activeAgentWorkspace(),
+        bridgeFor: (id) => this.host.bridgeFor(id)
+      },
+      this.usageStore
     );
   }
 
@@ -148,6 +163,7 @@ export class AgentWorkspaceRegistry {
           this.host.activate(event.workspaceId, event.kind === 'agent' ? 'agent' : 'terminal');
           if (event.kind === 'agent') {
             this.historyBroker.activateWorkspace(event.workspaceId);
+            this.usageBroker.activateWorkspace(event.workspaceId);
             // The active workspace changed: re-evaluate the narrow rule.
             this.notifyPlanVisibility(event.workspaceId);
           }
@@ -175,6 +191,12 @@ export class AgentWorkspaceRegistry {
           // not enter the source conversation, and it stays visible even when
           // the source workspace (or its in-flight channel) is already gone.
           this.historyStore.applyThreadOpenError(event.threadId ?? '', event.text ?? '');
+        } else if (event.type === 'agent_profile') {
+          // Profile events are global: requester replies and broadcasts both
+          // fold into the single UsageStore (revision-guarded).
+          this.usageBroker.handleProfile(event.raw);
+        } else if (event.type === 'agent_usage_report') {
+          this.usageBroker.handleUsageReport(event.raw);
         } else if (event.type === 'agent_workspace_limit_reached') {
           this.showNotice(event.text ?? '');
         }
@@ -286,6 +308,7 @@ export class AgentWorkspaceRegistry {
     this.controllers.set(workspaceId, controller);
     this.noticeSinks.set(workspaceId, (text) => timeline.appendSystemMessage(text));
     this.historyBroker.registerWorkspace(workspaceId);
+    this.usageBroker.registerWorkspace(workspaceId);
     controller.mount();
     this.historyDock?.updateOpenState();
   }
@@ -299,6 +322,7 @@ export class AgentWorkspaceRegistry {
     this.noticeSinks.delete(workspaceId);
     this.store.delete(workspaceId);
     this.historyBroker.unregisterWorkspace(workspaceId);
+    this.usageBroker.unregisterWorkspace(workspaceId);
     controller.dispose();
     this.host.closeWorkspace(workspaceId);
     this.historyDock?.updateOpenState();
