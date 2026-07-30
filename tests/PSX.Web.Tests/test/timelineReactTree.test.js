@@ -422,11 +422,12 @@ test('user messages over sixteen lines can be expanded and collapsed accessibly'
   }
 });
 
-test('collapsed toggle stays anchored inside the message bubble with a gradient fade', async () => {
+test('collapse toggle keeps one in-flow position across both states with a gradient fade', async () => {
   installAgentRuntime();
   // Load the SHIPPED stylesheet so this test breaks when the positioning
-  // contract in messages.css regresses (the toggle previously escaped to the
-  // page corner because no ancestor inside the bubble was positioned).
+  // contract in messages.css regresses (the toggle must sit in flow at the
+  // bubble's bottom-left in BOTH states — the collapsed state previously
+  // floated a centred pill while the expanded state was left-aligned).
   const cssPath = path.join(
     path.dirname(fileURLToPath(import.meta.url)),
     '..', '..', '..', 'frontend', 'webview', 'src', 'css', 'agent', 'messages.css'
@@ -465,21 +466,21 @@ test('collapsed toggle stays anchored inside the message bubble with a gradient 
     const button = host.querySelector('.agent-message-collapse-toggle');
     const body = host.querySelector('.agent-message-body');
     assert.ok(body.classList.contains('agent-message-collapsed'));
+    // Collapsed state: the toggle is in flow (never absolutely centred over
+    // the fade) and reads "显示更多" with a chevron.
+    assert.equal(window.getComputedStyle(button).position, 'static');
+    assert.equal(button.textContent, '显示更多');
+    assert.ok(button.querySelector('svg'), 'toggle carries a chevron icon');
+    // Expanded state: same node, same in-flow position, "收起" + rotated chevron.
+    await act(async () => button.click());
+    assert.ok(!body.classList.contains('agent-message-collapsed'));
+    assert.equal(window.getComputedStyle(button).position, 'static');
+    assert.equal(button.textContent, '收起');
+    assert.ok(button.querySelector('svg.rotate-180'), 'expanded chevron points up');
+    // No state-specific positioning rule may come back for the toggle.
     assert.ok(
-      body.classList.contains('agent-message-collapsible'),
-      'collapsible body must carry the class that establishes the positioning context'
-    );
-    assert.equal(window.getComputedStyle(button).position, 'absolute');
-    // The nearest positioned ancestor of the absolute toggle must be the
-    // message body itself, never anything outside the bubble.
-    let anchor = button.parentElement;
-    while (anchor && window.getComputedStyle(anchor).position === 'static') {
-      anchor = anchor.parentElement;
-    }
-    assert.ok(anchor, 'toggle must have a positioned ancestor');
-    assert.ok(
-      anchor.classList.contains('agent-message-body'),
-      'toggle must anchor to the message body, not an outer container'
+      !css.includes('.agent-message-collapsed .agent-message-collapse-toggle'),
+      'collapsed state must not reposition the toggle'
     );
     // Fade contract: gradient into the bubble background, no hard divider.
     const afterRule = css

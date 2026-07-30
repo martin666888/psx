@@ -38,9 +38,9 @@
                     <ToggleButton x:Name="ThemeButton"
                             Content="Theme"
                             Style="{StaticResource SoftWorkbenchToggleButtonStyle}"
-                            MinWidth="62"
-                            MinHeight="32"
-                            Padding="10,3"
+                            Height="28"
+                            VerticalAlignment="Center"
+                            Padding="10,0"
                             FontSize="12"
                             IsChecked="{Binding ThemePicker.IsOpen, Mode=TwoWay}"/>
                     <Popup x:Name="ThemePopup"

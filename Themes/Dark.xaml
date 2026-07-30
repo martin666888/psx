@@ -68,12 +68,13 @@
         </Setter>
     </Style>
 
-    <!-- ToggleButton 版本（Theme 弹层触发器）：checked 态用 accent 边框 + 弱表面。 -->
+    <!-- ToggleButton 版本（Theme 弹层触发器）：与 TabBar 的 "+" 图标按钮同族 —
+         透明底、无边框、hover 才浮现圆角表面；checked 态用弱表面 + 主文字色。 -->
     <Style x:Key="SoftWorkbenchToggleButtonStyle" TargetType="ToggleButton">
-        <Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/>
+        <Setter Property="Background" Value="Transparent"/>
         <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
-        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
-        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="Padding" Value="10,3"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="Template">
@@ -90,7 +91,7 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter Property="Background" Value="{DynamicResource HoverBrush}"/>
+                            <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}"/>
                             <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
@@ -102,7 +103,6 @@
                         <Trigger Property="IsChecked" Value="True">
                             <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}"/>
                             <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
-                            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Foreground" Value="{DynamicResource TextDimBrush}"/>

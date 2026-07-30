@@ -447,7 +447,11 @@ function UserMessageBody({
             }
           }}
         >
-          {collapsed ? '展开' : '收起'}
+          {collapsed ? '显示更多' : '收起'}
+          <ChevronDownIcon
+            className={'size-3.5' + (collapsed ? '' : ' rotate-180')}
+            aria-hidden="true"
+          />
         </button>
       )
     : null;

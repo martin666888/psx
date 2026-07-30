@@ -1,12 +1,15 @@
+/* Webkit scrollbar skin for the scroll nodes that stay on native scrolling.
+   History dock content and the Plan panel migrated to the shared Radix
+   ScrollArea component (hover-reveal thumb, same 8px / --agent-scrollbar
+   ladder) and no longer render native scrollbars. */
+
 .agent-thread-scroll::-webkit-scrollbar,
 .agent-composer textarea::-webkit-scrollbar,
 .agent-message-body pre::-webkit-scrollbar,
 .agent-tool pre::-webkit-scrollbar,
 .agent-decision pre::-webkit-scrollbar,
 .agent-tool-card-content::-webkit-scrollbar,
-.agent-plan-panel::-webkit-scrollbar,
-.agent-command-menu-scroll::-webkit-scrollbar,
-.agent-history-dock-content::-webkit-scrollbar {
+.agent-command-menu-scroll::-webkit-scrollbar {
     width: 8px;
     height: 8px;
 }
@@ -17,9 +20,7 @@
 .agent-tool pre::-webkit-scrollbar-track,
 .agent-decision pre::-webkit-scrollbar-track,
 .agent-tool-card-content::-webkit-scrollbar-track,
-.agent-plan-panel::-webkit-scrollbar-track,
-.agent-command-menu-scroll::-webkit-scrollbar-track,
-.agent-history-dock-content::-webkit-scrollbar-track {
+.agent-command-menu-scroll::-webkit-scrollbar-track {
     /* Scroll containers now sit on the rounded panel surfaces; a painted
      * track would read as a strip of workbench backdrop inside the panel. */
     background: transparent;
@@ -31,9 +32,7 @@
 .agent-tool pre::-webkit-scrollbar-thumb,
 .agent-decision pre::-webkit-scrollbar-thumb,
 .agent-tool-card-content::-webkit-scrollbar-thumb,
-.agent-plan-panel::-webkit-scrollbar-thumb,
-.agent-command-menu-scroll::-webkit-scrollbar-thumb,
-.agent-history-dock-content::-webkit-scrollbar-thumb {
+.agent-command-menu-scroll::-webkit-scrollbar-thumb {
     background: var(--agent-scrollbar);
     border-radius: 999px;
 }
@@ -48,9 +47,7 @@
 .agent-tool pre::-webkit-scrollbar-button,
 .agent-decision pre::-webkit-scrollbar-button,
 .agent-tool-card-content::-webkit-scrollbar-button,
-.agent-plan-panel::-webkit-scrollbar-button,
-.agent-command-menu-scroll::-webkit-scrollbar-button,
-.agent-history-dock-content::-webkit-scrollbar-button {
+.agent-command-menu-scroll::-webkit-scrollbar-button {
     display: none;
     width: 0;
     height: 0;

@@ -7,15 +7,16 @@
 // animation), so the Card is chrome-neutralized to avoid a card-in-card.
 // Entries keep the semantic contract: agent-plan-item status class,
 // aria-label, optional data-priority, and positional keys so unchanged rows
-// keep their DOM nodes across renders (node-identity test). The scrollable
-// body keeps the agent-plan-panel class/data-role (panel scroll CSS and
-// scrollbar styling key off it).
+// keep their DOM nodes across renders (node-identity test). The body keeps
+// the agent-plan-panel class/data-role as the panel frame; scrolling is
+// owned by the shared Radix ScrollArea (hover-reveal thumb).
 
 import type { JSX } from 'react';
 import type { WorkspacePlanState } from '../contracts/workspace-state.js';
 import { planStatusClass, planStatusLabel } from '../core/plan.js';
 import { renderMarkdown } from '../core/markdown.js';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.js';
+import { ScrollArea } from '../components/ui/scroll-area.js';
 import { TaskItem } from '../components/ai-elements/task.js';
 import { CheckCircle2Icon, CircleDotIcon, CircleIcon } from 'lucide-react';
 
@@ -75,11 +76,20 @@ export function PlanCard({ plan }: PlanCardProps): JSX.Element {
       <CardHeader className="flex min-h-9 flex-row items-center gap-2 px-2 pl-3">
         <CardTitle className="min-w-0 flex-1 truncate text-[13px]">Plan</CardTitle>
       </CardHeader>
+      {/* Radix ScrollArea (hover-reveal thumb) owns the panel scroll; the
+        * agent-plan-panel class/data-role stay on the CardContent frame and
+        * the old panel padding moves onto the viewport. */}
       <CardContent
         data-role="plan-panel"
-        className="agent-plan-panel border-t border-[var(--agent-border)] px-0"
+        className="agent-plan-panel flex border-t border-[var(--agent-border)] px-0"
       >
-        <PlanBody plan={plan} />
+        <ScrollArea
+          className="min-h-0 grow"
+          type="hover"
+          viewportProps={{ className: 'px-3.5 pt-3 pb-[18px]' }}
+        >
+          <PlanBody plan={plan} />
+        </ScrollArea>
       </CardContent>
     </Card>
   );

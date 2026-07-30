@@ -21,6 +21,7 @@ import {
 import { RefreshCwIcon } from 'lucide-react';
 import { Button } from '../components/ui/button.js';
 import { Input } from '../components/ui/input.js';
+import { ScrollArea } from '../components/ui/scroll-area.js';
 import {
   Select,
   SelectContent,
@@ -180,13 +181,21 @@ export function HistoryDockView(props: HistoryDockViewProps): JSX.Element {
           <RefreshCwIcon className="size-3.5" aria-hidden="true" />
         </Button>
       </div>
-      <div
-        ref={contentRef}
-        className="agent-history-dock-content min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-2"
-        data-role="history-content"
+      {/* Radix ScrollArea (hover-reveal thumb). The viewport keeps the
+        * agent-history-dock-content class, data-role anchor and scroll ref so
+        * the rounded-corner CSS, tests and the scroll-reset contract keep
+        * addressing the real scroll node. */}
+      <ScrollArea
+        className="min-h-0 flex-1"
+        type="hover"
+        viewportProps={{
+          ref: contentRef,
+          className: 'agent-history-dock-content p-2',
+          'data-role': 'history-content'
+        }}
       >
         <HistoryList {...props.list} />
-      </div>
+      </ScrollArea>
       <div
         ref={resizerRef}
         className="agent-history-dock-resizer"

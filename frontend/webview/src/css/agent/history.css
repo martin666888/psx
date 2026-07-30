@@ -43,10 +43,9 @@
 }
 
 .agent-history-dock-content {
-    /* Webkit scrollbar skin only (scrollbars.css) — standard scrollbar-color/
-     * width would suppress it and bring back native arrow buttons. */
-    /* The scroll node reaches the panel's bottom corners; round it so the
-     * scrollbar and rows never poke past the panel radius. */
+    /* This class sits on the Radix ScrollArea viewport (HistoryDockView.tsx).
+     * The scroll node reaches the panel's bottom corners; round it so the
+     * rows never poke past the panel radius. */
     border-bottom-left-radius: calc(var(--agent-workspace-radius) - 1px);
     border-bottom-right-radius: calc(var(--agent-workspace-radius) - 1px);
 }
