@@ -5,7 +5,7 @@
 // together. Backend replies are injected as agent_profile/agent_usage_report
 // host events answering the requestId captured from the posted bridge command.
 
-import { afterEach, test } from 'vitest';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { act } from 'react';
 import {
@@ -13,21 +13,12 @@ import {
   installBreakpoint,
   agentTemplateMarkup,
   createAgentWorkspace,
+  registerAgentCleanup,
   appModule
 } from './agentHarness.js';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const WS = '88888888-8888-4888-8888-888888888888';
-
-// Each test builds a whole app; without teardown the UsageRequestBroker's 30s
-// timeout timer (and the mounted panel/dock islands) would leak across files in
-// the shared vitest fork and pile up until Node exhausts memory. dispose()
-// clears every controller, broker timer and subscription.
-let currentApp = null;
-afterEach(() => {
-  currentApp?.dispose();
-  currentApp = null;
-});
 
 const tokens = (input = 0, output = 0, cacheRead = 0, cacheCreation = 0) => ({
   input,
@@ -67,7 +58,9 @@ async function fixture() {
     container: document.getElementById('agents'),
     template: document.getElementById('agent-workspace-template')
   });
-  currentApp = app;
+  // The global afterEach (vitest.setup.js) disposes this app before closing the
+  // jsdom window, so the pending force-request timer never leaks across tests.
+  registerAgentCleanup(() => app.dispose());
   createAgentWorkspace(app, WS);
   const footer = () => document.querySelector('[data-role="history-profile"]');
   for (let i = 0; i < 100 && !footer(); i++) {
@@ -365,5 +358,21 @@ test('panel: the refresh button forces a rescan', async () => {
     () => document.querySelector('[data-role="usage-refresh"]').click(),
     () => usageCommands(rig.posted).length === 2
   );
-  assert.equal(usageCommands(rig.posted).at(-1).value, 'force');
+  const forced = usageCommands(rig.posted).at(-1);
+  assert.equal(forced.value, 'force');
+
+  // Answer the forced rescan so the test never ends on an in-flight request
+  // (which would otherwise leave the broker's timeout timer pending).
+  await settle(
+    () =>
+      rig.app.handle({
+        type: 'agent_usage_report',
+        requestId: forced.requestId,
+        generatedAt: 'now',
+        timezone: 'UTC',
+        report: report(),
+        sources: []
+      }),
+    () => rig.app && document.querySelector('[data-role="usage-overview"]')
+  );
 });

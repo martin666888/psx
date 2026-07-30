@@ -366,5 +366,7 @@ export class AgentWorkspaceRegistry {
     }
     this.historyBroker.dispose();
     this.usageBroker.dispose();
+    this.historyDock = null;
+    this.planVisibilityListener = null;
   }
 }

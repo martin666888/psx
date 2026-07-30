@@ -54,15 +54,20 @@ export function createAgentApp(options: AgentAppOptions): AgentApp {
   );
   shellLayout.mount();
 
+  let disposed = false;
+
   return {
     handle(message: RawHostMessage): void {
-      registry.handle(message);
+      if (!disposed) registry.handle(message);
     },
     dispose(): void {
-      // Tear workspaces down first: closeController still reports open-state to
-      // the live dock. Then dispose the singletons the workspaces reported to.
-      registry.dispose();
+      if (disposed) return;
+      disposed = true;
+      // Order matters: drop the window/document listeners first (shell), then
+      // tear workspaces + global brokers down (registry still reports open
+      // state to the live dock), and finally unmount the global React islands.
       shellLayout.dispose();
+      registry.dispose();
       usagePanel.dispose();
       historyDock.dispose();
     }

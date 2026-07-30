@@ -7,6 +7,31 @@ const testDirectory = path.dirname(fileURLToPath(import.meta.url));
 export const repositoryRoot = path.resolve(testDirectory, '..', '..', '..');
 const nativeFetch = globalThis.fetch.bind(globalThis);
 let activeAgentDom = null;
+// Teardown callbacks (newest last) for whatever the current test built on top
+// of the jsdom window — most importantly the AgentApp, whose dispose() clears
+// the History/Usage broker timeout timers and unmounts the React islands.
+let activeAgentCleanups = [];
+
+/** Register a teardown callback for the active runtime (e.g. () => app.dispose()). */
+export function registerAgentCleanup(cleanup) {
+  activeAgentCleanups.push(cleanup);
+}
+
+/** Dispose the current app(s), then close the jsdom window (which cancels every
+ * timer and animation frame bound to it). Run before each fresh install and by
+ * the global afterEach so no app instance, broker timer or detached DOM tree
+ * survives into the next test/file in the shared vitest fork. */
+export function disposeActiveAgentRuntime() {
+  for (const cleanup of activeAgentCleanups.splice(0).reverse()) {
+    try {
+      cleanup();
+    } catch {
+      // Teardown must never fail a test; the window close below still runs.
+    }
+  }
+  activeAgentDom?.window.close();
+  activeAgentDom = null;
+}
 
 // Tests exercise the Agent TypeScript sources under frontend/agent/src
 // directly; Vitest transforms .ts/.tsx on import. Callers keep addressing
@@ -37,10 +62,14 @@ await loadBridgeGlobals();
 // touch. The Bridge globals were published once at harness load; they read the
 // current jsdom window at call time. Returns the message-capture handles.
 export function installAgentRuntime() {
-  activeAgentDom?.window.close();
+  disposeActiveAgentRuntime();
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {
     url: 'https://psx.local/',
-    runScripts: 'outside-only'
+    runScripts: 'outside-only',
+    // Visual mode gives a real, timer-backed, cancelable requestAnimationFrame
+    // (see below): the old synchronous stub could turn a self-scheduling frame
+    // loop into an unbounded synchronous allocation loop.
+    pretendToBeVisual: true
   });
   activeAgentDom = dom;
   globalThis.window = dom.window;
@@ -83,13 +112,12 @@ export function installAgentRuntime() {
   // context-usage host (3-0).
   globalThis.MutationObserver = dom.window.MutationObserver;
   globalThis.getComputedStyle = dom.window.getComputedStyle.bind(dom.window);
-  globalThis.requestAnimationFrame = (callback) => {
-    callback(0);
-    return 1;
-  };
-  globalThis.cancelAnimationFrame = () => {};
-  dom.window.requestAnimationFrame = globalThis.requestAnimationFrame;
-  dom.window.cancelAnimationFrame = globalThis.cancelAnimationFrame;
+  // Real (timer-backed, cancelable) rAF from jsdom visual mode. The previous
+  // synchronous stub executed callbacks inline and made cancelAnimationFrame a
+  // no-op, which turned Radix's self-scheduling frame loops into unbounded
+  // synchronous allocation. window.close() cancels every frame bound here.
+  globalThis.requestAnimationFrame = dom.window.requestAnimationFrame.bind(dom.window);
+  globalThis.cancelAnimationFrame = dom.window.cancelAnimationFrame.bind(dom.window);
   dom.window.matchMedia = () => ({
     matches: false,
     addEventListener() {},
@@ -238,6 +266,9 @@ export async function mountAgentApp({ terminal, wide = false } = {}) {
     container: document.getElementById('agents'),
     template: document.getElementById('agent-workspace-template')
   });
+  // The global afterEach (vitest.setup.js) disposes the app before closing the
+  // jsdom window, so broker timers and islands never leak into the next test.
+  registerAgentCleanup(() => app.dispose());
   return {
     runtime,
     breakpoint,

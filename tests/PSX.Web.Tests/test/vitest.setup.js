@@ -1,7 +1,8 @@
 // Shared Vitest setup. The old node --test runner had no global setup; keep
 // this minimal so tests stay self-describing. React act() support is enabled
 // per-file by the tests that render React trees, exactly as before.
-import { afterAll } from 'vitest';
+import { afterAll, afterEach } from 'vitest';
+import { disposeActiveAgentRuntime } from './agentHarness.js';
 
 process.env.TZ ||= 'UTC';
 
@@ -15,6 +16,13 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
     disconnect() {}
   };
 }
+
+// Dispose whatever the test built on the jsdom runtime (AgentApp, brokers,
+// islands) and close the window before the next test, so pending broker
+// timeout timers and detached DOM trees never accumulate across a file/fork.
+afterEach(() => {
+  disposeActiveAgentRuntime();
+});
 
 // Island loaders import their React module dynamically after a host event.
 // A test file may legitimately finish while such an import is still in
