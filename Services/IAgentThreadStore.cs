@@ -9,6 +9,7 @@ public interface IAgentThreadStore
     AgentThread CreateThread(string workingDirectory);
     AgentThread? LoadThread(string threadId);
     IReadOnlyList<AgentThreadSummary> ListThreads();
+    AgentThreadUsageSnapshot ReadUsageSnapshot();
     int DeleteEmptyDrafts();
     void SaveThread(AgentThread thread);
     void DeleteThread(string threadId);

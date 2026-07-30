@@ -302,6 +302,7 @@ public sealed class AgentWorkspaceActivationTests
                 ? throw new IOException("Simulated thread store failure.")
                 : inner.LoadThread(threadId);
         public IReadOnlyList<AgentThreadSummary> ListThreads() => inner.ListThreads();
+        public AgentThreadUsageSnapshot ReadUsageSnapshot() => inner.ReadUsageSnapshot();
         public int DeleteEmptyDrafts() => inner.DeleteEmptyDrafts();
         public void SaveThread(AgentThread thread) => inner.SaveThread(thread);
         public void DeleteThread(string threadId) => inner.DeleteThread(threadId);

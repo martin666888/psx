@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.IO;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using PSX.Models;
 
@@ -60,6 +61,8 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
     private readonly IAgentWorkspaceFactory _workspaceFactory;
     private readonly IAgentHistoryCatalog _historyCatalog;
     private readonly AgentProfileStore _profileStore;
+    private readonly AgentUsageService _usageService;
+    private readonly CancellationTokenSource _shutdownCts = new();
     private readonly SemaphoreSlim _creationLock = new(1, 1);
     private readonly ConcurrentDictionary<Guid, Entry> _entries = new();
     private readonly ConcurrentDictionary<string, Guid> _openThreads = new(StringComparer.OrdinalIgnoreCase);
@@ -80,7 +83,8 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
         IAgentProviderRegistry providerRegistry,
         IAgentWorkspaceFactory workspaceFactory,
         IAgentHistoryCatalog historyCatalog,
-        AgentProfileStore? profileStore = null)
+        AgentProfileStore? profileStore = null,
+        AgentUsageService? usageService = null)
     {
         _rootBridge = rootBridge;
         _threadStore = threadStore;
@@ -92,6 +96,7 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
         // coordinators path-isolated without another required parameter.
         _profileStore = profileStore
             ?? new AgentProfileStore(Path.Combine(threadStore.RootDirectory, "profile"));
+        _usageService = usageService ?? new AgentUsageService(threadStore, providerRegistry);
 
         _threadStore.DeleteEmptyDrafts();
 
@@ -498,6 +503,14 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
             return;
         }
 
+        if (args.Command == "usage_report")
+        {
+            // Usage aggregation is global and coordinator-owned; the report is
+            // returned only to the requester (matched by requestId).
+            _ = HandleUsageReportAsync(entry, args);
+            return;
+        }
+
         if (args.Command == "agent_permission_response")
         {
             entry.WaitingForPermission = false;
@@ -651,6 +664,63 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
             TaskContinuationOptions.OnlyOnFaulted);
     }
 
+    private static readonly JsonSerializerOptions UsageJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
+    /// <summary>
+    /// Aggregate the global Usage report off the UI thread and return it only to
+    /// the requester, echoing its requestId. Failures reply on the same event
+    /// with an error field and never enter thread history.
+    /// </summary>
+    private async Task HandleUsageReportAsync(Entry requester, AgentCommandEventArgs args)
+    {
+        var force = string.Equals(args.Value, "force", StringComparison.OrdinalIgnoreCase);
+        try
+        {
+            var result = await _usageService
+                .CollectAsync(force, _shutdownCts.Token)
+                .ConfigureAwait(false);
+
+            await requester.EventSink.SendEventAsync(new
+            {
+                type = "agent_usage_report",
+                requestId = args.RequestId,
+                generatedAt = result.GeneratedAt,
+                timezone = result.Timezone,
+                report = JsonSerializer.SerializeToNode(result.Report, UsageJsonOptions),
+                sources = JsonSerializer.SerializeToNode(result.Sources, UsageJsonOptions),
+                error = (string?)null
+            }).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Shutdown cancelled the scan; nothing to report.
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                await requester.EventSink.SendEventAsync(new
+                {
+                    type = "agent_usage_report",
+                    requestId = args.RequestId,
+                    generatedAt = DateTimeOffset.Now,
+                    timezone = TimeZoneInfo.Local.Id,
+                    report = (JsonNode?)null,
+                    sources = (JsonNode?)null,
+                    error = ex.Message
+                }).ConfigureAwait(false);
+            }
+            catch (Exception reportException)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"Unable to report Agent usage failure: {reportException}");
+            }
+        }
+    }
+
     private void SubscribeRuntimeStatusEvents()
     {
         var subscribedRuntimes = new HashSet<IAcpAgentRuntime>(ReferenceEqualityComparer.Instance);
@@ -754,6 +824,7 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
                 return _shutdownTask;
 
             _disposed = true;
+            _shutdownCts.Cancel();
             _rootBridge.UserMessageSubmitted -= OnSubmit;
             _rootBridge.CommandReceived -= OnCommand;
             _rootBridge.AttachmentUploadReceived -= OnUpload;

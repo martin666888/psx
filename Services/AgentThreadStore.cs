@@ -144,6 +144,55 @@ public sealed class AgentThreadStore : IAgentThreadStore
         }
     }
 
+    /// <summary>
+    /// Read-only projection of every stored thread for usage aggregation.
+    /// Enumerates all thread files directly (not the 100-entry index) and never
+    /// rewrites the index. Corrupt/unreadable files are skipped and counted so
+    /// the caller can report partial completeness.
+    /// </summary>
+    public AgentThreadUsageSnapshot ReadUsageSnapshot()
+    {
+        lock (FileIoLock)
+        {
+            EnsureDirectories();
+            var snapshots = new List<AgentUsageThreadSnapshot>();
+            var scanned = 0;
+            var skipped = 0;
+
+            foreach (var path in Directory.EnumerateFiles(_threadsDirectory, "*.json"))
+            {
+                scanned++;
+                try
+                {
+                    var thread = JsonSerializer.Deserialize<AgentThread>(ReadTextWithRetry(path), JsonOptions);
+                    if (thread == null)
+                    {
+                        skipped++;
+                        continue;
+                    }
+
+                    snapshots.Add(new AgentUsageThreadSnapshot(
+                        thread.ThreadId,
+                        thread.Title,
+                        thread.Provider,
+                        thread.ClaudeSessionId,
+                        thread.AcpSessionId,
+                        thread.ContextUsedTokens,
+                        thread.ContextWindowTokens,
+                        thread.Messages
+                            .Select(message => new AgentUsageMessageStamp(message.Role, message.CreatedAt))
+                            .ToArray()));
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+                {
+                    skipped++;
+                }
+            }
+
+            return new AgentThreadUsageSnapshot(snapshots, scanned, skipped);
+        }
+    }
+
     private AgentThread LoadThreadStrict(string threadId)
     {
         var path = GetThreadPath(threadId);

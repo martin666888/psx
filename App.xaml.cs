@@ -51,6 +51,11 @@ public partial class App : Application
         // data beside the thread store — never part of psx.ini.
         services.AddSingleton(sp => new AgentProfileStore(
             Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "profile")));
+        // Global Usage aggregation (thread activity + provider exact-usage
+        // sources). Singleton so its short-TTL cache is shared across requests.
+        services.AddSingleton(sp => new AgentUsageService(
+            sp.GetRequiredService<IAgentThreadStore>(),
+            sp.GetRequiredService<IAgentProviderRegistry>()));
         services.AddSingleton<IAgentDirectoryPicker, WpfAgentDirectoryPicker>();
 
         // Runtime / ACP install pipeline. RuntimeLocator remains shared by

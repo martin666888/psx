@@ -14,6 +14,11 @@ public sealed class ClaudeAcpAgentProvider : IAcpAgentProvider
         Runtime = runtime;
     }
 
+    // Claude Code writes per-session JSONL under ~/.claude/projects; the Usage
+    // panel reads exact token usage (including cache hits) from there, scoped to
+    // PSX-owned session ids only.
+    public IAgentUsageSource? UsageSource { get; } = new ClaudeSessionUsageSource();
+
     public AgentDescriptor Descriptor { get; } = new(
         Key: "acp-claude",
         DisplayName: "Claude Code",

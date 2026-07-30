@@ -14,6 +14,15 @@ public interface IAcpAgentProvider
     /// </summary>
     AcpClientCapabilityProfile ClientCapabilities { get; }
 
+    /// <summary>
+    /// Optional exact-usage data source for the global Usage panel. Providers
+    /// that can attribute precise token counts to PSX sessions (e.g. Claude
+    /// Code's session JSONL) return one here; others return null and are shown
+    /// with context snapshots only. This is data-driven capability, never a
+    /// provider-name branch in shared code.
+    /// </summary>
+    IAgentUsageSource? UsageSource => null;
+
     object CreateNewSessionParameters(string workingDirectory);
 
     /// <summary>
