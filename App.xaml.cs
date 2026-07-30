@@ -47,6 +47,10 @@ public partial class App : Application
         services.AddSingleton<IAgentBridgeService, AgentBridgeService>();
         services.AddSingleton<IAgentThreadStore, AgentThreadStore>();
         services.AddSingleton<IAgentHistoryCatalog, AgentHistoryCatalog>();
+        // Local user profile (History dock footer / Usage panel). Plain user
+        // data beside the thread store — never part of psx.ini.
+        services.AddSingleton(sp => new AgentProfileStore(
+            Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "profile")));
         services.AddSingleton<IAgentDirectoryPicker, WpfAgentDirectoryPicker>();
 
         // Runtime / ACP install pipeline. RuntimeLocator remains shared by

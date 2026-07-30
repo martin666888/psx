@@ -59,6 +59,7 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
     private readonly IAgentProviderRegistry _providerRegistry;
     private readonly IAgentWorkspaceFactory _workspaceFactory;
     private readonly IAgentHistoryCatalog _historyCatalog;
+    private readonly AgentProfileStore _profileStore;
     private readonly SemaphoreSlim _creationLock = new(1, 1);
     private readonly ConcurrentDictionary<Guid, Entry> _entries = new();
     private readonly ConcurrentDictionary<string, Guid> _openThreads = new(StringComparer.OrdinalIgnoreCase);
@@ -78,13 +79,19 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
         IAgentThreadStore threadStore,
         IAgentProviderRegistry providerRegistry,
         IAgentWorkspaceFactory workspaceFactory,
-        IAgentHistoryCatalog historyCatalog)
+        IAgentHistoryCatalog historyCatalog,
+        AgentProfileStore? profileStore = null)
     {
         _rootBridge = rootBridge;
         _threadStore = threadStore;
         _providerRegistry = providerRegistry;
         _workspaceFactory = workspaceFactory;
         _historyCatalog = historyCatalog;
+        // The profile lives beside the thread data (~/.psx/profile in
+        // production); deriving the default from the store root keeps test
+        // coordinators path-isolated without another required parameter.
+        _profileStore = profileStore
+            ?? new AgentProfileStore(Path.Combine(threadStore.RootDirectory, "profile"));
 
         _threadStore.DeleteEmptyDrafts();
 
@@ -483,6 +490,14 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
             return;
         }
 
+        if (args.Command is "profile_get" or "profile_set_name" or "profile_set_avatar")
+        {
+            // Profile commands are global (coordinator-owned) like load_thread:
+            // they never reach the per-workspace session engine.
+            HandleProfileCommand(entry, args);
+            return;
+        }
+
         if (args.Command == "agent_permission_response")
         {
             entry.WaitingForPermission = false;
@@ -547,6 +562,93 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
     {
         foreach (var entry in _entries.Values)
             _ = entry.EventSink.SendEventAsync(new { type = "agent_history_invalidated" });
+    }
+
+    /// <summary>
+    /// Global profile commands. The requester gets a reply that echoes its
+    /// requestId (completing the frontend broker's pending request); after a
+    /// successful mutation every other live workspace receives a requestId-free
+    /// broadcast that frontends apply by monotonic revision. Failures reply
+    /// only to the requester and never enter thread history.
+    /// </summary>
+    private void HandleProfileCommand(Entry requester, AgentCommandEventArgs args)
+    {
+        try
+        {
+            switch (args.Command)
+            {
+                case "profile_get":
+                    SendProfileEvent(requester, _profileStore.GetProfile(), args.RequestId);
+                    return;
+
+                case "profile_set_name":
+                {
+                    var result = _profileStore.SetDisplayName(args.Value);
+                    CompleteProfileMutation(requester, args.RequestId, result);
+                    return;
+                }
+
+                case "profile_set_avatar":
+                {
+                    byte[] avatar;
+                    try
+                    {
+                        avatar = Convert.FromBase64String(args.Value ?? "");
+                    }
+                    catch (FormatException)
+                    {
+                        SendProfileEvent(
+                            requester, _profileStore.GetProfile(), args.RequestId,
+                            "Avatar upload was not valid base64 image data.");
+                        return;
+                    }
+
+                    CompleteProfileMutation(requester, args.RequestId, _profileStore.SetAvatar(avatar));
+                    return;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            // Storage failures surface to the requester only; the profile UI
+            // shows the error inline and the command pipeline stays alive.
+            SendProfileEvent(requester, _profileStore.GetProfile(), args.RequestId, ex.Message);
+        }
+    }
+
+    private void CompleteProfileMutation(
+        Entry requester, string? requestId, AgentProfileUpdateResult result)
+    {
+        if (!result.Success)
+        {
+            SendProfileEvent(requester, result.Profile, requestId, result.Error);
+            return;
+        }
+
+        SendProfileEvent(requester, result.Profile, requestId);
+        foreach (var entry in _entries.Values)
+        {
+            if (!ReferenceEquals(entry, requester) && !entry.Closing)
+                SendProfileEvent(entry, result.Profile, requestId: null);
+        }
+    }
+
+    private static void SendProfileEvent(
+        Entry entry, AgentProfile profile, string? requestId, string? error = null)
+    {
+        var sendTask = entry.EventSink.SendEventAsync(new
+        {
+            type = "agent_profile",
+            requestId,
+            revision = profile.Revision,
+            displayName = profile.DisplayName,
+            avatarDataUrl = profile.AvatarDataUrl,
+            error
+        });
+        _ = sendTask.ContinueWith(
+            task => System.Diagnostics.Debug.WriteLine(
+                $"Unable to deliver agent_profile event: {task.Exception?.GetBaseException()}"),
+            TaskContinuationOptions.OnlyOnFaulted);
     }
 
     private void SubscribeRuntimeStatusEvents()
