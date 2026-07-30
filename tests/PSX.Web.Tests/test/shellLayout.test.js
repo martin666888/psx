@@ -269,12 +269,13 @@ test('shell: structural tokens and the centerline mechanism exist in shell.css',
     'main panel is a rounded workbench block with gutter, full border and radius'
   );
   // The workbench backdrop only appears while an Agent workspace is active:
-  // an optional theme tint wash over the flat --agent-bg base. The tint token
-  // defaults to transparent so themes opt in via [agentTheme] workbenchTint.
+  // an optional theme tint wash (left-to-right fade) over the flat --agent-bg
+  // base. The tint token defaults to transparent so themes opt in via
+  // [agentTheme] workbenchTint.
   assert.ok(shell.includes('--agent-workbench-tint: transparent'));
   assert.match(
     shell,
-    /#agent-workspace-container\.agent-workspace-active\s*\{[\s\S]*?linear-gradient\(180deg,\s*var\(--agent-workbench-tint\),\s*transparent 62%\),\s*var\(--agent-bg\)/,
+    /#agent-workspace-container\.agent-workspace-active\s*\{[\s\S]*?linear-gradient\(90deg,\s*var\(--agent-workbench-tint\),\s*transparent 62%\),\s*var\(--agent-bg\)/,
     'active container paints the tint wash over the workbench backdrop'
   );
   // The toolbar is an in-panel top bar, not a full-window strip.

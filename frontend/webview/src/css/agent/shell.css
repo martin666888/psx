@@ -53,11 +53,11 @@
     pointer-events: auto;
     /* The workbench backdrop both panels float on. Applied only while an
      * Agent workspace is active so the terminal view underneath stays
-     * visible for Terminal tabs. Themes may add a soft top-down tint wash
-     * (workbenchTint) over the flat base color; a transparent tint leaves
-     * the backdrop exactly --agent-bg. */
+     * visible for Terminal tabs. Themes may add a soft left-to-right tint
+     * wash (workbenchTint) over the flat base color; a transparent tint
+     * leaves the backdrop exactly --agent-bg. */
     background:
-        linear-gradient(180deg,
+        linear-gradient(90deg,
             var(--agent-workbench-tint),
             transparent 62%),
         var(--agent-bg);
