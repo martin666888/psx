@@ -355,4 +355,16 @@ export class AgentWorkspaceRegistry {
     this.host.closeWorkspace(workspaceId);
     this.historyDock?.updateOpenState();
   }
+
+  /** Tears down every live controller and both global brokers (clearing their
+   * pending timeout timers). entry.ts owns the dock/panel/shell singletons and
+   * disposes those separately. Used by app teardown and test afterEach so a
+   * closed app leaves no pending timer or subscription behind. */
+  dispose(): void {
+    for (const workspaceId of [...this.controllers.keys()]) {
+      this.closeController(workspaceId);
+    }
+    this.historyBroker.dispose();
+    this.usageBroker.dispose();
+  }
 }

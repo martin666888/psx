@@ -5,7 +5,7 @@
 // together. Backend replies are injected as agent_profile/agent_usage_report
 // host events answering the requestId captured from the posted bridge command.
 
-import { test } from 'vitest';
+import { afterEach, test } from 'vitest';
 import assert from 'node:assert/strict';
 import { act } from 'react';
 import {
@@ -18,6 +18,16 @@ import {
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const WS = '88888888-8888-4888-8888-888888888888';
+
+// Each test builds a whole app; without teardown the UsageRequestBroker's 30s
+// timeout timer (and the mounted panel/dock islands) would leak across files in
+// the shared vitest fork and pile up until Node exhausts memory. dispose()
+// clears every controller, broker timer and subscription.
+let currentApp = null;
+afterEach(() => {
+  currentApp?.dispose();
+  currentApp = null;
+});
 
 const tokens = (input = 0, output = 0, cacheRead = 0, cacheCreation = 0) => ({
   input,
@@ -57,6 +67,7 @@ async function fixture() {
     container: document.getElementById('agents'),
     template: document.getElementById('agent-workspace-template')
   });
+  currentApp = app;
   createAgentWorkspace(app, WS);
   const footer = () => document.querySelector('[data-role="history-profile"]');
   for (let i = 0; i < 100 && !footer(); i++) {

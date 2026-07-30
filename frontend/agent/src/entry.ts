@@ -21,6 +21,10 @@ export interface AgentAppOptions {
 
 export interface AgentApp {
   handle(message: RawHostMessage): void;
+  /** Tears down every controller, global broker, island and layout listener.
+   * The shipped app runs for the process lifetime; tests call this in
+   * afterEach so no app instance, subscription or pending timer survives. */
+  dispose(): void;
 }
 
 export function createAgentApp(options: AgentAppOptions): AgentApp {
@@ -53,6 +57,14 @@ export function createAgentApp(options: AgentAppOptions): AgentApp {
   return {
     handle(message: RawHostMessage): void {
       registry.handle(message);
+    },
+    dispose(): void {
+      // Tear workspaces down first: closeController still reports open-state to
+      // the live dock. Then dispose the singletons the workspaces reported to.
+      registry.dispose();
+      shellLayout.dispose();
+      usagePanel.dispose();
+      historyDock.dispose();
     }
   };
 }
