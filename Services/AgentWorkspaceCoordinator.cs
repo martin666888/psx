@@ -595,30 +595,30 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
                     return;
 
                 case "profile_set_name":
-                {
-                    var result = _profileStore.SetDisplayName(args.Value);
-                    CompleteProfileMutation(requester, args.RequestId, result);
-                    return;
-                }
-
-                case "profile_set_avatar":
-                {
-                    byte[] avatar;
-                    try
                     {
-                        avatar = Convert.FromBase64String(args.Value ?? "");
-                    }
-                    catch (FormatException)
-                    {
-                        SendProfileEvent(
-                            requester, _profileStore.GetProfile(), args.RequestId,
-                            "Avatar upload was not valid base64 image data.");
+                        var result = _profileStore.SetDisplayName(args.Value);
+                        CompleteProfileMutation(requester, args.RequestId, result);
                         return;
                     }
 
-                    CompleteProfileMutation(requester, args.RequestId, _profileStore.SetAvatar(avatar));
-                    return;
-                }
+                case "profile_set_avatar":
+                    {
+                        byte[] avatar;
+                        try
+                        {
+                            avatar = Convert.FromBase64String(args.Value ?? "");
+                        }
+                        catch (FormatException)
+                        {
+                            SendProfileEvent(
+                                requester, _profileStore.GetProfile(), args.RequestId,
+                                "Avatar upload was not valid base64 image data.");
+                            return;
+                        }
+
+                        CompleteProfileMutation(requester, args.RequestId, _profileStore.SetAvatar(avatar));
+                        return;
+                    }
             }
         }
         catch (Exception ex)
