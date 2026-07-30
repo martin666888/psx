@@ -303,10 +303,10 @@
      * sides and shifts the reading column right of the composer's identical
      * vw-based column. !important is the only way to beat the inline style;
      * plain "stable" keeps the right-side gutter so the scrollbar still never
-     * causes horizontal jitter. */
+     * causes horizontal jitter. No standard scrollbar-color/width here: since
+     * Chromium 121 they suppress the ::-webkit-scrollbar skin (scrollbars.css)
+     * and bring back native arrow buttons. */
     scrollbar-gutter: stable !important;
-    scrollbar-color: var(--agent-scrollbar) transparent;
-    scrollbar-width: thin;
     min-height: 0;
 }
 

@@ -1,8 +1,8 @@
 /* History dock chrome renders through HistoryDockView.tsx: the top bar
    controls are shadcn components (Input, Select, Button) and the content
    scroller's box model is Tailwind. This file keeps what utilities do not
-   express — the dock's absolute frame, the two-row bar grid, the Firefox
-   scrollbar properties of the single scroll node (the webkit skin lives in
+   express — the dock's absolute frame, the two-row bar grid, the rounded
+   corners of the single scroll node (its webkit scrollbar skin lives in
    scrollbars.css keyed off the same class), the resizer affordance and the
    open animation. */
 
@@ -43,8 +43,8 @@
 }
 
 .agent-history-dock-content {
-    scrollbar-color: var(--agent-scrollbar) transparent;
-    scrollbar-width: thin;
+    /* Webkit scrollbar skin only (scrollbars.css) — standard scrollbar-color/
+     * width would suppress it and bring back native arrow buttons. */
     /* The scroll node reaches the panel's bottom corners; round it so the
      * scrollbar and rows never poke past the panel radius. */
     border-bottom-left-radius: calc(var(--agent-workspace-radius) - 1px);

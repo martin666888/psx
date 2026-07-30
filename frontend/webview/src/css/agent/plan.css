@@ -78,8 +78,8 @@
     overflow-x: hidden;
     overflow-y: auto;
     padding: 12px 14px 18px;
-    scrollbar-color: var(--agent-scrollbar) transparent;
-    scrollbar-width: thin;
+    /* Webkit scrollbar skin only (scrollbars.css) — standard scrollbar-color/
+     * width would suppress it and bring back native arrow buttons. */
 }
 
 .agent-plan-list {

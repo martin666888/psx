@@ -37,3 +37,21 @@
     background: var(--agent-scrollbar);
     border-radius: 999px;
 }
+
+/* No arrow endpoints anywhere: the pill thumb on a transparent track is the
+ * whole affordance. This also documents why the scroll containers must never
+ * set the standard scrollbar-color/scrollbar-width properties — Chromium
+ * would drop this entire skin and render native arrow-button scrollbars. */
+.agent-thread-scroll::-webkit-scrollbar-button,
+.agent-composer textarea::-webkit-scrollbar-button,
+.agent-message-body pre::-webkit-scrollbar-button,
+.agent-tool pre::-webkit-scrollbar-button,
+.agent-decision pre::-webkit-scrollbar-button,
+.agent-tool-card-content::-webkit-scrollbar-button,
+.agent-plan-panel::-webkit-scrollbar-button,
+.agent-command-menu-scroll::-webkit-scrollbar-button,
+.agent-history-dock-content::-webkit-scrollbar-button {
+    display: none;
+    width: 0;
+    height: 0;
+}

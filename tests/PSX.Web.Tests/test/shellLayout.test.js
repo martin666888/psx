@@ -327,7 +327,18 @@ test('shell: retired layout tokens are gone from every agent stylesheet', () => 
     assert.ok(!css.includes('--agent-conversation-max-width'), `${file} still uses --agent-conversation-max-width`);
     assert.ok(!css.includes('--agent-history-dock-width'), `${file} still uses --agent-history-dock-width`);
     assert.ok(!css.includes('--agent-content-inline-padding'), `${file} still uses --agent-content-inline-padding`);
+    // Standard scrollbar properties suppress the ::-webkit-scrollbar skin in
+    // Chromium and bring back native arrow-button scrollbars.
+    assert.ok(!/scrollbar-color\s*:/.test(css), `${file} sets scrollbar-color`);
+    assert.ok(!/scrollbar-width\s*:/.test(css), `${file} sets scrollbar-width`);
   }
+  // The shared skin hides the arrow endpoints explicitly.
+  const scrollbars = readCss('scrollbars.css');
+  assert.match(
+    scrollbars,
+    /::-webkit-scrollbar-button[\s\S]*?\{\s*display: none/,
+    'scrollbar arrow buttons are removed'
+  );
 });
 
 test('shell: composer and conversation share the same reading-column rules', () => {

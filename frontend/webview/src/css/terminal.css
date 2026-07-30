@@ -65,3 +65,10 @@ body {
 .xterm-viewport::-webkit-scrollbar-thumb:hover {
     background: var(--term-scrollbar-hover);
 }
+
+/* No arrow endpoints on the terminal scrollbar either. */
+.xterm-viewport::-webkit-scrollbar-button {
+    display: none;
+    width: 0;
+    height: 0;
+}
