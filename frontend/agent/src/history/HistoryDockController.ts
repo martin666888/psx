@@ -25,6 +25,7 @@ import type {
   AgentHistoryListener,
   AgentHistoryState
 } from '../contracts/agent-history.js';
+import type { AgentUserProfile } from '../contracts/agent-usage.js';
 import {
   HISTORY_DOCK_DEFAULT_WIDTH,
   HISTORY_DOCK_MAX_WIDTH,
@@ -47,6 +48,12 @@ export interface HistoryDockHost {
   activeWorkspaceId(): string;
   /** workspaceId → currentThreadId for every live workspace bound to a thread. */
   openWorkspaceThreadIds(): ReadonlyMap<string, string>;
+  /** The global user profile shown in the dock footer. */
+  getProfile(): AgentUserProfile;
+  /** Re-renders the footer when the profile changes (revision-guarded upstream). */
+  subscribeProfile(listener: () => void): () => void;
+  /** Opens the global Usage panel and kicks off a cached usage load. */
+  openUsagePanel(): void;
 }
 
 const OPEN_STORAGE_KEY = 'psx.agent.historyDockOpen';
@@ -75,6 +82,7 @@ export class HistoryDockController {
    * scroll position on every other render without help. */
   private resetScrollToken = 0;
   private unsubscribeStore: (() => void) | null = null;
+  private unsubscribeProfile: (() => void) | null = null;
   /** Folded groups by cwd key (user clicked the header to collapse). Runtime
    * state, never persisted; shared across workspaces (a project is global). */
   private readonly foldedGroups = new Set<string>();
@@ -105,6 +113,8 @@ export class HistoryDockController {
     this.applyWidth(this.width);
     this.preferredOpen = this.readOpen();
     this.unsubscribeStore = this.host.subscribe(() => this.render());
+    // The footer mirrors the global profile; re-render on every profile apply.
+    this.unsubscribeProfile = this.host.subscribeProfile(() => this.render());
     // The open/close control is the history-toggle rendered by every
     // workspace's toolbar island; clicks arrive through toggleFromToolbar.
     this.syncVisibility();
@@ -173,6 +183,10 @@ export class HistoryDockController {
     if (this.unsubscribeStore) {
       this.unsubscribeStore();
       this.unsubscribeStore = null;
+    }
+    if (this.unsubscribeProfile) {
+      this.unsubscribeProfile();
+      this.unsubscribeProfile = null;
     }
     this.historyIsland?.dispose();
     this.historyIsland = null;
@@ -373,6 +387,11 @@ export class HistoryDockController {
       onWidthPreview: (width) => this.previewWidth(width),
       onWidthCommit: (width) => this.commitWidth(width),
       resetScrollToken: this.resetScrollToken,
+      profile: {
+        displayName: this.host.getProfile().displayName,
+        avatarDataUrl: this.host.getProfile().avatarDataUrl
+      },
+      onOpenUsage: () => this.host.openUsagePanel(),
       list: {
         hasWorkspaces: this.host.hasAgentWorkspaces(),
         state,

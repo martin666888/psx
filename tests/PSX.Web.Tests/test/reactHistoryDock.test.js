@@ -207,3 +207,18 @@ test('thread-open error remains local and supports dismiss', async () => {
   await act(async () => notice.querySelector('.agent-history-dismiss').click());
   assert.equal(content().querySelector('.agent-history-open-error'), null);
 });
+
+test('dock footer anchors the profile button between the list and the resizer', async () => {
+  await fixture();
+  const dock = document.querySelector('[data-role="history-dock"]');
+  const footer = dock.querySelector('[data-role="history-profile"]');
+  assert.ok(footer, 'footer renders inside the dock');
+  assert.equal(footer.tagName, 'BUTTON');
+  assert.equal(footer.getAttribute('aria-label'), '打开用量面板');
+  // DOM order: bar → scroll content → footer → resizer.
+  const resizer = dock.querySelector('[data-role="history-dock-resizer"]');
+  assert.ok(
+    footer.compareDocumentPosition(resizer) & Node.DOCUMENT_POSITION_FOLLOWING,
+    'footer precedes the resizer'
+  );
+});

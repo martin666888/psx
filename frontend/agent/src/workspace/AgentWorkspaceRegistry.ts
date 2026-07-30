@@ -33,6 +33,7 @@ import { AgentHistoryStore, normalizeProviderCatalog } from '../history/AgentHis
 import { AgentHistoryRequestBroker } from '../history/AgentHistoryRequestBroker.js';
 import { UsageStore } from '../usage/UsageStore.js';
 import { UsageRequestBroker } from '../usage/UsageRequestBroker.js';
+import type { UsagePanelHost } from '../usage/UsagePanelController.js';
 import type { HistoryDockController, HistoryDockHost } from '../history/HistoryDockController.js';
 import type { AgentShellLayoutHost } from '../shell/AgentShellLayoutController.js';
 
@@ -103,8 +104,29 @@ export class AgentWorkspaceRegistry {
       dismissThreadOpenError: () => this.historyStore.clearThreadOpenError(),
       hasAgentWorkspaces: () => this.controllers.size > 0,
       activeWorkspaceId: () => this.activeAgentWorkspace(),
-      openWorkspaceThreadIds: () => this.openWorkspaceThreadIds()
+      openWorkspaceThreadIds: () => this.openWorkspaceThreadIds(),
+      getProfile: () => this.usageStore.getState().profile,
+      subscribeProfile: (listener) => this.usageStore.subscribe(() => listener()),
+      openUsagePanel: () => this.openUsagePanel()
     };
+  }
+
+  /** The seam entry.ts hands to the singleton UsagePanelController. */
+  createUsagePanelHost(): UsagePanelHost {
+    return {
+      getState: () => this.usageStore.getState(),
+      subscribe: (listener) => this.usageStore.subscribe(() => listener()),
+      requestUsage: (force) => this.usageBroker.requestUsage(force),
+      setDisplayName: (name) => this.usageBroker.setDisplayName(name),
+      setAvatar: (base64Png) => this.usageBroker.setAvatar(base64Png),
+      close: () => this.usageStore.setPanelOpen(false)
+    };
+  }
+
+  /** Footer click: open the global panel and kick off a cached usage load. */
+  private openUsagePanel(): void {
+    this.usageStore.setPanelOpen(true);
+    this.usageBroker.requestUsage(false);
   }
 
   /** Called by entry.ts once the global dock exists (before any workspace is
@@ -166,6 +188,10 @@ export class AgentWorkspaceRegistry {
             this.usageBroker.activateWorkspace(event.workspaceId);
             // The active workspace changed: re-evaluate the narrow rule.
             this.notifyPlanVisibility(event.workspaceId);
+          } else {
+            // Switching to a terminal hides the whole Agent UI: the global
+            // Usage dialog must never float over the terminal view.
+            this.usageStore.setPanelOpen(false);
           }
           this.historyDock?.updateOpenState();
         } else if (event.type === 'agent_workspace_created') {
@@ -323,6 +349,8 @@ export class AgentWorkspaceRegistry {
     this.store.delete(workspaceId);
     this.historyBroker.unregisterWorkspace(workspaceId);
     this.usageBroker.unregisterWorkspace(workspaceId);
+    // With no Agent workspace left there is no channel to serve the panel.
+    if (this.controllers.size === 0) this.usageStore.setPanelOpen(false);
     controller.dispose();
     this.host.closeWorkspace(workspaceId);
     this.historyDock?.updateOpenState();

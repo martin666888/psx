@@ -62,6 +62,8 @@ describe('lazy React-island loading guard', () => {
     'history/historyIsland.ts',
     'history/HistoryDockView.tsx',
     'history/HistoryList.tsx',
+    'usage/usageIsland.ts',
+    'usage/UsagePanel.tsx',
     'composer/composerIsland.ts',
     'composer/ComposerView.tsx',
     'composer/ComposerBits.tsx',
@@ -96,6 +98,7 @@ describe('lazy React-island loading guard', () => {
       ['workspace/SessionRuntimeController.ts', 'sessionIsland'],
       ['plan/PlanController.ts', 'planIsland'],
       ['history/HistoryDockController.ts', 'historyIsland'],
+      ['usage/UsagePanelController.ts', 'usageIsland'],
       ['composer/ComposerController.ts', 'composerIsland'],
       ['timeline/TimelineController.ts', 'timelineIsland']
     ];

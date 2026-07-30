@@ -44,10 +44,72 @@
 
 .agent-history-dock-content {
     /* This class sits on the Radix ScrollArea viewport (HistoryDockView.tsx).
-     * The scroll node reaches the panel's bottom corners; round it so the
-     * rows never poke past the panel radius. */
+     * The footer now owns the panel's bottom corners; the scroll node only
+     * needs to stay clipped inside the frame. */
+    min-height: 0;
+}
+
+/* --- Profile footer (opens the global Usage panel) ------------------------- */
+
+.agent-history-dock-footer {
+    display: flex;
+    align-items: center;
+    gap: var(--agent-space-2);
+    height: 44px;
+    flex: none;
+    padding: 0 var(--agent-space-2);
+    border: 0;
+    border-top: 1px solid var(--agent-border);
+    /* The footer reaches the panel's bottom corners: it inherits the radius
+     * the scroll content used to carry. */
     border-bottom-left-radius: calc(var(--agent-workspace-radius) - 1px);
     border-bottom-right-radius: calc(var(--agent-workspace-radius) - 1px);
+    background: transparent;
+    color: var(--agent-text);
+    font-family: var(--agent-font-ui);
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.agent-history-dock-footer:hover {
+    background: var(--agent-surface-muted);
+}
+
+.agent-history-dock-footer:focus-visible {
+    outline: 2px solid var(--agent-focus-ring);
+    outline-offset: -2px;
+}
+
+.agent-history-dock-footer-avatar {
+    width: 24px;
+    height: 24px;
+    flex: none;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.agent-history-dock-footer-avatar-fallback {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--agent-accent);
+    color: var(--agent-canvas-surface, #1e1d19);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.agent-history-dock-footer-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.agent-history-dock-footer-icon {
+    flex: none;
+    color: var(--agent-text-muted);
 }
 
 /* The resizer straddles the dock's right border into the panel gap; it must

@@ -9,6 +9,7 @@
 import { WorkspaceHost } from './workspace/WorkspaceHost.js';
 import { AgentWorkspaceRegistry } from './workspace/AgentWorkspaceRegistry.js';
 import { HistoryDockController } from './history/HistoryDockController.js';
+import { UsagePanelController } from './usage/UsagePanelController.js';
 import { AgentShellLayoutController } from './shell/AgentShellLayoutController.js';
 import type { RawHostMessage } from './contracts/host-events.js';
 
@@ -38,6 +39,10 @@ export function createAgentApp(options: AgentAppOptions): AgentApp {
   registry.attachHistoryDock(historyDock);
   host.setHistoryDockView(historyDock);
   historyDock.mount(options.container);
+  // The global Usage panel dialog is a second singleton beside the dock: the
+  // footer opens it through the registry, the store's panelOpen drives it.
+  const usagePanel = new UsagePanelController(registry.createUsagePanelHost());
+  usagePanel.mount(options.container);
   // Shell layout: responsive narrow collapse + one-visible-panel rule.
   const shellLayout = new AgentShellLayoutController(
     options.container,
