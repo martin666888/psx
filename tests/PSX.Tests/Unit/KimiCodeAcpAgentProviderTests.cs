@@ -20,6 +20,7 @@ public sealed class KimiCodeAcpAgentProviderTests
             Assert.AreEqual("Kimi", provider.Descriptor.AssistantName);
             Assert.AreEqual("kimi", provider.Descriptor.IconKey);
             Assert.HasCount(0, provider.Descriptor.LegacyKeys);
+            Assert.IsInstanceOfType<KimiCodeSessionUsageSource>(provider.UsageSource);
         }
     }
 

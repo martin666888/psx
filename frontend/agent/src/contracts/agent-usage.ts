@@ -1,9 +1,8 @@
 // agent-usage.ts — contracts for the global Usage panel and user profile.
 //
 // Wire shapes mirror the C# AgentUsageResult / AgentProfile payloads
-// (camelCase). The UsageStore holds the profile plus the last usage report;
-// the UsageRequestBroker fills them through requestId-matched replies. No
-// consumer inspects providerKey — sections render purely by which fields exist.
+// (camelCase). Provider identity is descriptor-driven and opaque to the UI;
+// model/thread/parser diagnostics never cross the bridge.
 
 export interface AgentUserProfile {
   displayName: string;
@@ -11,58 +10,49 @@ export interface AgentUserProfile {
   revision: number;
 }
 
-export interface UsageTokens {
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheCreation: number;
-}
-
-export interface UsageModelRow extends UsageTokens {
-  model: string;
-}
-
-export interface UsageContextSnapshot {
-  threadTitle: string;
-  usedTokens: number | null;
-  windowTokens: number | null;
-}
-
-export interface UsageProviderSection {
-  providerKey: string;
-  iconKey: string;
-  exactUsage: { modelRows: UsageModelRow[] } | null;
-  contextSnapshots: UsageContextSnapshot[] | null;
-  sourceKey: string;
-}
-
 export interface UsageWindow {
-  activeThreads: number;
-  turns: number;
-  tokens: UsageTokens;
-  cacheHitRate: number | null;
-  providerSections: UsageProviderSection[];
+  totalTokens: number;
 }
 
-export interface UsageReport {
-  heatmap: number[];
-  heatmapStartDate: string;
+export type UsageGapReason =
+  | 'unsupported_source'
+  | 'unsupported_format'
+  | 'missing_session_logs'
+  | 'ambiguous_session_logs'
+  | 'unreadable_logs'
+  | 'unmatched_sessions'
+  | 'missing_session_id'
+  | 'damaged_thread_files'
+  | 'unregistered_provider';
+
+export interface UsageCompleteness {
+  status: 'available' | 'partial' | 'unavailable';
+  reasons: UsageGapReason[];
+  expectedSessions: number | null;
+  matchedSessions: number | null;
+  skippedFiles: number;
+  badLines: number;
+  untrackedThreads: number;
+}
+
+export interface ProviderUsageReport {
+  providerKey: string;
+  displayName: string;
+  iconKey: string;
+  dailyTokens: number[];
   today: UsageWindow;
   last7Days: UsageWindow;
   last30Days: UsageWindow;
+  completeness: UsageCompleteness;
 }
 
-export interface UsageSourceStatus {
-  key: string;
-  status: 'available' | 'partial' | 'unavailable';
-  scannedFiles: number;
-  skippedFiles: number;
-  badLines: number;
-  expectedSessions: number | null;
-  matchedSessions: number | null;
-  parserVersion: string;
-  lastScanAt: string;
-  detail: string | null;
+export interface UsageReport {
+  heatmapStartDate: string;
+  dailyTokens: number[];
+  today: UsageWindow;
+  last7Days: UsageWindow;
+  last30Days: UsageWindow;
+  providers: ProviderUsageReport[];
 }
 
 export type UsageWindowKey = 'today' | 'last7Days' | 'last30Days';
@@ -70,7 +60,7 @@ export type UsageWindowKey = 'today' | 'last7Days' | 'last30Days';
 export interface UsageState {
   profile: AgentUserProfile;
   report: UsageReport | null;
-  sources: UsageSourceStatus[];
+  completeness: UsageCompleteness | null;
   generatedAt: string;
   timezone: string;
   status: 'idle' | 'loading' | 'error';
@@ -84,7 +74,7 @@ export function createInitialUsageState(): UsageState {
   return {
     profile: { displayName: '', avatarDataUrl: null, revision: -1 },
     report: null,
-    sources: [],
+    completeness: null,
     generatedAt: '',
     timezone: '',
     status: 'idle',

@@ -17,8 +17,9 @@ public interface IAcpAgentProvider
     /// <summary>
     /// Optional exact-usage data source for the global Usage panel. Providers
     /// that can attribute precise token counts to PSX sessions (e.g. Claude
-    /// Code's session JSONL) return one here; others return null and are shown
-    /// with context snapshots only. This is data-driven capability, never a
+    /// Code's session JSONL) return one here; threads for providers without a
+    /// source contribute to the folded completeness gap instead of receiving
+    /// an estimated total. This is data-driven capability, never a
     /// provider-name branch in shared code.
     /// </summary>
     IAgentUsageSource? UsageSource => null;

@@ -37,7 +37,15 @@ test('attachment preview traps focus in Dialog and restores it on close', async 
   await composerReady(panel);
 
   const input = panel.querySelector('[data-role="attachment-input"]');
-  const file = new File(['preview'], 'preview.png', { type: 'image/png' });
+  // This test owns Dialog focus semantics, not browser File byte handling
+  // (AttachmentBridge has dedicated real-File tests). A metadata-only file
+  // avoids jsdom retaining an ArrayBuffer while V8 precise coverage is active.
+  const file = {
+    name: 'preview.png',
+    type: 'image/png',
+    size: 7,
+    lastModified: 0
+  };
   Object.defineProperty(input, 'files', { configurable: true, value: [file] });
   input.dispatchEvent(new Event('change', { bubbles: true }));
 

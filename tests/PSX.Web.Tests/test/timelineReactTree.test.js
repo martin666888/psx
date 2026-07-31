@@ -1,18 +1,43 @@
 // timelineReactTree.test.js — semantic contracts for the React timeline.
 
-import { test } from 'vitest';
+import { afterEach, beforeEach, test } from 'vitest';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { act } from 'react';
-import { appModule, installAgentRuntime } from './agentHarness.js';
+import {
+  appModule,
+  flushAgentAnimationFrames,
+  installAgentRuntime,
+  registerAgentCleanup
+} from './agentHarness.js';
 
-globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+beforeEach(() => {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+});
+afterEach(() => {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = false;
+});
 
 const NAME = 'Agent';
 const { TimelineProjection } = await appModule('timeline/timelineViewModel.js');
 const { mountTimelineIsland } = await appModule('timeline/timelineIsland.js');
+
+async function mountTimeline(host, reportFailure) {
+  let island = null;
+  await act(async () => {
+    island = mountTimelineIsland(host, reportFailure);
+  });
+  registerAgentCleanup(() => island?.dispose());
+  return island;
+}
+
+async function flushAnimationFrames(count = 1) {
+  await act(async () => {
+    flushAgentAnimationFrames(count);
+  });
+}
 
 const BASE_CALLBACKS = {
   copyText: async () => true,
@@ -34,7 +59,10 @@ async function renderEvents(events, callbackOverrides = {}) {
   const host = document.createElement('div');
   document.body.appendChild(host);
   const failures = [];
-  const island = mountTimelineIsland(host, (error, phase) => failures.push({ error, phase }));
+  const island = await mountTimeline(
+    host,
+    (error, phase) => failures.push({ error, phase })
+  );
   const callbacks = { ...BASE_CALLBACKS, ...callbackOverrides };
   const render = async () => {
     await act(async () => {
@@ -358,7 +386,7 @@ test('streaming updates preserve node identity', async () => {
   projection.apply('assistant_delta', { text: 'a' }, NAME);
   const host = document.createElement('div');
   document.body.appendChild(host);
-  const island = mountTimelineIsland(host, (error) => {
+  const island = await mountTimeline(host, (error) => {
     throw error;
   });
   const render = async () => {
@@ -377,6 +405,11 @@ test('streaming updates preserve node identity', async () => {
   assert.equal(host.querySelector('.agent-message-assistant .agent-message-body'), body);
   assert.equal(body.dataset.raw, 'ab');
   await act(async () => island.dispose());
+  assert.equal(
+    document.querySelector('[data-role="agent-react-root"]'),
+    null,
+    'disposing the last island unmounts the shared React root'
+  );
 });
 
 test('user messages over sixteen lines can be expanded and collapsed accessibly', async () => {
@@ -397,7 +430,7 @@ test('user messages over sixteen lines can be expanded and collapsed accessibly'
     );
     const host = document.createElement('div');
     document.body.appendChild(host);
-    const island = mountTimelineIsland(host, (error) => {
+    const island = await mountTimeline(host, (error) => {
       throw error;
     });
     await act(async () => {
@@ -407,6 +440,7 @@ test('user messages over sixteen lines can be expanded and collapsed accessibly'
         callbacks: BASE_CALLBACKS
       });
     });
+    await flushAnimationFrames(2);
     const button = host.querySelector('.agent-message-collapse-toggle');
     const body = host.querySelector('.agent-message-body');
     assert.ok(button);
@@ -453,7 +487,7 @@ test('collapse toggle keeps one in-flow position across both states with a gradi
     );
     const host = document.createElement('div');
     document.body.appendChild(host);
-    const island = mountTimelineIsland(host, (error) => {
+    const island = await mountTimeline(host, (error) => {
       throw error;
     });
     await act(async () => {
@@ -463,6 +497,7 @@ test('collapse toggle keeps one in-flow position across both states with a gradi
         callbacks: BASE_CALLBACKS
       });
     });
+    await flushAnimationFrames(2);
     const button = host.querySelector('.agent-message-collapse-toggle');
     const body = host.querySelector('.agent-message-body');
     assert.ok(body.classList.contains('agent-message-collapsed'));

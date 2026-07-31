@@ -7,9 +7,9 @@
 
 import type {
   AgentUserProfile,
+  UsageCompleteness,
   UsageListener,
   UsageReport,
-  UsageSourceStatus,
   UsageState
 } from '../contracts/agent-usage.js';
 import { createInitialUsageState } from '../contracts/agent-usage.js';
@@ -42,14 +42,14 @@ export class UsageStore {
 
   applyUsageReport(
     report: UsageReport,
-    sources: UsageSourceStatus[],
+    completeness: UsageCompleteness,
     generatedAt: string,
     timezone: string
   ): void {
     this.set({
       ...this.state,
       report,
-      sources,
+      completeness,
       generatedAt,
       timezone,
       status: 'idle',

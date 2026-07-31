@@ -1,0 +1,2 @@
+{"type":"metadata","protocol_version":"1.2","created_at":1784522400000}
+{"type":"usage.record","model":"fixture-model","usage":{"inputOther":1,"output":2,"inputCacheRead":3,"inputCacheCreation":4},"usageScope":"turn","time":1784522400400}

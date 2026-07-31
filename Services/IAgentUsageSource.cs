@@ -12,9 +12,27 @@ namespace PSX.Services;
 public interface IAgentUsageSource
 {
     /// <summary>
-    /// Collect exact usage for the given PSX session IDs. Returns parsed
-    /// records plus a completeness status; implementations must not throw for
+    /// Selects the single persisted session identifier understood by this
+    /// source. Keeping this choice in the Provider layer prevents shared
+    /// aggregation from branching on Provider names or double-counting legacy
+    /// and ACP identifiers for the same thread.
+    /// </summary>
+    string? ResolveSessionId(AgentUsageThreadSnapshot thread) =>
+        thread.AcpSessionId ?? thread.ClaudeSessionId;
+
+    /// <summary>
+    /// Collect exact usage for the given PSX session IDs. Records are emitted
+    /// immediately to keep scans bounded; implementations must not throw for
     /// missing directories or malformed data — they report it in the status.
     /// </summary>
-    AgentUsageContribution Collect(IReadOnlyCollection<string> sessionIds, CancellationToken cancellationToken);
+    AgentUsageSourceStatus Collect(
+        IReadOnlyCollection<string> sessionIds,
+        IAgentUsageRecordSink sink,
+        CancellationToken cancellationToken);
+}
+
+/// <summary>Streaming target owned by the provider-agnostic aggregator.</summary>
+public interface IAgentUsageRecordSink
+{
+    void Add(AgentUsageRecord record);
 }

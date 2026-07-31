@@ -690,7 +690,7 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
                 generatedAt = result.GeneratedAt,
                 timezone = result.Timezone,
                 report = JsonSerializer.SerializeToNode(result.Report, UsageJsonOptions),
-                sources = JsonSerializer.SerializeToNode(result.Sources, UsageJsonOptions),
+                completeness = JsonSerializer.SerializeToNode(result.Completeness, UsageJsonOptions),
                 error = (string?)null
             }).ConfigureAwait(false);
         }
@@ -700,6 +700,8 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
         }
         catch (Exception ex)
         {
+            System.Diagnostics.Debug.WriteLine(
+                $"Agent usage scan failed: {ex}");
             try
             {
                 await requester.EventSink.SendEventAsync(new
@@ -709,8 +711,8 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
                     generatedAt = DateTimeOffset.Now,
                     timezone = TimeZoneInfo.Local.Id,
                     report = (JsonNode?)null,
-                    sources = (JsonNode?)null,
-                    error = ex.Message
+                    completeness = (JsonNode?)null,
+                    error = "无法读取用量数据，请重试。"
                 }).ConfigureAwait(false);
             }
             catch (Exception reportException)

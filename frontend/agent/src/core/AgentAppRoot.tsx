@@ -133,16 +133,28 @@ function AgentIslandsView(): JSX.Element {
 let root: Root | null = null;
 let rootContainer: HTMLElement | null = null;
 
+function disposeRootWhenEmpty(): void {
+  if (entries.size !== 0 || !root) return;
+  const currentRoot = root;
+  const currentContainer = rootContainer;
+  // Clear the module-level handles before unmounting so cleanup code cannot
+  // accidentally reuse a root that is already being torn down.
+  root = null;
+  rootContainer = null;
+  currentRoot.unmount();
+  listeners.clear();
+  currentContainer?.remove();
+}
+
 function ensureRoot(): void {
   // Tests swap globalThis.document per file (agentHarness installs a fresh
   // jsdom); a root bound to a dead document must be rebuilt.
   if (root && rootContainer && rootContainer.ownerDocument === document) return;
   if (root) {
-    // The harness closes the previous jsdom window before the next app mount.
-    // Calling ReactRoot.unmount() against that already-detached document can
-    // make React remove nodes whose parent was cleared by jsdom, producing a
-    // NotFoundError. Drop every store/subscriber reference instead; the closed
-    // window owns the abandoned tree and can be collected as one unit.
+    // Defensive fallback for a caller that replaced the Document without
+    // disposing every island first. Normal app/test teardown removes the last
+    // island while its Document is still alive, and disposeRootWhenEmpty()
+    // unmounts the root synchronously before the window closes.
     root = null;
     rootContainer = null;
     entries.clear();
@@ -195,6 +207,10 @@ export function registerIsland(
       // dispose(), so the portal must be detached before that happens (the
       // per-root implementation had the same synchronous unmount semantics).
       flushSync(() => notify());
+      // A shared root with no islands has no keep-alive value. Unmount it while
+      // its owning Document is still valid so React effects, scheduler tasks
+      // and DOM references cannot leak into the next app/test runtime.
+      disposeRootWhenEmpty();
     }
   };
 }

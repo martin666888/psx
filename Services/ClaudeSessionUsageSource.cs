@@ -33,21 +33,20 @@ public sealed class ClaudeSessionUsageSource : IAgentUsageSource
         return string.IsNullOrWhiteSpace(home) ? null : Path.Combine(home, ".claude");
     }
 
-    public AgentUsageContribution Collect(
-        IReadOnlyCollection<string> sessionIds, CancellationToken cancellationToken)
+    public AgentUsageSourceStatus Collect(
+        IReadOnlyCollection<string> sessionIds,
+        IAgentUsageRecordSink sink,
+        CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(sink);
         var expected = sessionIds.Count;
         var now = DateTimeOffset.Now;
 
-        // No PSX Claude sessions: available with zero data, regardless of
-        // whether the Claude directory exists.
         if (expected == 0)
         {
-            return new AgentUsageContribution(
-                [],
-                new AgentUsageSourceStatus(
-                    SourceKey, AgentUsageSourceStatus.Available, 0, 0, 0,
-                    ExpectedSessions: 0, MatchedSessions: 0, ParserVersion, now, Detail: null));
+            return new AgentUsageSourceStatus(
+                SourceKey, AgentUsageSourceStatus.Available, 0, 0, 0,
+                ExpectedSessions: 0, MatchedSessions: 0, ParserVersion, now, Detail: null);
         }
 
         var configDir = _configDirResolver();
@@ -57,115 +56,151 @@ public sealed class ClaudeSessionUsageSource : IAgentUsageSource
 
         if (projectsDir == null || !Directory.Exists(projectsDir))
         {
-            return new AgentUsageContribution(
-                [],
-                new AgentUsageSourceStatus(
-                    SourceKey, AgentUsageSourceStatus.Unavailable, 0, 0, 0,
-                    ExpectedSessions: expected, MatchedSessions: 0, ParserVersion, now,
-                    Detail: "Claude session directory was not found. Usage cannot be read for these sessions."));
+            return new AgentUsageSourceStatus(
+                SourceKey, AgentUsageSourceStatus.Unavailable, 0, 0, 0,
+                ExpectedSessions: expected, MatchedSessions: 0, ParserVersion, now,
+                Detail: "Claude session directory was not found. Usage cannot be read for these sessions.")
+            {
+                Reasons = [AgentUsageGapReason.MissingSessionLogs]
+            };
         }
 
         var wanted = new HashSet<string>(sessionIds, StringComparer.OrdinalIgnoreCase);
-        var records = new List<AgentUsageRecord>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        var matchedSessions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var states = wanted.ToDictionary(
+            id => id,
+            _ => new SessionState(),
+            StringComparer.OrdinalIgnoreCase);
+        var probeableSessionIds = wanted
+            .Where(IsSafeSessionId)
+            .ToArray();
         var scannedFiles = 0;
         var skippedFiles = 0;
         var badLines = 0;
-
-        IEnumerable<string> files;
+        var traversalFailed = false;
         try
         {
-            files = Directory.EnumerateFiles(projectsDir, "*.jsonl", SearchOption.AllDirectories);
+            var projectDirectories = Directory
+                .EnumerateDirectories(projectsDir, "*", SearchOption.AllDirectories)
+                .Prepend(projectsDir);
+            foreach (var projectDirectory in projectDirectories)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                foreach (var sessionId in probeableSessionIds)
+                {
+                    var file = Path.Combine(projectDirectory, sessionId + ".jsonl");
+                    if (!TryFileExists(file, out var unreadable))
+                    {
+                        if (unreadable)
+                        {
+                            states[sessionId].Unreadable = true;
+                            traversalFailed = true;
+                        }
+                        continue;
+                    }
+
+                    var state = states[sessionId];
+                    scannedFiles++;
+                    state.FoundFile = true;
+                    try
+                    {
+                        var oversized = BoundedJsonlReader.Read(
+                            file,
+                            line =>
+                            {
+                                var outcome = ParseLine(line, sessionId, seen, out var record);
+                                switch (outcome)
+                                {
+                                    case ParseOutcome.Record:
+                                        state.HasActivity = true;
+                                        state.HasRecord = true;
+                                        sink.Add(record!);
+                                        break;
+                                    case ParseOutcome.Activity:
+                                        state.HasActivity = true;
+                                        break;
+                                    case ParseOutcome.Invalid:
+                                        state.Unreadable = true;
+                                        badLines++;
+                                        break;
+                                }
+                            },
+                            cancellationToken);
+                        if (oversized > 0)
+                        {
+                            state.Unreadable = true;
+                            badLines = checked(badLines + oversized);
+                        }
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        state.Unreadable = true;
+                        skippedFiles++;
+                    }
+                }
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            return new AgentUsageContribution(
-                [],
-                new AgentUsageSourceStatus(
-                    SourceKey, AgentUsageSourceStatus.Unavailable, 0, 0, 0,
-                    ExpectedSessions: expected, MatchedSessions: 0, ParserVersion, now, Detail: ex.Message));
+            traversalFailed = true;
         }
 
-        foreach (var file in files)
+        var matched = 0;
+        var reasons = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var state in states.Values)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            // The file name stem is the session id; skip files PSX did not own.
-            var stem = Path.GetFileNameWithoutExtension(file);
-            if (!wanted.Contains(stem))
-                continue;
-
-            scannedFiles++;
-            string[] lines;
-            try
+            if ((state.HasRecord && !state.Unreadable)
+                || (state.FoundFile && !state.HasActivity && !state.Unreadable))
             {
-                lines = File.ReadAllLines(file);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                skippedFiles++;
+                matched++;
                 continue;
             }
 
-            foreach (var line in lines)
-            {
-                if (string.IsNullOrWhiteSpace(line))
-                    continue;
-                if (!TryParseLine(line, stem, seen, out var record))
-                {
-                    if (record == null && IsBadLine(line))
-                        badLines++;
-                    continue;
-                }
-
-                matchedSessions.Add(stem);
-                records.Add(record!);
-            }
+            if (!state.FoundFile)
+                reasons.Add(AgentUsageGapReason.MissingSessionLogs);
+            else if (state.HasActivity && !state.HasRecord)
+                reasons.Add(AgentUsageGapReason.UnsupportedFormat);
         }
 
-        var status = DetermineStatus(expected, matchedSessions.Count, scannedFiles, skippedFiles, badLines, now);
-        return new AgentUsageContribution(records, status);
+        if (matched < expected)
+            reasons.Add(AgentUsageGapReason.UnmatchedSessions);
+        if (traversalFailed || skippedFiles > 0 || badLines > 0)
+            reasons.Add(AgentUsageGapReason.UnreadableLogs);
+
+        return BuildStatus(
+            expected, matched, scannedFiles, skippedFiles, badLines, now, reasons);
     }
 
-    private static bool IsBadLine(string line)
+    private static AgentUsageSourceStatus BuildStatus(
+        int expected,
+        int matched,
+        int scannedFiles,
+        int skippedFiles,
+        int badLines,
+        DateTimeOffset now,
+        IReadOnlySet<string> reasons)
     {
-        try
-        {
-            using var _ = JsonDocument.Parse(line);
-            return false;
-        }
-        catch (JsonException)
-        {
-            return true;
-        }
-    }
-
-    private static AgentUsageSourceStatus DetermineStatus(
-        int expected, int matched, int scannedFiles, int skippedFiles, int badLines, DateTimeOffset now)
-    {
-        var partial = matched < expected || skippedFiles > 0 || badLines > 0;
-        var status = partial ? AgentUsageSourceStatus.Partial : AgentUsageSourceStatus.Available;
-        string? detail = null;
-        if (partial)
-        {
-            var parts = new List<string>();
-            if (matched < expected)
-                parts.Add($"matched {matched} of {expected} sessions");
-            if (skippedFiles > 0)
-                parts.Add($"skipped {skippedFiles} unreadable file(s)");
-            if (badLines > 0)
-                parts.Add($"{badLines} malformed line(s)");
-            detail = "Partial data: " + string.Join(", ", parts) + ".";
-        }
+        var hasGap = reasons.Count > 0;
+        var status = expected > 0 && matched == 0
+            ? AgentUsageSourceStatus.Unavailable
+            : hasGap
+                ? AgentUsageSourceStatus.Partial
+                : AgentUsageSourceStatus.Available;
 
         return new AgentUsageSourceStatus(
             SourceKey, status, scannedFiles, skippedFiles, badLines,
-            ExpectedSessions: expected, MatchedSessions: matched, ParserVersion, now, detail);
+            ExpectedSessions: expected, MatchedSessions: matched, ParserVersion, now,
+            Detail: hasGap ? $"matched {matched} of {expected} sessions" : null)
+        {
+            Reasons = OrderReasons(reasons)
+        };
     }
 
-    private static bool TryParseLine(
-        string line, string sessionId, HashSet<string> seen, out AgentUsageRecord? record)
+    private static ParseOutcome ParseLine(
+        ReadOnlyMemory<byte> line,
+        string sessionId,
+        HashSet<string> seen,
+        out AgentUsageRecord? record)
     {
         record = null;
         JsonDocument document;
@@ -175,31 +210,34 @@ public sealed class ClaudeSessionUsageSource : IAgentUsageSource
         }
         catch (JsonException)
         {
-            return false;
+            return ParseOutcome.Invalid;
         }
 
         using (document)
         {
             var root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object)
-                return false;
+                return ParseOutcome.Ignored;
             if (!root.TryGetProperty("type", out var typeProp)
-                || typeProp.ValueKind != JsonValueKind.String
-                || typeProp.GetString() != "assistant")
+                || typeProp.ValueKind != JsonValueKind.String)
             {
-                return false;
+                return ParseOutcome.Ignored;
             }
+
+            var type = typeProp.GetString();
+            if (type != "assistant")
+                return type == "user" ? ParseOutcome.Activity : ParseOutcome.Ignored;
 
             if (!root.TryGetProperty("message", out var message)
                 || message.ValueKind != JsonValueKind.Object)
             {
-                return false;
+                return ParseOutcome.Activity;
             }
 
             if (!message.TryGetProperty("usage", out var usage)
                 || usage.ValueKind != JsonValueKind.Object)
             {
-                return false;
+                return ParseOutcome.Activity;
             }
 
             // Dedup by (sessionId, messageId): streamed retries or duplicate
@@ -209,7 +247,7 @@ public sealed class ClaudeSessionUsageSource : IAgentUsageSource
                 ? idProp.GetString()
                 : null;
             if (!string.IsNullOrEmpty(messageId) && !seen.Add(sessionId + "|" + messageId))
-                return false;
+                return ParseOutcome.Ignored;
 
             var model = message.TryGetProperty("model", out var modelProp)
                 && modelProp.ValueKind == JsonValueKind.String
@@ -220,23 +258,86 @@ public sealed class ClaudeSessionUsageSource : IAgentUsageSource
                 && tsProp.ValueKind == JsonValueKind.String
                 && DateTimeOffset.TryParse(tsProp.GetString(), out var parsed)
                 ? parsed
-                : DateTimeOffset.MinValue;
+                : (DateTimeOffset?)null;
+            if (!timestamp.HasValue
+                || !TryGetToken(usage, "input_tokens", required: true, out var input)
+                || !TryGetToken(usage, "output_tokens", required: true, out var output)
+                || !TryGetToken(usage, "cache_read_input_tokens", required: false, out var cacheRead)
+                || !TryGetToken(usage, "cache_creation_input_tokens", required: false, out var cacheCreation))
+            {
+                return ParseOutcome.Invalid;
+            }
 
             record = new AgentUsageRecord(
-                timestamp,
+                timestamp.Value,
                 model,
-                GetLong(usage, "input_tokens"),
-                GetLong(usage, "output_tokens"),
-                GetLong(usage, "cache_read_input_tokens"),
-                GetLong(usage, "cache_creation_input_tokens"));
-            return true;
+                input,
+                output,
+                cacheRead,
+                cacheCreation);
+            return ParseOutcome.Record;
         }
     }
 
-    private static long GetLong(JsonElement element, string propertyName) =>
-        element.TryGetProperty(propertyName, out var value)
-        && value.ValueKind == JsonValueKind.Number
-        && value.TryGetInt64(out var number)
-            ? number
-            : 0;
+    private static bool TryGetToken(
+        JsonElement element,
+        string propertyName,
+        bool required,
+        out long number)
+    {
+        number = 0;
+        if (!element.TryGetProperty(propertyName, out var value))
+            return !required;
+        return value.ValueKind == JsonValueKind.Number
+            && value.TryGetInt64(out number)
+            && number >= 0;
+    }
+
+    private static bool TryFileExists(string path, out bool unreadable)
+    {
+        unreadable = false;
+        try
+        {
+            return (File.GetAttributes(path) & FileAttributes.Directory) == 0;
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return false;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            unreadable = true;
+            return false;
+        }
+    }
+
+    private static bool IsSafeSessionId(string sessionId) =>
+        sessionId.Length > 0
+        && sessionId != "."
+        && sessionId != ".."
+        && sessionId.IndexOfAny(Path.GetInvalidFileNameChars()) < 0
+        && !sessionId.Contains(Path.DirectorySeparatorChar)
+        && !sessionId.Contains(Path.AltDirectorySeparatorChar);
+
+    private static IReadOnlyList<string> OrderReasons(IEnumerable<string> reasons)
+    {
+        var set = new HashSet<string>(reasons, StringComparer.Ordinal);
+        return AgentUsageGapReason.Ordered.Where(set.Contains).ToArray();
+    }
+
+    private sealed class SessionState
+    {
+        public bool FoundFile { get; set; }
+        public bool HasActivity { get; set; }
+        public bool HasRecord { get; set; }
+        public bool Unreadable { get; set; }
+    }
+
+    private enum ParseOutcome
+    {
+        Ignored,
+        Activity,
+        Record,
+        Invalid
+    }
 }

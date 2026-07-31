@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it } from 'vitest';
 import { JSDOM } from 'jsdom';
 import { Bridge } from '../../../frontend/webview/src/Bridge.js';
-import { TerminalManager } from '../../../frontend/webview/src/TerminalManager.js';
+
+let TerminalManager = null;
 
 // TerminalManager imports the Bridge singleton directly, so the paste request
 // capture stubs the method on that shared object (globalThis.Bridge mirrors the
@@ -12,16 +13,24 @@ describe('Terminal clipboard bridge', () => {
   let requests;
   let terminal;
   const realSendPasteRequest = Bridge.sendPasteRequest;
+  const realResizeObserver = globalThis.ResizeObserver;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     const dom = new JSDOM('<!doctype html><html><body><div id="terminal"></div></body></html>', {
       url: 'https://psx.local/',
       runScripts: 'outside-only'
     });
+    dom.window.HTMLCanvasElement.prototype.getContext = () => null;
     globalThis.window = dom.window;
     globalThis.document = dom.window.document;
-    globalThis.localStorage = dom.window.localStorage;
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: dom.window.localStorage
+    });
     globalThis.ResizeObserver = undefined;
+    TerminalManager ??= (
+      await import('../../../frontend/webview/src/TerminalManager.js')
+    ).TerminalManager;
     requests = [];
     Bridge.sendPasteRequest = (sessionId, requestId) => {
       requests.push({ sessionId, requestId });
@@ -35,6 +44,8 @@ describe('Terminal clipboard bridge', () => {
 
   afterEach(() => {
     Bridge.sendPasteRequest = realSendPasteRequest;
+    globalThis.ResizeObserver = realResizeObserver;
+    window.close();
   });
 
   it('correlates a response once and ignores mismatched or duplicate responses', () => {

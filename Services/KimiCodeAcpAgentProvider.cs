@@ -26,6 +26,11 @@ public sealed class KimiCodeAcpAgentProvider : IAcpAgentProvider
 
     public IAcpAgentRuntime Runtime { get; }
 
+    // Kimi persists exact per-request usage in each PSX-owned session wire.
+    // The source is deliberately independent from the active runtime root so
+    // bundled/self-updated versions share one historical usage view.
+    public IAgentUsageSource? UsageSource { get; } = new KimiCodeSessionUsageSource();
+
     // Kimi Code 0.29.1's reverse ACP filesystem bridge (fs/read_text_file) can
     // hang on parallel/large reads and stall ACP input processing. Do not
     // advertise fs, so Kimi falls back to its own local filesystem tools and

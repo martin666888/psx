@@ -14,8 +14,10 @@
 import type { RawHostMessage } from '../contracts/host-events.js';
 import type {
   AgentUserProfile,
+  ProviderUsageReport,
+  UsageCompleteness,
+  UsageGapReason,
   UsageReport,
-  UsageSourceStatus,
   UsageWindow
 } from '../contracts/agent-usage.js';
 import {
@@ -29,12 +31,28 @@ export interface UsageRequestBrokerOptions {
 }
 
 const DEFAULT_TIMEOUT_MS = 30000;
+const USAGE_HEATMAP_DAYS = 365;
+const USAGE_GAP_REASONS = new Set<UsageGapReason>([
+  'unsupported_source',
+  'unsupported_format',
+  'missing_session_logs',
+  'ambiguous_session_logs',
+  'unreadable_logs',
+  'unmatched_sessions',
+  'missing_session_id',
+  'damaged_thread_files',
+  'unregistered_provider'
+]);
 const NO_CHANNEL_TEXT = 'Open an Agent workspace to load usage.';
 const TIMEOUT_TEXT = 'Loading usage timed out.';
 const DEFAULT_ERROR_TEXT = 'Unable to load usage.';
 
 function num(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function nonNegativeNum(value: unknown): number {
+  return Math.max(0, num(value));
 }
 
 function numOrNull(value: unknown): number | null {
@@ -63,86 +81,65 @@ export function normalizeProfile(raw: RawHostMessage): AgentUserProfile {
 
 function normalizeWindow(value: unknown): UsageWindow {
   const w = asRecord(value);
-  const tokens = asRecord(w.tokens);
-  const sections = Array.isArray(w.providerSections) ? w.providerSections : [];
   return {
-    activeThreads: num(w.activeThreads),
-    turns: num(w.turns),
-    tokens: {
-      input: num(tokens.input),
-      output: num(tokens.output),
-      cacheRead: num(tokens.cacheRead),
-      cacheCreation: num(tokens.cacheCreation)
-    },
-    cacheHitRate: numOrNull(w.cacheHitRate),
-    providerSections: sections.map((rawSection) => {
-      const s = asRecord(rawSection);
-      const exact = s.exactUsage ? asRecord(s.exactUsage) : null;
-      const modelRows = exact && Array.isArray(exact.modelRows) ? exact.modelRows : null;
-      const context = Array.isArray(s.contextSnapshots) ? s.contextSnapshots : null;
-      return {
-        providerKey: str(s.providerKey),
-        iconKey: str(s.iconKey) || 'agent',
-        exactUsage: modelRows
-          ? {
-              modelRows: modelRows.map((rawRow) => {
-                const row = asRecord(rawRow);
-                return {
-                  model: str(row.model) || 'unknown',
-                  input: num(row.input),
-                  output: num(row.output),
-                  cacheRead: num(row.cacheRead),
-                  cacheCreation: num(row.cacheCreation)
-                };
-              })
-            }
-          : null,
-        contextSnapshots: context
-          ? context.map((rawSnap) => {
-              const snap = asRecord(rawSnap);
-              return {
-                threadTitle: str(snap.threadTitle),
-                usedTokens: numOrNull(snap.usedTokens),
-                windowTokens: numOrNull(snap.windowTokens)
-              };
-            })
-          : null,
-        sourceKey: str(s.sourceKey)
-      };
-    })
+    totalTokens: nonNegativeNum(w.totalTokens)
+  };
+}
+
+function normalizeDailyTokens(value: unknown): number[] {
+  const raw = Array.isArray(value) ? value : [];
+  return Array.from(
+    { length: USAGE_HEATMAP_DAYS },
+    (_, index) => nonNegativeNum(raw[index])
+  );
+}
+
+function normalizeProvider(value: unknown): ProviderUsageReport {
+  const provider = asRecord(value);
+  return {
+    providerKey: str(provider.providerKey),
+    displayName: str(provider.displayName),
+    iconKey: str(provider.iconKey) || 'agent',
+    dailyTokens: normalizeDailyTokens(provider.dailyTokens),
+    today: normalizeWindow(provider.today),
+    last7Days: normalizeWindow(provider.last7Days),
+    last30Days: normalizeWindow(provider.last30Days),
+    completeness: normalizeCompleteness(provider.completeness)
   };
 }
 
 export function normalizeUsageReport(value: unknown): UsageReport {
   const r = asRecord(value);
-  const heatmap = Array.isArray(r.heatmap) ? r.heatmap.map(num) : [];
   return {
-    heatmap,
     heatmapStartDate: str(r.heatmapStartDate),
+    dailyTokens: normalizeDailyTokens(r.dailyTokens),
     today: normalizeWindow(r.today),
     last7Days: normalizeWindow(r.last7Days),
-    last30Days: normalizeWindow(r.last30Days)
+    last30Days: normalizeWindow(r.last30Days),
+    providers: Array.isArray(r.providers)
+      ? r.providers.map(normalizeProvider).filter(provider => provider.providerKey)
+      : []
   };
 }
 
-export function normalizeSources(value: unknown): UsageSourceStatus[] {
-  const list = Array.isArray(value) ? value : [];
-  return list.map((rawSource) => {
-    const s = asRecord(rawSource);
-    const status = str(s.status);
-    return {
-      key: str(s.key),
-      status: status === 'partial' || status === 'unavailable' ? status : 'available',
-      scannedFiles: num(s.scannedFiles),
-      skippedFiles: num(s.skippedFiles),
-      badLines: num(s.badLines),
-      expectedSessions: numOrNull(s.expectedSessions),
-      matchedSessions: numOrNull(s.matchedSessions),
-      parserVersion: str(s.parserVersion),
-      lastScanAt: str(s.lastScanAt),
-      detail: strOrNull(s.detail)
-    };
-  });
+export function normalizeCompleteness(value: unknown): UsageCompleteness {
+  const c = asRecord(value);
+  const status = str(c.status);
+  const reasons = Array.isArray(c.reasons)
+    ? c.reasons
+        .map(str)
+        .filter((reason): reason is UsageGapReason =>
+          USAGE_GAP_REASONS.has(reason as UsageGapReason))
+    : [];
+  return {
+    status: status === 'partial' || status === 'unavailable' ? status : 'available',
+    reasons: [...new Set(reasons)],
+    expectedSessions: numOrNull(c.expectedSessions),
+    matchedSessions: numOrNull(c.matchedSessions),
+    skippedFiles: nonNegativeNum(c.skippedFiles),
+    badLines: nonNegativeNum(c.badLines),
+    untrackedThreads: nonNegativeNum(c.untrackedThreads)
+  };
 }
 
 export class UsageRequestBroker {
@@ -255,13 +252,13 @@ export class UsageRequestBroker {
     this.usageChannel = '';
 
     const error = strOrNull(raw.error);
-    if (error || !raw.report) {
+    if (error || !raw.report || !raw.completeness) {
       this.store.applyUsageError(error || DEFAULT_ERROR_TEXT);
       return;
     }
     this.store.applyUsageReport(
       normalizeUsageReport(raw.report),
-      normalizeSources(raw.sources),
+      normalizeCompleteness(raw.completeness),
       str(raw.generatedAt),
       str(raw.timezone)
     );

@@ -6,9 +6,9 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..', '..');
 
 // Vitest runs in the plain node environment on purpose: agentHarness.js
-// installs a fresh jsdom window per test (same isolation contract as the old
-// node --test runner), so a shared per-file jsdom environment would fight the
-// harness. Tests import the Agent TS sources under frontend/agent/src directly;
+// installs a fresh jsdom window per test, so a shared per-file jsdom
+// environment would fight the harness. Tests import the Agent TS sources under
+// frontend/agent/src directly;
 // the shipped bundle is produced by Vite into wwwroot/app and guarded by
 // verify:web.
 export default defineConfig({
@@ -23,24 +23,28 @@ export default defineConfig({
     alias: {
       '@agent-src': path.join(repoRoot, 'frontend', 'agent', 'src'),
       // Match the production Vite/tsconfig "@/..." mapping (shadcn imports).
-      '@': path.join(repoRoot, 'frontend', 'agent', 'src')
+      '@': path.join(repoRoot, 'frontend', 'agent', 'src'),
+      // The lucide-react barrel expands the package's entire ~1,900-icon
+      // module graph. V8 precise coverage retains external buffers for that
+      // graph even though production Vite tree-shakes it. UI tests only depend
+      // on the icons' SVG/component semantics; use a tiny local implementation
+      // and leave the real package to build:web + verify:web.
+      'lucide-react': path.join(here, 'test', 'lucideReactShim.js')
     }
   },
   test: {
     environment: 'node',
     include: ['test/**/*.test.js'],
     setupFiles: ['test/vitest.setup.js'],
-    // The harness mutates globalThis (window/document/Bridge); keep every
-    // file isolated like node --test did. Run exactly one worker/file at a
-    // time: parallel jsdom/React roots have previously exhausted workstation
-    // memory and left orphaned Node workers after a failed test.
+    // Each file needs a fresh module graph because Agent modules capture the
+    // active jsdom/React root. A single isolated worker thread preserves that
+    // boundary without retaining one child process per file under V8 coverage.
     isolate: true,
-    pool: 'forks',
+    pool: 'threads',
     fileParallelism: false,
     maxWorkers: 1,
-    // A broken jsdom/focus loop must fail the worker instead of exhausting
-    // physical memory and freezing the developer workstation.
-    execArgv: ['--max-old-space-size=1024'],
+    // tools/run-guarded-vitest.ps1 places the entire runner under hard
+    // per-process and process-tree Job Object memory limits.
     testTimeout: 20000,
     coverage: {
       provider: 'v8',

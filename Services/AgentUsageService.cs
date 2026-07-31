@@ -3,11 +3,9 @@ using PSX.Models;
 namespace PSX.Services;
 
 /// <summary>
-/// Builds the global Usage report: local activity from the thread store plus
-/// per-provider exact usage from each provider's <see cref="IAgentUsageSource"/>.
-/// Aggregation is provider-agnostic (no provider-name branches) and windowed
-/// server-side so the frontend never has to reconstruct de-duplicated window
-/// totals from the daily series.
+/// Builds the global Usage report from provider exact-usage sources. Aggregation
+/// is provider-agnostic (no provider-name branches); records stream directly
+/// into bounded per-provider day arrays.
 ///
 /// Collection is single-flight with a short TTL: concurrent callers await the
 /// same in-flight scan; a forced refresh bypasses the cache and coalesces
@@ -16,7 +14,6 @@ namespace PSX.Services;
 public sealed class AgentUsageService
 {
     public const int HeatmapDays = 365;
-    public const string PsxThreadsSourceKey = "psx-threads";
     private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
 
     private readonly IAgentThreadStore _threadStore;
@@ -84,204 +81,261 @@ public sealed class AgentUsageService
         var heatmapStart = today.AddDays(-(HeatmapDays - 1));
 
         var snapshot = _threadStore.ReadUsageSnapshot();
-        var sources = new List<AgentUsageSourceStatus>
-        {
-            BuildPsxThreadsStatus(snapshot)
-        };
-
-        // Per provider: exact-usage records (windowed later) + current context
-        // snapshots. Everything is keyed by provider registry key; the frontend
-        // renders sections purely by which fields are populated.
-        var providerRecords = new Dictionary<string, IReadOnlyList<AgentUsageRecord>>(StringComparer.OrdinalIgnoreCase);
-        var providerContext = new Dictionary<string, IReadOnlyList<AgentUsageContextSnapshot>>(StringComparer.OrdinalIgnoreCase);
-        var providerIconKey = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var providerSourceKey = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var providerResults = new List<ProviderCollectionResult>();
+        var trackedThreadCount = 0;
 
         foreach (var provider in _providerRegistry.Providers)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var key = provider.Descriptor.Key;
-            providerIconKey[key] = provider.Descriptor.IconKey;
-
             var threads = snapshot.Threads
                 .Where(thread => ReferenceEquals(_providerRegistry.Find(thread.Provider), provider))
                 .ToArray();
+            trackedThreadCount += threads.Length;
 
-            var context = threads
-                .Where(thread => thread.ContextUsedTokens.HasValue)
-                .Select(thread => new AgentUsageContextSnapshot(
-                    thread.Title, thread.ContextUsedTokens, thread.ContextWindowTokens))
-                .ToArray();
-            if (context.Length > 0)
-                providerContext[key] = context;
-
-            if (provider.UsageSource != null)
+            if (provider.UsageSource == null)
             {
-                var sessionIds = threads
-                    .SelectMany(thread => new[] { thread.ClaudeSessionId, thread.AcpSessionId })
-                    .Where(id => !string.IsNullOrWhiteSpace(id))
-                    .Select(id => id!)
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToArray();
+                if (threads.Length > 0)
+                {
+                    var reasons = new HashSet<string>(StringComparer.Ordinal)
+                    {
+                        AgentUsageGapReason.UnsupportedSource
+                    };
+                    if (threads.Any(thread =>
+                            string.IsNullOrWhiteSpace(thread.ClaudeSessionId)
+                            && string.IsNullOrWhiteSpace(thread.AcpSessionId)))
+                    {
+                        reasons.Add(AgentUsageGapReason.MissingSessionId);
+                    }
 
-                var contribution = provider.UsageSource.Collect(sessionIds, cancellationToken);
-                providerRecords[key] = contribution.Records;
-                sources.Add(contribution.Status);
-                providerSourceKey[key] = contribution.Status.Key;
+                    var completeness = new AgentUsageCompleteness(
+                        AgentUsageCompleteness.Unavailable,
+                        OrderReasons(reasons),
+                        ExpectedSessions: null,
+                        MatchedSessions: null,
+                        SkippedFiles: 0,
+                        BadLines: 0,
+                        UntrackedThreads: threads.Length);
+                    providerResults.Add(new ProviderCollectionResult(
+                        BuildProviderReport(
+                            provider, new long[HeatmapDays], completeness),
+                        threads.Length));
+                }
+                continue;
             }
-            else
+
+            var sessionIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var missingSessionIds = 0;
+            foreach (var thread in threads)
             {
-                // Context-only sections attribute to the local thread store.
-                providerSourceKey[key] = PsxThreadsSourceKey;
+                var sessionId = provider.UsageSource.ResolveSessionId(thread);
+                if (string.IsNullOrWhiteSpace(sessionId))
+                {
+                    missingSessionIds++;
+                    continue;
+                }
+
+                sessionIds.Add(sessionId);
             }
+
+            var accumulator = new DailyUsageAccumulator(
+                heatmapStart, today, localZone);
+            var sourceStatus = provider.UsageSource.Collect(
+                sessionIds, accumulator, cancellationToken);
+            var providerCompleteness = BuildProviderCompleteness(
+                threads.Length, missingSessionIds, sourceStatus);
+            providerResults.Add(new ProviderCollectionResult(
+                BuildProviderReport(
+                    provider, accumulator.DailyTokens, providerCompleteness),
+                threads.Length));
         }
 
+        var unknownThreads = snapshot.Threads.Count - trackedThreadCount;
+        var dailyTokens = new long[HeatmapDays];
+        foreach (var providerResult in providerResults)
+            AddSeries(dailyTokens, providerResult.Report.DailyTokens);
         var report = new AgentUsageReport(
-            BuildHeatmap(snapshot, heatmapStart, today, localZone),
             heatmapStart,
-            BuildWindow(snapshot, providerRecords, providerContext, providerIconKey, providerSourceKey,
-                today, today, localZone),
-            BuildWindow(snapshot, providerRecords, providerContext, providerIconKey, providerSourceKey,
-                today.AddDays(-6), today, localZone),
-            BuildWindow(snapshot, providerRecords, providerContext, providerIconKey, providerSourceKey,
-                today.AddDays(-29), today, localZone));
+            dailyTokens,
+            new AgentUsageWindow(SumTail(dailyTokens, 1)),
+            new AgentUsageWindow(SumTail(dailyTokens, 7)),
+            new AgentUsageWindow(SumTail(dailyTokens, 30)),
+            providerResults.Select(result => result.Report).ToArray());
 
         return new AgentUsageResult(
-            _timeProvider.GetUtcNow(), localZone.Id, report, sources);
+            _timeProvider.GetUtcNow(),
+            localZone.Id,
+            report,
+            BuildOverallCompleteness(snapshot, providerResults, unknownThreads));
     }
 
-    private static AgentUsageSourceStatus BuildPsxThreadsStatus(AgentThreadUsageSnapshot snapshot)
+    private static AgentProviderUsageReport BuildProviderReport(
+        IAcpAgentProvider provider,
+        IReadOnlyList<long> dailyTokens,
+        AgentUsageCompleteness completeness)
     {
-        var partial = snapshot.SkippedFiles > 0;
-        return new AgentUsageSourceStatus(
-            PsxThreadsSourceKey,
-            partial ? AgentUsageSourceStatus.Partial : AgentUsageSourceStatus.Available,
-            snapshot.ScannedFiles,
-            snapshot.SkippedFiles,
-            BadLines: 0,
-            ExpectedSessions: null,
-            MatchedSessions: null,
-            ParserVersion: "1",
-            LastScanAt: DateTimeOffset.Now,
-            Detail: partial
-                ? $"Partial data: skipped {snapshot.SkippedFiles} unreadable thread file(s)."
-                : null);
+        return new AgentProviderUsageReport(
+            provider.Descriptor.Key,
+            provider.Descriptor.DisplayName,
+            provider.Descriptor.IconKey,
+            dailyTokens,
+            new AgentUsageWindow(SumTail(dailyTokens, 1)),
+            new AgentUsageWindow(SumTail(dailyTokens, 7)),
+            new AgentUsageWindow(SumTail(dailyTokens, 30)),
+            completeness);
     }
 
-    private static IReadOnlyList<int> BuildHeatmap(
-        AgentThreadUsageSnapshot snapshot, DateOnly start, DateOnly today, TimeZoneInfo zone)
+    private static long SumTail(IReadOnlyList<long> values, int count)
     {
-        var counts = new int[HeatmapDays];
-        foreach (var thread in snapshot.Threads)
+        long total = 0;
+        var start = Math.Max(0, values.Count - count);
+        for (var index = start; index < values.Count; index++)
+            total = checked(total + values[index]);
+        return total;
+    }
+
+    private static AgentUsageCompleteness BuildProviderCompleteness(
+        int threadCount,
+        int missingSessionIds,
+        AgentUsageSourceStatus source)
+    {
+        var reasons = new HashSet<string>(source.Reasons, StringComparer.Ordinal);
+        if (missingSessionIds > 0)
+            reasons.Add(AgentUsageGapReason.MissingSessionId);
+        if (source.ExpectedSessions.HasValue
+            && source.MatchedSessions.HasValue
+            && source.MatchedSessions.Value < source.ExpectedSessions.Value)
         {
-            var activeDays = thread.Messages
-                .Where(message => message.Role == "user")
-                .Select(message => DateOnly.FromDateTime(
-                    TimeZoneInfo.ConvertTime(message.CreatedAt, zone).DateTime))
-                .Where(date => date >= start && date <= today)
-                .Distinct();
-            foreach (var date in activeDays)
-            {
-                var index = date.DayNumber - start.DayNumber;
-                if (index >= 0 && index < HeatmapDays)
-                    counts[index]++;
-            }
+            reasons.Add(AgentUsageGapReason.UnmatchedSessions);
         }
 
-        return counts;
+        var hasGap = reasons.Count > 0
+            || source.Status != AgentUsageSourceStatus.Available
+            || source.SkippedFiles > 0
+            || source.BadLines > 0
+            || missingSessionIds > 0;
+        var matched = source.MatchedSessions ?? 0;
+        var status = threadCount == 0
+            ? AgentUsageCompleteness.Available
+            : matched == 0
+                && ((source.ExpectedSessions ?? 0) > 0
+                    || missingSessionIds == threadCount
+                    || source.Status == AgentUsageSourceStatus.Unavailable)
+                ? AgentUsageCompleteness.Unavailable
+                : hasGap
+                    ? AgentUsageCompleteness.Partial
+                    : AgentUsageCompleteness.Available;
+
+        return new AgentUsageCompleteness(
+            status,
+            OrderReasons(reasons),
+            source.ExpectedSessions,
+            source.MatchedSessions,
+            source.SkippedFiles,
+            source.BadLines,
+            missingSessionIds);
     }
 
-    private static AgentUsageWindow BuildWindow(
+    private static AgentUsageCompleteness BuildOverallCompleteness(
         AgentThreadUsageSnapshot snapshot,
-        Dictionary<string, IReadOnlyList<AgentUsageRecord>> providerRecords,
-        Dictionary<string, IReadOnlyList<AgentUsageContextSnapshot>> providerContext,
-        Dictionary<string, string> providerIconKey,
-        Dictionary<string, string> providerSourceKey,
+        IReadOnlyList<ProviderCollectionResult> providerResults,
+        int unknownThreads)
+    {
+        int? expectedSessions = null;
+        int? matchedSessions = null;
+        var applicable = providerResults
+            .Where(result => result.ThreadCount > 0)
+            .Select(result => result.Report.Completeness)
+            .ToArray();
+        if (applicable.All(completeness =>
+                completeness.ExpectedSessions.HasValue
+                && completeness.MatchedSessions.HasValue))
+        {
+            expectedSessions = applicable.Sum(
+                completeness => completeness.ExpectedSessions!.Value);
+            matchedSessions = applicable.Sum(
+                completeness => completeness.MatchedSessions!.Value);
+        }
+
+        var untrackedThreads = checked(
+            unknownThreads
+            + providerResults.Sum(result =>
+                result.Report.Completeness.UntrackedThreads));
+        var skippedFiles = checked(
+            snapshot.SkippedFiles
+            + providerResults.Sum(result =>
+                result.Report.Completeness.SkippedFiles));
+        var badLines = providerResults.Sum(result =>
+            result.Report.Completeness.BadLines);
+        var reasons = new HashSet<string>(
+            providerResults.SelectMany(result =>
+                result.Report.Completeness.Reasons),
+            StringComparer.Ordinal);
+        if (snapshot.SkippedFiles > 0)
+            reasons.Add(AgentUsageGapReason.DamagedThreadFiles);
+        if (unknownThreads > 0)
+            reasons.Add(AgentUsageGapReason.UnregisteredProvider);
+
+        var hasGap = skippedFiles > 0
+            || badLines > 0
+            || untrackedThreads > 0
+            || providerResults.Any(result =>
+                result.Report.Completeness.Status != AgentUsageCompleteness.Available)
+            || reasons.Count > 0;
+        var matchedForAvailability = providerResults.Sum(result =>
+            result.Report.Completeness.MatchedSessions ?? 0);
+        var status = snapshot.Threads.Count > 0 && matchedForAvailability == 0
+            ? AgentUsageCompleteness.Unavailable
+            : hasGap
+                ? AgentUsageCompleteness.Partial
+                : AgentUsageCompleteness.Available;
+
+        return new AgentUsageCompleteness(
+            status,
+            OrderReasons(reasons),
+            expectedSessions,
+            matchedSessions,
+            skippedFiles,
+            badLines,
+            untrackedThreads);
+    }
+
+    private static void AddSeries(long[] destination, IReadOnlyList<long> source)
+    {
+        for (var index = 0; index < Math.Min(destination.Length, source.Count); index++)
+            destination[index] = checked(destination[index] + source[index]);
+    }
+
+    private static IReadOnlyList<string> OrderReasons(IEnumerable<string> reasons)
+    {
+        var set = new HashSet<string>(reasons, StringComparer.Ordinal);
+        return AgentUsageGapReason.Ordered.Where(set.Contains).ToArray();
+    }
+
+    private sealed record ProviderCollectionResult(
+        AgentProviderUsageReport Report,
+        int ThreadCount);
+
+    private sealed class DailyUsageAccumulator(
         DateOnly start,
         DateOnly today,
-        TimeZoneInfo zone)
+        TimeZoneInfo zone) : IAgentUsageRecordSink
     {
-        var activeThreads = 0;
-        var turns = 0;
-        foreach (var thread in snapshot.Threads)
+        public long[] DailyTokens { get; } = new long[HeatmapDays];
+
+        public void Add(AgentUsageRecord record)
         {
-            var userInWindow = thread.Messages
-                .Where(message => message.Role == "user")
-                .Count(message =>
-                {
-                    var date = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(message.CreatedAt, zone).DateTime);
-                    return date >= start && date <= today;
-                });
-            if (userInWindow > 0)
-            {
-                activeThreads++;
-                turns += userInWindow;
-            }
+            var date = DateOnly.FromDateTime(
+                TimeZoneInfo.ConvertTime(record.Timestamp, zone).DateTime);
+            if (date < start || date > today)
+                return;
+
+            var index = date.DayNumber - start.DayNumber;
+            DailyTokens[index] = checked(
+                DailyTokens[index]
+                + record.InputTokens
+                + record.OutputTokens
+                + record.CacheReadTokens
+                + record.CacheCreationTokens);
         }
-
-        var sections = new List<AgentUsageProviderSection>();
-        long totalInput = 0, totalOutput = 0, totalCacheRead = 0, totalCacheCreation = 0;
-
-        var providerKeys = providerRecords.Keys
-            .Concat(providerContext.Keys)
-            .Distinct(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var key in providerKeys)
-        {
-            AgentUsageExactUsage? exactUsage = null;
-            if (providerRecords.TryGetValue(key, out var records))
-            {
-                var rows = records
-                    .Where(record =>
-                    {
-                        var date = DateOnly.FromDateTime(
-                            TimeZoneInfo.ConvertTime(record.Timestamp, zone).DateTime);
-                        return date >= start && date <= today;
-                    })
-                    .GroupBy(record => record.Model, StringComparer.Ordinal)
-                    .Select(group => new AgentUsageModelRow(
-                        group.Key,
-                        group.Sum(record => record.InputTokens),
-                        group.Sum(record => record.OutputTokens),
-                        group.Sum(record => record.CacheReadTokens),
-                        group.Sum(record => record.CacheCreationTokens)))
-                    .OrderByDescending(row => row.Input + row.Output + row.CacheRead + row.CacheCreation)
-                    .ToArray();
-
-                if (rows.Length > 0)
-                {
-                    exactUsage = new AgentUsageExactUsage(rows);
-                    foreach (var row in rows)
-                    {
-                        totalInput += row.Input;
-                        totalOutput += row.Output;
-                        totalCacheRead += row.CacheRead;
-                        totalCacheCreation += row.CacheCreation;
-                    }
-                }
-            }
-
-            providerContext.TryGetValue(key, out var context);
-
-            if (exactUsage == null && (context == null || context.Count == 0))
-                continue;
-
-            sections.Add(new AgentUsageProviderSection(
-                key,
-                providerIconKey.TryGetValue(key, out var icon) ? icon : "agent",
-                exactUsage,
-                context,
-                providerSourceKey.TryGetValue(key, out var source) ? source : PsxThreadsSourceKey));
-        }
-
-        var cacheableInput = totalInput + totalCacheRead + totalCacheCreation;
-        double? cacheHitRate = cacheableInput > 0 ? (double)totalCacheRead / cacheableInput : null;
-
-        return new AgentUsageWindow(
-            activeThreads,
-            turns,
-            new AgentUsageTokens(totalInput, totalOutput, totalCacheRead, totalCacheCreation),
-            cacheHitRate,
-            sections);
     }
 }

@@ -1,11 +1,16 @@
 // reactSessionToolbar.test.js — React-only session metadata and context usage.
 
-import { test } from 'vitest';
+import { afterEach, beforeEach, test } from 'vitest';
 import assert from 'node:assert/strict';
 import { act } from 'react';
 import { mountAgentApp, createAgentWorkspace, appModule } from './agentHarness.js';
 
-globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+beforeEach(() => {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+});
+afterEach(() => {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = false;
+});
 const WS = '88888888-8888-4888-8888-888888888888';
 await appModule('workspace/sessionIsland.js');
 

@@ -1,0 +1,4 @@
+{"type":"metadata","protocol_version":"1.2","created_at":1784522400000}
+{"type":"turn.prompt","input":[],"origin":"user","time":1784522400100}
+{"type":"llm.request","kind":"chat","provider":"fixture","model":"fixture-model","modelAlias":"fixture","thinkingEffort":null,"maxTokens":4096,"toolSelect":null,"systemPromptHash":"redacted","toolsHash":"redacted","messageCount":1,"turnStep":0,"time":1784522400200}
+{"type":"usage.record","model":"fixture-model","usage":{"inputOther":10,"output":20,"inputCacheRead":30,"inputCacheCreation":40},"usageScope":"turn","time":1784522400300}

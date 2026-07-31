@@ -89,7 +89,12 @@ function Invoke-FrontendTests {
         npm.cmd run verify:web --prefix $repoRoot
     }
     Invoke-Checked "Run frontend tests with production-code coverage" {
-        npm.cmd run test:coverage --prefix $webProject
+        # V8 coverage retains the instrumented module graph until reporting.
+        # Keep the run hard-bounded, but give that single Node process enough
+        # headroom to finish instead of failing near the default 2 GiB cap.
+        powershell -ExecutionPolicy Bypass -File (
+            Join-Path $repoRoot "tools\run-guarded-vitest.ps1"
+        ) -ProcessMemoryLimitMB 2560 -JobMemoryLimitMB 3072 --coverage
     }
 }
 

@@ -1,11 +1,11 @@
 // reactUsagePanel.test.js — dock footer semantics + the global Usage panel.
 //
-// Drives the real app (createAgentApp) so the footer, the UsagePanelController
-// island, the UsageRequestBroker and the registry seams are exercised
-// together. Backend replies are injected as agent_profile/agent_usage_report
-// host events answering the requestId captured from the posted bridge command.
+// Drives the real app so the footer, Usage island, request broker and host
+// event seam are exercised together. The report fixture mirrors the compact
+// public bridge contract: exact total tokens, one 365-day series and one
+// folded completeness object.
 
-import { test } from 'vitest';
+import { afterEach, beforeEach, test } from 'vitest';
 import assert from 'node:assert/strict';
 import { act } from 'react';
 import {
@@ -17,31 +17,48 @@ import {
   appModule
 } from './agentHarness.js';
 
-globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-const WS = '88888888-8888-4888-8888-888888888888';
-
-const tokens = (input = 0, output = 0, cacheRead = 0, cacheCreation = 0) => ({
-  input,
-  output,
-  cacheRead,
-  cacheCreation
+beforeEach(() => {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+});
+afterEach(() => {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = false;
 });
 
-const usageWindow = (overrides = {}) => ({
-  activeThreads: 1,
-  turns: 2,
-  tokens: tokens(100, 50),
-  cacheHitRate: null,
-  providerSections: [],
+const WS = '88888888-8888-4888-8888-888888888888';
+
+const dailyTokens = (entries = {}) =>
+  Array.from({ length: 365 }, (_, index) => entries[index] ?? 0);
+
+const completeness = (overrides = {}) => ({
+  status: 'available',
+  reasons: [],
+  expectedSessions: 1,
+  matchedSessions: 1,
+  skippedFiles: 0,
+  badLines: 0,
+  untrackedThreads: 0,
+  ...overrides
+});
+
+const providerReport = (overrides = {}) => ({
+  providerKey: 'acp-claude',
+  displayName: 'Claude Code',
+  iconKey: 'claude',
+  dailyTokens: dailyTokens({ 0: 1, 1: 2, 364: 3 }),
+  today: { totalTokens: 200 },
+  last7Days: { totalTokens: 1500 },
+  last30Days: { totalTokens: 3290258 },
+  completeness: completeness(),
   ...overrides
 });
 
 const report = (overrides = {}) => ({
-  heatmap: [0, 1, 0, 3, 8],
   heatmapStartDate: '2026-01-01',
-  today: usageWindow(),
-  last7Days: usageWindow(),
-  last30Days: usageWindow(),
+  dailyTokens: dailyTokens({ 0: 1, 1: 2, 364: 3 }),
+  today: { totalTokens: 200 },
+  last7Days: { totalTokens: 1500 },
+  last30Days: { totalTokens: 3290258 },
+  providers: [providerReport()],
   ...overrides
 });
 
@@ -58,12 +75,10 @@ async function fixture() {
     container: document.getElementById('agents'),
     template: document.getElementById('agent-workspace-template')
   });
-  // The global afterEach (vitest.setup.js) disposes this app before closing the
-  // jsdom window, so the pending force-request timer never leaks across tests.
   registerAgentCleanup(() => app.dispose());
   createAgentWorkspace(app, WS);
   const footer = () => document.querySelector('[data-role="history-profile"]');
-  for (let i = 0; i < 100 && !footer(); i++) {
+  for (let index = 0; index < 100 && !footer(); index++) {
     await act(async () => new Promise((resolve) => setTimeout(resolve, 5)));
   }
   assert.ok(footer(), 'history dock footer did not mount');
@@ -75,7 +90,7 @@ async function settle(run, predicate, what = 'usage island') {
     run();
     await new Promise((resolve) => setTimeout(resolve, 20));
   });
-  for (let i = 0; i < 50 && !predicate(); i++) {
+  for (let index = 0; index < 50 && !predicate(); index++) {
     await act(async () => new Promise((resolve) => setTimeout(resolve, 5)));
   }
   assert.ok(predicate(), what + ' did not settle');
@@ -87,8 +102,6 @@ function usageCommands(posted) {
   );
 }
 
-/** Click the footer, answer the cached usage_report with the given payload,
- * and wait for the panel dialog to commit. */
 async function openPanelWith(rig, payload) {
   await settle(
     () => rig.footer().click(),
@@ -96,13 +109,13 @@ async function openPanelWith(rig, payload) {
     'usage_report command'
   );
   const request = usageCommands(rig.posted).at(-1);
-  assert.equal(request.value, 'cached', 'opening the panel loads from the backend cache');
+  assert.equal(request.value, 'cached');
   await settle(
     () =>
       rig.app.handle({
         type: 'agent_usage_report',
         requestId: request.requestId,
-        generatedAt: '2026-07-20 10:00:00Z',
+        generatedAt: '2026-07-20T10:00:00Z',
         timezone: 'Asia/Shanghai',
         ...payload
       }),
@@ -111,28 +124,23 @@ async function openPanelWith(rig, payload) {
   return request;
 }
 
-// --- footer semantics ------------------------------------------------------------
-
-test('footer: real button semantics with the first-character avatar fallback', async () => {
+test('footer: keeps button semantics and the first-character avatar fallback', async () => {
   const rig = await fixture();
   const footer = rig.footer();
 
   assert.equal(footer.tagName, 'BUTTON');
-  assert.equal(footer.getAttribute('aria-label'), '打开用量面板');
-  // The chart icon is decorative; the accessible name is the aria-label.
-  assert.ok(footer.querySelector('svg[aria-hidden="true"]'), 'chart icon is aria-hidden');
+  assert.ok(footer.getAttribute('aria-label'));
+  assert.ok(footer.querySelector('svg[aria-hidden="true"]'));
 
-  // No avatar yet: the fallback circle carries the first character.
   await settle(
     () => rig.app.handle({ type: 'agent_profile', revision: 1, displayName: 'neo wang' }),
     () => rig.footer().textContent.includes('neo wang')
   );
   const fallback = rig.footer().querySelector('.agent-history-dock-footer-avatar-fallback');
-  assert.ok(fallback, 'fallback circle renders while no avatar is set');
-  assert.equal(fallback.textContent, 'N', 'first character, uppercased');
+  assert.ok(fallback);
+  assert.equal(fallback.textContent, 'N');
   assert.equal(rig.footer().querySelector('img'), null);
 
-  // An avatar broadcast swaps the fallback for the real image (empty alt).
   const avatar = 'data:image/png;base64,iVBORw0KGgo=';
   await settle(
     () =>
@@ -144,189 +152,198 @@ test('footer: real button semantics with the first-character avatar fallback', a
       }),
     () => rig.footer().querySelector('img')
   );
-  const img = rig.footer().querySelector('img');
-  assert.equal(img.getAttribute('src'), avatar);
-  assert.equal(img.getAttribute('alt'), '');
+  const image = rig.footer().querySelector('img');
+  assert.equal(image.getAttribute('src'), avatar);
+  assert.equal(image.getAttribute('alt'), '');
 });
 
-// --- open + window switch ----------------------------------------------------------
-
-test('panel: opening loads cached usage and the window switch syncs overview + model rows', async () => {
+test('panel: window switching changes only the backend-owned total', async () => {
   const rig = await fixture();
+  const year = dailyTokens({ 0: 1, 20: 12, 364: 300 });
   await openPanelWith(rig, {
-    report: report({
-      today: usageWindow({
-        activeThreads: 1,
-        tokens: tokens(100, 50, 40, 10),
-        cacheHitRate: 0.25,
-        providerSections: [
-          {
-            providerKey: 'claude-code',
-            iconKey: 'claude',
-            exactUsage: {
-              modelRows: [{ model: 'model-today', input: 100, output: 50, cacheRead: 40, cacheCreation: 10 }]
-            },
-            contextSnapshots: null,
-            sourceKey: 'acp-claude'
-          }
-        ]
-      }),
-      last7Days: usageWindow({
-        activeThreads: 4,
-        tokens: tokens(1000, 500, 0, 0),
-        cacheHitRate: null,
-        providerSections: [
-          {
-            providerKey: 'claude-code',
-            iconKey: 'claude',
-            exactUsage: {
-              modelRows: [{ model: 'model-7d', input: 1000, output: 500, cacheRead: 0, cacheCreation: 0 }]
-            },
-            contextSnapshots: null,
-            sourceKey: 'acp-claude'
-          }
-        ]
-      })
-    }),
-    sources: [{ key: 'acp-claude', status: 'available' }]
+    report: report({ dailyTokens: year }),
+    completeness: completeness()
   });
 
   const panel = document.querySelector('[data-role="usage-panel"]');
-  assert.ok(panel, 'usage panel dialog is open');
-
-  // Today first: totals, output, hit rate, active threads + today's model row.
+  const heatmap = panel.querySelector('[data-role="usage-heatmap"]');
+  const heatmapMarkup = heatmap.innerHTML;
   assert.equal(panel.querySelector('[data-role="usage-total-tokens"]').textContent, '200');
-  assert.equal(panel.querySelector('[data-role="usage-output-tokens"]').textContent, '50');
-  assert.equal(panel.querySelector('[data-role="usage-cache-rate"]').textContent, '25.0%');
-  assert.equal(panel.querySelector('[data-role="usage-active-threads"]').textContent, '1');
-  assert.ok(panel.textContent.includes('model-today'));
-  assert.ok(!panel.textContent.includes('model-7d'));
 
-  // Switching the window swaps BOTH the overview and the model detail.
   await settle(
     () => panel.querySelector('[data-window="last7Days"]').click(),
-    () => panel.textContent.includes('model-7d')
+    () => panel.querySelector('[data-role="usage-total-tokens"]').textContent === '1,500'
   );
-  assert.equal(panel.querySelector('[data-role="usage-total-tokens"]').textContent, '1,500');
-  assert.equal(panel.querySelector('[data-role="usage-active-threads"]').textContent, '4');
-  // A zero denominator renders the em dash, never NaN.
-  assert.equal(panel.querySelector('[data-role="usage-cache-rate"]').textContent, '—');
-  assert.ok(!panel.textContent.includes('model-today'));
+  assert.equal(heatmap.innerHTML, heatmapMarkup, 'the annual heatmap is window-independent');
+
+  await settle(
+    () => panel.querySelector('[data-window="last30Days"]').click(),
+    () => panel.querySelector('[data-role="usage-total-tokens"]').textContent === '3,290,258'
+  );
+  assert.equal(panel.querySelectorAll('[data-role="usage-provider-row"]').length, 1);
+  for (const forbidden of [
+    'contextSnapshots',
+    'cacheHitRate',
+    'activeThreads',
+    'model-today',
+    'acp-claude'
+  ]) {
+    assert.ok(!panel.innerHTML.includes(forbidden), `${forbidden} must not enter the DOM`);
+  }
 });
 
-// --- field-driven provider sections --------------------------------------------------
-
-test('panel: provider sections render purely by which fields exist', async () => {
+test('panel: heatmap is Monday-aligned, logarithmic and one focus stop', async () => {
   const rig = await fixture();
+  const year = dailyTokens({ 0: 1, 1: 1000000, 2: 100 });
   await openPanelWith(rig, {
-    report: report({
-      today: usageWindow({
-        providerSections: [
-          {
-            providerKey: 'exact-only',
-            iconKey: 'agent',
-            exactUsage: { modelRows: [{ model: 'm1', input: 1, output: 2, cacheRead: 3, cacheCreation: 4 }] },
-            contextSnapshots: null,
-            sourceKey: 'src-partial'
-          },
-          {
-            providerKey: 'snapshot-only',
-            iconKey: 'agent',
-            exactUsage: null,
-            contextSnapshots: [{ threadTitle: 'Kimi thread', usedTokens: 1200, windowTokens: 200000 }],
-            sourceKey: ''
-          },
-          {
-            providerKey: 'synthetic-both',
-            iconKey: 'agent',
-            exactUsage: { modelRows: [{ model: 'm2', input: 5, output: 6, cacheRead: 7, cacheCreation: 8 }] },
-            contextSnapshots: [{ threadTitle: 'Hybrid thread', usedTokens: 10, windowTokens: null }],
-            sourceKey: 'src-unavailable'
-          }
-        ]
-      })
-    }),
-    sources: [
-      {
-        key: 'src-partial',
-        status: 'partial',
-        detail: '仅匹配到部分会话',
-        scannedFiles: 5,
-        skippedFiles: 2,
-        badLines: 3
-      },
-      { key: 'src-unavailable', status: 'unavailable', detail: '未找到 .claude/projects' }
-    ]
+    report: report({ heatmapStartDate: '2026-01-01', dailyTokens: year }),
+    completeness: completeness()
   });
 
-  const sections = document.querySelectorAll('[data-role="usage-provider-section"]');
-  assert.equal(sections.length, 3);
-
-  const byKey = (key) =>
-    document.querySelector(`[data-role="usage-provider-section"][data-provider-key="${key}"]`);
-
-  // exactUsage → model table with the four token columns; no snapshot list.
-  const exactOnly = byKey('exact-only');
-  assert.ok(exactOnly.querySelector('[data-role="usage-model-table"]'));
-  assert.equal(exactOnly.querySelector('[data-role="usage-context-snapshots"]'), null);
-  const cells = [...exactOnly.querySelectorAll('[data-role="usage-model-row"] td')].map(
-    (cell) => cell.textContent
-  );
-  assert.deepEqual(cells, ['m1', '1', '2', '3', '4']);
-
-  // contextSnapshots → snapshot list flagged as excluded from the totals.
-  const snapshotOnly = byKey('snapshot-only');
-  assert.equal(snapshotOnly.querySelector('[data-role="usage-model-table"]'), null);
-  assert.ok(snapshotOnly.querySelector('[data-role="usage-context-snapshots"]'));
-  assert.ok(snapshotOnly.textContent.includes('不计入合计'));
-  assert.ok(snapshotOnly.textContent.includes('Kimi thread'));
-
-  // A synthetic provider carrying both fields renders both blocks — proof the
-  // renderer never branches on the provider name.
-  const both = byKey('synthetic-both');
-  assert.ok(both.querySelector('[data-role="usage-model-table"]'));
-  assert.ok(both.querySelector('[data-role="usage-context-snapshots"]'));
-
-  // Source badges: partial exposes detail + skipped/bad counters,
-  // unavailable exposes its detail.
-  const partialBadge = exactOnly.querySelector('[data-role="usage-source-badge"]');
-  assert.equal(partialBadge.dataset.status, 'partial');
-  assert.ok(partialBadge.textContent.includes('仅匹配到部分会话'));
-  assert.ok(partialBadge.textContent.includes('2'));
-  assert.ok(partialBadge.textContent.includes('3'));
-  const unavailableBadge = both.querySelector('[data-role="usage-source-badge"]');
-  assert.equal(unavailableBadge.dataset.status, 'unavailable');
-  assert.ok(unavailableBadge.textContent.includes('未找到 .claude/projects'));
-});
-
-// --- heatmap ---------------------------------------------------------------------------
-
-test('panel: heatmap is one focus stop with an aria summary and hidden cells', async () => {
-  const rig = await fixture();
-  const heatmap = Array.from({ length: 365 }, (_, index) => (index % 30 === 0 ? 2 : 0));
-  await openPanelWith(rig, { report: report({ heatmap }), sources: [] });
-
   const region = document.querySelector('[data-role="usage-heatmap"]');
-  assert.ok(region);
+  const grid = region.querySelector('.agent-usage-heatmap-grid');
+  const cells = [...region.querySelectorAll('[data-role="usage-heatmap-cell"]')];
   assert.equal(region.getAttribute('tabindex'), '0');
-  const activeDays = heatmap.filter((count) => count > 0).length;
-  assert.equal(region.getAttribute('aria-label'), `过去 365 天活跃 ${activeDays} 天`);
-  const grid = region.querySelector('[aria-hidden="true"]');
-  assert.ok(grid, 'the cell grid is hidden from readers');
-  assert.equal(grid.children.length, 365);
+  assert.equal(grid.getAttribute('aria-hidden'), 'true');
+  assert.equal(grid.children.length, 371, '53 columns × 7 rows');
+  assert.equal(cells.length, 365);
+  assert.equal(grid.children[0].className, 'agent-usage-heatmap-placeholder');
+  assert.equal(grid.children[2].className, 'agent-usage-heatmap-placeholder');
+  assert.equal(grid.children[3].dataset.index, '0', 'Thursday starts after three Monday slots');
+  assert.equal(cells[0].title, '2026年1月1日 · 1 Token');
+  assert.equal(cells[364].title, '2026年12月31日 · 0 Token');
+  assert.equal(cells[0].dataset.level, '1');
+  assert.equal(cells[1].dataset.level, '4');
+  assert.ok(cells.every((cell) => !cell.hasAttribute('tabindex')));
+  assert.match(region.getAttribute('aria-label'), /Asia\/Shanghai/);
+  assert.match(region.getAttribute('aria-label'), /1,000,101 Token/);
+  assert.ok(!region.textContent.includes('低 → 高'));
+  assert.ok(region.textContent.includes('颜色越深，当天 Token 越多'));
 });
 
-// --- error + retry ------------------------------------------------------------------------
+test('panel: partial overall report keeps readable provider usage selectable', async () => {
+  const rig = await fixture();
+  const claude = providerReport();
+  const kimi = providerReport({
+    providerKey: 'acp-kimi',
+    displayName: 'Kimi Code',
+    iconKey: 'kimi',
+    dailyTokens: dailyTokens({ 10: 250 }),
+    today: { totalTokens: 40 },
+    last7Days: { totalTokens: 250 },
+    last30Days: { totalTokens: 250 },
+    completeness: completeness({
+      status: 'partial',
+      reasons: ['unmatched_sessions'],
+      expectedSessions: 2,
+      matchedSessions: 1
+    })
+  });
+  await openPanelWith(rig, {
+    report: report({ providers: [claude, kimi] }),
+    completeness: completeness({
+      status: 'partial',
+      reasons: ['unmatched_sessions'],
+      expectedSessions: 3,
+      matchedSessions: 2
+    })
+  });
 
-test('panel: an error reply renders inline and retry issues a fresh cached request', async () => {
+  const panel = document.querySelector('[data-role="usage-panel"]');
+  assert.equal(panel.querySelector('[data-role="usage-total-tokens"]').textContent, '200');
+  assert.match(panel.querySelector('.agent-usage-overview-note').textContent, /统计不完整/);
+  assert.match(panel.querySelector('.agent-usage-overview-note').textContent, /仅包含已读取到的精确 Token/);
+  assert.equal(panel.querySelector('[data-role="usage-all-provider"]').disabled, true);
+
+  const rows = [...panel.querySelectorAll('[data-role="usage-provider-row"]')];
+  const claudeRow = rows.find((row) => row.textContent.includes('Claude Code'));
+  const kimiRow = rows.find((row) => row.textContent.includes('Kimi Code'));
+  assert.equal(claudeRow.getAttribute('aria-pressed'), 'true');
+  assert.match(kimiRow.textContent, /已记录 40 Token/);
+  assert.match(kimiRow.title, /部分会话未计入/);
+
+  await act(async () => {
+    kimiRow.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  assert.equal(kimiRow.getAttribute('aria-pressed'), 'true');
+  assert.match(panel.querySelector('[data-role="usage-heatmap"]').getAttribute('aria-label'), /Kimi Code/);
+
+  const html = panel.innerHTML;
+  assert.ok(!html.includes('acp-claude'));
+  assert.ok(!html.includes('acp-kimi'));
+  assert.ok(!html.includes('.claude'));
+  assert.ok(!html.includes('C:\\'));
+});
+
+test('panel: unavailable differs from a real available zero', async () => {
+  const rig = await fixture();
+  const unavailableProvider = providerReport({
+    dailyTokens: dailyTokens(),
+    today: { totalTokens: 0 },
+    last7Days: { totalTokens: 0 },
+    last30Days: { totalTokens: 0 },
+    completeness: completeness({
+      status: 'unavailable',
+      reasons: ['missing_session_logs'],
+      expectedSessions: 1,
+      matchedSessions: 0
+    })
+  });
+  await openPanelWith(rig, {
+    report: report({
+      dailyTokens: dailyTokens(),
+      today: { totalTokens: 0 },
+      providers: [unavailableProvider]
+    }),
+    completeness: completeness({
+      status: 'unavailable',
+      reasons: ['missing_session_logs'],
+      expectedSessions: null,
+      matchedSessions: null,
+      untrackedThreads: 1
+    })
+  });
+
+  assert.equal(
+    document.querySelector('[data-role="usage-total-tokens"]').textContent,
+    '0'
+  );
+  assert.ok(document.querySelector('[data-role="usage-heatmap-empty"]'));
+  assert.equal(document.querySelector('[data-role="usage-heatmap-cell"]'), null);
+
+  await settle(
+    () => document.querySelector('[data-role="usage-refresh"]').click(),
+    () => usageCommands(rig.posted).length === 2
+  );
+  const refresh = usageCommands(rig.posted).at(-1);
+  await settle(
+    () =>
+      rig.app.handle({
+        type: 'agent_usage_report',
+        requestId: refresh.requestId,
+        generatedAt: 'now',
+        timezone: 'Asia/Shanghai',
+        report: report({ dailyTokens: dailyTokens(), today: { totalTokens: 0 } }),
+        completeness: completeness()
+      }),
+    () => document.querySelectorAll('[data-role="usage-heatmap-cell"]').length === 365
+  );
+  assert.equal(
+    document.querySelector('[data-role="usage-total-tokens"]').textContent,
+    '0'
+  );
+  assert.equal(document.querySelectorAll('[data-role="usage-heatmap-cell"]').length, 365);
+});
+
+test('panel: an error reply renders inline and retry preserves the request flow', async () => {
   const rig = await fixture();
   await openPanelWith(rig, { error: '扫描失败' });
 
   const error = document.querySelector('[data-role="usage-error"]');
-  assert.ok(error, 'error state renders inside the panel');
-  assert.ok(error.textContent.includes('扫描失败'));
+  assert.ok(error);
+  assert.match(error.textContent, /扫描失败/);
 
-  // Retry re-requests with a fresh requestId; the reply then lands normally.
   await settle(
     () => document.querySelector('[data-role="usage-retry"]').click(),
     () => usageCommands(rig.posted).length === 2
@@ -341,18 +358,19 @@ test('panel: an error reply renders inline and retry issues a fresh cached reque
         generatedAt: 'now',
         timezone: 'UTC',
         report: report(),
-        sources: []
+        completeness: completeness()
       }),
     () => document.querySelector('[data-role="usage-overview"]')
   );
   assert.equal(document.querySelector('[data-role="usage-error"]'), null);
 });
 
-// --- refresh -------------------------------------------------------------------------------
-
-test('panel: the refresh button forces a rescan', async () => {
+test('panel: refresh forces a rescan and accepts the matching reply', async () => {
   const rig = await fixture();
-  await openPanelWith(rig, { report: report(), sources: [] });
+  await openPanelWith(rig, {
+    report: report(),
+    completeness: completeness()
+  });
 
   await settle(
     () => document.querySelector('[data-role="usage-refresh"]').click(),
@@ -361,8 +379,6 @@ test('panel: the refresh button forces a rescan', async () => {
   const forced = usageCommands(rig.posted).at(-1);
   assert.equal(forced.value, 'force');
 
-  // Answer the forced rescan so the test never ends on an in-flight request
-  // (which would otherwise leave the broker's timeout timer pending).
   await settle(
     () =>
       rig.app.handle({
@@ -370,9 +386,9 @@ test('panel: the refresh button forces a rescan', async () => {
         requestId: forced.requestId,
         generatedAt: 'now',
         timezone: 'UTC',
-        report: report(),
-        sources: []
+        report: report({ today: { totalTokens: 201 } }),
+        completeness: completeness()
       }),
-    () => rig.app && document.querySelector('[data-role="usage-overview"]')
+    () => document.querySelector('[data-role="usage-total-tokens"]').textContent === '201'
   );
 });

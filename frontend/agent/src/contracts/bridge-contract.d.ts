@@ -266,13 +266,80 @@ interface WorkspaceHostEvent extends BridgeInboundMessageBase {
     text?: string;
 }
 
-/** Agent-global events that deliberately do not belong to a workspace. */
-interface AgentGlobalHostEvent extends BridgeInboundMessageBase {
+interface AgentThreadOpenErrorEvent extends BridgeInboundMessageBase {
     type: 'agent_thread_open_error';
     threadId: string;
     text?: string;
     detail?: string;
 }
+
+interface AgentProfileEvent extends BridgeInboundMessageBase {
+    type: 'agent_profile';
+    requestId?: string;
+    displayName: string;
+    avatarDataUrl: string | null;
+    revision: number;
+    error?: string | null;
+}
+
+interface AgentUsageWindowEvent {
+    totalTokens: number;
+}
+
+type AgentUsageGapReason =
+    | 'unsupported_source'
+    | 'unsupported_format'
+    | 'missing_session_logs'
+    | 'ambiguous_session_logs'
+    | 'unreadable_logs'
+    | 'unmatched_sessions'
+    | 'missing_session_id'
+    | 'damaged_thread_files'
+    | 'unregistered_provider';
+
+interface AgentUsageCompletenessEvent {
+    status: 'available' | 'partial' | 'unavailable';
+    reasons: AgentUsageGapReason[];
+    expectedSessions: number | null;
+    matchedSessions: number | null;
+    skippedFiles: number;
+    badLines: number;
+    untrackedThreads: number;
+}
+
+interface AgentProviderUsageReportEvent {
+    providerKey: string;
+    displayName: string;
+    iconKey: string;
+    dailyTokens: number[];
+    today: AgentUsageWindowEvent;
+    last7Days: AgentUsageWindowEvent;
+    last30Days: AgentUsageWindowEvent;
+    completeness: AgentUsageCompletenessEvent;
+}
+
+interface AgentUsageReportEvent extends BridgeInboundMessageBase {
+    type: 'agent_usage_report';
+    requestId: string;
+    generatedAt: string;
+    timezone: string;
+    report: {
+        heatmapStartDate: string;
+        dailyTokens: number[];
+        today: AgentUsageWindowEvent;
+        last7Days: AgentUsageWindowEvent;
+        last30Days: AgentUsageWindowEvent;
+        providers: AgentProviderUsageReportEvent[];
+    } | null;
+    completeness: AgentUsageCompletenessEvent | null;
+    error: string | null;
+}
+
+/** Agent-global events that deliberately do not belong to a workspace. */
+type AgentGlobalHostEvent =
+    | AgentThreadOpenErrorEvent
+    | AgentProfileEvent
+    | AgentUsageReportEvent;
 
 /** Every event AgentThreadManager.handleEvent may receive. Narrowing on
  * `type === 'permission_request'` yields the concrete presentation variants

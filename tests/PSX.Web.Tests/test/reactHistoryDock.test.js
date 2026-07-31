@@ -1,6 +1,6 @@
 // reactHistoryDock.test.js — React-only history content behavior.
 
-import { test } from 'vitest';
+import { afterEach, beforeEach, test } from 'vitest';
 import assert from 'node:assert/strict';
 import { act } from 'react';
 import {
@@ -8,10 +8,16 @@ import {
   installBreakpoint,
   agentTemplateMarkup,
   createAgentWorkspace,
+  registerAgentCleanup,
   appModule
 } from './agentHarness.js';
 
-globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+beforeEach(() => {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+});
+afterEach(() => {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = false;
+});
 const WS = '77777777-7777-4777-8777-777777777777';
 
 const thread = (overrides) => ({
@@ -46,6 +52,7 @@ async function fixture() {
     container: document.getElementById('agents'),
     template: document.getElementById('agent-workspace-template')
   });
+  registerAgentCleanup(() => app.dispose());
   createAgentWorkspace(app, WS);
   const content = () => document.querySelector('[data-role="history-content"]');
   // The dock chrome renders through the history-dock React island; wait for

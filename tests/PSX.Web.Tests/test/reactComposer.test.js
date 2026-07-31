@@ -1,11 +1,16 @@
 // reactComposer.test.js — React composer islands plus imperative textarea seam.
 
-import { test } from 'vitest';
+import { afterEach, beforeEach, test } from 'vitest';
 import assert from 'node:assert/strict';
 import { act } from 'react';
 import { mountAgentApp, createAgentWorkspace, appModule } from './agentHarness.js';
 
-globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+beforeEach(() => {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+});
+afterEach(() => {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = false;
+});
 const WS = '99999999-9999-4999-8999-999999999999';
 await appModule('composer/composerIsland.js');
 

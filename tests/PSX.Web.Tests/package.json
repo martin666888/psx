@@ -3,9 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "vitest run",
+    "test": "powershell -ExecutionPolicy Bypass -File ../../tools/run-guarded-vitest.ps1",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "powershell -ExecutionPolicy Bypass -File ../../tools/run-guarded-vitest.ps1 --coverage"
   },
   "devDependencies": {
     "jsdom": "29.1.1",

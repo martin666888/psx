@@ -9,6 +9,12 @@ namespace PSX.Tests.Unit;
 [TestCategory("Unit")]
 public sealed class ClaudeSessionUsageSourceTests
 {
+    private sealed class RecordingSink : IAgentUsageRecordSink
+    {
+        public List<AgentUsageRecord> Records { get; } = [];
+        public void Add(AgentUsageRecord record) => Records.Add(record);
+    }
+
     private static string WriteSession(string projectsDir, string sessionId, params string[] lines)
     {
         var projectDir = Path.Combine(projectsDir, "project-a");
@@ -35,6 +41,15 @@ public sealed class ClaudeSessionUsageSourceTests
     private static ClaudeSessionUsageSource SourceFor(string configDir) =>
         new(() => configDir);
 
+    private static (AgentUsageSourceStatus Status, List<AgentUsageRecord> Records) Collect(
+        ClaudeSessionUsageSource source,
+        IReadOnlyCollection<string> sessionIds)
+    {
+        var sink = new RecordingSink();
+        var status = source.Collect(sessionIds, sink, CancellationToken.None);
+        return (status, sink.Records);
+    }
+
     [TestMethod]
     public void Collect_NoSessions_AvailableWithZeroData()
     {
@@ -43,7 +58,7 @@ public sealed class ClaudeSessionUsageSourceTests
         // still be "available" (zero), not "unavailable".
         var source = SourceFor(Path.Combine(workspace.Path, "missing-claude"));
 
-        var contribution = source.Collect([], CancellationToken.None);
+        var contribution = Collect(source, []);
 
         Assert.AreEqual(AgentUsageSourceStatus.Available, contribution.Status.Status);
         Assert.IsEmpty(contribution.Records);
@@ -56,7 +71,7 @@ public sealed class ClaudeSessionUsageSourceTests
         using var workspace = TestWorkspace.Create(nameof(Collect_DirectoryMissing_Unavailable));
         var source = SourceFor(Path.Combine(workspace.Path, "missing-claude"));
 
-        var contribution = source.Collect(["session-1"], CancellationToken.None);
+        var contribution = Collect(source, ["session-1"]);
 
         Assert.AreEqual(AgentUsageSourceStatus.Unavailable, contribution.Status.Status);
         Assert.AreEqual(1, contribution.Status.ExpectedSessions);
@@ -76,7 +91,7 @@ public sealed class ClaudeSessionUsageSourceTests
         WriteSession(projectsDir, "other-session",
             AssistantLine("other-session", "m9", "claude-x", 999, 999, 999, 999, "2026-07-20T10:00:00Z"));
 
-        var contribution = SourceFor(configDir).Collect(["psx-session"], CancellationToken.None);
+        var contribution = Collect(SourceFor(configDir), ["psx-session"]);
 
         Assert.AreEqual(AgentUsageSourceStatus.Available, contribution.Status.Status);
         Assert.HasCount(1, contribution.Records);
@@ -90,6 +105,24 @@ public sealed class ClaudeSessionUsageSourceTests
     }
 
     [TestMethod]
+    public void Collect_UnsafeSessionId_CannotEscapeTheProjectsDirectory()
+    {
+        using var workspace = TestWorkspace.Create(nameof(Collect_UnsafeSessionId_CannotEscapeTheProjectsDirectory));
+        var configDir = Path.Combine(workspace.Path, ".claude");
+        var projectsDir = Path.Combine(configDir, "projects");
+        Directory.CreateDirectory(projectsDir);
+        File.WriteAllLines(
+            Path.Combine(configDir, "escape.jsonl"),
+            [AssistantLine("escape", "m1", "claude-x", 99, 0, 0, 0, "2026-07-20T10:00:00Z")]);
+
+        var contribution = Collect(SourceFor(configDir), [@"..\escape"]);
+
+        Assert.AreEqual(AgentUsageSourceStatus.Unavailable, contribution.Status.Status);
+        Assert.AreEqual(0, contribution.Status.MatchedSessions);
+        Assert.IsEmpty(contribution.Records);
+    }
+
+    [TestMethod]
     public void Collect_DeduplicatesByMessageId()
     {
         using var workspace = TestWorkspace.Create(nameof(Collect_DeduplicatesByMessageId));
@@ -99,15 +132,15 @@ public sealed class ClaudeSessionUsageSourceTests
             AssistantLine("psx-session", "dup", "claude-x", 10, 5, 0, 0, "2026-07-20T10:00:00Z"),
             AssistantLine("psx-session", "dup", "claude-x", 10, 5, 0, 0, "2026-07-20T10:00:01Z"));
 
-        var contribution = SourceFor(configDir).Collect(["psx-session"], CancellationToken.None);
+        var contribution = Collect(SourceFor(configDir), ["psx-session"]);
 
         Assert.HasCount(1, contribution.Records);
     }
 
     [TestMethod]
-    public void Collect_BadLine_CountedAndPartial()
+    public void Collect_BadLine_PreventsAnExactSessionMatch()
     {
-        using var workspace = TestWorkspace.Create(nameof(Collect_BadLine_CountedAndPartial));
+        using var workspace = TestWorkspace.Create(nameof(Collect_BadLine_PreventsAnExactSessionMatch));
         var configDir = Path.Combine(workspace.Path, ".claude");
         var projectsDir = Path.Combine(configDir, "projects");
         WriteSession(projectsDir, "psx-session",
@@ -115,11 +148,12 @@ public sealed class ClaudeSessionUsageSourceTests
             "{ this is not valid json",
             "{\"type\":\"user\",\"message\":{\"role\":\"user\"}}");
 
-        var contribution = SourceFor(configDir).Collect(["psx-session"], CancellationToken.None);
+        var contribution = Collect(SourceFor(configDir), ["psx-session"]);
 
         Assert.HasCount(1, contribution.Records);
         Assert.AreEqual(1, contribution.Status.BadLines);
-        Assert.AreEqual(AgentUsageSourceStatus.Partial, contribution.Status.Status);
+        Assert.AreEqual(AgentUsageSourceStatus.Unavailable, contribution.Status.Status);
+        Assert.AreEqual(0, contribution.Status.MatchedSessions);
     }
 
     [TestMethod]
@@ -132,7 +166,7 @@ public sealed class ClaudeSessionUsageSourceTests
             AssistantLine("psx-a", "m1", "claude-x", 10, 5, 0, 0, "2026-07-20T10:00:00Z"));
 
         // Two expected, only one present on disk.
-        var contribution = SourceFor(configDir).Collect(["psx-a", "psx-b"], CancellationToken.None);
+        var contribution = Collect(SourceFor(configDir), ["psx-a", "psx-b"]);
 
         Assert.AreEqual(AgentUsageSourceStatus.Partial, contribution.Status.Status);
         Assert.AreEqual(2, contribution.Status.ExpectedSessions);

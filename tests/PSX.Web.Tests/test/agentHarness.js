@@ -7,6 +7,7 @@ const testDirectory = path.dirname(fileURLToPath(import.meta.url));
 export const repositoryRoot = path.resolve(testDirectory, '..', '..', '..');
 const nativeFetch = globalThis.fetch.bind(globalThis);
 let activeAgentDom = null;
+let activeAnimationFrameScheduler = null;
 // Teardown callbacks (newest last) for whatever the current test built on top
 // of the jsdom window — most importantly the AgentApp, whose dispose() clears
 // the History/Usage broker timeout timers and unmounts the React islands.
@@ -15,6 +16,40 @@ let activeAgentCleanups = [];
 /** Register a teardown callback for the active runtime (e.g. () => app.dispose()). */
 export function registerAgentCleanup(cleanup) {
   activeAgentCleanups.push(cleanup);
+}
+
+function createAnimationFrameScheduler() {
+  let nextId = 1;
+  let timestamp = 0;
+  const callbacks = new Map();
+  return {
+    request(callback) {
+      const id = nextId++;
+      callbacks.set(id, callback);
+      return id;
+    },
+    cancel(id) {
+      callbacks.delete(id);
+    },
+    flush(count = 1) {
+      for (let frame = 0; frame < count; frame++) {
+        const pending = [...callbacks.values()];
+        callbacks.clear();
+        timestamp += 1000 / 60;
+        for (const callback of pending) callback(timestamp);
+      }
+    },
+    clear() {
+      callbacks.clear();
+    }
+  };
+}
+
+/** Advance the active jsdom by an explicit number of animation frames.
+ * Self-scheduling callbacks land in the NEXT frame queue, never recurse
+ * inline or run forever in the background. */
+export function flushAgentAnimationFrames(count = 1) {
+  activeAnimationFrameScheduler?.flush(count);
 }
 
 /** Dispose the current app(s), then close the jsdom window (which cancels every
@@ -29,6 +64,8 @@ export function disposeActiveAgentRuntime() {
       // Teardown must never fail a test; the window close below still runs.
     }
   }
+  activeAnimationFrameScheduler?.clear();
+  activeAnimationFrameScheduler = null;
   activeAgentDom?.window.close();
   activeAgentDom = null;
 }
@@ -66,9 +103,8 @@ export function installAgentRuntime() {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {
     url: 'https://psx.local/',
     runScripts: 'outside-only',
-    // Visual mode gives a real, timer-backed, cancelable requestAnimationFrame
-    // (see below): the old synchronous stub could turn a self-scheduling frame
-    // loop into an unbounded synchronous allocation loop.
+    // Keep browser visibility semantics. rAF itself is replaced below with a
+    // deterministic, explicitly advanced scheduler.
     pretendToBeVisual: true
   });
   activeAgentDom = dom;
@@ -112,12 +148,15 @@ export function installAgentRuntime() {
   // context-usage host (3-0).
   globalThis.MutationObserver = dom.window.MutationObserver;
   globalThis.getComputedStyle = dom.window.getComputedStyle.bind(dom.window);
-  // Real (timer-backed, cancelable) rAF from jsdom visual mode. The previous
-  // synchronous stub executed callbacks inline and made cancelAnimationFrame a
-  // no-op, which turned Radix's self-scheduling frame loops into unbounded
-  // synchronous allocation. window.close() cancels every frame bound here.
-  globalThis.requestAnimationFrame = dom.window.requestAnimationFrame.bind(dom.window);
-  globalThis.cancelAnimationFrame = dom.window.cancelAnimationFrame.bind(dom.window);
+  // A browser schedules callbacks for a future frame and can cancel them. The
+  // harness models those semantics without running Radix measurement loops
+  // forever in the background (especially costly under V8 coverage).
+  const animationFrames = createAnimationFrameScheduler();
+  activeAnimationFrameScheduler = animationFrames;
+  globalThis.requestAnimationFrame = (callback) => animationFrames.request(callback);
+  globalThis.cancelAnimationFrame = (id) => animationFrames.cancel(id);
+  dom.window.requestAnimationFrame = globalThis.requestAnimationFrame;
+  dom.window.cancelAnimationFrame = globalThis.cancelAnimationFrame;
   dom.window.matchMedia = () => ({
     matches: false,
     addEventListener() {},

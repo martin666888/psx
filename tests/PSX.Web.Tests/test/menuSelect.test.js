@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, test } from 'vitest';
+import { afterEach, beforeEach, test } from 'vitest';
 import assert from 'node:assert/strict';
 import { act } from 'react';
 import { mountAgentApp, createAgentWorkspace, composerReady } from './agentHarness.js';
@@ -60,11 +60,11 @@ async function mount() {
   return { app, panel, posted: runtime.postedMessages };
 }
 
-beforeAll(async () => {
+beforeEach(async () => {
   fixture = await mount();
 });
 
-afterAll(async () => {
+afterEach(async () => {
   if (!fixture) return;
   const { app } = fixture;
   fixture = null;

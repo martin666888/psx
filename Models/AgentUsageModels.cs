@@ -6,21 +6,13 @@ namespace PSX.Models;
 /// <summary>Lightweight, read-only projection of one stored thread for usage
 /// aggregation. Never triggers an index rewrite.</summary>
 public sealed record AgentUsageThreadSnapshot(
-    string ThreadId,
-    string Title,
     string Provider,
     string? ClaudeSessionId,
-    string? AcpSessionId,
-    long? ContextUsedTokens,
-    long? ContextWindowTokens,
-    IReadOnlyList<AgentUsageMessageStamp> Messages);
-
-/// <summary>One message reduced to the fields usage aggregation needs.</summary>
-public sealed record AgentUsageMessageStamp(string Role, DateTimeOffset CreatedAt);
+    string? AcpSessionId);
 
 /// <summary>Result of enumerating every thread file. <see cref="SkippedFiles"/>
-/// counts unreadable/corrupt thread JSON so the psx-threads source can report
-/// partial completeness instead of silently under-counting.</summary>
+/// counts unreadable/corrupt thread JSON so folded completeness can report a
+/// gap instead of silently under-counting.</summary>
 public sealed record AgentThreadUsageSnapshot(
     IReadOnlyList<AgentUsageThreadSnapshot> Threads,
     int ScannedFiles,
@@ -52,56 +44,81 @@ public sealed record AgentUsageSourceStatus(
     public const string Available = "available";
     public const string Partial = "partial";
     public const string Unavailable = "unavailable";
+
+    /// <summary>Stable, user-safe reason keys. Paths, provider internals and
+    /// parser diagnostics stay in <see cref="Detail"/> and never cross the
+    /// bridge.</summary>
+    public IReadOnlyList<string> Reasons { get; init; } = [];
 }
 
-/// <summary>Everything one <see cref="PSX.Services.IAgentUsageSource"/> returns:
-/// the parsed records plus its own completeness status.</summary>
-public sealed record AgentUsageContribution(
-    IReadOnlyList<AgentUsageRecord> Records,
-    AgentUsageSourceStatus Status);
-
-public sealed record AgentUsageTokens(long Input, long Output, long CacheRead, long CacheCreation)
+public static class AgentUsageGapReason
 {
-    public static readonly AgentUsageTokens Zero = new(0, 0, 0, 0);
+    public const string UnsupportedSource = "unsupported_source";
+    public const string UnsupportedFormat = "unsupported_format";
+    public const string MissingSessionLogs = "missing_session_logs";
+    public const string AmbiguousSessionLogs = "ambiguous_session_logs";
+    public const string UnreadableLogs = "unreadable_logs";
+    public const string UnmatchedSessions = "unmatched_sessions";
+    public const string MissingSessionId = "missing_session_id";
+    public const string DamagedThreadFiles = "damaged_thread_files";
+    public const string UnregisteredProvider = "unregistered_provider";
+
+    public static readonly IReadOnlyList<string> Ordered =
+    [
+        UnsupportedSource,
+        UnsupportedFormat,
+        MissingSessionLogs,
+        AmbiguousSessionLogs,
+        UnreadableLogs,
+        UnmatchedSessions,
+        MissingSessionId,
+        DamagedThreadFiles,
+        UnregisteredProvider
+    ];
 }
 
-public sealed record AgentUsageModelRow(
-    string Model, long Input, long Output, long CacheRead, long CacheCreation);
-
-public sealed record AgentUsageExactUsage(IReadOnlyList<AgentUsageModelRow> ModelRows);
-
-public sealed record AgentUsageContextSnapshot(string ThreadTitle, long? UsedTokens, long? WindowTokens);
-
-/// <summary>One provider's slice of a window. Rendering is purely field-driven:
-/// <see cref="ExactUsage"/> present -> model table; <see cref="ContextSnapshots"/>
-/// present -> snapshot list. No consumer inspects <see cref="ProviderKey"/>.</summary>
-public sealed record AgentUsageProviderSection(
-    string ProviderKey,
-    string IconKey,
-    AgentUsageExactUsage? ExactUsage,
-    IReadOnlyList<AgentUsageContextSnapshot>? ContextSnapshots,
-    string SourceKey);
-
-/// <summary>Aggregates for one time window. <see cref="Tokens"/> and
-/// <see cref="CacheHitRate"/> sum exact usage only; context snapshots never
-/// contribute to totals.</summary>
-public sealed record AgentUsageWindow(
-    int ActiveThreads,
-    int Turns,
-    AgentUsageTokens Tokens,
-    double? CacheHitRate,
-    IReadOnlyList<AgentUsageProviderSection> ProviderSections);
+/// <summary>One independently computed report window. Token totals include
+/// input, output, cache-read and cache-creation tokens from exact sources.</summary>
+public sealed record AgentUsageWindow(long TotalTokens);
 
 public sealed record AgentUsageReport(
-    IReadOnlyList<int> Heatmap,
     DateOnly HeatmapStartDate,
+    IReadOnlyList<long> DailyTokens,
     AgentUsageWindow Today,
     AgentUsageWindow Last7Days,
-    AgentUsageWindow Last30Days);
+    AgentUsageWindow Last30Days,
+    IReadOnlyList<AgentProviderUsageReport> Providers);
+
+public sealed record AgentProviderUsageReport(
+    string ProviderKey,
+    string DisplayName,
+    string IconKey,
+    IReadOnlyList<long> DailyTokens,
+    AgentUsageWindow Today,
+    AgentUsageWindow Last7Days,
+    AgentUsageWindow Last30Days,
+    AgentUsageCompleteness Completeness);
+
+/// <summary>User-facing completeness folded across local thread enumeration
+/// and applicable exact-usage sources. Only stable reason keys cross the
+/// bridge; parser details and paths remain internal.</summary>
+public sealed record AgentUsageCompleteness(
+    string Status,
+    IReadOnlyList<string> Reasons,
+    int? ExpectedSessions,
+    int? MatchedSessions,
+    int SkippedFiles,
+    int BadLines,
+    int UntrackedThreads)
+{
+    public const string Available = "available";
+    public const string Partial = "partial";
+    public const string Unavailable = "unavailable";
+}
 
 /// <summary>Top-level payload for an agent_usage_report event body.</summary>
 public sealed record AgentUsageResult(
     DateTimeOffset GeneratedAt,
     string Timezone,
     AgentUsageReport Report,
-    IReadOnlyList<AgentUsageSourceStatus> Sources);
+    AgentUsageCompleteness Completeness);

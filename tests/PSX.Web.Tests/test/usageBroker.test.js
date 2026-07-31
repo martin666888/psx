@@ -66,9 +66,36 @@ function profileGets(commands) {
 }
 
 function minimalReport() {
-  // normalizeWindow tolerates missing fields; a truthy report object is all
-  // handleUsageReport needs to accept the reply.
-  return { heatmap: [1, 2, 3], heatmapStartDate: '2024-01-01', today: {}, last7Days: {}, last30Days: {} };
+  return {
+    dailyTokens: Array.from({ length: 365 }, (_, index) => (index < 3 ? index + 1 : 0)),
+    heatmapStartDate: '2024-01-01',
+    today: { totalTokens: 3 },
+    last7Days: { totalTokens: 6 },
+    last30Days: { totalTokens: 6 },
+    providers: [{
+      providerKey: 'acp-claude',
+      displayName: 'Claude Code',
+      iconKey: 'claude',
+      dailyTokens: Array.from({ length: 365 }, (_, index) => (index < 3 ? index + 1 : 0)),
+      today: { totalTokens: 3 },
+      last7Days: { totalTokens: 6 },
+      last30Days: { totalTokens: 6 },
+      completeness: completeness()
+    }]
+  };
+}
+
+function completeness(overrides = {}) {
+  return {
+    status: 'available',
+    reasons: [],
+    expectedSessions: 1,
+    matchedSessions: 1,
+    skippedFiles: 0,
+    badLines: 0,
+    untrackedThreads: 0,
+    ...overrides
+  };
 }
 
 // --- profile bootstrap ---------------------------------------------------------
@@ -99,13 +126,15 @@ test('broker: a usage reply with the in-flight requestId lands in the store', ()
     generatedAt: 'now',
     timezone: 'UTC',
     report: minimalReport(),
-    sources: [{ key: 'psx-threads', status: 'available' }]
+    completeness: completeness()
   });
 
   const state = rig.store.getState();
   assert.equal(state.status, 'idle');
-  assert.deepEqual(state.report.heatmap, [1, 2, 3]);
-  assert.equal(state.sources[0].key, 'psx-threads');
+  assert.equal(state.report.dailyTokens.length, 365);
+  assert.deepEqual(state.report.dailyTokens.slice(0, 3), [1, 2, 3]);
+  assert.equal(state.report.providers[0].displayName, 'Claude Code');
+  assert.equal(state.completeness.status, 'available');
   assert.equal(state.generatedAt, 'now');
 });
 
@@ -152,7 +181,11 @@ test('broker: consecutive force refreshes supersede — the older reply is dropp
   assert.equal(rig.store.getState().report, null);
 
   // The current scan lands normally.
-  rig.broker.handleUsageReport({ requestId: second.requestId, report: { ...minimalReport(), heatmapStartDate: 'FRESH' } });
+  rig.broker.handleUsageReport({
+    requestId: second.requestId,
+    report: { ...minimalReport(), heatmapStartDate: 'FRESH' },
+    completeness: completeness()
+  });
   const state = rig.store.getState();
   assert.equal(state.status, 'idle');
   assert.equal(state.report.heatmapStartDate, 'FRESH');
@@ -260,6 +293,10 @@ test('broker: retries on another channel when the carrier closes mid-scan', () =
   // The current channel lands; the late reply from the closed carrier is dropped.
   rig.broker.handleUsageReport({ requestId: first.requestId, report: minimalReport() });
   assert.equal(rig.store.getState().status, 'loading');
-  rig.broker.handleUsageReport({ requestId: retried[1].requestId, report: minimalReport() });
+  rig.broker.handleUsageReport({
+    requestId: retried[1].requestId,
+    report: minimalReport(),
+    completeness: completeness()
+  });
   assert.equal(rig.store.getState().status, 'idle');
 });

@@ -9,6 +9,9 @@
     <UseWPF>true</UseWPF>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationIcon>Assets\Icons\psx.ico</ApplicationIcon>
+    <!-- TestResults may contain unpacked runtimes and arbitrary source files.
+         Exclude the entire artifact tree from every SDK default item glob. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);TestResults\**</DefaultItemExcludes>
   <!--
     Note: self-contained / single-file publish settings live in
     Properties/PublishProfiles/win-x64-self-contained.pubxml and are

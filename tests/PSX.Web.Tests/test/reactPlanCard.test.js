@@ -1,11 +1,16 @@
 // reactPlanCard.test.js — React-only plan behavior.
 
-import { test } from 'vitest';
+import { afterEach, beforeEach, test } from 'vitest';
 import assert from 'node:assert/strict';
 import { act } from 'react';
 import { mountAgentApp, createAgentWorkspace, appModule } from './agentHarness.js';
 
-globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+beforeEach(() => {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+});
+afterEach(() => {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = false;
+});
 const WS = '66666666-6666-4666-8666-666666666666';
 await appModule('plan/planIsland.js');
 

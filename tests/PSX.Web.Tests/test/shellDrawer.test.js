@@ -10,10 +10,20 @@ import {
   createAgentWorkspace,
   composerReady,
   appModule,
+  registerAgentCleanup,
   repositoryRoot
 } from './agentHarness.js';
 
-globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+globalThis.IS_REACT_ACT_ENVIRONMENT = false;
+
+async function flushReact(callback) {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  try {
+    await act(callback);
+  } finally {
+    globalThis.IS_REACT_ACT_ENVIRONMENT = false;
+  }
+}
 
 // Narrow mode (<1000px): History remains a dock and Plan remains a content
 // card, but both auto-collapse and reopen one at a time. matchMedia is
@@ -39,7 +49,7 @@ function trigger(panel) {
 // creation; wait for its first commit before clicking them.
 async function toolbarReady(panel) {
   for (let i = 0; i < 100 && !trigger(panel); i++) {
-    await act(async () => new Promise((resolve) => setTimeout(resolve, 5)));
+    await flushReact(async () => new Promise((resolve) => setTimeout(resolve, 5)));
   }
   assert.ok(trigger(panel), 'workspace toolbar island did not mount');
 }
@@ -47,7 +57,7 @@ async function toolbarReady(panel) {
 // Clicks flow through React props into the controllers and back into the
 // islands; act() flushes that re-render synchronously.
 async function click(el) {
-  await act(async () => {
+  await flushReact(async () => {
     el.click();
   });
 }
@@ -64,10 +74,11 @@ async function mountApp({ wide = false } = {}) {
     container: document.getElementById('agents'),
     template: document.getElementById('agent-workspace-template')
   });
+  registerAgentCleanup(() => app.dispose());
   // The dock chrome renders through the history-dock React island; wait for
   // its first commit so the tests can read dock state synchronously.
   for (let i = 0; i < 100 && !dock(); i++) {
-    await act(async () => new Promise((resolve) => setTimeout(resolve, 5)));
+    await flushReact(async () => new Promise((resolve) => setTimeout(resolve, 5)));
   }
   assert.ok(dock(), 'history dock island did not mount');
   return {

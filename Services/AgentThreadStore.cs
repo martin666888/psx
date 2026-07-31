@@ -164,7 +164,7 @@ public sealed class AgentThreadStore : IAgentThreadStore
                 scanned++;
                 try
                 {
-                    var thread = JsonSerializer.Deserialize<AgentThread>(ReadTextWithRetry(path), JsonOptions);
+                    var thread = ReadUsageProjectionWithRetry(path);
                     if (thread == null)
                     {
                         skipped++;
@@ -172,16 +172,9 @@ public sealed class AgentThreadStore : IAgentThreadStore
                     }
 
                     snapshots.Add(new AgentUsageThreadSnapshot(
-                        thread.ThreadId,
-                        thread.Title,
                         thread.Provider,
                         thread.ClaudeSessionId,
-                        thread.AcpSessionId,
-                        thread.ContextUsedTokens,
-                        thread.ContextWindowTokens,
-                        thread.Messages
-                            .Select(message => new AgentUsageMessageStamp(message.Role, message.CreatedAt))
-                            .ToArray()));
+                        thread.AcpSessionId));
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
                 {
@@ -464,6 +457,29 @@ public sealed class AgentThreadStore : IAgentThreadStore
         }
     }
 
+    private static AgentUsageThreadProjection? ReadUsageProjectionWithRetry(string path)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                using var stream = new FileStream(
+                    path,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete,
+                    bufferSize: 64 * 1024,
+                    FileOptions.SequentialScan);
+                return JsonSerializer.Deserialize<AgentUsageThreadProjection>(stream, JsonOptions);
+            }
+            catch (Exception ex) when (
+                IsTransientFileAccessError(ex) && attempt < FileRetryDelays.Length)
+            {
+                Thread.Sleep(FileRetryDelays[attempt]);
+            }
+        }
+    }
+
     private static void WriteTextWithRetryAtomic(string path, string content, string description)
     {
         lock (FileIoLock)
@@ -576,5 +592,12 @@ public sealed class AgentThreadStore : IAgentThreadStore
     {
         var name = Path.GetFileName(workingDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
         return string.IsNullOrWhiteSpace(name) ? "Agent Chat" : name;
+    }
+
+    private sealed class AgentUsageThreadProjection
+    {
+        public string Provider { get; set; } = "";
+        public string? ClaudeSessionId { get; set; }
+        public string? AcpSessionId { get; set; }
     }
 }
