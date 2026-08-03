@@ -60,46 +60,66 @@ test('canonicalizes built-in and advertised ACP commands on submit', async () =>
 
 test('renders slash suggestions with cmdk and selects advertised commands from the textarea', async () => {
   const { app, panel, posted } = await mount();
-  app.handle({
-    type: 'agent_commands',
-    workspaceId: WS,
-    ready: true,
-    commands: [
-      { name: '/review', description: 'Review changes' },
-      { name: '/run', description: 'Run checks' }
-    ]
-  });
-  const input = role(panel, 'input');
-  setDraft(panel, '/r');
+  const scrolledItems = [];
+  const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+  HTMLElement.prototype.scrollIntoView = function (options) {
+    scrolledItems.push({ item: this, options });
+  };
 
-  const menu = role(panel, 'command-menu');
-  for (let attempt = 0; attempt < 100 && menu.hidden; attempt++) {
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  const items = [...menu.querySelectorAll('[data-slot="command-item"]')];
-  assert.equal(menu.hidden, false);
-  assert.deepEqual(items.map((item) => item.dataset.commandName), ['/review', '/run']);
-  assert.equal(menu.querySelector('[data-selected="true"]').dataset.commandName, '/review');
+  try {
+    app.handle({
+      type: 'agent_commands',
+      workspaceId: WS,
+      ready: true,
+      commands: [
+        { name: '/review', description: 'Review changes' },
+        { name: '/run', description: 'Run checks' }
+      ]
+    });
+    const input = role(panel, 'input');
+    setDraft(panel, '/r');
 
-  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
-  for (let attempt = 0; attempt < 100; attempt++) {
-    if (menu.querySelector('[data-selected="true"]')?.dataset.commandName === '/run') break;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  assert.equal(menu.querySelector('[data-selected="true"]').dataset.commandName, '/run');
+    const menu = role(panel, 'command-menu');
+    for (let attempt = 0; attempt < 100 && menu.hidden; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    const items = [...menu.querySelectorAll('[data-slot="command-item"]')];
+    assert.equal(menu.hidden, false);
+    assert.deepEqual(items.map((item) => item.dataset.commandName), ['/review', '/run']);
+    assert.equal(menu.querySelector('[data-selected="true"]').dataset.commandName, '/review');
+    assert.equal(input.getAttribute('aria-activedescendant'), items[0].id);
 
-  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-  for (let attempt = 0; attempt < 100 && !menu.hidden; attempt++) {
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    scrolledItems.length = 0;
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    for (let attempt = 0; attempt < 100; attempt++) {
+      if (menu.querySelector('[data-selected="true"]')?.dataset.commandName === '/run') break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.equal(menu.querySelector('[data-selected="true"]').dataset.commandName, '/run');
+    await waitFor(
+      () => scrolledItems.some(({ item }) => item.dataset.commandName === '/run'),
+      'active slash command did not scroll into view'
+    );
+    assert.deepEqual(
+      scrolledItems.find(({ item }) => item.dataset.commandName === '/run').options,
+      { block: 'nearest', inline: 'nearest' }
+    );
+
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    for (let attempt = 0; attempt < 100 && !menu.hidden; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.equal(menu.hidden, true);
+    assert.deepEqual(posted.at(-1), {
+      type: 'agent_command',
+      workspaceId: WS,
+      command: 'agent_command',
+      value: '/run',
+      requestId: ''
+    });
+  } finally {
+    HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
   }
-  assert.equal(menu.hidden, true);
-  assert.deepEqual(posted.at(-1), {
-    type: 'agent_command',
-    workspaceId: WS,
-    command: 'agent_command',
-    value: '/run',
-    requestId: ''
-  });
 });
 
 test('rejects unknown leading commands but sends inline slash-like text', async () => {

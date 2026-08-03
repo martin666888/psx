@@ -227,9 +227,20 @@ function ComposerConfigControls({ controls }: { controls: ComposerControlsProps 
 }
 
 function ComposerCommandMenu({ menu }: { menu: ComposerCommandMenuProps }): JSX.Element {
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const groups = Array.from(new Set(menu.items.map((item) => item.source)));
+
+  useLayoutEffect(() => {
+    if (!menu.open || !menu.activeId) return;
+    const activeItem = Array.from(
+      menuRef.current?.querySelectorAll<HTMLElement>('[data-slot="command-item"]') ?? []
+    ).find((item) => item.id === menu.activeId);
+    activeItem?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [menu.activeId, menu.open]);
+
   return (
     <div
+      ref={menuRef}
       id={menu.id}
       data-role="command-menu"
       className="absolute bottom-[calc(100%+var(--agent-space-2))] left-0 z-[var(--agent-layer-menu)] w-full max-w-full overflow-hidden rounded-[var(--agent-radius-card)] border bg-popover shadow-[var(--agent-shadow-popover)]"
@@ -254,6 +265,9 @@ function ComposerCommandMenu({ menu }: { menu: ComposerCommandMenuProps }): JSX.
                   <CommandItem
                     key={item.id}
                     id={item.id}
+                    ref={(node) => {
+                      if (node) node.id = item.id;
+                    }}
                     value={item.id}
                     data-command-name={item.name}
                     className="justify-between gap-4 px-3 py-2"
