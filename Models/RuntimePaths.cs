@@ -116,4 +116,35 @@ public sealed record RuntimePaths
     /// <see cref="AcpActivePointerFile"/> ("current" or "next").
     /// </summary>
     public required string KimiActivePointerFile { get; init; }
+
+    /// <summary>
+    /// Root of the bundled Qwen Code CLI install shipped inside the release zip
+    /// at <c>{InstallDir}/tools/qwen/</c>. Pre-installed at build time and never
+    /// populated by a runtime <c>npm ci</c>. Contains
+    /// <c>package-lock.json</c> and <c>node_modules/@qwen-code/qwen-code/</c>.
+    /// The directory is not guaranteed to exist in a development build. It also
+    /// doubles as the Qwen refresh seed (package.json / .npmrc) and is never
+    /// written to.
+    /// </summary>
+    public required string BundledQwenDirectory { get; init; }
+
+    /// <summary>
+    /// Self-updated Qwen Code install under the writable <c>runtime/</c> root.
+    /// When structurally valid it takes precedence over
+    /// <see cref="BundledQwenDirectory"/>; deleting it falls back to the bundled copy.
+    /// </summary>
+    public required string QwenCurrentDirectory { get; init; }
+
+    /// <summary>
+    /// Staging directory for a background Qwen Code update. Never read by the live
+    /// session; promoted to <see cref="QwenCurrentDirectory"/> on the next PSX
+    /// launch when the pointer says "next".
+    /// </summary>
+    public required string QwenNextDirectory { get; init; }
+
+    /// <summary>
+    /// Pending-update marker for the Qwen runtime, mirroring
+    /// <see cref="AcpActivePointerFile"/> ("current" or "next").
+    /// </summary>
+    public required string QwenActivePointerFile { get; init; }
 }

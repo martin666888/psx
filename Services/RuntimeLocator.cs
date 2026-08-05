@@ -19,6 +19,10 @@ public sealed class RuntimeLocator
     private const string KimiCurrentSubdirectoryName = "kimi-current";
     private const string KimiNextSubdirectoryName = "kimi-next";
     private const string KimiActivePointerFileName = "kimi-active.txt";
+    private const string QwenSubdirectoryName = "qwen";
+    private const string QwenCurrentSubdirectoryName = "qwen-current";
+    private const string QwenNextSubdirectoryName = "qwen-next";
+    private const string QwenActivePointerFileName = "qwen-active.txt";
     private const string NpmCliRelativePath = "node_modules/npm/bin/npm-cli.js";
     private const string WebView2FixedRuntimeSubdirectoryName = "webview2-fixed";
     private const string WebView2ExecutableName = "msedgewebview2.exe";
@@ -90,6 +94,10 @@ public sealed class RuntimeLocator
             KimiCurrentDirectory = Path.Combine(runtimeRoot, KimiCurrentSubdirectoryName),
             KimiNextDirectory = Path.Combine(runtimeRoot, KimiNextSubdirectoryName),
             KimiActivePointerFile = Path.Combine(runtimeRoot, KimiActivePointerFileName),
+            BundledQwenDirectory = Path.Combine(installDirectory, "tools", QwenSubdirectoryName),
+            QwenCurrentDirectory = Path.Combine(runtimeRoot, QwenCurrentSubdirectoryName),
+            QwenNextDirectory = Path.Combine(runtimeRoot, QwenNextSubdirectoryName),
+            QwenActivePointerFile = Path.Combine(runtimeRoot, QwenActivePointerFileName),
         };
     }
 

@@ -207,5 +207,13 @@ public sealed class RuntimeLocatorTests
         yield return paths.AcpActivePointerFile;
         yield return paths.AcpSeedDirectory;
         yield return paths.InstallDirectory;
+        yield return paths.BundledKimiDirectory;
+        yield return paths.KimiCurrentDirectory;
+        yield return paths.KimiNextDirectory;
+        yield return paths.KimiActivePointerFile;
+        yield return paths.BundledQwenDirectory;
+        yield return paths.QwenCurrentDirectory;
+        yield return paths.QwenNextDirectory;
+        yield return paths.QwenActivePointerFile;
     }
 }
