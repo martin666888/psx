@@ -68,7 +68,7 @@ public sealed class AcpAskUserQuestionAdapterTests
             content.RootElement,
             new[] { 0, 2 });
 
-        Assert.AreEqual(2, answers.Count);
+        Assert.HasCount(2, answers);
         Assert.AreEqual("Custom pick", answers["0"]);
         Assert.AreEqual("Alpha, Beta", answers["2"]);
         Assert.IsFalse(answers.ContainsKey("1"));

@@ -151,6 +151,47 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <Style x:Key="NewWorkspaceMenuRowStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="7,6"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Margin" Value="0,1"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="RowSurface"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="Transparent"
+                                BorderThickness="0"
+                                CornerRadius="{StaticResource ControlCornerRadius}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="Center"
+                                              RecognizesAccessKey="True"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource HoverBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="RowSurface" Property="BorderBrush" Value="Transparent"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.56"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
 
     <Grid Background="{DynamicResource WindowBackgroundBrush}">
@@ -197,51 +238,130 @@
             </ItemsControl>
         </ScrollViewer>
 
-        <!-- New tab button -->
-        <Button Grid.Column="1"
-                x:Name="NewWorkspaceButton"
-                ToolTip="New workspace"
-                AutomationProperties.Name="New workspace"
-                FontSize="16"
-                Width="40" Height="40"
-                Background="Transparent"
-                Foreground="{DynamicResource TextSecondaryBrush}"
-                BorderThickness="0"
-                Cursor="Hand"
-                Click="OnNewWorkspaceClick">
-            <Button.Template>
-                <ControlTemplate TargetType="Button">
-                    <Border x:Name="NewTabSurface"
-                            Margin="6"
-                            Background="{TemplateBinding Background}"
-                            BorderBrush="Transparent"
-                            BorderThickness="2"
-                            CornerRadius="{StaticResource ControlCornerRadius}">
-                        <Path Data="M10,3 L10,17 M3,10 L17,10"
-                              Stroke="{TemplateBinding Foreground}"
-                              StrokeThickness="1.5"
-                              StrokeStartLineCap="Round"
-                              StrokeEndLineCap="Round"
-                              Stretch="Uniform"
-                              Width="14"
-                              Height="14"
-                              HorizontalAlignment="Center"
-                              VerticalAlignment="Center"/>
-                    </Border>
-                    <ControlTemplate.Triggers>
-                        <Trigger Property="IsMouseOver" Value="True">
-                            <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}"/>
-                            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
-                        </Trigger>
-                        <Trigger Property="IsPressed" Value="True">
-                            <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}"/>
-                        </Trigger>
-                        <Trigger Property="IsKeyboardFocused" Value="True">
-                            <Setter TargetName="NewTabSurface" Property="BorderBrush" Value="Transparent"/>
-                        </Trigger>
-                    </ControlTemplate.Triggers>
-                </ControlTemplate>
-            </Button.Template>
-        </Button>
+        <!-- New workspace: Theme-style anchored popover (not native ContextMenu). -->
+        <Grid Grid.Column="1">
+            <ToggleButton x:Name="NewWorkspaceButton"
+                          ToolTip="New workspace"
+                          AutomationProperties.Name="New workspace"
+                          Width="40" Height="40"
+                          Background="Transparent"
+                          Foreground="{DynamicResource TextSecondaryBrush}"
+                          BorderThickness="0"
+                          Cursor="Hand"
+                          IsChecked="{Binding IsOpen, ElementName=NewWorkspacePopup, Mode=TwoWay}">
+                <ToggleButton.Template>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="NewTabSurface"
+                                Margin="6"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="Transparent"
+                                BorderThickness="2"
+                                CornerRadius="{StaticResource ControlCornerRadius}">
+                            <Path Data="M10,3 L10,17 M3,10 L17,10"
+                                  Stroke="{TemplateBinding Foreground}"
+                                  StrokeThickness="1.5"
+                                  StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round"
+                                  Stretch="Uniform"
+                                  Width="14"
+                                  Height="14"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="NewTabSurface" Property="BorderBrush" Value="Transparent"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </ToggleButton.Template>
+            </ToggleButton>
+
+            <Popup x:Name="NewWorkspacePopup"
+                   PlacementTarget="{Binding ElementName=NewWorkspaceButton}"
+                   Placement="Bottom"
+                   HorizontalOffset="-180"
+                   VerticalOffset="6"
+                   AllowsTransparency="True"
+                   PopupAnimation="None"
+                   StaysOpen="False">
+                <Border Width="220"
+                        Padding="8"
+                        DataContext="{Binding PlacementTarget.DataContext, ElementName=NewWorkspacePopup}"
+                        Background="{DynamicResource SurfaceRaisedBrush}"
+                        BorderBrush="{DynamicResource BorderStrongBrush}"
+                        BorderThickness="1"
+                        CornerRadius="{StaticResource CardCornerRadius}">
+                    <StackPanel>
+                        <Button Style="{StaticResource NewWorkspaceMenuRowStyle}"
+                                AutomationProperties.Name="New Terminal"
+                                Click="OnNewWorkspaceMenuItemClick"
+                                Command="{Binding NewTabCommand}">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Data="M1.5,2 L5.5,6 L1.5,10 M6.5,10.5 L11,10.5"
+                                      Stroke="{DynamicResource TextSecondaryBrush}"
+                                      StrokeThickness="1.5"
+                                      StrokeStartLineCap="Round"
+                                      StrokeEndLineCap="Round"
+                                      StrokeLineJoin="Round"
+                                      Stretch="Uniform"
+                                      Width="12"
+                                      Height="12"
+                                      Margin="0,0,8,0"
+                                      VerticalAlignment="Center"/>
+                                <TextBlock Text="New Terminal"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                           FontSize="12"/>
+                            </StackPanel>
+                        </Button>
+
+                        <TextBlock Text="NEW AGENT"
+                                   Margin="6,10,6,3"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   FontSize="9"
+                                   FontWeight="SemiBold"/>
+
+                        <ItemsControl ItemsSource="{Binding AgentProviders}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Style="{StaticResource NewWorkspaceMenuRowStyle}"
+                                            AutomationProperties.Name="{Binding DisplayName}"
+                                            Click="OnNewWorkspaceMenuItemClick"
+                                            Command="{Binding DataContext.NewAgentCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                            CommandParameter="{Binding Key}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Path Data="{Binding IconKey, Converter={StaticResource ProviderIconConverter}}"
+                                                  Fill="{DynamicResource TextSecondaryBrush}"
+                                                  Stretch="Uniform"
+                                                  Width="12"
+                                                  Height="12"
+                                                  Margin="0,0,8,0"
+                                                  VerticalAlignment="Center"/>
+                                            <TextBlock Text="{Binding DisplayName}"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                                       FontSize="12"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                        </StackPanel>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+            </Popup>
+        </Grid>
     </Grid>
 </UserControl>

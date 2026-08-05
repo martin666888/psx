@@ -77,6 +77,8 @@ public sealed class AgentTabIconTests
         StringAssert.Contains(source, "Data=\"{Binding IconKey, Converter={StaticResource ProviderIconConverter}}\"");
         StringAssert.Contains(source, "QwenIcon=\"{StaticResource AgentIconGeometry.Qwen}\"");
         StringAssert.Contains(source, "QoderIcon=\"{StaticResource AgentIconGeometry.Qoder}\"");
+        StringAssert.Contains(source, "x:Name=\"NewWorkspacePopup\"");
+        Assert.IsFalse(source.Contains("new ContextMenu", StringComparison.Ordinal));
         Assert.IsFalse(source.Contains("AgentStateMarker", StringComparison.Ordinal));
         Assert.IsFalse(source.Contains("Text=\"●\"", StringComparison.Ordinal));
     }

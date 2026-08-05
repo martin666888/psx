@@ -114,7 +114,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         {
             AgentProviders.Add(new AgentProviderChoiceViewModel(
                 provider.Key,
-                provider.DisplayName));
+                provider.DisplayName,
+                provider.IconKey));
         }
 
         _workspaceManager.WorkspaceCreated += OnWorkspaceCreated;
@@ -195,4 +196,4 @@ public partial class MainViewModel : ObservableObject, IDisposable
     }
 }
 
-public sealed record AgentProviderChoiceViewModel(string Key, string DisplayName);
+public sealed record AgentProviderChoiceViewModel(string Key, string DisplayName, string IconKey);
