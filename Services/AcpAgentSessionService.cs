@@ -1438,7 +1438,8 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     /// </summary>
     private async Task<JsonElement> SendWithAuthRetryAsync(
         Func<CancellationToken, Task<JsonElement>> send,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool treatTimeoutAsAuthRequired = false)
     {
         for (var attempt = 0; ; attempt++)
         {
@@ -1453,6 +1454,16 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 {
                     continue;
                 }
+
+                throw new AcpAuthRequiredException(BuildLoginRequiredMessage());
+            }
+            catch (TimeoutException) when (treatTimeoutAsAuthRequired && attempt == 0)
+            {
+                // Some external CLIs (e.g. Qoder) hang on session/new until the
+                // user finishes interactive login instead of returning an ACP
+                // auth error. Map that stall onto the same recoverable path.
+                if (await RecoverFromAuthRequiredAsync(cancellationToken).ConfigureAwait(false))
+                    continue;
 
                 throw new AcpAuthRequiredException(BuildLoginRequiredMessage());
             }
@@ -1480,9 +1491,10 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             return true;
         }
 
-        // No valid token yet — open an interactive login terminal running the
-        // agent's `acp --login` and leave the workspace in auth_required so the
-        // user can retry after finishing login.
+        // No valid token yet — open an interactive login terminal and leave
+        // the workspace in auth_required so the user can retry after login.
+        // Prefer the provider's own login profile when one exists; otherwise
+        // fall back to appending --login to the ACP process spec.
         await LaunchLoginTerminalAsync().ConfigureAwait(false);
         return false;
     }
@@ -1547,12 +1559,16 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     }
 
     /// <summary>
-    /// Builds a login terminal profile from the runtime's ACP launch spec by
-    /// appending <c>--login</c>. Provider-agnostic: whatever the runtime uses
-    /// to launch ACP is reused, so no Kimi-specific paths are hard-coded here.
+    /// Builds a login terminal profile. Prefer the provider's declared login
+    /// profile (e.g. <c>qodercli login</c>); otherwise append <c>--login</c>
+    /// to the ACP process spec (Claude / Kimi / Qwen style).
     /// </summary>
     private ShellProfile? CreateLoginTerminalProfile()
     {
+        var providerProfile = _provider.CreateLoginTerminalProfile(_workingDirectory);
+        if (providerProfile != null)
+            return providerProfile;
+
         AcpProcessSpec spec;
         try
         {
@@ -1919,9 +1935,10 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             token => _transport!.SendRequestAsync(
                 "session/new",
                 _provider.CreateNewSessionParameters(_workingDirectory),
-                TimeSpan.FromSeconds(30),
+                _provider.NewSessionTimeout,
                 GetEffectiveCancellationToken(token)),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            treatTimeoutAsAuthRequired: _provider.TreatNewSessionTimeoutAsAuthRequired).ConfigureAwait(false);
 
         _acpSessionId = GetString(result, "sessionId");
         _sessionIdForTransportRecovery = null;

@@ -10,9 +10,12 @@ namespace PSX.Services;
 /// </summary>
 public sealed class QwenCodeAcpAgentProvider : IAcpAgentProvider
 {
+    private readonly QwenCodeAcpRuntime _runtime;
+
     public QwenCodeAcpAgentProvider(QwenCodeAcpRuntime runtime)
     {
-        Runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
+        _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
+        Runtime = runtime;
     }
 
     public AgentDescriptor Descriptor { get; } = new(
@@ -60,15 +63,15 @@ public sealed class QwenCodeAcpAgentProvider : IAcpAgentProvider
     public bool IsCommandVisible(string normalizedCommand) => true;
 
     /// <summary>
-    /// Only used for the explicit <c>/terminal</c> entry point and troubleshooting,
-    /// never as a normal chat path.
+    /// Only used for the explicit <c>/terminal</c> entry point and troubleshooting.
+    /// Uses the resolved portable Node + package entry so a clean machine without
+    /// a global <c>qwen</c> on PATH still works.
     /// </summary>
     public ShellProfile CreateNativeTerminalProfile(string workingDirectory, string? sessionId)
     {
         var escapedCwd = workingDirectory.Replace("'", "''");
-        var command = string.IsNullOrWhiteSpace(sessionId)
-            ? "qwen"
-            : $"qwen --resume {sessionId}";
+        var command = _runtime.TryBuildInteractivePowerShellInvocation(sessionId)
+            ?? (string.IsNullOrWhiteSpace(sessionId) ? "qwen" : $"qwen --resume {sessionId}");
 
         return new ShellProfile
         {

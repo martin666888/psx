@@ -332,9 +332,12 @@ $requiredFiles = @(
     "tools\kimi\node_modules\@moonshot-ai\kimi-code\dist\main.mjs",
     "tools\qwen\package.json",
     "tools\qwen\package-lock.json",
-    "tools\qwen\node_modules\@qwen-code\qwen-code\package.json",
-    "tools\qwen\node_modules\@qwen-code\qwen-code\cli-entry.js"
+    "tools\qwen\node_modules\@qwen-code\qwen-code\package.json"
 )
+# Keep the resolved Qwen bin entry in the required set (dynamic; not hardcoded
+# to cli-entry.js so a future bin rename still validates).
+$qwenEntryRelative = $qwenEntry.Substring($StagingDir.Length).TrimStart('\').Replace('/', '\')
+$requiredFiles += $qwenEntryRelative
 foreach ($relativePath in $requiredFiles) {
     $fullPath = Join-Path $StagingDir $relativePath
     if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) {

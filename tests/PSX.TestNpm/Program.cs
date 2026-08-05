@@ -3,13 +3,27 @@ using System.Text.Json;
 if (args.Length < 2)
     return 64;
 
-// `node <staged>/dist/main.mjs --version` — the Kimi staged smoke check.
+// `node <staged-entry> --version` — staged smoke checks for Kimi/Qwen.
 // Handled before configuration parsing because args[0] is the package entry
 // file here, not the fake npm configuration path.
-if (args[0].EndsWith(".mjs", StringComparison.OrdinalIgnoreCase) && args.Contains("--version"))
+if (args.Contains("--version")
+    && (args[0].EndsWith(".mjs", StringComparison.OrdinalIgnoreCase)
+        || args[0].EndsWith(".js", StringComparison.OrdinalIgnoreCase)))
 {
-    var distDirectory = Path.GetDirectoryName(Path.GetFullPath(args[0]));
-    var packageDirectory = distDirectory == null ? null : Path.GetDirectoryName(distDirectory);
+    var entryDirectory = Path.GetDirectoryName(Path.GetFullPath(args[0]));
+    string? packageDirectory = null;
+    if (entryDirectory != null)
+    {
+        if (File.Exists(Path.Combine(entryDirectory, "package.json")))
+            packageDirectory = entryDirectory;
+        else
+        {
+            var parent = Path.GetDirectoryName(entryDirectory);
+            if (parent != null && File.Exists(Path.Combine(parent, "package.json")))
+                packageDirectory = parent;
+        }
+    }
+
     if (packageDirectory == null)
         return 1;
     // Test seam: a marker file forces the smoke check to fail.
@@ -122,6 +136,27 @@ if (scenario.CreateKimi)
     }
 }
 
+if (scenario.CreateQwen)
+{
+    WriteJson(
+        Path.Combine(workingDirectory, "node_modules", "@qwen-code", "qwen-code", "package.json"),
+        new
+        {
+            name = "@qwen-code/qwen-code",
+            version = scenario.QwenVersion ?? "0.22.0",
+            bin = new Dictionary<string, string> { ["qwen"] = "cli-entry.js" }
+        });
+    WriteFile(
+        Path.Combine(workingDirectory, "node_modules", "@qwen-code", "qwen-code", "cli-entry.js"),
+        "// fake qwen acp entry");
+    if (scenario.QwenSmokeFails)
+    {
+        WriteFile(
+            Path.Combine(workingDirectory, "node_modules", "@qwen-code", "qwen-code", "smoke-fail.marker"),
+            "fail");
+    }
+}
+
 return scenario.ExitCode;
 
 static void WriteFile(string path, string contents)
@@ -153,7 +188,10 @@ internal sealed class FakeNpmScenario
     public bool CreateClaude { get; set; } = true;
     public bool CreateKimi { get; set; }
     public bool KimiSmokeFails { get; set; }
+    public bool CreateQwen { get; set; }
+    public bool QwenSmokeFails { get; set; }
     public string? AdapterVersion { get; set; }
     public string? ClaudeCodeVersion { get; set; }
     public string? KimiVersion { get; set; }
+    public string? QwenVersion { get; set; }
 }

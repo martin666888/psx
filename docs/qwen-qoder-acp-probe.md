@@ -59,12 +59,11 @@ Workspace creation time and reject lower versions with
 - `initialize` fast and healthy.
 - `session/new` **timed out (~45s+)** in this environment while dumping skill
   conflict warnings to stderr. Treat unauthenticated / heavy-startup hangs as a
-  known risk: surface `AuthenticationRequired` / guide `qodercli login` rather
-  than leaving the UI spinning forever. PSX session startup already has
-  timeouts — keep them.
-
-Prompt / permission / Chinese reply were **not** exercised in CI-safe smoke.
-Manual follow-up with `ACP_PROBE_PROMPT=1` after login remains recommended.
+  known risk: PSX maps that onto `auth_required` with a **90s** `NewSessionTimeout`
+  and `TreatNewSessionTimeoutAsAuthRequired`, then opens `qodercli login`
+  (not `qodercli --acp --login`).
+- Prompt / permission / Chinese reply still need a manual soak after login
+  (`ACP_PROBE_PROMPT=1`).
 
 ## Auto-update conflict (implementation notes)
 

@@ -95,6 +95,34 @@ public sealed class QoderCliAcpAgentProviderTests
             Assert.IsNotNull(profile);
             StringAssert.Contains(profile!.Arguments, "qodercli");
             Assert.IsFalse(profile.Arguments.Contains("--resume", StringComparison.Ordinal));
+            Assert.IsFalse(profile.Arguments.Contains("--acp", StringComparison.Ordinal));
+        }
+    }
+
+    [TestMethod]
+    public void CreateLoginTerminalProfile_UsesQodercliLoginNotAcpLoginFlag()
+    {
+        var provider = CreateProvider(out var workspace);
+        using (workspace)
+        {
+            var profile = provider.CreateLoginTerminalProfile("C:/projects/app");
+
+            Assert.IsNotNull(profile);
+            StringAssert.Contains(profile!.Arguments, "qodercli");
+            StringAssert.Contains(profile.Arguments, " login");
+            Assert.IsFalse(profile.Arguments.Contains("--acp", StringComparison.Ordinal));
+            Assert.IsFalse(profile.Arguments.Contains("--login", StringComparison.Ordinal));
+        }
+    }
+
+    [TestMethod]
+    public void NewSessionPolicy_AllowsSlowUnauthenticatedStartup()
+    {
+        var provider = CreateProvider(out var workspace);
+        using (workspace)
+        {
+            Assert.IsTrue(provider.NewSessionTimeout >= TimeSpan.FromSeconds(90));
+            Assert.IsTrue(provider.TreatNewSessionTimeoutAsAuthRequired);
         }
     }
 

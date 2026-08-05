@@ -37,6 +37,29 @@ public interface IAcpAgentProvider
     bool IsCommandVisible(string normalizedCommand);
 
     ShellProfile? CreateNativeTerminalProfile(string workingDirectory, string? sessionId);
+
+    /// <summary>
+    /// Optional interactive login terminal. When non-null, the session engine
+    /// opens this profile instead of appending <c>--login</c> to the ACP
+    /// process spec (which is wrong for CLIs whose login entry is a separate
+    /// subcommand such as <c>qodercli login</c>).
+    /// </summary>
+    ShellProfile? CreateLoginTerminalProfile(string workingDirectory) => null;
+
+    /// <summary>
+    /// Budget for the first <c>session/new</c> (and equivalent) RPC when
+    /// establishing a live session. Providers whose unauthenticated startup is
+    /// known to be slow may raise this above the default 30s.
+    /// </summary>
+    TimeSpan NewSessionTimeout => TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// When true, a timed-out first <c>session/new</c> is treated as a
+    /// recoverable auth failure: open the login terminal and stay in
+    /// <c>auth_required</c> instead of a hard error. Used by external CLIs
+    /// that hang on session creation until the user logs in.
+    /// </summary>
+    bool TreatNewSessionTimeoutAsAuthRequired => false;
 }
 
 public interface IAgentProviderRegistry

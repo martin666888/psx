@@ -8,9 +8,12 @@ namespace PSX.Services;
 /// </summary>
 public sealed class QoderCliAcpAgentProvider : IAcpAgentProvider
 {
+    private readonly QoderCliAcpRuntime _runtime;
+
     public QoderCliAcpAgentProvider(QoderCliAcpRuntime runtime)
     {
-        Runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
+        _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
+        Runtime = runtime;
     }
 
     public AgentDescriptor Descriptor { get; } = new(
@@ -25,6 +28,12 @@ public sealed class QoderCliAcpAgentProvider : IAcpAgentProvider
     public IAcpAgentRuntime Runtime { get; }
 
     public IAgentUsageSource? UsageSource { get; } = null;
+
+    // Phase 0: unauthenticated session/new can exceed 45s. Give headroom and
+    // map that stall onto auth_required + qodercli login instead of a hard error.
+    public TimeSpan NewSessionTimeout => TimeSpan.FromSeconds(90);
+
+    public bool TreatNewSessionTimeoutAsAuthRequired => true;
 
     public AcpClientCapabilityProfile ClientCapabilities { get; } = new()
     {
@@ -59,18 +68,41 @@ public sealed class QoderCliAcpAgentProvider : IAcpAgentProvider
 
     /// <summary>
     /// Only used for the explicit <c>/terminal</c> entry point and troubleshooting,
-    /// never as a normal chat path.
+    /// never as a normal chat path. Prefer the resolved qodercli path so a PATH
+    /// that only finds the AppData npm shim still works.
     /// </summary>
     public ShellProfile CreateNativeTerminalProfile(string workingDirectory, string? sessionId)
     {
         var escapedCwd = workingDirectory.Replace("'", "''");
+        var entry = QuoteForPowerShell(_runtime.TryGetDiscoveredEntryPath() ?? "qodercli");
         return new ShellProfile
         {
             Id = "qoder-cli",
             Name = Descriptor.DisplayName,
             Command = "powershell.exe",
-            Arguments = $"-NoExit -Command Set-Location -LiteralPath '{escapedCwd}'; qodercli",
+            Arguments = $"-NoExit -Command Set-Location -LiteralPath '{escapedCwd}'; & {entry}",
             StartingDirectory = workingDirectory
         };
     }
+
+    /// <summary>
+    /// Qoder documents interactive login as <c>qodercli login</c>, not
+    /// <c>qodercli --acp --login</c>.
+    /// </summary>
+    public ShellProfile CreateLoginTerminalProfile(string workingDirectory)
+    {
+        var escapedCwd = workingDirectory.Replace("'", "''");
+        var entry = QuoteForPowerShell(_runtime.TryGetDiscoveredEntryPath() ?? "qodercli");
+        return new ShellProfile
+        {
+            Id = "qoder-cli-login",
+            Name = $"{Descriptor.DisplayName} 登录",
+            Command = "powershell.exe",
+            Arguments = $"-NoExit -Command Set-Location -LiteralPath '{escapedCwd}'; & {entry} login",
+            StartingDirectory = workingDirectory
+        };
+    }
+
+    private static string QuoteForPowerShell(string value)
+        => "'" + value.Replace("'", "''") + "'";
 }

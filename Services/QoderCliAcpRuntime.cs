@@ -40,6 +40,26 @@ public sealed class QoderCliAcpRuntime : IAcpAgentRuntime
 
     public AcpRuntimeOwnershipKind OwnershipKind => AcpRuntimeOwnershipKind.External;
 
+    /// <summary>
+    /// Path-only entry for terminal profiles and login. May return a discovered
+    /// shim before the version gate has passed (login must still be reachable).
+    /// </summary>
+    public string? TryGetDiscoveredEntryPath()
+    {
+        lock (_gate)
+        {
+            if (!string.IsNullOrWhiteSpace(_discoveredPath))
+                return _discoveredPath;
+        }
+
+        var discovered = DiscoverEntryPath();
+        lock (_gate)
+        {
+            _discoveredPath ??= discovered;
+            return _discoveredPath;
+        }
+    }
+
     public bool HasDiscoveredEntry
     {
         get

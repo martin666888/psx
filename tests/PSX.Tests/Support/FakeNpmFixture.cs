@@ -113,6 +113,42 @@ internal sealed class FakeNpmFixture : IDisposable
             "// fake kimi acp entry");
     }
 
+    /// <summary>Creates a Qwen runtime that shares this fixture's fake node/npm.</summary>
+    public QwenCodeAcpRuntime CreateQwenRuntime(TimeSpan? processTimeout = null) =>
+        new(Locator, Path.Combine(InstallDirectory, "logs"), processTimeout ?? TimeSpan.FromSeconds(10));
+
+    /// <summary>Installs a structurally valid bundled Qwen baseline under tools/qwen.</summary>
+    public void InstallQwenBundle(string version = "0.21.5")
+    {
+        var bundleRoot = Path.Combine(InstallDirectory, "tools", "qwen");
+        WriteJson(
+            Path.Combine(bundleRoot, "package.json"),
+            new
+            {
+                name = "psx-qwen-runtime",
+                dependencies = new Dictionary<string, string> { ["@qwen-code/qwen-code"] = version }
+            });
+        WriteFile(Path.Combine(bundleRoot, ".npmrc"), "os=win32\ncpu=x64\n");
+        WriteFile(Path.Combine(bundleRoot, "package-lock.json"), "{}");
+        CreateQwenInstall(bundleRoot, version);
+    }
+
+    /// <summary>Writes a valid Qwen package tree (manifest + entry) into a root.</summary>
+    public void CreateQwenInstall(string directory, string version)
+    {
+        WriteJson(
+            Path.Combine(directory, "node_modules", "@qwen-code", "qwen-code", "package.json"),
+            new
+            {
+                name = "@qwen-code/qwen-code",
+                version,
+                bin = new Dictionary<string, string> { ["qwen"] = "cli-entry.js" }
+            });
+        WriteFile(
+            Path.Combine(directory, "node_modules", "@qwen-code", "qwen-code", "cli-entry.js"),
+            "// fake qwen acp entry");
+    }
+
     public IReadOnlyList<FakeNpmInvocation> ReadInvocations()
     {
         if (!File.Exists(InvocationLogPath))
@@ -212,9 +248,12 @@ internal sealed class FakeNpmScenario
     public bool CreateClaude { get; set; } = true;
     public bool CreateKimi { get; set; }
     public bool KimiSmokeFails { get; set; }
+    public bool CreateQwen { get; set; }
+    public bool QwenSmokeFails { get; set; }
     public string? AdapterVersion { get; set; }
     public string? ClaudeCodeVersion { get; set; }
     public string? KimiVersion { get; set; }
+    public string? QwenVersion { get; set; }
 }
 
 internal sealed class FakeNpmInvocation

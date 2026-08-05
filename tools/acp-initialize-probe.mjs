@@ -24,7 +24,9 @@ const child = spawn(cmd, args, {
 
 let stdout = '';
 let stderr = '';
+let stdoutBuf = '';
 let resolved = false;
+let exitCode = 1;
 
 const init = {
   jsonrpc: '2.0',
@@ -44,21 +46,35 @@ function finish(ok, detail) {
   if (resolved) return;
   resolved = true;
   clearTimeout(timer);
+  exitCode = ok ? 0 : 1;
+  console.log(JSON.stringify({ ok, detail, stdout, stderr }, null, 2));
+
   try {
     child.stdin.end();
   } catch {
     /* ignore */
   }
-  const killer = setTimeout(() => {
+
+  const forceKill = setTimeout(() => {
     try {
       child.kill();
     } catch {
       /* ignore */
     }
   }, 2000);
-  child.once('exit', () => clearTimeout(killer));
-  console.log(JSON.stringify({ ok, detail, stdout, stderr }, null, 2));
-  process.exit(ok ? 0 : 1);
+
+  const done = () => {
+    clearTimeout(forceKill);
+    process.exit(exitCode);
+  };
+
+  if (child.exitCode !== null || child.signalCode !== null) {
+    done();
+    return;
+  }
+
+  child.once('exit', done);
+  child.once('error', done);
 }
 
 const timer = setTimeout(() => finish(false, 'timeout waiting for initialize result'), timeoutMs);
@@ -67,7 +83,10 @@ child.stdout.setEncoding('utf8');
 child.stderr.setEncoding('utf8');
 child.stdout.on('data', (chunk) => {
   stdout += chunk;
-  for (const line of chunk.split(/\r?\n/)) {
+  stdoutBuf += chunk;
+  const lines = stdoutBuf.split(/\r?\n/);
+  stdoutBuf = lines.pop() ?? '';
+  for (const line of lines) {
     if (!line.trim()) continue;
     try {
       const msg = JSON.parse(line);

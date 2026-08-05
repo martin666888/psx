@@ -469,10 +469,69 @@ public sealed class QwenCodeAcpRuntime : IAcpAgentRuntime
     {
         Directory.CreateDirectory(paths.RuntimeRoot);
         var settingsPath = Path.Combine(paths.RuntimeRoot, QwenSystemSettingsFileName);
-        if (!File.Exists(settingsPath))
-            File.WriteAllText(settingsPath, QwenSystemSettingsContent, Encoding.UTF8);
+        if (File.Exists(settingsPath))
+        {
+            try
+            {
+                var existing = File.ReadAllText(settingsPath);
+                if (HasDisabledAutoUpdate(existing))
+                    return settingsPath;
+            }
+            catch (IOException)
+            {
+                // Fall through and rewrite.
+            }
+        }
+
+        var tmp = settingsPath + ".tmp";
+        File.WriteAllText(tmp, QwenSystemSettingsContent, Encoding.UTF8);
+        File.Move(tmp, settingsPath, overwrite: true);
         return settingsPath;
     }
+
+    private static bool HasDisabledAutoUpdate(string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (!document.RootElement.TryGetProperty("general", out var general)
+                || general.ValueKind != JsonValueKind.Object
+                || !general.TryGetProperty("enableAutoUpdate", out var flag)
+                || flag.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            {
+                return false;
+            }
+
+            return flag.ValueKind == JsonValueKind.False;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Builds a PowerShell invocation for the interactive Qwen CLI using the
+    /// resolved portable Node + package entry (not a PATH-dependent <c>qwen</c>).
+    /// Returns null when the install is incomplete.
+    /// </summary>
+    public string? TryBuildInteractivePowerShellInvocation(string? sessionId)
+    {
+        var paths = Paths;
+        var validationError = ValidateActiveInstall(paths, out var entryPath);
+        if (validationError != null || entryPath == null || string.IsNullOrWhiteSpace(paths.PortableNodePath))
+            return null;
+
+        var command = new StringBuilder();
+        command.Append("& ").Append(QuoteForPowerShell(paths.PortableNodePath));
+        command.Append(' ').Append(QuoteForPowerShell(entryPath));
+        if (!string.IsNullOrWhiteSpace(sessionId))
+            command.Append(" --resume ").Append(QuoteForPowerShell(sessionId));
+        return command.ToString();
+    }
+
+    private static string QuoteForPowerShell(string value)
+        => "'" + value.Replace("'", "''") + "'";
 
     private void PromoteNextToCurrent(RuntimePaths paths)
     {

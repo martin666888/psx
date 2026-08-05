@@ -4,7 +4,6 @@
  * Set ACP_PROBE_PROMPT=1 to also send a short prompt (requires auth + network).
  */
 import { spawn } from 'node:child_process';
-import readline from 'node:readline';
 
 const sep = process.argv.indexOf('--');
 const cmd = process.argv[sep + 1];
