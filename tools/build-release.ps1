@@ -10,6 +10,8 @@
       - tools/acp-seed/                      (installed by the user on first Agent use)
       - tools/kimi/                          (Kimi Code ACP runtime, installed at
                                               build time from tools/kimi-seed/ via npm ci)
+      - tools/qwen/                          (Qwen Code ACP runtime, installed at
+                                              build time from tools/qwen-seed/ via npm ci)
 
     The output zip is portable for end users: unzip and double-click PSX.exe.
     .NET and Node are bundled. Agent mode asks for confirmation before it
@@ -183,7 +185,7 @@ Write-Host "    Installed Node into staging/tools/node/; wrote node-version.txt"
 Write-Host ""
 
 # ---- step 4: bundle Kimi Code ACP runtime (lockfile-driven, reproducible) ----
-Write-Host "==> [4/5] Install Kimi Code ACP runtime into staging/tools/kimi" -ForegroundColor Cyan
+Write-Host "==> [4/6] Install Kimi Code ACP runtime into staging/tools/kimi" -ForegroundColor Cyan
 $kimiSeedDir = Join-Path $RepoRoot "tools\kimi-seed"
 $kimiTargetDir = Join-Path $StagingDir "tools\kimi"
 foreach ($seedFile in @("package.json", "package-lock.json", ".npmrc")) {
@@ -221,10 +223,62 @@ Write-Host "    Kimi smoke check passed: --version -> $kimiSmokeOutput"
 Write-Host "    Installed Kimi Code into staging/tools/kimi/"
 Write-Host ""
 
-# ---- step 5: optional WebView2 Fixed Version runtime ----
+# ---- step 5: bundle Qwen Code ACP runtime (lockfile-driven, reproducible) ----
+Write-Host "==> [5/6] Install Qwen Code ACP runtime into staging/tools/qwen" -ForegroundColor Cyan
+$qwenSeedDir = Join-Path $RepoRoot "tools\qwen-seed"
+$qwenTargetDir = Join-Path $StagingDir "tools\qwen"
+foreach ($seedFile in @("package.json", "package-lock.json", ".npmrc")) {
+    $seedSource = Join-Path $qwenSeedDir $seedFile
+    if (-not (Test-Path -LiteralPath $seedSource -PathType Leaf)) {
+        throw "Qwen seed file is missing: tools/qwen-seed/$seedFile"
+    }
+}
+New-Item -ItemType Directory -Path $qwenTargetDir -Force | Out-Null
+Copy-Item (Join-Path $qwenSeedDir "package.json") $qwenTargetDir -Force
+Copy-Item (Join-Path $qwenSeedDir "package-lock.json") $qwenTargetDir -Force
+Copy-Item (Join-Path $qwenSeedDir ".npmrc") $qwenTargetDir -Force
+
+& $nodeExe $npmCli ci --prefix $qwenTargetDir --omit=dev --include=optional --no-audit --no-fund | Out-Host
+if ($LASTEXITCODE -ne 0) { throw "npm ci for Qwen Code failed (exit $LASTEXITCODE)" }
+
+# Resolve the npm bin entry dynamically (0.21.x uses cli-entry.js; older used cli.js).
+$qwenPackageJson = Join-Path $qwenTargetDir "node_modules\@qwen-code\qwen-code\package.json"
+if (-not (Test-Path -LiteralPath $qwenPackageJson -PathType Leaf)) {
+    throw "Bundled Qwen package.json is missing: $qwenPackageJson"
+}
+$qwenPkg = Get-Content -LiteralPath $qwenPackageJson -Raw | ConvertFrom-Json
+$qwenBinRelative = $null
+if ($qwenPkg.bin -is [string]) {
+    $qwenBinRelative = [string]$qwenPkg.bin
+} elseif ($qwenPkg.bin.qwen) {
+    $qwenBinRelative = [string]$qwenPkg.bin.qwen
+} else {
+    throw "Bundled Qwen package.json is missing a bin.qwen entry"
+}
+$qwenEntry = Join-Path (Split-Path -Parent $qwenPackageJson) $qwenBinRelative
+if (-not (Test-Path -LiteralPath $qwenEntry -PathType Leaf)) {
+    throw "Bundled Qwen entry is missing: $qwenEntry"
+}
+$qwenVersionOutput = (& $nodeExe $qwenEntry --version 2>&1 | Out-String).Trim()
+if ($LASTEXITCODE -ne 0) { throw "Bundled Qwen --version smoke failed (exit $LASTEXITCODE): $qwenVersionOutput" }
+if ([string]::IsNullOrWhiteSpace($qwenVersionOutput)) { throw "Bundled Qwen --version smoke produced no output" }
+Write-Host "    Qwen --version smoke passed: $qwenVersionOutput"
+
+# Release/CI ACP smoke must NOT call session/new or prompt (no login / network).
+$acpProbe = Join-Path $RepoRoot "tools\acp-initialize-probe.mjs"
+if (-not (Test-Path -LiteralPath $acpProbe -PathType Leaf)) {
+    throw "ACP initialize probe is missing: tools/acp-initialize-probe.mjs"
+}
+& $nodeExe $acpProbe -- $nodeExe $qwenEntry --acp | Out-Host
+if ($LASTEXITCODE -ne 0) { throw "Bundled Qwen ACP initialize smoke failed (exit $LASTEXITCODE)" }
+Write-Host "    Qwen ACP initialize smoke passed"
+Write-Host "    Installed Qwen Code into staging/tools/qwen/"
+Write-Host ""
+
+# ---- step 6: optional WebView2 Fixed Version runtime ----
 $fixedWebView2Source = Resolve-WebView2FixedRuntimeDirectory $WebView2FixedRuntimePath
 if ($fixedWebView2Source) {
-    Write-Host "==> [5/5] Bundle WebView2 Fixed Version runtime" -ForegroundColor Cyan
+    Write-Host "==> [6/6] Bundle WebView2 Fixed Version runtime" -ForegroundColor Cyan
     $fixedWebView2Target = Join-Path $StagingDir "runtime\webview2-fixed"
     if (Test-Path $fixedWebView2Target) {
         Remove-Item -Recurse -Force $fixedWebView2Target
@@ -233,7 +287,7 @@ if ($fixedWebView2Source) {
     Copy-Item -Recurse -Force (Join-Path $fixedWebView2Source "*") $fixedWebView2Target
     Write-Host "    Copied fixed runtime from $fixedWebView2Source"
 } else {
-    Write-Host "==> [5/5] WebView2 runtime is NOT bundled" -ForegroundColor Yellow
+    Write-Host "==> [6/6] WebView2 runtime is NOT bundled" -ForegroundColor Yellow
     Write-Host "    Users without WebView2 will see a prompt asking them to install it."
 }
 Write-Host ""
@@ -249,6 +303,8 @@ $requiredFiles = @(
     "licenses\acp\LICENSE",
     "licenses\kimi\LICENSE",
     "licenses\kimi\THIRD-PARTY-NOTICES.md",
+    "licenses\qwen\LICENSE",
+    "licenses\qwen\THIRD-PARTY-NOTICES.md",
     "licenses\communitytoolkit.mvvm\License.md",
     "licenses\dotnet\LICENSE.txt",
     "licenses\microsoft.extensions\LICENSE.TXT",
@@ -273,7 +329,11 @@ $requiredFiles = @(
     "tools\kimi\package.json",
     "tools\kimi\package-lock.json",
     "tools\kimi\node_modules\@moonshot-ai\kimi-code\package.json",
-    "tools\kimi\node_modules\@moonshot-ai\kimi-code\dist\main.mjs"
+    "tools\kimi\node_modules\@moonshot-ai\kimi-code\dist\main.mjs",
+    "tools\qwen\package.json",
+    "tools\qwen\package-lock.json",
+    "tools\qwen\node_modules\@qwen-code\qwen-code\package.json",
+    "tools\qwen\node_modules\@qwen-code\qwen-code\cli-entry.js"
 )
 foreach ($relativePath in $requiredFiles) {
     $fullPath = Join-Path $StagingDir $relativePath
@@ -289,7 +349,7 @@ if (Test-Path -LiteralPath $forbiddenAcpRuntime) {
 
 $forbiddenFiles = @(Get-ChildItem -LiteralPath $StagingDir -Recurse -File | Where-Object {
     $relative = $_.FullName.Substring($StagingDir.Length).TrimStart('\').Replace('\', '/')
-    $strayNodeModules = ($relative -match '(^|/)node_modules/') -and (-not $relative.StartsWith('tools/node/node_modules/', [StringComparison]::OrdinalIgnoreCase)) -and (-not $relative.StartsWith('tools/kimi/node_modules/', [StringComparison]::OrdinalIgnoreCase))
+    $strayNodeModules = ($relative -match '(^|/)node_modules/') -and (-not $relative.StartsWith('tools/node/node_modules/', [StringComparison]::OrdinalIgnoreCase)) -and (-not $relative.StartsWith('tools/kimi/node_modules/', [StringComparison]::OrdinalIgnoreCase)) -and (-not $relative.StartsWith('tools/qwen/node_modules/', [StringComparison]::OrdinalIgnoreCase))
     # Source maps and TypeScript are forbidden only for the generated Vite
     # output (vendored passthrough files under wwwroot/app/vendor may ship
     # upstream maps). Portable Node/npm legitimately contains maps.
@@ -353,7 +413,7 @@ try {
         $normalized = $_.Replace('\', '/')
         $leaf = [IO.Path]::GetFileName($normalized)
         $extension = [IO.Path]::GetExtension($normalized)
-        $strayNodeModules = ($normalized -match '(^|/)node_modules/') -and (-not $normalized.StartsWith('tools/node/node_modules/', [StringComparison]::OrdinalIgnoreCase)) -and (-not $normalized.StartsWith('tools/kimi/node_modules/', [StringComparison]::OrdinalIgnoreCase))
+        $strayNodeModules = ($normalized -match '(^|/)node_modules/') -and (-not $normalized.StartsWith('tools/node/node_modules/', [StringComparison]::OrdinalIgnoreCase)) -and (-not $normalized.StartsWith('tools/kimi/node_modules/', [StringComparison]::OrdinalIgnoreCase)) -and (-not $normalized.StartsWith('tools/qwen/node_modules/', [StringComparison]::OrdinalIgnoreCase))
         # Keep this scoped to the Vite output for parity with the staging
         # check; Node/npm and wwwroot/app/vendor files can ship source maps.
         $agentSourceArtifact = $normalized.StartsWith('wwwroot/app/', [StringComparison]::OrdinalIgnoreCase) -and (-not $normalized.StartsWith('wwwroot/app/vendor/', [StringComparison]::OrdinalIgnoreCase)) -and $extension -in @('.ts', '.map')

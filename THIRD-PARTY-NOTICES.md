@@ -24,10 +24,10 @@ The portable release redistributes:
 - Radix UI — MIT; see `licenses/radix-ui/LICENSE`.
 - Lucide icons — ISC; see `licenses/lucide/LICENSE`.
 - Lobe Icons static SVG brand marks — MIT; see `licenses/lobe-icons/LICENSE`.
-  The pinned `claude.svg` and `kimi.svg` assets from
-  `@lobehub/icons-static-svg@1.94.0` are retained under
-  `Assets/AgentIcons/lobehub-1.94.0/` and converted to WPF geometry for the
-  TabBar. Claude and Kimi names and marks remain trademarks of their
+  The pinned `claude.svg`, `kimi.svg`, `qwen.svg`, and `qoder.svg` assets from
+  `@lobehub/icons-static-svg` are retained under
+  `Assets/AgentIcons/` and converted to WPF geometry for the
+  TabBar. Provider names and marks remain trademarks of their
   respective owners.
 - Tailwind CSS — MIT; see `licenses/tailwindcss/LICENSE`.
 - ACP seed manifests — the adapter is Apache-2.0; see `licenses/acp/LICENSE`.
@@ -35,6 +35,10 @@ The portable release redistributes:
   `licenses/kimi/LICENSE` and `licenses/kimi/THIRD-PARTY-NOTICES.md` for the
   runtime and its production dependencies (`node-pty`, `node-addon-api`,
   `@mariozechner/clipboard`), all MIT.
+- Qwen Code ACP runtime — bundled under `tools/qwen/`; Apache-2.0. See
+  `licenses/qwen/LICENSE` and `licenses/qwen/THIRD-PARTY-NOTICES.md` for the
+  runtime and its production dependencies (`sharp`, `node-pty`, clipboard
+  helpers, and related packages).
 
 The release includes only the ACP package manifests and lockfile. It does not
 redistribute Claude Code, the Claude Agent SDK native binary, or an installed
@@ -47,7 +51,9 @@ Copies of the license and notice files for the binary dependencies shipped by
 PSX are stored under `licenses/` and included in the portable release.
 
 Unlike the Claude ACP adapter (installed on first use from the seed lockfile),
-the Kimi Code runtime IS redistributed inside the portable release under
-`tools/kimi/`. It is installed at build time from the pinned lockfile in
-`tools/kimi-seed/` (Windows x64 only) and remains subject to the MIT terms of
-each bundled package.
+the Kimi Code and Qwen Code runtimes ARE redistributed inside the portable
+release under `tools/kimi/` and `tools/qwen/`. They are installed at build time
+from the pinned lockfiles in `tools/kimi-seed/` and `tools/qwen-seed/`
+(Windows x64 only) and remain subject to the license terms of each bundled
+package. Qoder CLI is not redistributed; PSX only detects an externally
+installed `qodercli` on the user machine.
