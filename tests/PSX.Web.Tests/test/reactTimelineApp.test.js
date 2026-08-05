@@ -68,6 +68,7 @@ test('permission response uses the unchanged bridge payload', async () => {
       workspaceId: WS,
       requestId: 'p1',
       title: 'Run tool?',
+      description: 'Run the listed Bash command once.',
       options: [
         { optionId: 'allow', name: 'Allow', kind: 'allow_once' },
         { optionId: 'reject', name: 'Reject', kind: 'reject_once' }
@@ -78,6 +79,15 @@ test('permission response uses the unchanged bridge payload', async () => {
   const permissionGroup = thread().querySelector('.agent-decision-option-pills');
   assert.ok(permissionGroup.classList.contains('flex-wrap'));
   assert.ok(permissionGroup.querySelector('[data-option-id="allow"]').classList.contains('rounded-full'));
+  assert.match(
+    thread().querySelector('[data-request-id="p1"]').textContent,
+    /Run the listed Bash command once/
+  );
+  assert.equal(
+    thread().querySelector('[data-request-id="p1"] .agent-decision-raw-input'),
+    null,
+    'ordinary permission without explicit rawInput hides Raw Input'
+  );
   await flushReact(async () => thread().querySelector('[data-option-id="allow"]').click());
   assert.deepEqual(runtime.postedMessages.at(-1), {
     type: 'agent_permission_response',
@@ -88,6 +98,72 @@ test('permission response uses the unchanged bridge payload', async () => {
   const permissionCard = thread().querySelector('[data-request-id="p1"]');
   assert.equal(permissionCard.dataset.decisionState, 'disabled');
   assert.equal(permissionCard.querySelectorAll('[data-option-id]').length, 1);
+});
+
+test('reused ACP requestId only folds the live permission card', async () => {
+  const { app, panel, runtime } = await fixture();
+  const thread = () => panel.querySelector('[data-role="thread"]');
+  await settle(
+    () => {
+      app.handle({
+        type: 'agent_thread_loaded',
+        workspaceId: WS,
+        clear: true,
+        messages: [
+          {
+            role: 'document_permission',
+            requestId: '2',
+            name: 'Old approval',
+            text: '# historical plan',
+            decisionOptions: [
+              { optionId: 'approve_always', name: 'Approve for this session', kind: 'allow_always' }
+            ],
+            selectedOptionId: 'approve_always',
+            decisionState: 'selected'
+          }
+        ]
+      });
+      app.handle({
+        type: 'permission_request',
+        workspaceId: WS,
+        requestId: '2',
+        title: 'Bash',
+        description: 'ls -la "$HOME/.arkcli/"',
+        options: [
+          { optionId: 'approve_once', name: 'Approve once', kind: 'allow_once' },
+          { optionId: 'approve_always', name: 'Approve for this session', kind: 'allow_always' },
+          { optionId: 'reject', name: 'Reject', kind: 'reject_once' }
+        ]
+      });
+    },
+    () => thread()?.querySelectorAll('[data-request-id="2"]').length === 2
+      && !!thread()?.querySelector('.agent-decision-permission [data-option-id="approve_always"]')
+  );
+
+  const liveCard = thread().querySelector('.agent-decision-permission[data-request-id="2"]');
+  const historicalCard = thread().querySelector('.agent-document-permission[data-request-id="2"]');
+  assert.ok(liveCard);
+  assert.ok(historicalCard);
+  assert.equal(liveCard.dataset.decisionState, 'active');
+  assert.equal(historicalCard.dataset.decisionState, 'disabled');
+
+  await flushReact(async () =>
+    liveCard.querySelector('[data-option-id="approve_always"]').click()
+  );
+  assert.deepEqual(runtime.postedMessages.at(-1), {
+    type: 'agent_permission_response',
+    workspaceId: WS,
+    requestId: '2',
+    value: 'approve_always'
+  });
+  const foldedLive = thread().querySelector('.agent-decision-permission[data-request-id="2"]');
+  const untouchedHistorical = thread().querySelector(
+    '.agent-document-permission[data-request-id="2"]'
+  );
+  assert.equal(foldedLive.dataset.decisionState, 'disabled');
+  assert.equal(foldedLive.dataset.state, 'closed', 'live card collapses after local select');
+  assert.match(foldedLive.textContent, /Selection recorded/);
+  assert.equal(untouchedHistorical.dataset.decisionState, 'disabled');
 });
 
 test('mode transition card options approve directly from the timeline', async () => {

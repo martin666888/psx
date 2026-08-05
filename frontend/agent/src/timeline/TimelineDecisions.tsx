@@ -46,6 +46,7 @@ function PermissionQuestionCard({
   const [open, setOpen] = useProjectionOpen(!item.collapsed);
   const disabled = item.decisionState !== 'active';
   const [rawInputOpen, setRawInputOpen] = useState(false);
+  const hasRawInput = item.text.trim().length > 0;
   const resolvedId = item.selectedOptionId;
   const resolvedName = item.selectedOptionName;
   const selected =
@@ -85,21 +86,28 @@ function PermissionQuestionCard({
           semantics) for text search and replay tooling. */}
       <CollapsibleContent forceMount className="data-[state=closed]:hidden">
       <div className="agent-decision-body relative px-3 pb-3">
-        <Collapsible
-          className="agent-decision-raw-input group/raw mt-2.5"
-          open={rawInputOpen}
-          onOpenChange={setRawInputOpen}
-        >
-          <CollapsibleTrigger className="agent-decision-raw-input-summary flex cursor-pointer select-none items-center gap-2 px-3 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:bg-accent">
-            <ChevronRightIcon className="size-2.5 shrink-0 transition-transform group-data-[state=open]/raw:rotate-90" aria-hidden="true" />
-            Raw Input
-          </CollapsibleTrigger>
-          {/* forceMount keeps the collapsed raw payload in the DOM (old
-              <details> semantics) for text search and replay tooling. */}
-          <CollapsibleContent forceMount className="data-[state=closed]:hidden">
-            <pre className="agent-decision-raw-input-content m-0 whitespace-pre-wrap break-words bg-background p-3 font-mono text-xs leading-normal">{item.text}</pre>
-          </CollapsibleContent>
-        </Collapsible>
+        {item.description ? (
+          <div className="agent-decision-description mt-1 break-words text-sm leading-normal text-foreground">
+            {item.description}
+          </div>
+        ) : null}
+        {hasRawInput ? (
+          <Collapsible
+            className="agent-decision-raw-input group/raw mt-2.5"
+            open={rawInputOpen}
+            onOpenChange={setRawInputOpen}
+          >
+            <CollapsibleTrigger className="agent-decision-raw-input-summary flex cursor-pointer select-none items-center gap-2 px-3 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:bg-accent">
+              <ChevronRightIcon className="size-2.5 shrink-0 transition-transform group-data-[state=open]/raw:rotate-90" aria-hidden="true" />
+              Raw Input
+            </CollapsibleTrigger>
+            {/* forceMount keeps the collapsed raw payload in the DOM (old
+                <details> semantics) for text search and replay tooling. */}
+            <CollapsibleContent forceMount className="data-[state=closed]:hidden">
+              <pre className="agent-decision-raw-input-content m-0 whitespace-pre-wrap break-words bg-background p-3 font-mono text-xs leading-normal">{item.text}</pre>
+            </CollapsibleContent>
+          </Collapsible>
+        ) : null}
         <div className="agent-decision-actions mt-2.5">
           {item.options.length === 0 ? (
             <div className="agent-decision-status agent-decision-options-error mt-0 flex-[1_1_100%] text-xs text-destructive">

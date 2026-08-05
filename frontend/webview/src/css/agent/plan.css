@@ -20,6 +20,14 @@
     pointer-events: auto;
 }
 
+/* An empty / inactive Plan still occupies the top-right overlay slot, but it
+ * must not steal clicks from permission buttons and other thread controls
+ * underneath the reading column. Only an active plan needs hit-testing
+ * (scroll / text selection). */
+.agent-context-cards > .agent-plan-card:not([data-plan-active="true"]) {
+    pointer-events: none;
+}
+
 .agent-plan-card {
     display: flex;
     flex: 0 1 auto;

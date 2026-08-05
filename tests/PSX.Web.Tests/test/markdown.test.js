@@ -37,6 +37,31 @@ test('allows only safe link schemes', () => {
   assert.doesNotMatch(html, /8443/);
 });
 
+test('emphasis delimiters do not pair inside identifiers', () => {
+  const cross = renderMarkdown('mode_transition then switch_mode');
+  assert.doesNotMatch(cross, /<em>/);
+  assert.match(cross, /mode_transition then switch_mode/);
+
+  assert.doesNotMatch(renderMarkdown('snake_case'), /<em>/);
+  assert.doesNotMatch(renderMarkdown('中文_标识符'), /<em>/);
+  assert.doesNotMatch(renderMarkdown('path/to_file_name.ts --flag_value'), /<em>/);
+
+  assert.match(renderMarkdown('_合法斜体_'), /<em>合法斜体<\/em>/);
+  assert.match(renderMarkdown('*合法斜体*'), /<em>合法斜体<\/em>/);
+  assert.match(renderMarkdown('__粗体__'), /<strong>粗体<\/strong>/);
+  assert.match(renderMarkdown('**粗体**'), /<strong>粗体<\/strong>/);
+
+  const boldCross = renderMarkdown('mode__transition then switch__mode');
+  assert.doesNotMatch(boldCross, /<strong>/);
+  assert.match(boldCross, /mode__transition then switch__mode/);
+  assert.doesNotMatch(renderMarkdown('a**b then c**d'), /<strong>/);
+
+  const code = renderMarkdown('use `mode_transition` and `*stars*`');
+  assert.match(code, /<code>mode_transition<\/code>/);
+  assert.match(code, /<code>\*stars\*<\/code>/);
+  assert.doesNotMatch(code, /<em>/);
+});
+
 test('escapes scripts, event handlers and attributes while preserving the small safe tag list', () => {
   const html = renderMarkdown('<script>alert(1)</script> <img src=x onerror=alert(1)> <details open><summary>Read</summary><b>Safe</b></details>');
 

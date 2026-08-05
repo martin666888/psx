@@ -54,7 +54,8 @@ test('a full streaming turn folds into message/thinking/tool/message items in or
   assert.equal(list[2].variant, 'run-group');
   assert.equal(list[2].open, false, 'run group closes on finalize');
   assert.equal(list[2].cards.length, 1);
-  assert.equal(list[2].cards[0].output, 'ls\nfile.txt');
+  assert.equal(list[2].cards[0].input, 'ls');
+  assert.equal(list[2].cards[0].output, '\nfile.txt');
   assert.equal(list[2].cards[0].state, 'done');
   assert.equal(list[3].role, 'assistant');
   assert.equal(list[3].raw, 'Hi there');
@@ -198,25 +199,136 @@ test('replay keeps tool cards when assistant text interleaves inside the same ru
 test('permission and question requests fold into decision items with default options', () => {
   const projection = fold([
     ['user_message', { text: 'q' }],
-    ['permission_request', { requestId: 'p1', title: 'Run tool?', text: '{"cmd":"ls"}' }],
+    ['permission_request', {
+      requestId: 'p1',
+      title: 'Run tool?',
+      description: 'Run ls once?',
+      text: '{"cmd":"ls"}'
+    }],
     ['question_request', { requestId: 'q1', options: [{ optionId: 'a', name: 'Alpha', kind: 'allow_once' }] }]
   ]);
   const list = items(projection);
   const permission = list[1];
   assert.equal(permission.kind, 'permission');
   assert.equal(permission.decisionState, 'active');
+  assert.equal(permission.description, 'Run ls once?');
+  assert.equal(permission.text, '{"cmd":"ls"}');
   assert.deepEqual(permission.options.map((option) => option.optionId), ['allow', 'reject']);
   const question = list[2];
   assert.equal(question.title, NAME + ' question');
   assert.deepEqual(question.options, [{ optionId: 'a', name: 'Alpha', kind: 'allow_once' }]);
 
+  projection.selectDecisionOption(permission.id, 'allow', 'Allow');
+  assert.equal(permission.collapsed, true, 'local select collapses the card');
+
   projection.apply('permission_resolved', { requestId: 'p1', optionId: 'allow', optionName: 'Allow' }, NAME);
   assert.equal(permission.decisionState, 'disabled');
   assert.equal(permission.selectedOptionId, 'allow');
+  assert.equal(permission.collapsed, true, 'remote resolve does not reopen or re-fold');
 
   projection.apply('permission_cancelled', { requestId: 'q1', text: 'Too late.' }, NAME);
   assert.equal(question.decisionState, 'disabled');
   assert.equal(question.statusText, 'Too late.');
+});
+
+test('reused ACP requestId updates the live card, not a historical twin', () => {
+  const projection = new TimelineProjection();
+  projection.apply(
+    'agent_thread_loaded',
+    {
+      clear: true,
+      messages: [
+        {
+          role: 'document_permission',
+          requestId: '2',
+          name: 'Old approval',
+          text: '# historical plan',
+          decisionOptions: [
+            { optionId: 'approve_always', name: 'Approve for this session', kind: 'allow_always' }
+          ],
+          selectedOptionId: 'approve_always',
+          decisionState: 'selected'
+        }
+      ]
+    },
+    NAME
+  );
+  projection.apply(
+    'permission_request',
+    {
+      requestId: '2',
+      title: 'Bash',
+      description: 'ls -la "$HOME/.arkcli/"',
+      options: [
+        { optionId: 'approve_once', name: 'Approve once', kind: 'allow_once' },
+        { optionId: 'approve_always', name: 'Approve for this session', kind: 'allow_always' },
+        { optionId: 'reject', name: 'Reject', kind: 'reject_once' }
+      ]
+    },
+    NAME
+  );
+
+  const list = items(projection).filter((item) => item.type === 'decision');
+  const historical = list.find((item) => item.historical);
+  const live = list.find((item) => !item.historical);
+  assert.ok(historical, 'historical decision with requestId 2 is present');
+  assert.ok(live, 'live decision reuses requestId 2');
+  assert.equal(historical.requestId, '2');
+  assert.equal(live.requestId, '2');
+  assert.equal(historical.decisionState, 'disabled');
+  assert.equal(live.decisionState, 'active');
+  assert.notEqual(historical.id, live.id);
+
+  projection.selectDecisionOption(live.id, 'approve_always', 'Approve for this session');
+  assert.equal(live.decisionState, 'disabled');
+  assert.equal(live.collapsed, true, 'the clicked live card collapses');
+  assert.equal(live.selectedOptionId, 'approve_always');
+  assert.equal(
+    historical.selectedOptionId,
+    'approve_always',
+    'historical selection is left alone'
+  );
+  assert.equal(historical.decisionState, 'disabled');
+
+  projection.apply(
+    'permission_resolved',
+    {
+      requestId: '2',
+      optionId: 'approve_always',
+      optionName: 'Approve for this session'
+    },
+    NAME
+  );
+  assert.equal(live.selectedOptionId, 'approve_always');
+  assert.equal(live.selectedOptionName, 'Approve for this session');
+  assert.equal(live.collapsed, true, 'remote resolve still targets the live card');
+});
+
+test('tool_updated replaces input/output/summary with empty-string clearing', () => {
+  const projection = fold([
+    ['user_message', { text: 'q' }],
+    ['tool_started', { runId: 'r1', toolCallId: 't1', name: 'Bash', summary: 'pending', input: '' }],
+    ['tool_delta', { toolCallId: 't1', text: 'partial terminal' }],
+    ['tool_updated', {
+      toolCallId: 't1',
+      summary: 'Bash ls',
+      input: '{"command":"ls"}',
+      output: 'file.txt',
+      status: 'running'
+    }],
+    ['tool_updated', {
+      toolCallId: 't1',
+      summary: 'Bash ls',
+      input: '',
+      output: 'final only',
+      status: 'completed'
+    }]
+  ]);
+  const card = items(projection).find((item) => item.type === 'tool').cards[0];
+  assert.equal(card.input, '', 'empty string clears prior input');
+  assert.equal(card.output, 'final only', 'snapshot overwrites prior terminal delta');
+  assert.equal(card.summary, 'Bash ls');
+  assert.equal(card.state, 'done');
 });
 
 test('a live mode transition replaces its tool card and is interrupted by run_finished', () => {
@@ -242,11 +354,53 @@ test('a live mode transition replaces its tool card and is interrupted by run_fi
   assert.equal(transition.kind, 'mode_transition');
   assert.equal(transition.headerState, 'Pending');
   assert.equal(transition.text, '# Proposal');
+  assert.equal(transition.collapsed, false, 'live document decisions start expanded');
 
-  projection.apply('run_finished', {}, NAME);
-  assert.equal(transition.decisionState, 'disabled');
-  assert.equal(transition.headerState, 'Interrupted');
-  assert.equal(transition.statusText, 'This request is no longer active.');
+  projection.selectDecisionOption(transition.id, 'go', 'Proceed');
+  assert.equal(transition.collapsed, true);
+  assert.equal(transition.headerState, 'Sending');
+  projection.apply('permission_resolved', { requestId: 'mt1', optionId: 'go', optionName: 'Proceed' }, NAME);
+  assert.equal(transition.headerState, 'Selected');
+  assert.equal(transition.collapsed, true, 'remote resolve does not change collapse');
+
+  const interrupted = fold([
+    ['user_message', { text: 'q' }],
+    [
+      'permission_request',
+      {
+        requestId: 'mt2',
+        presentation: 'mode_transition',
+        documentText: '# Proposal',
+        toolCallId: 'mt-tool-2',
+        options: [{ optionId: 'go', name: 'Proceed', kind: 'allow_once' }]
+      }
+    ],
+    ['run_finished', {}]
+  ]);
+  const interruptedDecision = items(interrupted).find((item) => item.type === 'decision');
+  assert.equal(interruptedDecision.decisionState, 'disabled');
+  assert.equal(interruptedDecision.headerState, 'Interrupted');
+  assert.equal(interruptedDecision.statusText, 'This request is no longer active.');
+});
+
+test('historical document decisions start collapsed', () => {
+  const projection = fold([
+    ['agent_thread_loaded', {
+      messages: [{
+        role: 'document_permission',
+        requestId: 'hist-1',
+        title: 'ExitPlanMode',
+        text: '# Old plan',
+        decisionState: 'selected',
+        selectedOptionId: 'approve',
+        options: [{ optionId: 'approve', name: 'Approve', kind: 'allow_once' }]
+      }]
+    }]
+  ]);
+  const decision = items(projection).find((item) => item.type === 'decision');
+  assert.equal(decision.kind, 'document_permission');
+  assert.equal(decision.historical, true);
+  assert.equal(decision.collapsed, true);
 });
 
 test('a document permission renders its document, replaces its tool card and is not a mode transition', () => {

@@ -84,7 +84,7 @@ export class TimelineController implements FeatureController {
       onElicitationAction: (item, payload, statusText) => {
         if (!item.requestId) return;
         this.bridge()?.sendAgentElicitationResponse(item.requestId, payload);
-        this.projection.disableDecision(item.requestId, statusText);
+        this.projection.disableDecision(item.id, statusText);
         this.render();
       },
       createAttachmentTile: (attachment) =>
@@ -110,7 +110,9 @@ export class TimelineController implements FeatureController {
     } else {
       return;
     }
-    this.projection.selectDecisionOption(item.requestId, option.optionId, option.name);
+    // Update the clicked card by stable timeline id. ACP requestId alone is
+    // not unique across historical replay + a restarted agent process.
+    this.projection.selectDecisionOption(item.id, option.optionId, option.name);
     this.render();
   }
 

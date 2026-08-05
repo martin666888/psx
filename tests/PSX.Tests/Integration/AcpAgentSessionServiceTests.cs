@@ -258,16 +258,18 @@ public sealed class AcpAgentSessionServiceTests
     }
 
     [TestMethod]
-    public async Task OrdinaryPermission_WithMarkdownContentUsesDocumentPresentationWithoutModeTransitionSemantics()
+    public async Task OrdinaryPermission_WithSingleLineContentUsesOrdinaryDescriptionWithoutDocumentSnapshot()
     {
-        using var fixture = new FakeAcpSessionFixture(nameof(OrdinaryPermission_WithMarkdownContentUsesDocumentPresentationWithoutModeTransitionSemantics));
+        using var fixture = new FakeAcpSessionFixture(nameof(OrdinaryPermission_WithSingleLineContentUsesOrdinaryDescriptionWithoutDocumentSnapshot));
 
         await fixture.Service.SubmitMessageAsync("ordinary permission");
         var permission = await fixture.Bridge.WaitForEventAsync("permission_request");
 
-        Assert.AreEqual("document", permission.GetProperty("presentation").GetString());
+        Assert.AreEqual(JsonValueKind.Null, permission.GetProperty("presentation").ValueKind);
         Assert.AreEqual("execute", permission.GetProperty("toolKind").GetString());
-        Assert.AreEqual("# Markdown command details", permission.GetProperty("documentText").GetString());
+        Assert.AreEqual("# Markdown command details", permission.GetProperty("description").GetString());
+        Assert.AreEqual(JsonValueKind.Null, permission.GetProperty("documentText").ValueKind);
+        Assert.AreEqual(JsonValueKind.Null, permission.GetProperty("text").ValueKind);
         CollectionAssert.AreEqual(
             new[] { "run-once", "cancel" },
             permission.GetProperty("options").EnumerateArray()
@@ -281,9 +283,7 @@ public sealed class AcpAgentSessionServiceTests
 
         var thread = fixture.LoadOnlyVisibleThread();
         Assert.IsFalse(thread.Messages.Any(message => message.Role == "mode_transition"));
-        var snapshot = thread.Messages.Single(message => message.Role == "document_permission");
-        Assert.AreEqual("selected", snapshot.DecisionState);
-        Assert.AreEqual("run-once", snapshot.SelectedOptionId);
+        Assert.IsFalse(thread.Messages.Any(message => message.Role == "document_permission"));
         Assert.IsTrue(thread.Messages.Any(message => message.Role == "assistant"
             && message.Text == "Ordinary permission result: run-once"));
     }
@@ -354,6 +354,116 @@ public sealed class AcpAgentSessionServiceTests
         Assert.IsFalse(thread.Messages.Any(message => message.Role == "mode_transition"));
         Assert.IsTrue(thread.Messages.Any(message => message.Role == "assistant"
             && message.Text == "Empty permission result: cancelled"));
+    }
+
+    [TestMethod]
+    public async Task ToolMerger_PrefersContentOverDifferentlyFormattedRawOutput()
+    {
+        using var fixture = new FakeAcpSessionFixture(nameof(ToolMerger_PrefersContentOverDifferentlyFormattedRawOutput));
+
+        await fixture.Service.SubmitMessageAsync("merge content rawoutput");
+        await fixture.Bridge.WaitForEventAsync("run_finished");
+
+        var tool = fixture.LoadOnlyVisibleThread().Messages.Single(message =>
+            message.Role == "tool" && message.ToolCallId == "tool-merge-content");
+        Assert.AreEqual("```ts\n1| const x = 1;\n```", (tool.ToolOutput ?? "").Replace("\r\n", "\n"));
+        Assert.IsFalse(
+            (tool.ToolOutput ?? "").Contains("const x = 1;\nconst x = 1;", StringComparison.Ordinal)
+            || (tool.ToolOutput ?? "").Contains("```\nconst x = 1;", StringComparison.Ordinal),
+            "rawOutput must not be concatenated when content is present");
+        StringAssert.Contains(tool.ToolInput ?? "", "src/a.ts");
+    }
+
+    [TestMethod]
+    public async Task ToolMerger_HoldsPendingJsonUntilRawInputThenPersistsFinalInput()
+    {
+        using var fixture = new FakeAcpSessionFixture(nameof(ToolMerger_HoldsPendingJsonUntilRawInputThenPersistsFinalInput));
+
+        await fixture.Service.SubmitMessageAsync("merge pending params");
+        await fixture.Bridge.WaitForEventAsync(
+            "tool_updated",
+            message => message.TryGetProperty("input", out var input)
+                       && (input.GetString() ?? "").Contains("a.ts", StringComparison.Ordinal)
+                       && (input.GetString() ?? "").Contains("final", StringComparison.Ordinal));
+        await fixture.Bridge.WaitForEventAsync("run_finished");
+
+        var tool = fixture.LoadOnlyVisibleThread().Messages.Single(message =>
+            message.Role == "tool" && message.ToolCallId == "tool-merge-pending");
+        StringAssert.Contains(tool.ToolInput ?? "", "a.ts");
+        StringAssert.Contains(tool.ToolInput ?? "", "final");
+        Assert.AreEqual("Wrote a.ts", tool.ToolOutput);
+        Assert.IsFalse(
+            (tool.ToolOutput ?? "").Contains("partial", StringComparison.Ordinal),
+            "pending JSON parameter snapshots must not become the final output");
+    }
+
+    [TestMethod]
+    public async Task ToolMerger_FinalContentSnapshotOverwritesTerminalDelta()
+    {
+        using var fixture = new FakeAcpSessionFixture(nameof(ToolMerger_FinalContentSnapshotOverwritesTerminalDelta));
+
+        await fixture.Service.SubmitMessageAsync("merge terminal snapshot");
+        await fixture.Bridge.WaitForEventAsync(
+            "tool_delta",
+            message => message.GetProperty("toolCallId").GetString() == "tool-merge-terminal");
+        await fixture.Bridge.WaitForEventAsync("run_finished");
+
+        var tool = fixture.LoadOnlyVisibleThread().Messages.Single(message =>
+            message.Role == "tool" && message.ToolCallId == "tool-merge-terminal");
+        Assert.AreEqual("final snapshot", tool.ToolOutput);
+        Assert.IsFalse(
+            (tool.ToolOutput ?? "").Contains("partial line", StringComparison.Ordinal),
+            "terminal deltas must be replaced by a later content snapshot");
+        StringAssert.Contains(tool.ToolInput ?? "", "echo hi");
+    }
+
+    [TestMethod]
+    public async Task ToolMerger_TitleOnlyUpdateReplacesNameAndEmitsToolUpdated()
+    {
+        using var fixture = new FakeAcpSessionFixture(nameof(ToolMerger_TitleOnlyUpdateReplacesNameAndEmitsToolUpdated));
+
+        await fixture.Service.SubmitMessageAsync("merge title update");
+        var updated = await fixture.Bridge.WaitForEventAsync(
+            "tool_updated",
+            message => message.GetProperty("toolCallId").GetString() == "tool-merge-title"
+                       && message.GetProperty("name").GetString() == "Updated Title");
+        Assert.AreEqual("Updated Title", updated.GetProperty("summary").GetString());
+        await fixture.Bridge.WaitForEventAsync("run_finished");
+
+        var tool = fixture.LoadOnlyVisibleThread().Messages.Single(message =>
+            message.Role == "tool" && message.ToolCallId == "tool-merge-title");
+        Assert.AreEqual("Updated Title", tool.Name);
+        Assert.AreEqual("Updated Title", tool.Summary);
+    }
+
+    [TestMethod]
+    public async Task DiffOnlyPermission_RendersDocumentCardWithReadableDiffBody()
+    {
+        using var fixture = new FakeAcpSessionFixture(nameof(DiffOnlyPermission_RendersDocumentCardWithReadableDiffBody));
+
+        await fixture.Service.SubmitMessageAsync("diff permission");
+        var permission = await fixture.Bridge.WaitForEventAsync("permission_request");
+
+        Assert.AreEqual("document", permission.GetProperty("presentation").GetString());
+        var documentText = (permission.GetProperty("documentText").GetString() ?? "").Replace("\r\n", "\n");
+        Assert.IsFalse(string.IsNullOrWhiteSpace(documentText));
+        StringAssert.Contains(documentText, "### src/App.cs");
+        StringAssert.Contains(documentText, "-old line");
+        StringAssert.Contains(documentText, "+new line");
+
+        fixture.Bridge.RaiseCommand(
+            "agent_permission_response",
+            permission.GetProperty("requestId").GetString(),
+            "approve");
+        await fixture.Bridge.WaitForEventAsync("permission_resolved");
+        await fixture.Bridge.WaitForEventAsync("run_finished");
+
+        var thread = fixture.LoadOnlyVisibleThread();
+        var snapshot = thread.Messages.Single(message => message.Role == "document_permission");
+        Assert.AreEqual("selected", snapshot.DecisionState);
+        Assert.AreEqual("approve", snapshot.SelectedOptionId);
+        Assert.IsFalse(thread.Messages.Any(message => message.Role == "tool"
+            && message.ToolCallId == "tool-diff-permission"));
     }
 
     [TestMethod]

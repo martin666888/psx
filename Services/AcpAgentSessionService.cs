@@ -139,7 +139,9 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     private readonly StringBuilder _assistantBuffer = new();
     private readonly Dictionary<string, string> _toolNames = new();
     private readonly Dictionary<string, string> _toolSummaries = new();
+    private readonly Dictionary<string, string> _toolInputs = new();
     private readonly Dictionary<string, string> _toolOutputs = new();
+    private readonly Dictionary<string, string> _toolPendingParamSnapshots = new();
     private readonly HashSet<string> _startedToolCallIds = new();
     private readonly HashSet<string> _documentDecisionToolCallIds = new();
     private readonly Dictionary<string, string> _availableAgentCommands = new(StringComparer.OrdinalIgnoreCase);
@@ -1546,7 +1548,9 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             _assistantBuffer.Clear();
             _toolNames.Clear();
             _toolSummaries.Clear();
+            _toolInputs.Clear();
             _toolOutputs.Clear();
+            _toolPendingParamSnapshots.Clear();
             _startedToolCallIds.Clear();
             _documentDecisionToolCallIds.Clear();
             _currentRunId = Guid.NewGuid().ToString();
@@ -2200,12 +2204,16 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         var toolCallId = GetString(toolCall, "toolCallId");
         var toolKind = GetString(toolCall, "kind");
         var toolStatus = GetString(toolCall, "status");
-        var documentText = AcpPermissionPolicy.ReadDocument(toolCall);
-        var presentation = AcpPermissionPolicy.IsModeTransition(toolKind, documentText)
-            ? PermissionPresentation.ModeTransition
-            : !string.IsNullOrWhiteSpace(documentText)
-                ? PermissionPresentation.Document
-                : PermissionPresentation.Ordinary;
+        var classified = AcpPermissionPolicy.Classify(toolCall);
+        var presentation = classified.Presentation switch
+        {
+            AcpPermissionPresentation.ModeTransition => PermissionPresentation.ModeTransition,
+            AcpPermissionPresentation.Document => PermissionPresentation.Document,
+            _ => PermissionPresentation.Ordinary
+        };
+        var documentText = classified.DocumentText;
+        var description = classified.Description;
+        var explicitToolInput = classified.ExplicitRawInput;
         var pending = new PendingPermission
         {
             Options = options,
@@ -2217,35 +2225,6 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         if (string.IsNullOrWhiteSpace(title))
         {
             title = GetString(toolCall, "name") ?? $"{_provider.Descriptor.AssistantName} permission request";
-        }
-
-        // 提取工具输入参数：尝试多个可能的字段
-        var toolInput = "";
-        string? explicitToolInput = null;
-        if (toolCall.ValueKind != JsonValueKind.Undefined)
-        {
-            if (toolCall.TryGetProperty("rawInput", out var rawInput))
-            {
-                toolInput = rawInput.ValueKind == JsonValueKind.String
-                    ? rawInput.GetString() ?? ""
-                    : rawInput.GetRawText();
-                explicitToolInput = toolInput;
-            }
-            else if (toolCall.TryGetProperty("input", out var input))
-            {
-                toolInput = input.GetRawText();
-                explicitToolInput = toolInput;
-            }
-            else if (toolCall.TryGetProperty("arguments", out var args))
-            {
-                toolInput = args.GetRawText();
-                explicitToolInput = toolInput;
-            }
-            else
-            {
-                // 如果没有找到输入字段，输出整个 toolCall 对象
-                toolInput = toolCall.GetRawText();
-            }
         }
 
         if (pending.IsDocumentDecision)
@@ -2268,7 +2247,10 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             type = "permission_request",
             requestId,
             title,
-            text = pending.IsDocumentDecision ? explicitToolInput : toolInput,
+            text = explicitToolInput,
+            description = pending.IsDocumentDecision || string.IsNullOrWhiteSpace(description)
+                ? null
+                : description,
             presentation = pending.Presentation switch
             {
                 PermissionPresentation.ModeTransition => "mode_transition",
@@ -2717,34 +2699,19 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     private async Task HandleToolCallAsync(JsonElement update)
     {
-        var reportedToolCallId = GetString(update, "toolCallId");
-        if (ShouldSuppressDocumentDecisionTool(reportedToolCallId))
-        {
-            CleanupToolTracking(reportedToolCallId);
-            return;
-        }
-
-        var toolCallId = await EnsureToolStartedAsync(update).ConfigureAwait(false);
-
-        var initialOutput = FormatToolOutput(update);
-        if (!string.IsNullOrWhiteSpace(initialOutput))
-        {
-            _toolOutputs[toolCallId] = initialOutput;
-            await _bridgeService.SendEventAsync(new
-            {
-                type = "tool_delta",
-                text = initialOutput,
-                runId = _currentRunId,
-                toolCallId
-            }).ConfigureAwait(false);
-        }
-
-        var status = GetString(update, "status");
-        if (status is "completed" or "failed")
-            await FinishToolAsync(toolCallId, status).ConfigureAwait(false);
+        await ApplyLiveToolUpdateAsync(update).ConfigureAwait(false);
     }
 
     private async Task HandleToolCallUpdateAsync(JsonElement update)
+    {
+        await ApplyLiveToolUpdateAsync(update).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// ACP tool_call / tool_call_update merger: present fields replace; only
+    /// <c>_meta.terminal_output.data</c> appends via <c>tool_delta</c>.
+    /// </summary>
+    private async Task ApplyLiveToolUpdateAsync(JsonElement update)
     {
         var reportedToolCallId = GetString(update, "toolCallId");
         if (ShouldSuppressDocumentDecisionTool(reportedToolCallId))
@@ -2753,27 +2720,104 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             return;
         }
 
-        // Some adapters can surface an update before the corresponding
-        // tool_call notification. Normalize that sequence for the frontend so
-        // every delta has a keyed, collapsible tool card to attach to.
         var toolCallId = await EnsureToolStartedAsync(update).ConfigureAwait(false);
+        var snapshotChanged = false;
+        var terminalChunk = ReadTerminalOutputChunk(update);
+        var hasRawInput = update.TryGetProperty("rawInput", out _);
+        var hasContent = update.TryGetProperty("content", out _);
+        var hasRawOutput = update.TryGetProperty("rawOutput", out _);
+        var status = GetString(update, "status");
+        var isTerminalStatus = status is "completed" or "failed";
 
-        var output = FormatToolOutput(update);
-        if (!string.IsNullOrWhiteSpace(output))
+        // ACP present-field replace for title: update name/summary even when
+        // rawInput is absent, and emit a full tool_updated snapshot.
+        var presentTitle = GetString(update, "title");
+        if (!string.IsNullOrWhiteSpace(presentTitle))
         {
-            _toolOutputs[toolCallId] += output;
+            if (!_toolNames.TryGetValue(toolCallId, out var existingName)
+                || !string.Equals(existingName, presentTitle, StringComparison.Ordinal))
+            {
+                _toolNames[toolCallId] = presentTitle;
+                snapshotChanged = true;
+            }
+
+            var titledSummary = BuildToolSummary(
+                presentTitle,
+                _toolInputs.GetValueOrDefault(toolCallId, ""),
+                update);
+            if (!_toolSummaries.TryGetValue(toolCallId, out var existingSummary)
+                || !string.Equals(existingSummary, titledSummary, StringComparison.Ordinal))
+            {
+                _toolSummaries[toolCallId] = titledSummary;
+                snapshotChanged = true;
+            }
+        }
+
+        if (hasRawInput)
+        {
+            var input = FormatToolInput(update);
+            _toolInputs[toolCallId] = input;
+            _toolPendingParamSnapshots.Remove(toolCallId);
+            var name = _toolNames.TryGetValue(toolCallId, out var existingName) ? existingName : ReadToolName(update);
+            _toolSummaries[toolCallId] = BuildToolSummary(name, input, update);
+            snapshotChanged = true;
+        }
+
+        if (hasContent || hasRawOutput)
+        {
+            var displayOutput = FormatContentAndRawOutput(update);
+            if (!isTerminalStatus
+                && !hasRawInput
+                && !(_toolInputs.TryGetValue(toolCallId, out var existingInput)
+                     && !string.IsNullOrWhiteSpace(existingInput))
+                && IsPendingParamSnapshot(displayOutput))
+            {
+                _toolPendingParamSnapshots[toolCallId] = displayOutput;
+            }
+            else
+            {
+                _toolPendingParamSnapshots.Remove(toolCallId);
+                _toolOutputs[toolCallId] = displayOutput;
+                snapshotChanged = true;
+            }
+        }
+        else if (!string.IsNullOrEmpty(terminalChunk))
+        {
+            _toolOutputs[toolCallId] = (_toolOutputs.TryGetValue(toolCallId, out var existing) ? existing : "")
+                + terminalChunk;
             await _bridgeService.SendEventAsync(new
             {
                 type = "tool_delta",
-                text = output,
+                text = terminalChunk,
                 runId = _currentRunId,
                 toolCallId
             }).ConfigureAwait(false);
         }
 
-        var status = GetString(update, "status");
-        if (status is "completed" or "failed")
+        if (snapshotChanged)
+            await SendToolUpdatedAsync(toolCallId, status).ConfigureAwait(false);
+
+        if (isTerminalStatus)
             await FinishToolAsync(toolCallId, status).ConfigureAwait(false);
+    }
+
+    private async Task SendToolUpdatedAsync(string toolCallId, string? status)
+    {
+        var name = _toolNames.TryGetValue(toolCallId, out var n) ? n : "Tool";
+        var summary = _toolSummaries.TryGetValue(toolCallId, out var s) ? s : name;
+        var input = _toolInputs.TryGetValue(toolCallId, out var i) ? i : "";
+        var output = _toolOutputs.TryGetValue(toolCallId, out var o) ? o : "";
+        await _bridgeService.SendEventAsync(new
+        {
+            type = "tool_updated",
+            runId = _currentRunId,
+            toolCallId,
+            name,
+            summary,
+            input,
+            output,
+            status = string.IsNullOrWhiteSpace(status) ? "running" : status
+        }).ConfigureAwait(false);
     }
 
     private async Task<string> EnsureToolStartedAsync(JsonElement update)
@@ -2781,18 +2825,28 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         var toolCallId = GetString(update, "toolCallId");
         var name = ReadToolName(update);
         var input = FormatToolInput(update);
-        var summary = BuildToolSummary(name, input, update);
 
-        if (!_toolNames.TryGetValue(toolCallId, out var existingName)
-            || string.Equals(existingName, "Tool", StringComparison.OrdinalIgnoreCase))
-        {
+        // Initialize only. Subsequent title / input / output field replaces are
+        // applied in ApplyLiveToolUpdateAsync so change detection can emit
+        // tool_updated for title-only updates.
+        if (!_toolNames.ContainsKey(toolCallId))
             _toolNames[toolCallId] = name;
-        }
+        else if (string.Equals(_toolNames[toolCallId], "Tool", StringComparison.OrdinalIgnoreCase)
+                 && !string.Equals(name, "Tool", StringComparison.OrdinalIgnoreCase))
+            _toolNames[toolCallId] = name;
+
+        if (!string.IsNullOrEmpty(input) || update.TryGetProperty("rawInput", out _))
+            _toolInputs[toolCallId] = input;
 
         if (!_toolSummaries.ContainsKey(toolCallId))
-            _toolSummaries[toolCallId] = summary;
+            _toolSummaries[toolCallId] = BuildToolSummary(
+                _toolNames[toolCallId],
+                _toolInputs.GetValueOrDefault(toolCallId, ""),
+                update);
         if (!_toolOutputs.ContainsKey(toolCallId))
             _toolOutputs[toolCallId] = "";
+        if (!_toolInputs.ContainsKey(toolCallId))
+            _toolInputs[toolCallId] = "";
 
         if (_startedToolCallIds.Add(toolCallId))
         {
@@ -2800,10 +2854,11 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             {
                 type = "tool_started",
                 name = _toolNames[toolCallId],
-                input,
+                input = _toolInputs[toolCallId],
                 runId = _currentRunId,
                 toolCallId,
-                summary = _toolSummaries[toolCallId]
+                summary = _toolSummaries[toolCallId],
+                status = "running"
             }).ConfigureAwait(false);
         }
 
@@ -2860,29 +2915,15 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         // Do NOT flush the assistant buffer here: replayed turns must keep the
         // live persistence shape (one assistant message per turn), so tool
         // events only record data and everything is emitted at the turn end.
-        if (string.IsNullOrWhiteSpace(replay.CurrentRunId))
-            replay.CurrentRunId = $"history-{++replay.TurnIndex}";
-
-        var toolCallId = GetString(update, "toolCallId");
-        if (string.IsNullOrWhiteSpace(toolCallId))
-            toolCallId = "history-tool-" + Guid.NewGuid().ToString("N");
-
-        var name = ReadToolName(update);
-        var input = FormatToolInput(update);
-        replay.ToolNames[toolCallId] = name;
-        replay.ToolInputs[toolCallId] = input;
-        replay.ToolOutputs[toolCallId] = FormatToolOutput(update);
-        replay.ToolSummaries[toolCallId] = BuildToolSummary(name, input, update);
-        replay.ToolRunIds[toolCallId] = replay.CurrentRunId;
-        if (!replay.ToolOrder.Contains(toolCallId))
-            replay.ToolOrder.Add(toolCallId);
-
-        var status = GetString(update, "status");
-        if (status is "completed" or "failed")
-            replay.ToolStatuses[toolCallId] = status;
+        ApplyReplayToolUpdate(replay, update);
     }
 
     private static void CaptureReplayToolUpdate(ReplayHistoryState replay, JsonElement update)
+    {
+        ApplyReplayToolUpdate(replay, update);
+    }
+
+    private static void ApplyReplayToolUpdate(ReplayHistoryState replay, JsonElement update)
     {
         if (string.IsNullOrWhiteSpace(replay.CurrentRunId))
             replay.CurrentRunId = $"history-{++replay.TurnIndex}";
@@ -2891,27 +2932,78 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         if (string.IsNullOrWhiteSpace(toolCallId))
             toolCallId = "history-tool-" + Guid.NewGuid().ToString("N");
 
+        var name = ReadToolName(update);
         if (!replay.ToolNames.ContainsKey(toolCallId))
-            replay.ToolNames[toolCallId] = ReadToolName(update);
-        if (!replay.ToolInputs.ContainsKey(toolCallId))
-            replay.ToolInputs[toolCallId] = FormatToolInput(update);
-        if (!replay.ToolSummaries.ContainsKey(toolCallId))
-            replay.ToolSummaries[toolCallId] = BuildToolSummary(replay.ToolNames[toolCallId], replay.ToolInputs[toolCallId], update);
+            replay.ToolNames[toolCallId] = name;
+        else if (string.Equals(replay.ToolNames[toolCallId], "Tool", StringComparison.OrdinalIgnoreCase)
+                 && !string.Equals(name, "Tool", StringComparison.OrdinalIgnoreCase))
+            replay.ToolNames[toolCallId] = name;
+
+        var presentTitle = GetString(update, "title");
+        if (!string.IsNullOrWhiteSpace(presentTitle))
+            replay.ToolNames[toolCallId] = presentTitle;
+
+        var hasRawInput = update.TryGetProperty("rawInput", out _);
+        if (hasRawInput)
+        {
+            var input = FormatToolInput(update);
+            replay.ToolInputs[toolCallId] = input;
+            replay.ToolSummaries[toolCallId] = BuildToolSummary(replay.ToolNames[toolCallId], input, update);
+        }
+        else if (!replay.ToolInputs.ContainsKey(toolCallId))
+        {
+            replay.ToolInputs[toolCallId] = "";
+        }
+
+        if (!string.IsNullOrWhiteSpace(presentTitle) || !replay.ToolSummaries.ContainsKey(toolCallId))
+        {
+            replay.ToolSummaries[toolCallId] = BuildToolSummary(
+                replay.ToolNames[toolCallId],
+                replay.ToolInputs.GetValueOrDefault(toolCallId, ""),
+                update);
+        }
+
         if (!replay.ToolRunIds.ContainsKey(toolCallId))
             replay.ToolRunIds[toolCallId] = replay.CurrentRunId;
         if (!replay.ToolOrder.Contains(toolCallId))
             replay.ToolOrder.Add(toolCallId);
 
-        var output = FormatToolOutput(update);
-        if (!string.IsNullOrWhiteSpace(output))
+        var status = GetString(update, "status");
+        var isTerminalStatus = status is "completed" or "failed";
+        var hasContent = update.TryGetProperty("content", out _);
+        var hasRawOutput = update.TryGetProperty("rawOutput", out _);
+        var terminalChunk = ReadTerminalOutputChunk(update);
+
+        if (hasContent || hasRawOutput)
+        {
+            var displayOutput = FormatContentAndRawOutput(update);
+            var hasCommittedInput = replay.ToolInputs.TryGetValue(toolCallId, out var existingInput)
+                && !string.IsNullOrWhiteSpace(existingInput);
+            if (!isTerminalStatus
+                && !hasRawInput
+                && !hasCommittedInput
+                && IsPendingParamSnapshot(displayOutput))
+            {
+                // Keep the latest pending snapshot out of ToolOutputs until
+                // rawInput or a terminal formal result arrives.
+            }
+            else
+            {
+                replay.ToolOutputs[toolCallId] = displayOutput;
+            }
+        }
+        else if (!string.IsNullOrEmpty(terminalChunk))
         {
             replay.ToolOutputs[toolCallId] = replay.ToolOutputs.TryGetValue(toolCallId, out var existing)
-                ? existing + output
-                : output;
+                ? existing + terminalChunk
+                : terminalChunk;
+        }
+        else if (!replay.ToolOutputs.ContainsKey(toolCallId))
+        {
+            replay.ToolOutputs[toolCallId] = "";
         }
 
-        var status = GetString(update, "status");
-        if (status is "completed" or "failed")
+        if (isTerminalStatus)
             replay.ToolStatuses[toolCallId] = status;
     }
 
@@ -3027,9 +3119,19 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
         var name = _toolNames.TryGetValue(toolCallId, out var n) ? n : "Tool";
         var summary = _toolSummaries.TryGetValue(toolCallId, out var s) ? s : name;
+        var input = _toolInputs.TryGetValue(toolCallId, out var i) ? i : "";
         var output = _toolOutputs.TryGetValue(toolCallId, out var o) ? o : "";
-        _toolOutputs.Remove(toolCallId);
-        AddToolMessage("", name, _currentRunId, toolCallId, output, status, summary);
+        if (string.IsNullOrWhiteSpace(output)
+            && _toolPendingParamSnapshots.TryGetValue(toolCallId, out var pending)
+            && !IsPendingParamSnapshot(pending))
+        {
+            output = pending;
+            _toolOutputs[toolCallId] = output;
+        }
+
+        await SendToolUpdatedAsync(toolCallId, status).ConfigureAwait(false);
+        AddToolMessage(input, name, _currentRunId, toolCallId, output, status, summary);
+        CleanupToolTracking(toolCallId);
         await _bridgeService.SendEventAsync(new
         {
             type = "tool_finished",
@@ -3053,7 +3155,9 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
         _toolNames.Remove(toolCallId);
         _toolSummaries.Remove(toolCallId);
+        _toolInputs.Remove(toolCallId);
         _toolOutputs.Remove(toolCallId);
+        _toolPendingParamSnapshots.Remove(toolCallId);
         _startedToolCallIds.Remove(toolCallId);
     }
 
@@ -3483,7 +3587,9 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         _assistantBuffer.Clear();
         _toolNames.Clear();
         _toolSummaries.Clear();
+        _toolInputs.Clear();
         _toolOutputs.Clear();
+        _toolPendingParamSnapshots.Clear();
         _startedToolCallIds.Clear();
         _documentDecisionToolCallIds.Clear();
         _currentRunId = null;
@@ -3699,44 +3805,81 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             : rawInput.GetRawText();
     }
 
-    private static string FormatToolOutput(JsonElement update)
+    private static string ReadTerminalOutputChunk(JsonElement update)
     {
-        var parts = new List<string>();
         var terminalOutput = ReadNestedElement(update, "_meta", "terminal_output");
-        if (terminalOutput.HasValue)
-        {
-            var data = GetString(terminalOutput.Value, "data");
-            if (!string.IsNullOrWhiteSpace(data))
-                parts.Add(data);
-        }
+        return terminalOutput.HasValue
+            ? GetString(terminalOutput.Value, "data")
+            : "";
+    }
 
-        if (update.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.Array)
+    /// <summary>
+    /// Prefer readable <c>content</c>; fall back to <c>rawOutput</c> only when
+    /// content is empty. Never concatenate both — Claude Read often ships the
+    /// same result as fenced content plus plain rawOutput.
+    /// </summary>
+    private static string FormatContentAndRawOutput(JsonElement update)
+    {
+        var contentText = FormatContentBlocks(update);
+        if (!string.IsNullOrWhiteSpace(contentText))
+            return contentText;
+
+        if (!update.TryGetProperty("rawOutput", out var rawOutput))
+            return "";
+
+        if (rawOutput.ValueKind == JsonValueKind.String)
+            return rawOutput.GetString() ?? "";
+        if (rawOutput.ValueKind != JsonValueKind.Null)
+            return rawOutput.GetRawText();
+        return "";
+    }
+
+    private static string FormatContentBlocks(JsonElement update)
+    {
+        if (!update.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.Array)
+            return "";
+
+        var parts = new List<string>();
+        foreach (var item in content.EnumerateArray())
         {
-            foreach (var item in content.EnumerateArray())
+            var itemType = GetString(item, "type");
+            if (itemType == "content"
+                && item.TryGetProperty("content", out var block)
+                && GetString(block, "type") == "text")
             {
-                var itemType = GetString(item, "type");
-                if (itemType == "content"
-                    && item.TryGetProperty("content", out var block)
-                    && GetString(block, "type") == "text")
-                {
-                    parts.Add(GetString(block, "text"));
-                }
-                else if (itemType == "diff")
-                {
-                    parts.Add(item.GetRawText());
-                }
+                parts.Add(GetString(block, "text"));
+            }
+            else if (itemType == "text")
+            {
+                parts.Add(GetString(item, "text"));
+            }
+            else if (itemType == "diff")
+            {
+                parts.Add(item.GetRawText());
             }
         }
 
-        if (update.TryGetProperty("rawOutput", out var rawOutput))
-        {
-            if (rawOutput.ValueKind == JsonValueKind.String)
-                parts.Add(rawOutput.GetString() ?? "");
-            else if (rawOutput.ValueKind != JsonValueKind.Null)
-                parts.Add(rawOutput.GetRawText());
-        }
+        return string.Join(Environment.NewLine, parts.Where(part => !string.IsNullOrWhiteSpace(part)));
+    }
 
-        return string.Join(Environment.NewLine, parts.Where(p => !string.IsNullOrWhiteSpace(p)));
+    private static string FormatToolOutput(JsonElement update)
+    {
+        var parts = new List<string>();
+        var terminal = ReadTerminalOutputChunk(update);
+        if (!string.IsNullOrWhiteSpace(terminal))
+            parts.Add(terminal);
+
+        var body = FormatContentAndRawOutput(update);
+        if (!string.IsNullOrWhiteSpace(body))
+            parts.Add(body);
+
+        return string.Join(Environment.NewLine, parts.Where(part => !string.IsNullOrWhiteSpace(part)));
+    }
+
+    private static bool IsPendingParamSnapshot(string text)
+    {
+        var trimmed = text.TrimStart();
+        return trimmed.StartsWith('{') || trimmed.StartsWith('[');
     }
 
     private static string BuildToolSummary(string name, string input, JsonElement update)

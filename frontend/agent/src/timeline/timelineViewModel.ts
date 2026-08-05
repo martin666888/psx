@@ -80,8 +80,12 @@ export interface ThinkingItem {
 export interface ToolCardVM {
   toolCallId: string;
   summary: string;
-  /** Accumulated pre content (input, then deltas, then 'Finished.'). */
+  /** Explicit tool input (rawInput); never intermediate param snapshots. */
+  input: string;
+  /** Tool output / terminal stream; never mixed with pending JSON params. */
   output: string;
+  /** When true, the Input section starts collapsed (long input). */
+  inputCollapsed: boolean;
   /** normalized: running | done | error | cancelled | fallback */
   state: string;
   open: boolean;
@@ -140,6 +144,8 @@ export interface DecisionItem {
   title: string;
   /** Raw input JSON / message / document markdown depending on kind. */
   text: string;
+  /** Ordinary permission one-line explanation; never document body. */
+  description: string;
   /** Explicit technical tool input for document decisions; never a toolCall fallback. */
   rawText: string;
   options: DecisionOptionVM[];
@@ -260,9 +266,22 @@ export class TimelineProjection {
           asString(raw.toolCallId) || ('local-' + Date.now()),
           asString(raw.summary) || asString(raw.name) || 'Tool',
           asString(raw.input),
+          '',
           'running'
         );
         return true;
+      case 'tool_updated': {
+        const card = this.resolveToolCard(raw);
+        if (card) {
+          // Full snapshot assignment — empty string clears prior values.
+          card.input = typeof raw.input === 'string' ? raw.input : asString(raw.input);
+          card.output = typeof raw.output === 'string' ? raw.output : asString(raw.output);
+          card.summary = typeof raw.summary === 'string' ? raw.summary : asString(raw.summary);
+          card.state = normalizeToolState(asString(raw.status) || card.state || 'running');
+          card.inputCollapsed = shouldCollapseToolInput(card.input);
+        }
+        return true;
+      }
       case 'tool_delta': {
         const card = this.resolveToolCard(raw);
         if (card) {
@@ -275,10 +294,7 @@ export class TimelineProjection {
       case 'tool_finished': {
         const card = this.resolveToolCard(raw);
         if (card) {
-          if (!card.output.trim()) card.output = 'Finished.';
-          if (card.state === 'running' && this.currentGroup) {
-            // running count derives from card states at render time
-          }
+          if (!card.output.trim() && !card.input.trim()) card.output = 'Finished.';
           card.state = normalizeToolState(asString(raw.status) || 'done');
           card.open = false;
           this.forgetToolCard(card.toolCallId);
@@ -342,9 +358,11 @@ export class TimelineProjection {
     }
   }
 
-  /** External resolution hook: an option button in the React tree was clicked. */
-  selectDecisionOption(requestId: string, optionId: string, optionName: string): void {
-    const item = this.findDecision(requestId);
+  /** External resolution hook: an option button in the React tree was clicked.
+   *  Look up by stable timeline item id — never by ACP requestId, which can
+   *  collide with replayed historical decisions after a process restart. */
+  selectDecisionOption(itemId: string, optionId: string, optionName: string): void {
+    const item = this.findDecisionById(itemId);
     if (!item || item.decisionState !== 'active') return;
     item.decisionState = 'disabled';
     item.collapsed = true;
@@ -358,8 +376,8 @@ export class TimelineProjection {
   /** External hook: a locally-resolved elicitation (legacy disableDecisionCard).
    *  Collapses the card like selectDecisionOption: only a local answer folds
    *  the form; external cancels leave the user's toggle alone. */
-  disableDecision(requestId: string, statusText: string): void {
-    const item = this.findDecision(requestId);
+  disableDecision(itemId: string, statusText: string): void {
+    const item = this.findDecisionById(itemId);
     if (!item || item.decisionState !== 'active') return;
     item.decisionState = 'disabled';
     item.collapsed = true;
@@ -526,17 +544,30 @@ export class TimelineProjection {
     this.createRunGroup(runId);
   }
 
-  private createToolCard(toolCallId: string, summary: string, input: string, state: string): ToolCardVM | null {
+  private createToolCard(
+    toolCallId: string,
+    summary: string,
+    input: string,
+    output: string,
+    state: string
+  ): ToolCardVM | null {
     if (!this.currentGroup) return null;
     const existing = this.currentGroup.cards.find((card) => card.toolCallId === toolCallId);
     if (existing) {
-      if (input && !existing.output) existing.output = input;
+      if (input) {
+        existing.input = input;
+        existing.inputCollapsed = shouldCollapseToolInput(input);
+      }
+      if (output) existing.output = output;
+      if (summary) existing.summary = summary;
       return existing;
     }
     const card: ToolCardVM = {
       toolCallId,
       summary,
-      output: input,
+      input,
+      output,
+      inputCollapsed: shouldCollapseToolInput(input),
       state: normalizeToolState(state),
       open: true
     };
@@ -560,6 +591,7 @@ export class TimelineProjection {
       toolCallId,
       asString(raw.summary) || asString(raw.name) || 'Tool output',
       asString(raw.input),
+      asString(raw.output),
       'running'
     );
   }
@@ -618,10 +650,30 @@ export class TimelineProjection {
 
   // --- decisions --------------------------------------------------------------------------
 
-  private findDecision(requestId: string): DecisionItem | null {
-    if (!requestId) return null;
+  private findDecisionById(itemId: string): DecisionItem | null {
+    if (!itemId) return null;
     for (const row of this.rows) {
-      if (row.item.type === 'decision' && row.item.requestId === requestId) return row.item;
+      if (row.item.type === 'decision' && row.item.id === itemId) return row.item;
+    }
+    return null;
+  }
+
+  /**
+   * Match a live ACP permission/question by requestId. Scan newest-first and
+   * skip historical replay cards — JSON-RPC ids restart per process and often
+   * collide with earlier decisions restored from the thread.
+   */
+  private findLiveDecisionByRequestId(requestId: string): DecisionItem | null {
+    if (!requestId) return null;
+    for (let index = this.rows.length - 1; index >= 0; index -= 1) {
+      const item = this.rows[index].item;
+      if (
+        item.type === 'decision' &&
+        !item.historical &&
+        item.requestId === requestId
+      ) {
+        return item;
+      }
     }
     return null;
   }
@@ -653,7 +705,8 @@ export class TimelineProjection {
       requestId: asString(raw.requestId),
       title:
         asString(raw.title) || (kind === 'permission' ? 'Permission request' : assistantName + ' question'),
-      text: asString(raw.text) || '{}',
+      text: asString(raw.text),
+      description: asString(raw.description),
       rawText: '',
       options,
       decisionState: 'active',
@@ -677,6 +730,7 @@ export class TimelineProjection {
       requestId: asString(raw.requestId),
       title: assistantName + ' Agent needs input',
       text: '',
+      description: '',
       rawText: '',
       options: [],
       decisionState: 'active',
@@ -720,10 +774,11 @@ export class TimelineProjection {
       requestId: asString(raw.requestId),
       title: asString(raw.title) || asString(raw.name) || 'Review the proposed direction',
       text: asString(raw.documentText) || asString(raw.text),
+      description: '',
       rawText: asString(raw.text),
       options,
       decisionState: historical ? 'disabled' : 'active',
-      collapsed: false,
+      collapsed: historical,
       selectedOptionId,
       selectedOptionName: '',
       statusText: historical ? modeTransitionStatusText(storedState, options, selectedOptionId) : '',
@@ -750,9 +805,10 @@ export class TimelineProjection {
   }
 
   private resolveDecision(requestId: string, optionId: string, optionName: string): void {
-    const item = this.findDecision(requestId);
+    const item = this.findLiveDecisionByRequestId(requestId);
     if (!item) return;
     item.decisionState = 'disabled';
+    // Remote resolve updates selection state only — never forces collapse.
     if (item.kind === 'mode_transition' || item.kind === 'document_permission') {
       item.selectedOptionId = optionId;
       item.headerState = 'Selected';
@@ -765,7 +821,7 @@ export class TimelineProjection {
   }
 
   private cancelDecision(requestId: string, text: string): void {
-    const item = this.findDecision(requestId);
+    const item = this.findLiveDecisionByRequestId(requestId);
     if (!item) return;
     item.decisionState = 'disabled';
     if (item.kind === 'mode_transition' || item.kind === 'document_permission') {
@@ -830,10 +886,14 @@ export class TimelineProjection {
 
   private appendHistoryToolCard(msg: RawHostMessage): void {
     if (!this.historyGroup) return;
+    const input = asString(msg.toolInput);
+    const output = asString(msg.toolOutput) || (!input ? asString(msg.text) : '');
     this.historyGroup.cards.push({
       toolCallId: asString(msg.toolCallId),
       summary: asString(msg.summary) || asString(msg.name) || 'Tool',
-      output: asString(msg.toolOutput) || asString(msg.text),
+      input,
+      output,
+      inputCollapsed: shouldCollapseToolInput(input),
       state: normalizeToolState(asString(msg.toolStatus) || 'done'),
       open: false
     });
@@ -937,6 +997,20 @@ export function normalizeToolState(state: string): string {
     : raw === 'running'
     ? 'running'
     : 'done';
+}
+
+/** Input longer than 240 chars or spanning more than 3 lines starts collapsed. */
+export function shouldCollapseToolInput(input: string): boolean {
+  if (!input) return false;
+  if (input.length > 240) return true;
+  let lines = 1;
+  for (let index = 0; index < input.length; index += 1) {
+    if (input[index] === '\n') {
+      lines += 1;
+      if (lines > 3) return true;
+    }
+  }
+  return false;
 }
 
 export const TOOL_STATE_LABELS: Readonly<Record<string, string>> = {

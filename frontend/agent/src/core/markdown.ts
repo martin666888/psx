@@ -43,6 +43,125 @@ function restoreSafeHtml(html: string): string {
   return result;
 }
 
+/** Letter, number, or identifier-continue (underscore). Used so emphasis
+ *  delimiters inside snake_case / CJK_identifiers do not pair across words. */
+function isIdentChar(ch: string | undefined): boolean {
+  if (!ch) return false;
+  return /[\p{L}\p{N}_]/u.test(ch);
+}
+
+/** Replace flanking doubled `marker marker`...`marker marker` runs (bold). */
+function replaceFlankingDoubleEmphasis(
+  html: string,
+  marker: '*' | '_',
+  tag: 'strong'
+): string {
+  const openTag = '<' + tag + '>';
+  const closeTag = '</' + tag + '>';
+  let result = '';
+  let index = 0;
+  while (index < html.length) {
+    if (html[index] !== marker || html[index + 1] !== marker) {
+      result += html[index];
+      index += 1;
+      continue;
+    }
+
+    const openIndex = index;
+    const before = openIndex > 0 ? html[openIndex - 1] : undefined;
+    if (isIdentChar(before)) {
+      result += marker + marker;
+      index += 2;
+      continue;
+    }
+
+    let closeIndex = -1;
+    for (let pos = openIndex + 2; pos < html.length - 1; pos += 1) {
+      if (html[pos] === '\n') break;
+      if (html[pos] !== marker || html[pos + 1] !== marker) continue;
+      const after = pos + 2 < html.length ? html[pos + 2] : undefined;
+      if (isIdentChar(after)) continue;
+      const inner = html.slice(openIndex + 2, pos);
+      if (!inner || inner.includes(marker)) continue;
+      closeIndex = pos;
+      break;
+    }
+
+    if (closeIndex < 0) {
+      result += marker + marker;
+      index += 2;
+      continue;
+    }
+
+    result += openTag + html.slice(openIndex + 2, closeIndex) + closeTag;
+    index = closeIndex + 2;
+  }
+  return result;
+}
+
+/** Replace flanking `marker`...`marker` runs with `tag`, skipping pairs whose
+ *  open/close sit inside an identifier. Bold (`**`/`__`) is applied by the
+ *  caller before single-marker italic. */
+function replaceFlankingEmphasis(
+  html: string,
+  marker: '*' | '_',
+  tag: 'em' | 'strong'
+): string {
+  const openTag = '<' + tag + '>';
+  const closeTag = '</' + tag + '>';
+  let result = '';
+  let index = 0;
+  while (index < html.length) {
+    if (html[index] !== marker) {
+      result += html[index];
+      index += 1;
+      continue;
+    }
+
+    // Skip doubled markers left for bold (already handled) or unfinished pairs.
+    if (html[index + 1] === marker) {
+      result += marker + marker;
+      index += 2;
+      continue;
+    }
+
+    const openIndex = index;
+    const before = openIndex > 0 ? html[openIndex - 1] : undefined;
+    if (isIdentChar(before)) {
+      result += marker;
+      index += 1;
+      continue;
+    }
+
+    let closeIndex = -1;
+    for (let pos = openIndex + 1; pos < html.length; pos += 1) {
+      const ch = html[pos];
+      if (ch === '\n') break;
+      if (ch !== marker) continue;
+      if (html[pos + 1] === marker) {
+        pos += 1;
+        continue;
+      }
+      const after = pos + 1 < html.length ? html[pos + 1] : undefined;
+      if (isIdentChar(after)) continue;
+      const inner = html.slice(openIndex + 1, pos);
+      if (!inner || inner.includes(marker)) continue;
+      closeIndex = pos;
+      break;
+    }
+
+    if (closeIndex < 0) {
+      result += marker;
+      index += 1;
+      continue;
+    }
+
+    result += openTag + html.slice(openIndex + 1, closeIndex) + closeTag;
+    index = closeIndex + 1;
+  }
+  return result;
+}
+
 export function renderInline(text: unknown): string {
   const codeSpans: string[] = [];
   const withCodeTokens = String(text).replace(/`([^`]+)`/g, (_match, code: string) => {
@@ -53,10 +172,11 @@ export function renderInline(text: unknown): string {
 
   let html = escapeHtml(withCodeTokens);
   html = restoreSafeHtml(html);
-  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  html = html.replace(/__([^_]+)__/g, '<strong>$1</strong>');
-  html = html.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
-  html = html.replace(/_([^_\n]+)_/g, '<em>$1</em>');
+  // Bold before italic; delimiter pairs must not sit inside identifiers.
+  html = replaceFlankingDoubleEmphasis(html, '*', 'strong');
+  html = replaceFlankingDoubleEmphasis(html, '_', 'strong');
+  html = replaceFlankingEmphasis(html, '*', 'em');
+  html = replaceFlankingEmphasis(html, '_', 'em');
   html = html.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_match, label: string, href: string) => {
     const href2 = safeHref(href);
     if (!href2) return label;

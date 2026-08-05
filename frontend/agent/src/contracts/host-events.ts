@@ -95,6 +95,7 @@ export type AgentWorkspaceEventType =
   | 'thinking_finished'
   | 'thinking_delta'
   | 'tool_started'
+  | 'tool_updated'
   | 'tool_delta'
   | 'tool_finished'
   | 'permission_request'
@@ -167,6 +168,7 @@ const AGENT_WORKSPACE_EVENT_TYPES: ReadonlySet<string> = new Set<AgentWorkspaceE
   'thinking_finished',
   'thinking_delta',
   'tool_started',
+  'tool_updated',
   'tool_delta',
   'tool_finished',
   'permission_request',

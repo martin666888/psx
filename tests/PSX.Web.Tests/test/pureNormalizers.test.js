@@ -25,6 +25,15 @@ test('markdown: renderMarkdown shapes headings, inline styles and code', () => {
   assert.equal(markdown.renderMarkdown('1. first\n2. second'), '<ol><li>first</li><li>second</li></ol>');
   assert.equal(markdown.renderMarkdown('> a quote'), '<blockquote>a quote</blockquote>');
   assert.equal(markdown.renderMarkdown('---'), '<hr>');
+  assert.equal(
+    markdown.renderMarkdown('mode_transition then switch_mode'),
+    '<p>mode_transition then switch_mode</p>'
+  );
+  assert.equal(
+    markdown.renderMarkdown('mode__transition then switch__mode'),
+    '<p>mode__transition then switch__mode</p>'
+  );
+  assert.equal(markdown.renderMarkdown('_斜体_ and *斜体*'), '<p><em>斜体</em> and <em>斜体</em></p>');
 });
 
 test('markdown: renderMarkdown builds tables and fenced code blocks', () => {

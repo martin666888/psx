@@ -75,6 +75,7 @@ describe('Bridge message type constants', () => {
       ThinkingFinished: 'thinking_finished',
       ThinkingDelta: 'thinking_delta',
       ToolStarted: 'tool_started',
+      ToolUpdated: 'tool_updated',
       ToolDelta: 'tool_delta',
       ToolFinished: 'tool_finished',
       PermissionRequest: 'permission_request',

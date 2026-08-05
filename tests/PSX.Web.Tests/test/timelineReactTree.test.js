@@ -258,8 +258,14 @@ test('permission and question actions expose semantic state and callbacks', asyn
   await act(async () => view.host.querySelector('[data-request-id="q1"] [data-option-id="yes"]').click());
   assert.deepEqual(chosen, [['p1', 'allow'], ['q1', 'yes']]);
 
-  view.projection.selectDecisionOption('p1', 'allow', 'Allow');
-  view.projection.disableDecision('q1', 'Too late.');
+  const permission = view.projection.snapshot().rows
+    .map((row) => row.item)
+    .find((item) => item.type === 'decision' && item.requestId === 'p1');
+  const question = view.projection.snapshot().rows
+    .map((row) => row.item)
+    .find((item) => item.type === 'decision' && item.requestId === 'q1');
+  view.projection.selectDecisionOption(permission.id, 'allow', 'Allow');
+  view.projection.disableDecision(question.id, 'Too late.');
   await view.render();
   assert.equal(view.host.querySelector('[data-request-id="p1"]').dataset.decisionState, 'disabled');
   assert.equal(view.host.querySelector('[data-request-id="p1"] [data-option-id="allow"]').getAttribute('aria-pressed'), 'true');
@@ -359,7 +365,10 @@ test('elicitation option buttons render title and description and submit the pic
   // Production TimelineController disables the decision after posting the
   // response; a local answer folds the card to its header, the header shows
   // the resolution status and a click re-expands the historical form.
-  view.projection.disableDecision('e3', 'Response sent.');
+  const elicitation = view.projection.snapshot().rows
+    .map((row) => row.item)
+    .find((item) => item.type === 'decision' && item.requestId === 'e3');
+  view.projection.disableDecision(elicitation.id, 'Response sent.');
   await view.render();
   const card = view.host.querySelector('.agent-decision-elicitation');
   assert.equal(card.dataset.state, 'closed');

@@ -166,7 +166,10 @@ interface AgentPermissionRequestEvent extends AgentWorkspaceEventBase {
     type: 'permission_request';
     requestId: string;
     title?: string;
+    /** Explicit tool input only; never a whole toolCall JSON fallback. */
     text?: string;
+    /** Single-line ordinary explanation from content text. */
+    description?: string;
     toolKind?: string;
     options: AgentDecisionOptionPayload[];
     presentation?: null;
@@ -202,6 +205,20 @@ interface AgentDocumentPermissionRequestEvent extends AgentWorkspaceEventBase {
     text?: string;
     documentText: string;
     options: AgentDecisionOptionPayload[];
+}
+
+/** tool_updated — full field-replace snapshot for a live tool card. */
+interface AgentToolUpdatedEvent extends AgentWorkspaceEventBase {
+    type: 'tool_updated';
+    runId: string;
+    toolCallId: string;
+    name: string;
+    summary: string;
+    /** Empty string clears the card input. */
+    input: string;
+    /** Empty string clears the card output. */
+    output: string;
+    status: string;
 }
 
 /** Agent events other than the permission_request variants modeled above.
@@ -348,7 +365,8 @@ type AgentEvent =
     | AgentGenericEvent
     | AgentPermissionRequestEvent
     | AgentModeTransitionRequestEvent
-    | AgentDocumentPermissionRequestEvent;
+    | AgentDocumentPermissionRequestEvent
+    | AgentToolUpdatedEvent;
 
 /** Every event the C# host may post to the frontend. */
 type BridgeInboundMessage =

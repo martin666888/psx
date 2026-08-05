@@ -355,6 +355,13 @@ test('shell: composer and conversation share the same reading-column rules', () 
     /\.agent-composer-card\s*\{[\s\S]*?border:\s*1px solid var\(--agent-border-strong\)/,
     'Composer uses the strong theme border instead of relying on a dark-theme shadow'
   );
+
+  const usage = readCss('usage.css');
+  assert.match(
+    usage,
+    /\.agent-usage-panel\s*\{[\s\S]*?border:\s*1px solid var\(--agent-border-strong\)/,
+    'Usage dialog shell uses the strong theme border so it separates from the dark overlay'
+  );
   // Desktop breathing room is the dedicated token (24px); narrow windows use
   // the smaller spacing step, never zero.
   assert.match(shell, /--agent-composer-bottom-space: 24px/);

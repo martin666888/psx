@@ -282,6 +282,240 @@ internal sealed class FakeAcpAgent
             return;
         }
 
+        // Tool merger: content wins over a differently formatted rawOutput.
+        if (text.Contains("merge content rawoutput", StringComparison.OrdinalIgnoreCase))
+        {
+            WriteSessionUpdate(new
+            {
+                sessionUpdate = "tool_call",
+                toolCallId = "tool-merge-content",
+                title = "Read",
+                kind = "read",
+                status = "in_progress",
+                rawInput = new { file_path = "src/a.ts" }
+            });
+            WriteSessionUpdate(new
+            {
+                sessionUpdate = "tool_call_update",
+                toolCallId = "tool-merge-content",
+                title = "Read",
+                kind = "read",
+                status = "completed",
+                content = new[]
+                {
+                    new
+                    {
+                        type = "content",
+                        content = new { type = "text", text = "```ts\n1| const x = 1;\n```" }
+                    }
+                },
+                rawOutput = "const x = 1;"
+            });
+            WriteAssistantChunk("Merge content rawoutput done.");
+            CompletePrompt(id, new { stopReason = "end_turn" });
+            return;
+        }
+
+        // Tool merger: pending JSON param snapshots stay off the UI until rawInput.
+        if (text.Contains("merge pending params", StringComparison.OrdinalIgnoreCase))
+        {
+            WriteSessionUpdate(new
+            {
+                sessionUpdate = "tool_call",
+                toolCallId = "tool-merge-pending",
+                title = "Write",
+                kind = "edit",
+                status = "in_progress",
+                content = new[]
+                {
+                    new
+                    {
+                        type = "content",
+                        content = new { type = "text", text = "{\"path\":\"a.ts\",\"partial\":true}" }
+                    }
+                }
+            });
+            WriteSessionUpdate(new
+            {
+                sessionUpdate = "tool_call_update",
+                toolCallId = "tool-merge-pending",
+                title = "Write",
+                kind = "edit",
+                status = "in_progress",
+                content = new[]
+                {
+                    new
+                    {
+                        type = "content",
+                        content = new { type = "text", text = "{\"path\":\"a.ts\",\"content\":\"final\"}" }
+                    }
+                }
+            });
+            WriteSessionUpdate(new
+            {
+                sessionUpdate = "tool_call_update",
+                toolCallId = "tool-merge-pending",
+                title = "Write",
+                kind = "edit",
+                status = "in_progress",
+                rawInput = new { path = "a.ts", content = "final" }
+            });
+            WriteSessionUpdate(new
+            {
+                sessionUpdate = "tool_call_update",
+                toolCallId = "tool-merge-pending",
+                title = "Write",
+                kind = "edit",
+                status = "completed",
+                content = new[]
+                {
+                    new
+                    {
+                        type = "content",
+                        content = new { type = "text", text = "Wrote a.ts" }
+                    }
+                }
+            });
+            WriteAssistantChunk("Merge pending params done.");
+            CompletePrompt(id, new { stopReason = "end_turn" });
+            return;
+        }
+
+        // Tool merger: terminal deltas are overwritten by a later content snapshot.
+        if (text.Contains("merge terminal snapshot", StringComparison.OrdinalIgnoreCase))
+        {
+            WriteSessionUpdate(new
+            {
+                sessionUpdate = "tool_call",
+                toolCallId = "tool-merge-terminal",
+                title = "Bash",
+                kind = "execute",
+                status = "in_progress",
+                rawInput = new { command = "echo hi" }
+            });
+            WriteSessionUpdate(new
+            {
+                sessionUpdate = "tool_call_update",
+                toolCallId = "tool-merge-terminal",
+                title = "Bash",
+                kind = "execute",
+                status = "in_progress",
+                _meta = new { terminal_output = new { data = "partial line\n" } }
+            });
+            WriteSessionUpdate(new
+            {
+                sessionUpdate = "tool_call_update",
+                toolCallId = "tool-merge-terminal",
+                title = "Bash",
+                kind = "execute",
+                status = "completed",
+                content = new[]
+                {
+                    new
+                    {
+                        type = "content",
+                        content = new { type = "text", text = "final snapshot" }
+                    }
+                }
+            });
+            WriteAssistantChunk("Merge terminal snapshot done.");
+            CompletePrompt(id, new { stopReason = "end_turn" });
+            return;
+        }
+
+        // Tool merger: a later title-only update replaces name/summary via tool_updated.
+        if (text.Contains("merge title update", StringComparison.OrdinalIgnoreCase))
+        {
+            WriteSessionUpdate(new
+            {
+                sessionUpdate = "tool_call",
+                toolCallId = "tool-merge-title",
+                title = "Initial Title",
+                kind = "read",
+                status = "in_progress",
+                rawInput = new { path = "x.ts" }
+            });
+            WriteSessionUpdate(new
+            {
+                sessionUpdate = "tool_call_update",
+                toolCallId = "tool-merge-title",
+                title = "Updated Title",
+                kind = "read",
+                status = "in_progress"
+            });
+            WriteSessionUpdate(new
+            {
+                sessionUpdate = "tool_call_update",
+                toolCallId = "tool-merge-title",
+                title = "Updated Title",
+                kind = "read",
+                status = "completed",
+                content = new[]
+                {
+                    new
+                    {
+                        type = "content",
+                        content = new { type = "text", text = "done" }
+                    }
+                }
+            });
+            WriteAssistantChunk("Merge title update done.");
+            CompletePrompt(id, new { stopReason = "end_turn" });
+            return;
+        }
+
+        // Diff-only document permission must keep a non-empty documentText.
+        if (text.Contains("diff permission", StringComparison.OrdinalIgnoreCase))
+        {
+            WriteSessionUpdate(new
+            {
+                sessionUpdate = "tool_call",
+                toolCallId = "tool-diff-permission",
+                title = "Apply patch",
+                kind = "edit",
+                status = "in_progress"
+            });
+            var diffPermission = await SendClientRequestAsync("session/request_permission", new
+            {
+                sessionId = GetString(parameters, "sessionId", "fake-session-new"),
+                toolCall = new
+                {
+                    toolCallId = "tool-diff-permission",
+                    title = "Apply patch",
+                    kind = "edit",
+                    status = "pending",
+                    content = new object[]
+                    {
+                        new
+                        {
+                            type = "diff",
+                            path = "src/App.cs",
+                            oldText = "old line",
+                            newText = "new line"
+                        }
+                    }
+                },
+                options = new[]
+                {
+                    new { optionId = "approve", name = "Approve", kind = "allow_once" },
+                    new { optionId = "reject", name = "Reject", kind = "reject_once" }
+                }
+            }).ConfigureAwait(false);
+
+            var diffOptionId = ReadPermissionOption(diffPermission);
+            WriteSessionUpdate(new
+            {
+                sessionUpdate = "tool_call_update",
+                toolCallId = "tool-diff-permission",
+                title = "Apply patch",
+                kind = "edit",
+                status = "completed"
+            });
+            WriteAssistantChunk($"Diff permission result: {diffOptionId}");
+            CompletePrompt(id, new { stopReason = "end_turn" });
+            return;
+        }
+
         WriteSessionUpdate(new
         {
             sessionUpdate = "available_commands_update",

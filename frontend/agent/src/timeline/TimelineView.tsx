@@ -55,7 +55,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger
 } from '../components/ui/collapsible.js';
-import { CheckIcon, ChevronDownIcon, CopyIcon, WrenchIcon } from 'lucide-react';
+import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CopyIcon, WrenchIcon } from 'lucide-react';
 
 export interface TimelineCallbacks extends DecisionCallbacks {
   /** Clipboard write with the legacy execCommand fallback; resolves ok. */
@@ -257,7 +257,10 @@ function ToolCardView({
   card: ToolGroupItem['cards'][number];
 }): JSX.Element {
   const [open, setOpen] = useProjectionOpen(card.open);
+  const [inputOpen, setInputOpen] = useProjectionOpen(!card.inputCollapsed);
   const label = TOOL_STATE_LABELS[card.state] || TOOL_STATE_LABELS.done;
+  const hasInput = card.input.trim().length > 0;
+  const hasOutput = card.output.trim().length > 0;
   return (
     <Tool
       className={'agent-tool-card agent-tool-card-' + card.state + ' mb-0 rounded-none border-0'}
@@ -277,10 +280,32 @@ function ToolCardView({
       {/* forceMount keeps closed outputs in the DOM (the old <details> body
           was always present) for replay tooling and text search. */}
       <ToolContent forceMount className="data-[state=closed]:hidden">
-        <div className="agent-tool-card-body pb-3 pl-6">
-          <pre className="agent-tool-card-content max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/50 p-3 font-mono text-xs">
-            {card.output}
-          </pre>
+        <div className="agent-tool-card-body flex flex-col gap-2 pb-3 pl-6">
+          {hasInput ? (
+            <Collapsible
+              open={inputOpen}
+              onOpenChange={setInputOpen}
+              className="agent-tool-card-input group/tool-input"
+            >
+              <CollapsibleTrigger className="flex cursor-pointer select-none items-center gap-2 py-1 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground">
+                <ChevronRightIcon className="size-2.5 shrink-0 transition-transform group-data-[state=open]/tool-input:rotate-90" aria-hidden="true" />
+                Input
+              </CollapsibleTrigger>
+              <CollapsibleContent forceMount className="data-[state=closed]:hidden">
+                <pre className="agent-tool-card-input-content m-0 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/50 p-3 font-mono text-xs">
+                  {card.input}
+                </pre>
+              </CollapsibleContent>
+            </Collapsible>
+          ) : null}
+          {hasOutput ? (
+            <div className="agent-tool-card-output">
+              <div className="mb-1 text-xs font-semibold text-muted-foreground">Output</div>
+              <pre className="agent-tool-card-content max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/50 p-3 font-mono text-xs">
+                {card.output}
+              </pre>
+            </div>
+          ) : null}
         </div>
       </ToolContent>
     </Tool>

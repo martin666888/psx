@@ -29,13 +29,140 @@ public sealed class AcpPermissionPolicyTests
     }
 
     [TestMethod]
-    public void IsModeTransition_RequiresSwitchModeAndNonEmptyDocument()
+    public void Classify_SwitchModeWithSingleLineText_IsModeTransition()
     {
-        Assert.IsTrue(AcpPermissionPolicy.IsModeTransition("switch_mode", "# Plan"));
-        Assert.IsFalse(AcpPermissionPolicy.IsModeTransition("switch_mode", "  "));
-        Assert.IsFalse(AcpPermissionPolicy.IsModeTransition("edit", "# Plan"));
-        Assert.IsFalse(AcpPermissionPolicy.IsModeTransition(null, "# Plan"));
+        using var document = JsonDocument.Parse("""
+            {
+              "kind": "switch_mode",
+              "content": [ { "type": "text", "text": "Ready to code?" } ]
+            }
+            """);
+
+        var result = AcpPermissionPolicy.Classify(document.RootElement);
+
+        Assert.AreEqual(AcpPermissionPresentation.ModeTransition, result.Presentation);
+        Assert.AreEqual("Ready to code?", result.DocumentText);
+        Assert.AreEqual("", result.Description);
     }
+
+    [TestMethod]
+    public void Classify_SingleLineTextWithoutDiff_IsOrdinaryDescription()
+    {
+        using var document = JsonDocument.Parse("""
+            {
+              "kind": "execute",
+              "content": [ { "type": "text", "text": "# Markdown command details" } ]
+            }
+            """);
+
+        var result = AcpPermissionPolicy.Classify(document.RootElement);
+
+        Assert.AreEqual(AcpPermissionPresentation.Ordinary, result.Presentation);
+        Assert.AreEqual("# Markdown command details", result.Description);
+        Assert.AreEqual("", result.DocumentText);
+        Assert.IsNull(result.ExplicitRawInput);
+    }
+
+    [TestMethod]
+    public void Classify_MultilineTextOrDiff_IsDocument()
+    {
+        using var multiline = JsonDocument.Parse("""
+            {
+              "kind": "execute",
+              "content": [ { "type": "text", "text": "# Plan\n\nDo the work" } ]
+            }
+            """);
+        using var withDiff = JsonDocument.Parse("""
+            {
+              "kind": "edit",
+              "content": [
+                { "type": "diff", "path": "a.cs", "oldText": "a", "newText": "b" },
+                { "type": "text", "text": "short" }
+              ]
+            }
+            """);
+
+        Assert.AreEqual(
+            AcpPermissionPresentation.Document,
+            AcpPermissionPolicy.Classify(multiline.RootElement).Presentation);
+        Assert.AreEqual(
+            AcpPermissionPresentation.Document,
+            AcpPermissionPolicy.Classify(withDiff.RootElement).Presentation);
+        Assert.AreEqual(
+            "# Plan\n\nDo the work",
+            AcpPermissionPolicy.Classify(multiline.RootElement).DocumentText.Replace("\r\n", "\n"));
+        var withDiffText = AcpPermissionPolicy.Classify(withDiff.RootElement).DocumentText.Replace("\r\n", "\n");
+        StringAssert.Contains(withDiffText, "### a.cs");
+        StringAssert.Contains(withDiffText, "-a");
+        StringAssert.Contains(withDiffText, "+b");
+        StringAssert.Contains(withDiffText, "short");
+    }
+
+    [TestMethod]
+    public void Classify_DiffOnly_IsDocumentWithNonEmptyReadableBody()
+    {
+        using var document = JsonDocument.Parse("""
+            {
+              "kind": "edit",
+              "content": [
+                { "type": "diff", "path": "src/App.cs", "oldText": "old line", "newText": "new line" }
+              ]
+            }
+            """);
+
+        var result = AcpPermissionPolicy.Classify(document.RootElement);
+        var body = result.DocumentText.Replace("\r\n", "\n");
+
+        Assert.AreEqual(AcpPermissionPresentation.Document, result.Presentation);
+        Assert.AreEqual("", result.Description);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(result.DocumentText));
+        StringAssert.Contains(body, "### src/App.cs");
+        StringAssert.Contains(body, "```diff");
+        StringAssert.Contains(body, "-old line");
+        StringAssert.Contains(body, "+new line");
+    }
+
+    [TestMethod]
+    public void Classify_DoesNotStripTrailingDocumentLines()
+    {
+        using var document = JsonDocument.Parse("""
+            {
+              "content": [
+                { "type": "text", "text": "# Body\n\nDetails" },
+                { "type": "text", "text": "Please approve." }
+              ]
+            }
+            """);
+
+        var result = AcpPermissionPolicy.Classify(document.RootElement);
+
+        Assert.AreEqual(AcpPermissionPresentation.Document, result.Presentation);
+        StringAssert.Contains(result.DocumentText, "Please approve.");
+        Assert.AreEqual("", result.Description);
+    }
+
+    [TestMethod]
+    public void Classify_ExplicitRawInputOnly_NoToolCallJsonFallback()
+    {
+        using var document = JsonDocument.Parse("""
+            {
+              "kind": "execute",
+              "title": "Bash",
+              "rawInput": { "command": "ls" },
+              "content": [ { "type": "text", "text": "Run ls?" } ]
+            }
+            """);
+
+        var result = AcpPermissionPolicy.Classify(document.RootElement);
+
+        Assert.AreEqual(AcpPermissionPresentation.Ordinary, result.Presentation);
+        Assert.AreEqual("Run ls?", result.Description);
+        StringAssert.Contains(result.ExplicitRawInput, "command");
+        StringAssert.Contains(result.ExplicitRawInput, "ls");
+        Assert.IsFalse(result.ExplicitRawInput!.Contains("\"kind\"", StringComparison.Ordinal));
+        Assert.IsFalse(result.ExplicitRawInput.Contains("\"title\"", StringComparison.Ordinal));
+    }
+
 
     [TestMethod]
     public void ReadDocument_DoesNotInferDocumentFromRawInput()
