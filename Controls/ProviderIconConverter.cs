@@ -9,6 +9,8 @@ public sealed class ProviderIconConverter : IValueConverter
     public Geometry DefaultIcon { get; set; } = Geometry.Empty;
     public Geometry ClaudeIcon { get; set; } = Geometry.Empty;
     public Geometry KimiIcon { get; set; } = Geometry.Empty;
+    public Geometry QwenIcon { get; set; } = Geometry.Empty;
+    public Geometry QoderIcon { get; set; } = Geometry.Empty;
 
     public object Convert(
         object? value,
@@ -16,12 +18,7 @@ public sealed class ProviderIconConverter : IValueConverter
         object? parameter,
         CultureInfo culture)
     {
-        return (value as string) switch
-        {
-            string key when key.Equals("claude", StringComparison.OrdinalIgnoreCase) => ClaudeIcon,
-            string key when key.Equals("kimi", StringComparison.OrdinalIgnoreCase) => KimiIcon,
-            _ => DefaultIcon
-        };
+        return Resolve(value as string) ?? DefaultIcon;
     }
 
     public object ConvertBack(
@@ -32,4 +29,13 @@ public sealed class ProviderIconConverter : IValueConverter
     {
         throw new NotSupportedException();
     }
+
+    private Geometry? Resolve(string? iconKey) => iconKey?.ToLowerInvariant() switch
+    {
+        "claude" => ClaudeIcon,
+        "kimi" => KimiIcon,
+        "qwen" => QwenIcon,
+        "qoder" => QoderIcon,
+        _ => null
+    };
 }

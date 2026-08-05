@@ -8,7 +8,9 @@
         <local:ProviderIconConverter x:Key="ProviderIconConverter"
                                      DefaultIcon="{StaticResource AgentIconGeometry.Agent}"
                                      ClaudeIcon="{StaticResource AgentIconGeometry.Claude}"
-                                     KimiIcon="{StaticResource AgentIconGeometry.Kimi}"/>
+                                     KimiIcon="{StaticResource AgentIconGeometry.Kimi}"
+                                     QwenIcon="{StaticResource AgentIconGeometry.Qwen}"
+                                     QoderIcon="{StaticResource AgentIconGeometry.Qoder}"/>
 
         <Style x:Key="TabItemContainerStyle" TargetType="Border">
             <Setter Property="Background" Value="{DynamicResource WindowBackgroundBrush}"/>

@@ -80,6 +80,18 @@ public partial class App : Application
                 Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "agent", "acp-logs")));
         services.AddSingleton<KimiCodeAcpAgentProvider>();
         services.AddSingleton<IAcpAgentProvider>(sp => sp.GetRequiredService<KimiCodeAcpAgentProvider>());
+
+        // Qwen Code is Apache-2.0 and pre-installed into tools/qwen/ at build
+        // time, so it uses its own bundled runtime (no npm ci / promote). Its
+        // logs land next to the ACP logs. Registering the provider is enough
+        // for it to appear in the New Agent menu / workspace creation / history
+        // filter / provider catalog. Default provider stays Claude.
+        services.AddSingleton<QwenCodeAcpRuntime>(sp =>
+            new QwenCodeAcpRuntime(
+                sp.GetRequiredService<RuntimeLocator>(),
+                Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "agent", "acp-logs")));
+        services.AddSingleton<QwenCodeAcpAgentProvider>();
+        services.AddSingleton<IAcpAgentProvider>(sp => sp.GetRequiredService<QwenCodeAcpAgentProvider>());
         services.AddSingleton(new AgentProviderOptions { DefaultProviderKey = "acp-claude" });
         services.AddSingleton<IAgentProviderRegistry, AgentProviderRegistry>();
         services.AddSingleton<IAgentRuntimeCoordinator, AgentRuntimeCoordinator>();

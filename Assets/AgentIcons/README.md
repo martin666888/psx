@@ -5,7 +5,9 @@ The original monochrome SVGs in `lobehub-1.94.0/` come from
 
 - `claude.svg`
 - `kimi.svg`
+- `qwen.svg`
+- `qoder.svg`
 
-PSX converts these two pinned SVG paths to WPF `StreamGeometry` resources in
+PSX converts these pinned SVG paths to WPF `StreamGeometry` resources in
 `Themes/AgentIcons.xaml`. The application never downloads icons at runtime.
 See `licenses/lobe-icons/LICENSE` and `THIRD-PARTY-NOTICES.md`.

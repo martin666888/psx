@@ -13,7 +13,7 @@ namespace PSX.Tests.Unit;
 public sealed class AgentTabIconTests
 {
     [TestMethod]
-    public void IconResources_LoadThreeDistinctGeometries_AndConverterFallsBack()
+    public void IconResources_LoadDistinctGeometries_AndConverterResolvesKnownKeys()
     {
         var resourcesPath = Path.Combine(
             TestWorkspace.RepositoryRoot,
@@ -31,22 +31,35 @@ public sealed class AgentTabIconTests
         var fallback = resources["AgentIconGeometry.Agent"];
         var claude = resources["AgentIconGeometry.Claude"];
         var kimi = resources["AgentIconGeometry.Kimi"];
+        var qwen = resources["AgentIconGeometry.Qwen"];
+        var qoder = resources["AgentIconGeometry.Qoder"];
         var converter = new ProviderIconConverter
         {
             DefaultIcon = fallback,
             ClaudeIcon = claude,
-            KimiIcon = kimi
+            KimiIcon = kimi,
+            QwenIcon = qwen,
+            QoderIcon = qoder
         };
 
         Assert.AreNotEqual(fallback.ToString(), claude.ToString());
         Assert.AreNotEqual(fallback.ToString(), kimi.ToString());
+        Assert.AreNotEqual(fallback.ToString(), qwen.ToString());
+        Assert.AreNotEqual(fallback.ToString(), qoder.ToString());
         Assert.AreNotEqual(claude.ToString(), kimi.ToString());
+        Assert.AreNotEqual(qwen.ToString(), qoder.ToString());
         Assert.AreSame(
             claude,
             converter.Convert("claude", typeof(Geometry), null, CultureInfo.InvariantCulture));
         Assert.AreSame(
             kimi,
             converter.Convert("KIMI", typeof(Geometry), null, CultureInfo.InvariantCulture));
+        Assert.AreSame(
+            qwen,
+            converter.Convert("qwen", typeof(Geometry), null, CultureInfo.InvariantCulture));
+        Assert.AreSame(
+            qoder,
+            converter.Convert("QODER", typeof(Geometry), null, CultureInfo.InvariantCulture));
         Assert.AreSame(
             fallback,
             converter.Convert("unregistered-provider", typeof(Geometry), null, CultureInfo.InvariantCulture));
@@ -62,6 +75,8 @@ public sealed class AgentTabIconTests
         var source = File.ReadAllText(tabBarPath);
 
         StringAssert.Contains(source, "Data=\"{Binding IconKey, Converter={StaticResource ProviderIconConverter}}\"");
+        StringAssert.Contains(source, "QwenIcon=\"{StaticResource AgentIconGeometry.Qwen}\"");
+        StringAssert.Contains(source, "QoderIcon=\"{StaticResource AgentIconGeometry.Qoder}\"");
         Assert.IsFalse(source.Contains("AgentStateMarker", StringComparison.Ordinal));
         Assert.IsFalse(source.Contains("Text=\"●\"", StringComparison.Ordinal));
     }
