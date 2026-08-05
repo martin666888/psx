@@ -635,7 +635,9 @@ export function DecisionCard({
   if (item.kind === 'mode_transition' || item.kind === 'document_permission') {
     return <DocumentDecisionCard item={item} callbacks={callbacks} />;
   }
-  if (item.kind === 'elicitation') {
+  // Permission form variant reuses the elicitation form body over the
+  // permission response channel (see TimelineController).
+  if (item.kind === 'elicitation' || (item.kind === 'permission' && item.schema)) {
     return <ElicitationCard item={item} callbacks={callbacks} />;
   }
   return <PermissionQuestionCard item={item} assistantName={assistantName} callbacks={callbacks} />;

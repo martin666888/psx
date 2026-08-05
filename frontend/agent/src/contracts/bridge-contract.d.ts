@@ -191,6 +191,24 @@ interface AgentModeTransitionRequestEvent extends AgentWorkspaceEventBase {
 }
 
 /**
+ * permission_request with presentation 'form' — ask-user questions lifted from
+ * nested rawInput.questions into an elicitation-shaped schema while staying on
+ * the permission response channel (agent_permission_response).
+ */
+interface AgentPermissionFormRequestEvent extends AgentWorkspaceEventBase {
+    type: 'permission_request';
+    presentation: 'form';
+    requestId: string;
+    title?: string;
+    message?: string;
+    /** JSON Schema object rendered by the shared elicitation form body. */
+    schema: Record<string, unknown>;
+    /** Offered optionId sent with answers on Continue (e.g. proceed_once). */
+    formSubmitOptionId: string;
+    options: AgentDecisionOptionPayload[];
+}
+
+/**
  * permission_request with presentation 'document' — a structured document
  * supplied by an ACP Agent without claiming the switch_mode protocol
  * semantics. It remains an ordinary ACP permission response.
@@ -366,6 +384,7 @@ type AgentEvent =
     | AgentGenericEvent
     | AgentPermissionRequestEvent
     | AgentModeTransitionRequestEvent
+    | AgentPermissionFormRequestEvent
     | AgentDocumentPermissionRequestEvent
     | AgentToolUpdatedEvent;
 

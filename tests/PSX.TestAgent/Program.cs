@@ -639,6 +639,46 @@ internal sealed class FakeAcpAgent
             }).ConfigureAwait(false);
             WriteAssistantChunk($"Ordinary permission result: {ReadPermissionOption(permission)}");
         }
+        else if (text.Contains("ask user permission", StringComparison.OrdinalIgnoreCase))
+        {
+            var permission = await SendClientRequestAsync("session/request_permission", new
+            {
+                sessionId = GetString(parameters, "sessionId", "fake-session-new"),
+                toolCall = new
+                {
+                    toolCallId = "tool-ask-user",
+                    title = "Ask user 1 question",
+                    kind = "think",
+                    status = "pending",
+                    rawInput = new
+                    {
+                        questions = new object[]
+                        {
+                            new
+                            {
+                                question = "Which wallpaper style?",
+                                header = "Style",
+                                multiSelect = false,
+                                options = new object[]
+                                {
+                                    new { label = "Scenic", description = "Landscapes" },
+                                    new { label = "Cute", description = "Pets" }
+                                }
+                            }
+                        }
+                    }
+                },
+                options = new[]
+                {
+                    new { optionId = "proceed_once", name = "Submit", kind = "allow_once" },
+                    new { optionId = "cancel", name = "Cancel", kind = "reject_once" }
+                }
+            }).ConfigureAwait(false);
+
+            var optionId = ReadPermissionOption(permission);
+            var answers = ReadPermissionAnswers(permission);
+            WriteAssistantChunk($"Ask user result: {optionId}; answers={answers}");
+        }
         else if (text.Contains("permission", StringComparison.OrdinalIgnoreCase))
         {
             WriteSessionUpdate(new
@@ -924,6 +964,22 @@ internal sealed class FakeAcpAgent
                && outcome.TryGetProperty("optionId", out var selected)
             ? selected.GetString() ?? "cancelled"
             : "cancelled";
+    }
+
+    private static string ReadPermissionAnswers(JsonElement permission)
+    {
+        if (!permission.TryGetProperty("result", out var permissionResult)
+            || !permissionResult.TryGetProperty("answers", out var answers)
+            || answers.ValueKind != JsonValueKind.Object)
+        {
+            return "";
+        }
+
+        return string.Join(
+            ";",
+            answers.EnumerateObject()
+                .OrderBy(property => property.Name, StringComparer.Ordinal)
+                .Select(property => $"{property.Name}={property.Value.GetString()}"));
     }
 
     private static int GetInt(JsonElement element, string name)

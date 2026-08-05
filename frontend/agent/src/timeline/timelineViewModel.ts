@@ -165,9 +165,14 @@ export interface DecisionItem {
   toolCallId: string;
   /** Document-decision replay cards render already-resolved. */
   historical: boolean;
-  /** elicitation raw schema payload (form rendering source). */
+  /** elicitation / permission-form raw schema payload (form rendering source). */
   schema: RawHostMessage | null;
   elicitationMessage: string;
+  /**
+   * Permission form variant: offered optionId to send with answers on Continue.
+   * Empty for ordinary permission / elicitation cards.
+   */
+  formSubmitOptionId: string;
 }
 
 export type TimelineItem =
@@ -338,6 +343,8 @@ export class TimelineProjection {
           this.appendDocumentDecision(raw, false, 'mode_transition');
         } else if (raw.presentation === 'document' && raw.documentText) {
           this.appendDocumentDecision(raw, false, 'document_permission');
+        } else if (raw.presentation === 'form' && raw.schema) {
+          this.appendPermissionForm(raw, assistantName);
         } else {
           this.appendDecision(raw, 'permission', assistantName);
         }
@@ -721,7 +728,47 @@ export class TimelineProjection {
       toolCallId: '',
       historical: false,
       schema: null,
-      elicitationMessage: ''
+      elicitationMessage: '',
+      formSubmitOptionId: ''
+    });
+  }
+
+  /**
+   * Ask-user permission form: same pending permission channel, elicitation-shaped
+   * schema so the shared form UI can collect answers without leaving the
+   * agent_permission_response pairing.
+   */
+  private appendPermissionForm(raw: RawHostMessage, assistantName: string): void {
+    const hasStructuredOptions = Array.isArray(raw.options);
+    const options = hasStructuredOptions
+      ? (raw.options as RawHostMessage[]).map((option) => ({
+          optionId: asString(option.optionId),
+          name: asString(option.name) || asString(option.optionId) || 'Select',
+          kind: asString(option.kind)
+        }))
+      : [];
+    this.append({
+      type: 'decision',
+      id: this.nextId('dec'),
+      kind: 'permission',
+      requestId: asString(raw.requestId),
+      decisionSnapshotId: asString(raw.decisionSnapshotId) || undefined,
+      title: asString(raw.title) || assistantName + ' Agent needs input',
+      text: '',
+      description: '',
+      rawText: '',
+      options,
+      decisionState: 'active',
+      collapsed: false,
+      selectedOptionId: '',
+      selectedOptionName: '',
+      statusText: '',
+      headerState: '',
+      toolCallId: '',
+      historical: false,
+      schema: raw,
+      elicitationMessage: asString(raw.message) || 'Provide the requested information to continue.',
+      formSubmitOptionId: asString(raw.formSubmitOptionId)
     });
   }
 
@@ -746,7 +793,8 @@ export class TimelineProjection {
       toolCallId: '',
       historical: false,
       schema: raw,
-      elicitationMessage: asString(raw.message) || 'Provide the requested information to continue.'
+      elicitationMessage: asString(raw.message) || 'Provide the requested information to continue.',
+      formSubmitOptionId: ''
     });
   }
 
@@ -791,7 +839,8 @@ export class TimelineProjection {
       toolCallId: asString(raw.toolCallId),
       historical,
       schema: null,
-      elicitationMessage: ''
+      elicitationMessage: '',
+      formSubmitOptionId: ''
     });
   }
 

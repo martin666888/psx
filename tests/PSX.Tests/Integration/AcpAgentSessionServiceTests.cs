@@ -467,6 +467,35 @@ public sealed class AcpAgentSessionServiceTests
     }
 
     [TestMethod]
+    public async Task AskUserPermission_LiftsQuestionsIntoFormAndReturnsAnswers()
+    {
+        using var fixture = new FakeAcpSessionFixture(nameof(AskUserPermission_LiftsQuestionsIntoFormAndReturnsAnswers));
+
+        await fixture.Service.SubmitMessageAsync("ask user permission");
+        var permission = await fixture.Bridge.WaitForEventAsync("permission_request");
+
+        Assert.AreEqual("form", permission.GetProperty("presentation").GetString());
+        Assert.AreEqual("proceed_once", permission.GetProperty("formSubmitOptionId").GetString());
+        Assert.AreEqual(JsonValueKind.Null, permission.GetProperty("text").ValueKind);
+        Assert.IsTrue(permission.TryGetProperty("schema", out var schema));
+        Assert.IsTrue(schema.GetProperty("properties").TryGetProperty("q0", out _));
+        Assert.IsTrue(schema.GetProperty("properties").TryGetProperty("q0_other", out _));
+        Assert.AreEqual(0, schema.GetProperty("required").GetArrayLength());
+
+        var requestId = permission.GetProperty("requestId").GetString();
+        fixture.Bridge.RaiseCommand(
+            "agent_permission_response",
+            requestId,
+            """{"optionId":"proceed_once","content":{"q0":"Scenic"}}""");
+        await fixture.Bridge.WaitForEventAsync("permission_resolved");
+        await fixture.Bridge.WaitForEventAsync("run_finished");
+
+        var thread = fixture.LoadOnlyVisibleThread();
+        Assert.IsTrue(thread.Messages.Any(message => message.Role == "assistant"
+            && message.Text == "Ask user result: proceed_once; answers=0=Scenic"));
+    }
+
+    [TestMethod]
     public async Task Cancel_StopsAHangingPromptAndLeavesTransportReusable()
     {
         using var fixture = new FakeAcpSessionFixture(nameof(Cancel_StopsAHangingPromptAndLeavesTransportReusable));

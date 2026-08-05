@@ -231,6 +231,44 @@ test('permission and question requests fold into decision items with default opt
   assert.equal(question.statusText, 'Too late.');
 });
 
+test('permission form presentation folds schema without raw input text', () => {
+  const projection = fold([
+    ['user_message', { text: 'ask' }],
+    ['permission_request', {
+      requestId: 'pf1',
+      presentation: 'form',
+      title: 'Ask user 1 question',
+      message: 'Please answer the following question(s):',
+      formSubmitOptionId: 'proceed_once',
+      schema: {
+        type: 'object',
+        properties: {
+          q0: {
+            type: 'string',
+            title: 'Style',
+            oneOf: [{ const: 'Scenic', title: 'Scenic' }]
+          },
+          q0_other: { type: 'string', title: 'Other' }
+        },
+        required: []
+      },
+      options: [
+        { optionId: 'proceed_once', name: 'Submit', kind: 'allow_once' },
+        { optionId: 'cancel', name: 'Cancel', kind: 'reject_once' }
+      ],
+      text: '{"questions":[{"should":"not appear"}]}'
+    }]
+  ]);
+  const form = items(projection).find((item) => item.type === 'decision');
+  assert.equal(form.kind, 'permission');
+  assert.equal(form.formSubmitOptionId, 'proceed_once');
+  assert.equal(form.text, '', 'form variant suppresses raw input dump');
+  assert.equal(form.elicitationMessage, 'Please answer the following question(s):');
+  assert.ok(form.schema);
+  assert.equal(form.schema.presentation, 'form');
+  assert.deepEqual(form.options.map((option) => option.optionId), ['proceed_once', 'cancel']);
+});
+
 test('reused ACP requestId updates the live card, not a historical twin', () => {
   const projection = new TimelineProjection();
   projection.apply(

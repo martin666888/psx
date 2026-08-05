@@ -273,6 +273,62 @@ test('permission and question actions expose semantic state and callbacks', asyn
   await view.dispose();
 });
 
+test('permission form variant renders elicitation options and posts permission JSON', async () => {
+  const elicitationActions = [];
+  const view = await renderEvents([
+    ['user_message', { text: 'ask' }],
+    ['permission_request', {
+      requestId: 'pf1',
+      presentation: 'form',
+      title: 'Ask user 1 question',
+      message: 'Which style?',
+      formSubmitOptionId: 'proceed_once',
+      schema: {
+        type: 'object',
+        properties: {
+          q0: {
+            type: 'string',
+            title: 'Style',
+            description: 'Which wallpaper style?',
+            oneOf: [
+              { const: 'Scenic', title: 'Scenic', description: 'Landscapes' },
+              { const: 'Cute', title: 'Cute', description: 'Pets' }
+            ]
+          },
+          q0_other: { type: 'string', title: 'Other' }
+        },
+        required: []
+      },
+      options: [
+        { optionId: 'proceed_once', name: 'Submit', kind: 'allow_once' },
+        { optionId: 'cancel', name: 'Cancel', kind: 'reject_once' }
+      ]
+    }]
+  ], {
+    onElicitationAction: (item, payload, statusText) => {
+      elicitationActions.push({ requestId: item.requestId, kind: item.kind, payload, statusText });
+    }
+  });
+
+  assert.match(view.host.textContent, /Which wallpaper style/);
+  assert.equal(view.host.querySelector('.agent-decision-raw-input'), null);
+  const options = [...view.host.querySelectorAll('.agent-elicitation-option')];
+  assert.equal(options.length, 2);
+  await act(async () => options[1].click());
+  await act(async () => {
+    const continueBtn = [...view.host.querySelectorAll('button')].find((button) => /Continue/i.test(button.textContent || ''));
+    assert.ok(continueBtn);
+    continueBtn.click();
+  });
+  assert.equal(elicitationActions.length, 1);
+  assert.equal(elicitationActions[0].kind, 'permission');
+  assert.equal(elicitationActions[0].requestId, 'pf1');
+  const parsed = JSON.parse(elicitationActions[0].payload);
+  assert.equal(parsed.action, 'accept');
+  assert.equal(parsed.content.q0, 'Cute');
+  await view.dispose();
+});
+
 const ELICITATION = ['elicitation_request', {
   requestId: 'e1',
   message: 'Pick your options.',

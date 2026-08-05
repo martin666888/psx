@@ -59,6 +59,14 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         public IReadOnlyList<AgentDecisionOption> Options { get; init; } = Array.Empty<AgentDecisionOption>();
         public PermissionPresentation Presentation { get; init; }
         public string DecisionSnapshotId { get; init; } = "";
+        /// <summary>
+        /// When set, this permission is the ask-user form variant: the frontend
+        /// renders an elicitation-shaped schema and may reply with JSON
+        /// <c>{ optionId, content }</c> instead of a bare optionId.
+        /// </summary>
+        public bool IsAskUserForm { get; init; }
+        public IReadOnlyList<int> AskUserAnswerIndexes { get; init; } = Array.Empty<int>();
+        public string? FormSubmitOptionId { get; init; }
         public bool IsDocumentDecision => Presentation is PermissionPresentation.Document or PermissionPresentation.ModeTransition;
         public bool IsModeTransition => Presentation == PermissionPresentation.ModeTransition;
     }
@@ -2276,11 +2284,39 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         var documentText = classified.DocumentText;
         var description = classified.Description;
         var explicitToolInput = classified.ExplicitRawInput;
+
+        // Structural ask-user lift: nested rawInput.questions → permission form
+        // variant (same pending table / agent_permission_response channel).
+        // Never emit elicitation_request for this — that would break pairing.
+        var isAskUserForm = false;
+        object? askUserSchema = null;
+        string? askUserMessage = null;
+        IReadOnlyList<int> askUserIndexes = Array.Empty<int>();
+        string? formSubmitOptionId = null;
+        if (presentation == PermissionPresentation.Ordinary
+            && AcpAskUserQuestionAdapter.TryCreateForm(
+                toolCall,
+                out askUserMessage,
+                out askUserSchema,
+                out askUserIndexes))
+        {
+            formSubmitOptionId = AcpAskUserQuestionAdapter.ResolveProceedOptionId(options);
+            if (!string.IsNullOrWhiteSpace(formSubmitOptionId))
+            {
+                isAskUserForm = true;
+                explicitToolInput = null;
+                description = "";
+            }
+        }
+
         var pending = new PendingPermission
         {
             Options = options,
             Presentation = presentation,
-            DecisionSnapshotId = Guid.NewGuid().ToString("N")
+            DecisionSnapshotId = Guid.NewGuid().ToString("N"),
+            IsAskUserForm = isAskUserForm,
+            AskUserAnswerIndexes = askUserIndexes,
+            FormSubmitOptionId = formSubmitOptionId
         };
         _pendingPermissions[requestId] = pending;
 
@@ -2319,12 +2355,17 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             description = pending.IsDocumentDecision || string.IsNullOrWhiteSpace(description)
                 ? null
                 : description,
-            presentation = pending.Presentation switch
-            {
-                PermissionPresentation.ModeTransition => "mode_transition",
-                PermissionPresentation.Document => "document",
-                _ => null
-            },
+            presentation = pending.IsAskUserForm
+                ? "form"
+                : pending.Presentation switch
+                {
+                    PermissionPresentation.ModeTransition => "mode_transition",
+                    PermissionPresentation.Document => "document",
+                    _ => null
+                },
+            message = pending.IsAskUserForm ? askUserMessage : null,
+            schema = pending.IsAskUserForm ? askUserSchema : null,
+            formSubmitOptionId = pending.IsAskUserForm ? formSubmitOptionId : null,
             toolCallId,
             toolKind,
             toolStatus,
@@ -2351,11 +2392,29 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             return new { outcome = new { outcome = "cancelled" } };
         }
 
-        var selected = await pending.Completion.Task.ConfigureAwait(false);
-        if (selected == "__cancelled__")
+        var selectedRaw = await pending.Completion.Task.ConfigureAwait(false);
+        if (selectedRaw == "__cancelled__")
         {
             if (pending.IsDocumentDecision)
                 UpdateDocumentDecisionState(requestId, pending.Presentation, "cancelled", decisionSnapshotId: pending.DecisionSnapshotId);
+            return new { outcome = new { outcome = "cancelled" } };
+        }
+
+        if (!AcpAskUserQuestionAdapter.TryParsePermissionResponseValue(
+                selectedRaw,
+                out var selected,
+                out var formContent,
+                out var hasFormContent))
+        {
+            if (pending.IsDocumentDecision)
+                UpdateDocumentDecisionState(requestId, pending.Presentation, "cancelled", decisionSnapshotId: pending.DecisionSnapshotId);
+
+            await _bridgeService.SendEventAsync(new
+            {
+                type = "permission_cancelled",
+                requestId,
+                text = "The selected option was not offered by the ACP Agent."
+            }).ConfigureAwait(false);
             return new { outcome = new { outcome = "cancelled" } };
         }
 
@@ -2385,6 +2444,29 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             optionId = selected,
             optionName = selectedOption.Name
         }).ConfigureAwait(false);
+
+        Dictionary<string, string>? answers = null;
+        if (pending.IsAskUserForm
+            && hasFormContent
+            && string.Equals(selected, pending.FormSubmitOptionId, StringComparison.OrdinalIgnoreCase))
+        {
+            answers = AcpAskUserQuestionAdapter.MapContentToAnswers(
+                formContent,
+                pending.AskUserAnswerIndexes);
+        }
+
+        if (answers is { Count: > 0 })
+        {
+            return new Dictionary<string, object?>
+            {
+                ["outcome"] = new Dictionary<string, object?>
+                {
+                    ["outcome"] = "selected",
+                    ["optionId"] = selected
+                },
+                ["answers"] = answers
+            };
+        }
 
         return new
         {

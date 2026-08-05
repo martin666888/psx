@@ -83,6 +83,10 @@ export class TimelineController implements FeatureController {
       onDecisionOption: (item, option) => this.resolveDecision(item, option),
       onElicitationAction: (item, payload, statusText) => {
         if (!item.requestId) return;
+        if (item.kind === 'permission' && item.schema) {
+          this.resolvePermissionForm(item, payload, statusText);
+          return;
+        }
         this.bridge()?.sendAgentElicitationResponse(item.requestId, payload);
         this.projection.disableDecision(item.id, statusText);
         this.render();
@@ -113,6 +117,41 @@ export class TimelineController implements FeatureController {
     // Update the clicked card by stable timeline id. ACP requestId alone is
     // not unique across historical replay + a restarted agent process.
     this.projection.selectDecisionOption(item.id, option.optionId, option.name);
+    this.render();
+  }
+
+  /**
+   * Ask-user permission form: stay on agent_permission_response. Accept sends
+   * JSON `{ optionId, content }`; decline/cancel send an offered reject option
+   * or the shared `__cancelled__` sentinel.
+   */
+  private resolvePermissionForm(item: DecisionItem, payload: string, statusText: string): void {
+    if (!item.requestId) return;
+    let action = 'cancel';
+    let content: Record<string, unknown> = {};
+    try {
+      const parsed = JSON.parse(payload) as { action?: string; content?: Record<string, unknown> };
+      action = typeof parsed.action === 'string' ? parsed.action : 'cancel';
+      if (parsed.content && typeof parsed.content === 'object') content = parsed.content;
+    } catch {
+      action = 'cancel';
+    }
+
+    if (action === 'accept') {
+      const optionId = item.formSubmitOptionId || resolveProceedOptionId(item.options);
+      if (!optionId) return;
+      this.bridge()?.sendAgentPermissionResponse(
+        item.requestId,
+        JSON.stringify({ optionId, content })
+      );
+      this.projection.selectDecisionOption(item.id, optionId, 'Continue');
+      this.render();
+      return;
+    }
+
+    const cancelId = resolveCancelOptionId(item.options);
+    this.bridge()?.sendAgentPermissionResponse(item.requestId, cancelId || '__cancelled__');
+    this.projection.disableDecision(item.id, statusText);
     this.render();
   }
 
@@ -164,4 +203,41 @@ export class TimelineController implements FeatureController {
       .getPanel(this.workspaceId)
       ?.querySelector<HTMLElement>('[data-role="conversation-host"]') ?? null;
   }
+}
+
+function resolveProceedOptionId(options: DecisionOptionVM[]): string {
+  const exact = options.find(
+    (option) =>
+      option.optionId === 'proceed_once' ||
+      option.optionId === 'allow_once' ||
+      option.optionId === 'allow'
+  );
+  if (exact) return exact.optionId;
+  const byKind = options.find(
+    (option) =>
+      option.kind === 'allow_once' || option.kind === 'allow_always' || option.kind === 'allow'
+  );
+  if (byKind) return byKind.optionId;
+  const fallback = options.find(
+    (option) =>
+      option.kind !== 'reject_once' &&
+      option.kind !== 'reject_always' &&
+      option.optionId !== 'cancel' &&
+      !/reject|cancel/i.test(option.optionId)
+  );
+  return fallback?.optionId || '';
+}
+
+function resolveCancelOptionId(options: DecisionOptionVM[]): string {
+  const exact = options.find(
+    (option) =>
+      option.optionId === 'cancel' ||
+      option.optionId === 'reject' ||
+      option.optionId === 'reject_once'
+  );
+  if (exact) return exact.optionId;
+  const byKind = options.find(
+    (option) => option.kind === 'reject_once' || option.kind === 'reject_always'
+  );
+  return byKind?.optionId || '';
 }
