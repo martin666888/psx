@@ -39,7 +39,7 @@ test('markdown: renderMarkdown shapes headings, inline styles and code', () => {
 test('markdown: renderMarkdown builds tables and fenced code blocks', () => {
   assert.equal(
     markdown.renderMarkdown('| A | B |\n| --- | --- |\n| 1 | 2 |'),
-    '<div class="agent-table-scroll"><table><thead><tr><th>A</th><th>B</th></tr></thead>' +
+    '<div class="agent-table-scroll agent-native-scroll"><table><thead><tr><th>A</th><th>B</th></tr></thead>' +
       '<tbody><tr><td>1</td><td>2</td></tr></tbody></table></div>'
   );
   assert.equal(

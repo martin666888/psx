@@ -1,8 +1,10 @@
 /* Webkit scrollbar skin for the scroll nodes that stay on native scrolling.
-   History dock content and the Plan panel migrated to the shared Radix
-   ScrollArea component (hover-reveal thumb, same 8px / --agent-scrollbar
-   ladder) and no longer render native scrollbars. */
+   Add agent-native-scroll to every explicit overflow-auto/scroll element;
+   the structural selectors below cover generated content and controller-owned
+   scroll nodes that cannot carry that utility directly. History dock content
+   and the Plan panel use the shared Radix ScrollArea component instead. */
 
+.agent-native-scroll::-webkit-scrollbar,
 .agent-thread-scroll::-webkit-scrollbar,
 .agent-composer textarea::-webkit-scrollbar,
 .agent-message-body pre::-webkit-scrollbar,
@@ -15,6 +17,7 @@
     height: 8px;
 }
 
+.agent-native-scroll::-webkit-scrollbar-track,
 .agent-thread-scroll::-webkit-scrollbar-track,
 .agent-composer textarea::-webkit-scrollbar-track,
 .agent-message-body pre::-webkit-scrollbar-track,
@@ -28,6 +31,7 @@
     background: transparent;
 }
 
+.agent-native-scroll::-webkit-scrollbar-thumb,
 .agent-thread-scroll::-webkit-scrollbar-thumb,
 .agent-composer textarea::-webkit-scrollbar-thumb,
 .agent-message-body pre::-webkit-scrollbar-thumb,
@@ -44,6 +48,7 @@
  * whole affordance. This also documents why the scroll containers must never
  * set the standard scrollbar-color/scrollbar-width properties — Chromium
  * would drop this entire skin and render native arrow-button scrollbars. */
+.agent-native-scroll::-webkit-scrollbar-button,
 .agent-thread-scroll::-webkit-scrollbar-button,
 .agent-composer textarea::-webkit-scrollbar-button,
 .agent-message-body pre::-webkit-scrollbar-button,

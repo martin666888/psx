@@ -130,7 +130,7 @@ export const ToolContent = ({ className, ...props }: ToolContentProps) => (
 /** PSX replacement for the AI Elements CodeBlock: the fenced-code HTML
  * pipeline (`pre > code`) styled by CSS, no Shiki. */
 const PlainCode = ({ code }: { code: string }) => (
-  <pre className="overflow-x-auto p-3 text-xs">
+  <pre className="agent-native-scroll overflow-x-auto p-3 text-xs">
     <code>{code}</code>
   </pre>
 );
@@ -180,7 +180,7 @@ export const ToolOutput = ({
       </h4>
       <div
         className={cn(
-          "overflow-x-auto rounded-md text-xs [&_table]:w-full",
+          "agent-native-scroll overflow-x-auto rounded-md text-xs [&_table]:w-full",
           errorText
             ? "bg-destructive/10 text-destructive"
             : "bg-muted/50 text-foreground"

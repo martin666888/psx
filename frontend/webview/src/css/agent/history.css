@@ -2,8 +2,7 @@
    controls are shadcn components (Input, Select, Button) and the content
    scroller's box model is Tailwind. This file keeps what utilities do not
    express — the dock's absolute frame, the two-row bar grid, the rounded
-   corners of the single scroll node (its webkit scrollbar skin lives in
-   scrollbars.css keyed off the same class), the resizer affordance and the
+   corners of the Radix ScrollArea viewport, the resizer affordance and the
    open animation. */
 
 /* --- Global History dock (singleton, left column) -------------------------- */

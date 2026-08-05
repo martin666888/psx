@@ -148,7 +148,7 @@ function RecoveryCard({ item, callbacks }: { item: RecoveryItem; callbacks: Time
             Technical details
           </CollapsibleTrigger>
           <CollapsibleContent forceMount className="data-[state=closed]:hidden">
-            <pre className="agent-recovery-technical mt-2 max-h-44 overflow-auto whitespace-pre-wrap break-words rounded-md border bg-muted/50 p-3 font-mono text-[11px] leading-normal">
+            <pre className="agent-recovery-technical agent-native-scroll mt-2 max-h-44 overflow-auto whitespace-pre-wrap break-words rounded-md border bg-muted/50 p-3 font-mono text-[11px] leading-normal">
               {item.detail}
             </pre>
           </CollapsibleContent>
@@ -233,7 +233,7 @@ function ThinkingBlock({ item }: { item: ThinkingItem }): JSX.Element {
       {/* forceMount keeps the collapsed transcript in the DOM (old <details>
           semantics) for text search and replay tooling. */}
       <ReasoningContent forceMount className="data-[state=closed]:hidden">
-        <pre className="agent-thinking-content max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-muted/50 p-3 font-mono text-xs">
+        <pre className="agent-thinking-content agent-native-scroll max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-muted/50 p-3 font-mono text-xs">
           {item.text}
         </pre>
       </ReasoningContent>
@@ -292,7 +292,7 @@ function ToolCardView({
                 Input
               </CollapsibleTrigger>
               <CollapsibleContent forceMount className="data-[state=closed]:hidden">
-                <pre className="agent-tool-card-input-content m-0 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/50 p-3 font-mono text-xs">
+                <pre className="agent-tool-card-input-content agent-native-scroll m-0 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/50 p-3 font-mono text-xs">
                   {card.input}
                 </pre>
               </CollapsibleContent>
@@ -301,7 +301,7 @@ function ToolCardView({
           {hasOutput ? (
             <div className="agent-tool-card-output">
               <div className="mb-1 text-xs font-semibold text-muted-foreground">Output</div>
-              <pre className="agent-tool-card-content max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/50 p-3 font-mono text-xs">
+              <pre className="agent-tool-card-content agent-native-scroll max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/50 p-3 font-mono text-xs">
                 {card.output}
               </pre>
             </div>
@@ -379,7 +379,7 @@ function InlineTool({ item }: { item: InlineToolItem }): JSX.Element {
       {/* forceMount keeps the collapsed output in the DOM (old static-card
           semantics) for text search and replay tooling. */}
       <ToolContent forceMount className="data-[state=closed]:hidden">
-        <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words px-3 pb-3 font-mono text-xs">{item.text}</pre>
+        <pre className="agent-native-scroll max-h-72 overflow-auto whitespace-pre-wrap break-words px-3 pb-3 font-mono text-xs">{item.text}</pre>
       </ToolContent>
     </Tool>
   );

@@ -31,6 +31,7 @@
     <script>
         window.onerror = function(msg, src, line, col, err) {
             var d = document.createElement('pre');
+            d.className = 'agent-native-scroll';
             d.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#f38ba8;color:#1e1e2e;font-size:12px;padding:8px;z-index:9999;white-space:pre-wrap;max-height:40vh;overflow:auto';
             d.textContent = '[JS ERROR] ' + msg + '\n  at ' + src + ':' + line + ':' + col + (err ? '\n' + err.stack : '');
             document.body.appendChild(d);

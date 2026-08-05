@@ -304,7 +304,7 @@ function ComposerTextarea(props: {
       value={props.draft}
       disabled={props.draftProps.disabled}
       spellCheck={false}
-      className="min-h-[var(--agent-composer-input-min-height)] max-h-[180px] w-full resize-none overflow-y-auto border-0 bg-transparent p-0 font-mono text-sm leading-[1.45] text-foreground shadow-none placeholder:text-muted-foreground focus-visible:ring-0"
+      className="agent-native-scroll min-h-[var(--agent-composer-input-min-height)] max-h-[180px] w-full resize-none overflow-y-auto border-0 bg-transparent p-0 font-mono text-sm leading-[1.45] text-foreground shadow-none placeholder:text-muted-foreground focus-visible:ring-0"
       aria-autocomplete="list"
       aria-haspopup="listbox"
       aria-expanded={props.commands.open}

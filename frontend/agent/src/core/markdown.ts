@@ -220,7 +220,7 @@ function tryReadTable(lines: string[], startIndex: number): { html: string; endI
   }).join('');
 
   return {
-    html: '<div class="agent-table-scroll"><table><thead><tr>' + head + '</tr></thead><tbody>' + body + '</tbody></table></div>',
+    html: '<div class="agent-table-scroll agent-native-scroll"><table><thead><tr>' + head + '</tr></thead><tbody>' + body + '</tbody></table></div>',
     endIndex
   };
 }
