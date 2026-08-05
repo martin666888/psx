@@ -82,6 +82,33 @@ public sealed class QwenCodeAcpAgentProviderTests
     }
 
     [TestMethod]
+    public void CreateLoginTerminalProfile_UsesInteractiveTuiNotAcpLoginFlag()
+    {
+        using var fixture = new FakeNpmFixture(nameof(CreateLoginTerminalProfile_UsesInteractiveTuiNotAcpLoginFlag));
+        fixture.InstallQwenBundle();
+        var provider = new QwenCodeAcpAgentProvider(fixture.CreateQwenRuntime());
+
+        var profile = provider.CreateLoginTerminalProfile("C:/projects/app");
+
+        Assert.IsNotNull(profile);
+        StringAssert.Contains(profile!.Arguments, "node.exe");
+        StringAssert.Contains(profile.Arguments, "cli-entry.js");
+        Assert.IsFalse(profile.Arguments.Contains("--acp", StringComparison.Ordinal));
+        Assert.IsFalse(profile.Arguments.Contains("--login", StringComparison.Ordinal));
+        Assert.IsFalse(profile.Arguments.Contains("--resume", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void CreateLoginTerminalProfile_IncompleteInstall_ReturnsNull()
+    {
+        var provider = CreateProvider(out var workspace);
+        using (workspace)
+        {
+            Assert.IsNull(provider.CreateLoginTerminalProfile("C:/projects/app"));
+        }
+    }
+
+    [TestMethod]
     public void Registry_QwenRegistered_DefaultStaysClaudeAndQwenIsDiscoverable()
     {
         using var workspace = TestWorkspace.Create(nameof(Registry_QwenRegistered_DefaultStaysClaudeAndQwenIsDiscoverable));

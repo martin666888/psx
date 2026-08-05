@@ -1560,8 +1560,8 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     /// <summary>
     /// Builds a login terminal profile. Prefer the provider's declared login
-    /// profile (e.g. <c>qodercli login</c>); otherwise append <c>--login</c>
-    /// to the ACP process spec (Claude / Kimi / Qwen style).
+    /// profile (e.g. <c>qodercli login</c>, or Qwen's interactive TUI). Otherwise
+    /// append <c>--login</c> to the ACP process spec (Claude / Kimi style).
     /// </summary>
     private ShellProfile? CreateLoginTerminalProfile()
     {

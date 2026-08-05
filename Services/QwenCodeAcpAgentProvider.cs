@@ -82,4 +82,26 @@ public sealed class QwenCodeAcpAgentProvider : IAcpAgentProvider
             StartingDirectory = workingDirectory
         };
     }
+
+    /// <summary>
+    /// Qwen does not accept <c>--acp --login</c>. Interactive OAuth happens in
+    /// the normal TUI (portable Node + package entry); credentials land in
+    /// <c>~/.qwen</c> and the Agent workspace retries afterward.
+    /// </summary>
+    public ShellProfile? CreateLoginTerminalProfile(string workingDirectory)
+    {
+        var command = _runtime.TryBuildInteractivePowerShellInvocation(sessionId: null);
+        if (command == null)
+            return null;
+
+        var escapedCwd = workingDirectory.Replace("'", "''");
+        return new ShellProfile
+        {
+            Id = "qwen-code-login",
+            Name = $"{Descriptor.DisplayName} 登录",
+            Command = "powershell.exe",
+            Arguments = $"-NoExit -Command Set-Location -LiteralPath '{escapedCwd}'; {command}",
+            StartingDirectory = workingDirectory
+        };
+    }
 }
