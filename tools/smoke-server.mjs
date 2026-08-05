@@ -49,7 +49,7 @@ const REACT_SMOKE_BOOTSTRAP = String.raw`
       postMessage(payload) {
         // Bridge.sendToHost posts a JSON string. The history broker only
         // accepts agent_threads answers to its own in-flight history
-        // command, so the fixture answers like the host.
+        // command, so the fixture echoes the requestId like the host.
         let message = payload;
         if (typeof message === 'string') {
           try { message = JSON.parse(message); } catch { return; }
@@ -58,6 +58,7 @@ const REACT_SMOKE_BOOTSTRAP = String.raw`
           setTimeout(() => emit({
             type: 'agent_threads',
             workspaceId: message.workspaceId,
+            requestId: message.requestId,
             threads: [{
               threadId: 'ht1',
               title: 'Release smoke thread',

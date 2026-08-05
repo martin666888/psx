@@ -58,6 +58,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         public IReadOnlyList<AgentDecisionOption> Options { get; init; } = Array.Empty<AgentDecisionOption>();
         public PermissionPresentation Presentation { get; init; }
+        public string DecisionSnapshotId { get; init; } = "";
         public bool IsDocumentDecision => Presentation is PermissionPresentation.Document or PermissionPresentation.ModeTransition;
         public bool IsModeTransition => Presentation == PermissionPresentation.ModeTransition;
     }
@@ -96,7 +97,9 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     {
         public Process Process { get; init; } = null!;
         public StringBuilder Output { get; } = new();
+        public int OutputByteCount { get; set; }
         public int OutputByteLimit { get; init; } = 200_000;
+        public bool Truncated { get; set; }
         public long TransportGeneration { get; init; }
         public CancellationToken TransportToken { get; init; }
     }
@@ -127,6 +130,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     private readonly IAcpAgentRuntime _runtime;
     private readonly IAgentRuntimeCoordinator _runtimeCoordinator;
     private readonly object _runLock = new();
+    private readonly object _sessionMutationSync = new();
     private readonly object _commandLock = new();
     private readonly object _runtimeInstallLock = new();
     private readonly SemaphoreSlim _transportLock = new(1, 1);
@@ -359,7 +363,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             {
                 pending.Completion.TrySetResult("__cancelled__");
                 if (pending.IsDocumentDecision)
-                    UpdateDocumentDecisionState(item.Key, pending.Presentation, "cancelled");
+                    UpdateDocumentDecisionState(item.Key, pending.Presentation, "cancelled", decisionSnapshotId: pending.DecisionSnapshotId);
                 await _bridgeService.SendEventAsync(new
                 {
                     type = "permission_cancelled",
@@ -523,8 +527,11 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
         try
         {
-            if (ThinkingMessageNormalizer.Normalize(_currentThread.Messages))
-                _threadStore.SaveThread(_currentThread);
+            lock (_sessionMutationSync)
+            {
+                if (ThinkingMessageNormalizer.Normalize(_currentThread.Messages))
+                    _threadStore.SaveThread(_currentThread);
+            }
             ApplyThread(_currentThread);
             await SendAgentCommandsUnavailableAsync().ConfigureAwait(false);
             _acpSessionId = null;
@@ -689,32 +696,36 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             return;
         }
 
-        _workingDirectory = fullPath;
-        _currentThread.Cwd = fullPath;
-        SaveCurrentThread();
+        lock (_sessionMutationSync)
+        {
+            _workingDirectory = fullPath;
+            _currentThread.Cwd = fullPath;
+            SaveCurrentThreadCore();
+        }
         await SendThreadLoadedAsync(clear: true, selectPlan: true).ConfigureAwait(false);
         await _bridgeService.SendEventAsync(new { type = "command_result", text = $"Working directory changed to: {fullPath}" }).ConfigureAwait(false);
         await PublishStateAsync().ConfigureAwait(false);
     }
 
-    public async Task ListThreadsAsync()
+    public async Task ListThreadsAsync(string? requestId = null)
     {
         try
         {
             await _bridgeService.SendEventAsync(
-                AgentThreadBridgePayload.ThreadList(_threadStore.ListThreads())).ConfigureAwait(false);
+                AgentThreadBridgePayload.ThreadList(_threadStore.ListThreads(), requestId)).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            await SendHistoryErrorAsync(ex).ConfigureAwait(false);
+            await SendHistoryErrorAsync(ex, requestId).ConfigureAwait(false);
         }
     }
 
-    private Task SendHistoryErrorAsync(Exception exception)
+    private Task SendHistoryErrorAsync(Exception exception, string? requestId = null)
     {
         return _bridgeService.SendEventAsync(new
         {
             type = "agent_history_error",
+            requestId = string.IsNullOrWhiteSpace(requestId) ? null : requestId,
             text = $"Unable to load Agent thread history. {exception.Message}"
         });
     }
@@ -800,7 +811,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 await CancelAsync().ConfigureAwait(false);
                 break;
             case "history":
-                await ListThreadsAsync().ConfigureAwait(false);
+                await ListThreadsAsync(e.RequestId).ConfigureAwait(false);
                 break;
             case "delete":
                 await DeleteThreadAsync(_currentThread.ThreadId).ConfigureAwait(false);
@@ -1546,13 +1557,16 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             _status = "running";
             _thinkingBuffer.Clear();
             _assistantBuffer.Clear();
-            _toolNames.Clear();
-            _toolSummaries.Clear();
-            _toolInputs.Clear();
-            _toolOutputs.Clear();
-            _toolPendingParamSnapshots.Clear();
-            _startedToolCallIds.Clear();
-            _documentDecisionToolCallIds.Clear();
+            lock (_sessionMutationSync)
+            {
+                _toolNames.Clear();
+                _toolSummaries.Clear();
+                _toolInputs.Clear();
+                _toolOutputs.Clear();
+                _toolPendingParamSnapshots.Clear();
+                _startedToolCallIds.Clear();
+                _documentDecisionToolCallIds.Clear();
+            }
             _currentRunId = Guid.NewGuid().ToString();
             _runCts = cts;
             _runRequestCts = requestCts;
@@ -1778,12 +1792,15 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         _acpSessionId = GetString(result, "sessionId");
         _sessionIdForTransportRecovery = null;
         _transportRecoveryRequired = false;
-        _currentThread.Provider = _provider.Descriptor.Key;
-        _currentThread.AcpSessionId = _acpSessionId;
-        _currentThread.AdapterVersion = _adapterVersion;
-        CaptureModes(result);
-        CaptureConfigOptions(result);
-        SaveCurrentThread();
+        lock (_sessionMutationSync)
+        {
+            _currentThread.Provider = _provider.Descriptor.Key;
+            _currentThread.AcpSessionId = _acpSessionId;
+            _currentThread.AdapterVersion = _adapterVersion;
+            CaptureModes(result);
+            CaptureConfigOptions(result);
+            SaveCurrentThreadCore();
+        }
         await SendSessionReadyAsync().ConfigureAwait(false);
     }
 
@@ -1820,11 +1837,16 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         // the agent-side session context — replayed content must never
         // overwrite the archive, because providers may replay injected context
         // as user chunks and fragment assistant text around tool events.
-        var hasLocalTranscript = _currentThread.Messages.Count > 0;
-        var documentDecisionSnapshots = _currentThread.Messages
-            .Where(DocumentDecisionSnapshotMerger.IsDocumentDecision)
-            .Select(DocumentDecisionSnapshotMerger.CloneMessage)
-            .ToArray();
+        bool hasLocalTranscript;
+        AgentMessage[] documentDecisionSnapshots;
+        lock (_sessionMutationSync)
+        {
+            hasLocalTranscript = _currentThread.Messages.Count > 0;
+            documentDecisionSnapshots = _currentThread.Messages
+                .Where(DocumentDecisionSnapshotMerger.IsDocumentDecision)
+                .Select(DocumentDecisionSnapshotMerger.CloneMessage)
+                .ToArray();
+        }
         var replay = new ReplayHistoryState();
         // With a local transcript only control updates are applied and content
         // replay is dropped on arrival: large sessions otherwise pay full CPU
@@ -1854,11 +1876,15 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             {
                 // Keep the archive. A still-pending mode transition cannot be
                 // answered after a reload, so mark it interrupted locally.
-                var interrupted = DocumentDecisionSnapshotMerger.InterruptPending(_currentThread);
-                // One unified persist for everything ControlOnly captured in
-                // memory (usage, mode, title) plus the interruption above,
-                // instead of a disk write per control update.
-                SaveCurrentThread();
+                bool interrupted;
+                lock (_sessionMutationSync)
+                {
+                    interrupted = DocumentDecisionSnapshotMerger.InterruptPending(_currentThread);
+                    // One unified persist for everything ControlOnly captured in
+                    // memory (usage, mode, title) plus the interruption above,
+                    // instead of a disk write per control update.
+                    SaveCurrentThreadCore();
+                }
                 if (interrupted)
                     await SendThreadLoadedAsync(clear: true).ConfigureAwait(false);
 
@@ -1874,10 +1900,13 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
             if (replay.Messages.Count > 0)
             {
-                if (replay.Messages[0].Role == "user")
-                    _currentThread.Title = BuildMessageTitle(replay.Messages[0].Text);
-                _currentThread.Messages = replay.Messages;
-                SaveCurrentThread();
+                lock (_sessionMutationSync)
+                {
+                    if (replay.Messages[0].Role == "user")
+                        _currentThread.Title = BuildMessageTitle(replay.Messages[0].Text);
+                    _currentThread.Messages = replay.Messages;
+                    SaveCurrentThreadCore();
+                }
                 await SendThreadLoadedAsync(clear: true).ConfigureAwait(false);
             }
             else
@@ -1998,8 +2027,11 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 _supportsImage = ReadNestedBool(initResult, "agentCapabilities", "promptCapabilities", "image") ?? false;
                 _supportsSessionResume = SupportsSessionResume(initResult);
                 _authMethods = ParseAuthMethods(initResult);
-                _currentThread.AdapterVersion = _adapterVersion;
-                SaveCurrentThread();
+                lock (_sessionMutationSync)
+                {
+                    _currentThread.AdapterVersion = _adapterVersion;
+                    SaveCurrentThreadCore();
+                }
                 await PublishStateAsync().ConfigureAwait(false);
             }
             catch
@@ -2217,7 +2249,8 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         var pending = new PendingPermission
         {
             Options = options,
-            Presentation = presentation
+            Presentation = presentation,
+            DecisionSnapshotId = Guid.NewGuid().ToString("N")
         };
         _pendingPermissions[requestId] = pending;
 
@@ -2229,11 +2262,15 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
         if (pending.IsDocumentDecision)
         {
-            if (!string.IsNullOrWhiteSpace(toolCallId))
-                _documentDecisionToolCallIds.Add(toolCallId);
+            lock (_sessionMutationSync)
+            {
+                if (!string.IsNullOrWhiteSpace(toolCallId))
+                    _documentDecisionToolCallIds.Add(toolCallId);
+            }
 
             UpsertDocumentDecisionMessage(
                 pending.Presentation,
+                pending.DecisionSnapshotId,
                 requestId,
                 toolCallId,
                 title,
@@ -2246,6 +2283,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         {
             type = "permission_request",
             requestId,
+            decisionSnapshotId = pending.DecisionSnapshotId,
             title,
             text = explicitToolInput,
             description = pending.IsDocumentDecision || string.IsNullOrWhiteSpace(description)
@@ -2273,7 +2311,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         {
             _pendingPermissions.TryRemove(requestId, out _);
             if (pending.IsDocumentDecision)
-                UpdateDocumentDecisionState(requestId, pending.Presentation, "cancelled");
+                UpdateDocumentDecisionState(requestId, pending.Presentation, "cancelled", decisionSnapshotId: pending.DecisionSnapshotId);
             await _bridgeService.SendEventAsync(new
             {
                 type = "permission_cancelled",
@@ -2287,7 +2325,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         if (selected == "__cancelled__")
         {
             if (pending.IsDocumentDecision)
-                UpdateDocumentDecisionState(requestId, pending.Presentation, "cancelled");
+                UpdateDocumentDecisionState(requestId, pending.Presentation, "cancelled", decisionSnapshotId: pending.DecisionSnapshotId);
             return new { outcome = new { outcome = "cancelled" } };
         }
 
@@ -2295,7 +2333,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         if (selectedOption == null)
         {
             if (pending.IsDocumentDecision)
-                UpdateDocumentDecisionState(requestId, pending.Presentation, "cancelled");
+                UpdateDocumentDecisionState(requestId, pending.Presentation, "cancelled", decisionSnapshotId: pending.DecisionSnapshotId);
 
             await _bridgeService.SendEventAsync(new
             {
@@ -2308,7 +2346,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
         selected = selectedOption.OptionId;
         if (pending.IsDocumentDecision)
-            UpdateDocumentDecisionState(requestId, pending.Presentation, "selected", selected);
+            UpdateDocumentDecisionState(requestId, pending.Presentation, "selected", selected, pending.DecisionSnapshotId);
 
         await _bridgeService.SendEventAsync(new
         {
@@ -2372,16 +2410,41 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     private object HandleReadTextFile(JsonElement parameters)
     {
+        const int MaxByteLength = 200_000;
         var path = EnsureAllowedPath(GetString(parameters, "path"));
         var line = TryGetInt(parameters, "line");
         var limit = TryGetInt(parameters, "limit");
-        var lines = File.ReadAllLines(path, Encoding.UTF8);
         var start = Math.Max((line ?? 1) - 1, 0);
-        var selected = lines.Skip(start);
-        if (limit is > 0)
-            selected = selected.Take(limit.Value);
 
-        return new { content = string.Join(Environment.NewLine, selected) };
+        using var reader = new StreamReader(path, Encoding.UTF8);
+        for (var skipped = 0; skipped < start && !reader.EndOfStream; skipped++)
+            reader.ReadLine();
+
+        var lines = new List<string>();
+        var byteCount = 0;
+        var lineCount = 0;
+        var newlineBytes = Encoding.UTF8.GetByteCount(Environment.NewLine);
+
+        while (!reader.EndOfStream)
+        {
+            if (limit is > 0 && lineCount >= limit.Value)
+                break;
+
+            var nextLine = reader.ReadLine();
+            if (nextLine == null)
+                break;
+
+            var lineBytes = Encoding.UTF8.GetByteCount(nextLine);
+            var addedBytes = lines.Count > 0 ? newlineBytes + lineBytes : lineBytes;
+            if (byteCount + addedBytes > MaxByteLength)
+                break;
+
+            lines.Add(nextLine);
+            byteCount += addedBytes;
+            lineCount++;
+        }
+
+        return new { content = string.Join(Environment.NewLine, lines) };
     }
 
     private object HandleWriteTextFile(JsonElement parameters)
@@ -2433,7 +2496,9 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             }
         }
 
-        var limit = TryGetInt(parameters, "outputByteLimit") ?? 200_000;
+        const int MaxOutputByteLimit = 2_000_000;
+        var rawLimit = TryGetInt(parameters, "outputByteLimit") ?? 200_000;
+        var limit = Math.Clamp(rawLimit, 0, MaxOutputByteLimit);
         var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
         if (!process.Start())
             throw new InvalidOperationException($"Failed to start ACP terminal command: {command}");
@@ -2460,7 +2525,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             return new
             {
                 output = terminal.Output.ToString(),
-                truncated = false,
+                truncated = terminal.Truncated,
                 exitStatus = terminal.Process.HasExited
                     ? new { exitCode = terminal.Process.ExitCode, signal = (string?)null }
                     : null
@@ -2516,9 +2581,13 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
                 lock (terminal.Output)
                 {
-                    terminal.Output.Append(buffer, 0, count);
-                    if (terminal.Output.Length > terminal.OutputByteLimit)
-                        terminal.Output.Remove(0, terminal.Output.Length - terminal.OutputByteLimit);
+                    terminal.OutputByteCount = AppendBoundedUtf8(
+                        terminal.Output,
+                        terminal.OutputByteCount,
+                        buffer.AsSpan(0, count),
+                        terminal.OutputByteLimit,
+                        out var truncated);
+                    terminal.Truncated |= truncated;
                 }
             }
         }
@@ -2526,6 +2595,66 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         {
             // The transport reset or service shutdown disposed the stream.
         }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"ReadTerminalStreamAsync failed for terminal {terminalId}: {ex}");
+        }
+    }
+
+    /// <summary>
+    /// Appends UTF-16 text while retaining at most <paramref name="byteLimit"/>
+    /// UTF-8 bytes. The oldest complete Unicode scalars are removed in one
+    /// StringBuilder operation, avoiding one allocation/removal per character.
+    /// </summary>
+    internal static int AppendBoundedUtf8(
+        StringBuilder output,
+        int currentByteCount,
+        ReadOnlySpan<char> text,
+        int byteLimit,
+        out bool truncated)
+    {
+        var joinsSplitSurrogate = output.Length > 0
+            && text.Length > 0
+            && char.IsHighSurrogate(output[^1])
+            && char.IsLowSurrogate(text[0]);
+        var appendedBytes = Encoding.UTF8.GetByteCount(text);
+        // Each half was previously counted as a three-byte replacement. Once
+        // joined they form one four-byte scalar, so correct the rolling count.
+        if (joinsSplitSurrogate)
+            appendedBytes -= 2;
+
+        output.Append(text);
+        var byteCount = currentByteCount + appendedBytes;
+        var excess = byteCount - Math.Max(0, byteLimit);
+        if (excess <= 0)
+        {
+            truncated = false;
+            return byteCount;
+        }
+
+        var removeChars = 0;
+        var removedBytes = 0;
+        while (removedBytes < excess && removeChars < output.Length)
+        {
+            var current = output[removeChars];
+            if (char.IsHighSurrogate(current)
+                && removeChars + 1 < output.Length
+                && char.IsLowSurrogate(output[removeChars + 1]))
+            {
+                removeChars += 2;
+                removedBytes += 4;
+            }
+            else
+            {
+                removeChars++;
+                removedBytes += current <= 0x7f ? 1 : current <= 0x7ff ? 2 : 3;
+            }
+        }
+
+        if (removeChars > 0)
+            output.Remove(0, removeChars);
+        truncated = removeChars > 0;
+        return byteCount - removedBytes;
     }
 
     private AcpTerminalProcess GetTerminal(string terminalId)
@@ -2680,10 +2809,13 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     private Task ApplyCurrentModeUpdateAsync(JsonElement update, bool persist)
     {
-        _currentModeId = GetString(update, "currentModeId");
-        _currentThread.ModeId = _currentModeId;
-        if (persist)
-            SaveCurrentThread();
+        lock (_sessionMutationSync)
+        {
+            _currentModeId = GetString(update, "currentModeId");
+            _currentThread.ModeId = _currentModeId;
+            if (persist)
+                SaveCurrentThreadCore();
+        }
         return SendModesAsync();
     }
 
@@ -2692,9 +2824,12 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         if (!update.TryGetProperty("title", out var title) || title.ValueKind != JsonValueKind.String)
             return;
 
-        _currentThread.Title = title.GetString() ?? _currentThread.Title;
-        if (persist)
-            SaveCurrentThread();
+        lock (_sessionMutationSync)
+        {
+            _currentThread.Title = title.GetString() ?? _currentThread.Title;
+            if (persist)
+                SaveCurrentThreadCore();
+        }
     }
 
     private async Task HandleToolCallAsync(JsonElement update)
@@ -2714,10 +2849,13 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     private async Task ApplyLiveToolUpdateAsync(JsonElement update)
     {
         var reportedToolCallId = GetString(update, "toolCallId");
-        if (ShouldSuppressDocumentDecisionTool(reportedToolCallId))
+        lock (_sessionMutationSync)
         {
-            CleanupToolTracking(reportedToolCallId);
-            return;
+            if (ShouldSuppressDocumentDecisionToolCore(reportedToolCallId))
+            {
+                CleanupToolTrackingCore(reportedToolCallId);
+                return;
+            }
         }
 
         var toolCallId = await EnsureToolStartedAsync(update).ConfigureAwait(false);
@@ -2728,67 +2866,76 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         var hasRawOutput = update.TryGetProperty("rawOutput", out _);
         var status = GetString(update, "status");
         var isTerminalStatus = status is "completed" or "failed";
+        string? terminalDelta = null;
 
-        // ACP present-field replace for title: update name/summary even when
-        // rawInput is absent, and emit a full tool_updated snapshot.
-        var presentTitle = GetString(update, "title");
-        if (!string.IsNullOrWhiteSpace(presentTitle))
+        lock (_sessionMutationSync)
         {
-            if (!_toolNames.TryGetValue(toolCallId, out var existingName)
-                || !string.Equals(existingName, presentTitle, StringComparison.Ordinal))
+            // ACP present-field replace for title: update name/summary even when
+            // rawInput is absent, and emit a full tool_updated snapshot.
+            var presentTitle = GetString(update, "title");
+            if (!string.IsNullOrWhiteSpace(presentTitle))
             {
-                _toolNames[toolCallId] = presentTitle;
-                snapshotChanged = true;
+                if (!_toolNames.TryGetValue(toolCallId, out var existingName)
+                    || !string.Equals(existingName, presentTitle, StringComparison.Ordinal))
+                {
+                    _toolNames[toolCallId] = presentTitle;
+                    snapshotChanged = true;
+                }
+
+                var titledSummary = BuildToolSummary(
+                    presentTitle,
+                    _toolInputs.GetValueOrDefault(toolCallId, ""),
+                    update);
+                if (!_toolSummaries.TryGetValue(toolCallId, out var existingSummary)
+                    || !string.Equals(existingSummary, titledSummary, StringComparison.Ordinal))
+                {
+                    _toolSummaries[toolCallId] = titledSummary;
+                    snapshotChanged = true;
+                }
             }
 
-            var titledSummary = BuildToolSummary(
-                presentTitle,
-                _toolInputs.GetValueOrDefault(toolCallId, ""),
-                update);
-            if (!_toolSummaries.TryGetValue(toolCallId, out var existingSummary)
-                || !string.Equals(existingSummary, titledSummary, StringComparison.Ordinal))
+            if (hasRawInput)
             {
-                _toolSummaries[toolCallId] = titledSummary;
-                snapshotChanged = true;
-            }
-        }
-
-        if (hasRawInput)
-        {
-            var input = FormatToolInput(update);
-            _toolInputs[toolCallId] = input;
-            _toolPendingParamSnapshots.Remove(toolCallId);
-            var name = _toolNames.TryGetValue(toolCallId, out var existingName) ? existingName : ReadToolName(update);
-            _toolSummaries[toolCallId] = BuildToolSummary(name, input, update);
-            snapshotChanged = true;
-        }
-
-        if (hasContent || hasRawOutput)
-        {
-            var displayOutput = FormatContentAndRawOutput(update);
-            if (!isTerminalStatus
-                && !hasRawInput
-                && !(_toolInputs.TryGetValue(toolCallId, out var existingInput)
-                     && !string.IsNullOrWhiteSpace(existingInput))
-                && IsPendingParamSnapshot(displayOutput))
-            {
-                _toolPendingParamSnapshots[toolCallId] = displayOutput;
-            }
-            else
-            {
+                var input = FormatToolInput(update);
+                _toolInputs[toolCallId] = input;
                 _toolPendingParamSnapshots.Remove(toolCallId);
-                _toolOutputs[toolCallId] = displayOutput;
+                var name = _toolNames.TryGetValue(toolCallId, out var existingName) ? existingName : ReadToolName(update);
+                _toolSummaries[toolCallId] = BuildToolSummary(name, input, update);
                 snapshotChanged = true;
             }
+
+            if (hasContent || hasRawOutput)
+            {
+                var displayOutput = FormatContentAndRawOutput(update);
+                if (!isTerminalStatus
+                    && !hasRawInput
+                    && !(_toolInputs.TryGetValue(toolCallId, out var existingInput)
+                         && !string.IsNullOrWhiteSpace(existingInput))
+                    && IsPendingParamSnapshot(displayOutput))
+                {
+                    _toolPendingParamSnapshots[toolCallId] = displayOutput;
+                }
+                else
+                {
+                    _toolPendingParamSnapshots.Remove(toolCallId);
+                    _toolOutputs[toolCallId] = displayOutput;
+                    snapshotChanged = true;
+                }
+            }
+            else if (!string.IsNullOrEmpty(terminalChunk))
+            {
+                _toolOutputs[toolCallId] = (_toolOutputs.TryGetValue(toolCallId, out var existing) ? existing : "")
+                    + terminalChunk;
+                terminalDelta = terminalChunk;
+            }
         }
-        else if (!string.IsNullOrEmpty(terminalChunk))
+
+        if (!string.IsNullOrEmpty(terminalDelta))
         {
-            _toolOutputs[toolCallId] = (_toolOutputs.TryGetValue(toolCallId, out var existing) ? existing : "")
-                + terminalChunk;
             await _bridgeService.SendEventAsync(new
             {
                 type = "tool_delta",
-                text = terminalChunk,
+                text = terminalDelta,
                 runId = _currentRunId,
                 toolCallId
             }).ConfigureAwait(false);
@@ -2803,11 +2950,31 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     private async Task SendToolUpdatedAsync(string toolCallId, string? status)
     {
-        var name = _toolNames.TryGetValue(toolCallId, out var n) ? n : "Tool";
-        var summary = _toolSummaries.TryGetValue(toolCallId, out var s) ? s : name;
-        var input = _toolInputs.TryGetValue(toolCallId, out var i) ? i : "";
-        var output = _toolOutputs.TryGetValue(toolCallId, out var o) ? o : "";
-        await _bridgeService.SendEventAsync(new
+        string name;
+        string summary;
+        string input;
+        string output;
+        lock (_sessionMutationSync)
+        {
+            name = _toolNames.TryGetValue(toolCallId, out var n) ? n : "Tool";
+            summary = _toolSummaries.TryGetValue(toolCallId, out var s) ? s : name;
+            input = _toolInputs.TryGetValue(toolCallId, out var i) ? i : "";
+            output = _toolOutputs.TryGetValue(toolCallId, out var o) ? o : "";
+        }
+
+        await SendToolUpdatedSnapshotAsync(toolCallId, status, name, summary, input, output)
+            .ConfigureAwait(false);
+    }
+
+    private Task SendToolUpdatedSnapshotAsync(
+        string toolCallId,
+        string? status,
+        string name,
+        string summary,
+        string input,
+        string output)
+    {
+        return _bridgeService.SendEventAsync(new
         {
             type = "tool_updated",
             runId = _currentRunId,
@@ -2817,7 +2984,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             input,
             output,
             status = string.IsNullOrWhiteSpace(status) ? "running" : status
-        }).ConfigureAwait(false);
+        });
     }
 
     private async Task<string> EnsureToolStartedAsync(JsonElement update)
@@ -2825,39 +2992,51 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         var toolCallId = GetString(update, "toolCallId");
         var name = ReadToolName(update);
         var input = FormatToolInput(update);
+        var started = false;
+        string startedName;
+        string startedInput;
+        string startedSummary;
 
         // Initialize only. Subsequent title / input / output field replaces are
         // applied in ApplyLiveToolUpdateAsync so change detection can emit
         // tool_updated for title-only updates.
-        if (!_toolNames.ContainsKey(toolCallId))
-            _toolNames[toolCallId] = name;
-        else if (string.Equals(_toolNames[toolCallId], "Tool", StringComparison.OrdinalIgnoreCase)
-                 && !string.Equals(name, "Tool", StringComparison.OrdinalIgnoreCase))
-            _toolNames[toolCallId] = name;
+        lock (_sessionMutationSync)
+        {
+            if (!_toolNames.ContainsKey(toolCallId))
+                _toolNames[toolCallId] = name;
+            else if (string.Equals(_toolNames[toolCallId], "Tool", StringComparison.OrdinalIgnoreCase)
+                     && !string.Equals(name, "Tool", StringComparison.OrdinalIgnoreCase))
+                _toolNames[toolCallId] = name;
 
-        if (!string.IsNullOrEmpty(input) || update.TryGetProperty("rawInput", out _))
-            _toolInputs[toolCallId] = input;
+            if (!string.IsNullOrEmpty(input) || update.TryGetProperty("rawInput", out _))
+                _toolInputs[toolCallId] = input;
 
-        if (!_toolSummaries.ContainsKey(toolCallId))
-            _toolSummaries[toolCallId] = BuildToolSummary(
-                _toolNames[toolCallId],
-                _toolInputs.GetValueOrDefault(toolCallId, ""),
-                update);
-        if (!_toolOutputs.ContainsKey(toolCallId))
-            _toolOutputs[toolCallId] = "";
-        if (!_toolInputs.ContainsKey(toolCallId))
-            _toolInputs[toolCallId] = "";
+            if (!_toolSummaries.ContainsKey(toolCallId))
+                _toolSummaries[toolCallId] = BuildToolSummary(
+                    _toolNames[toolCallId],
+                    _toolInputs.GetValueOrDefault(toolCallId, ""),
+                    update);
+            if (!_toolOutputs.ContainsKey(toolCallId))
+                _toolOutputs[toolCallId] = "";
+            if (!_toolInputs.ContainsKey(toolCallId))
+                _toolInputs[toolCallId] = "";
 
-        if (_startedToolCallIds.Add(toolCallId))
+            started = _startedToolCallIds.Add(toolCallId);
+            startedName = _toolNames[toolCallId];
+            startedInput = _toolInputs[toolCallId];
+            startedSummary = _toolSummaries[toolCallId];
+        }
+
+        if (started)
         {
             await _bridgeService.SendEventAsync(new
             {
                 type = "tool_started",
-                name = _toolNames[toolCallId],
-                input = _toolInputs[toolCallId],
+                name = startedName,
+                input = startedInput,
                 runId = _currentRunId,
                 toolCallId,
-                summary = _toolSummaries[toolCallId],
+                summary = startedSummary,
                 status = "running"
             }).ConfigureAwait(false);
         }
@@ -3111,27 +3290,36 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     private async Task FinishToolAsync(string toolCallId, string status)
     {
-        if (ShouldSuppressDocumentDecisionTool(toolCallId))
+        string name;
+        string summary;
+        string input;
+        string output;
+        lock (_sessionMutationSync)
         {
-            CleanupToolTracking(toolCallId);
-            return;
+            if (ShouldSuppressDocumentDecisionToolCore(toolCallId))
+            {
+                CleanupToolTrackingCore(toolCallId);
+                return;
+            }
+
+            name = _toolNames.TryGetValue(toolCallId, out var n) ? n : "Tool";
+            summary = _toolSummaries.TryGetValue(toolCallId, out var s) ? s : name;
+            input = _toolInputs.TryGetValue(toolCallId, out var i) ? i : "";
+            output = _toolOutputs.TryGetValue(toolCallId, out var o) ? o : "";
+            if (string.IsNullOrWhiteSpace(output)
+                && _toolPendingParamSnapshots.TryGetValue(toolCallId, out var pending)
+                && !IsPendingParamSnapshot(pending))
+            {
+                output = pending;
+                _toolOutputs[toolCallId] = output;
+            }
+
+            AddToolMessageCore(input, name, _currentRunId, toolCallId, output, status, summary);
+            CleanupToolTrackingCore(toolCallId);
         }
 
-        var name = _toolNames.TryGetValue(toolCallId, out var n) ? n : "Tool";
-        var summary = _toolSummaries.TryGetValue(toolCallId, out var s) ? s : name;
-        var input = _toolInputs.TryGetValue(toolCallId, out var i) ? i : "";
-        var output = _toolOutputs.TryGetValue(toolCallId, out var o) ? o : "";
-        if (string.IsNullOrWhiteSpace(output)
-            && _toolPendingParamSnapshots.TryGetValue(toolCallId, out var pending)
-            && !IsPendingParamSnapshot(pending))
-        {
-            output = pending;
-            _toolOutputs[toolCallId] = output;
-        }
-
-        await SendToolUpdatedAsync(toolCallId, status).ConfigureAwait(false);
-        AddToolMessage(input, name, _currentRunId, toolCallId, output, status, summary);
-        CleanupToolTracking(toolCallId);
+        await SendToolUpdatedSnapshotAsync(toolCallId, status, name, summary, input, output)
+            .ConfigureAwait(false);
         await _bridgeService.SendEventAsync(new
         {
             type = "tool_finished",
@@ -3142,13 +3330,13 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         }).ConfigureAwait(false);
     }
 
-    private bool ShouldSuppressDocumentDecisionTool(string toolCallId)
+    private bool ShouldSuppressDocumentDecisionToolCore(string toolCallId)
     {
         return !string.IsNullOrWhiteSpace(toolCallId)
                && _documentDecisionToolCallIds.Contains(toolCallId);
     }
 
-    private void CleanupToolTracking(string toolCallId)
+    private void CleanupToolTrackingCore(string toolCallId)
     {
         if (string.IsNullOrWhiteSpace(toolCallId))
             return;
@@ -3200,26 +3388,35 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         if (used is null or < 0)
             return Task.CompletedTask;
 
-        _currentThread.ContextUsedTokens = used.Value;
-        var size = TryGetLong(update, "size");
-        _currentThread.ContextWindowTokens = size is > 0 ? size : null;
-        if (update.TryGetProperty("cost", out var cost))
+        long? contextWindowTokens;
+        decimal? contextCostAmount;
+        string? contextCostCurrency;
+        lock (_sessionMutationSync)
         {
-            var amount = TryGetDecimal(cost, "amount");
-            var currency = GetString(cost, "currency");
-            _currentThread.ContextCostAmount = amount is >= 0 && !string.IsNullOrWhiteSpace(currency) ? amount : null;
-            _currentThread.ContextCostCurrency = _currentThread.ContextCostAmount.HasValue ? currency : null;
-        }
+            _currentThread.ContextUsedTokens = used.Value;
+            var size = TryGetLong(update, "size");
+            _currentThread.ContextWindowTokens = size is > 0 ? size : null;
+            if (update.TryGetProperty("cost", out var cost))
+            {
+                var amount = TryGetDecimal(cost, "amount");
+                var currency = GetString(cost, "currency");
+                _currentThread.ContextCostAmount = amount is >= 0 && !string.IsNullOrWhiteSpace(currency) ? amount : null;
+                _currentThread.ContextCostCurrency = _currentThread.ContextCostAmount.HasValue ? currency : null;
+            }
 
-        if (persist)
-            SaveCurrentThread();
+            if (persist)
+                SaveCurrentThreadCore();
+            contextWindowTokens = _currentThread.ContextWindowTokens;
+            contextCostAmount = _currentThread.ContextCostAmount;
+            contextCostCurrency = _currentThread.ContextCostCurrency;
+        }
         return _bridgeService.SendEventAsync(new
         {
             type = "agent_usage_update",
-            contextUsedTokens = _currentThread.ContextUsedTokens,
-            contextWindowTokens = _currentThread.ContextWindowTokens,
-            contextCostAmount = _currentThread.ContextCostAmount,
-            contextCostCurrency = _currentThread.ContextCostCurrency
+            contextUsedTokens = used.Value,
+            contextWindowTokens,
+            contextCostAmount,
+            contextCostCurrency
         });
     }
 
@@ -3235,9 +3432,12 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             modeId
         }, TimeSpan.FromSeconds(15), _serviceLifetimeCts.Token).ConfigureAwait(false);
 
-        _currentModeId = modeId;
-        _currentThread.ModeId = modeId;
-        SaveCurrentThread();
+        lock (_sessionMutationSync)
+        {
+            _currentModeId = modeId;
+            _currentThread.ModeId = modeId;
+            SaveCurrentThreadCore();
+        }
         await SendModesAsync().ConfigureAwait(false);
     }
 
@@ -3264,72 +3464,81 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         var result = await _transport!.SendRequestAsync("session/set_config_option", parameters,
             TimeSpan.FromSeconds(15), _serviceLifetimeCts.Token).ConfigureAwait(false);
 
-        CaptureConfigOptions(result);
-        if (configId == "mode" && value is string modeId)
-            _currentModeId = modeId;
-        _currentThread.ModeId = _currentModeId;
-        SaveCurrentThread();
+        lock (_sessionMutationSync)
+        {
+            CaptureConfigOptions(result);
+            if (configId == "mode" && value is string modeId)
+                _currentModeId = modeId;
+            _currentThread.ModeId = _currentModeId;
+            SaveCurrentThreadCore();
+        }
         await Task.WhenAll(SendConfigOptionsAsync(), SendModesAsync()).ConfigureAwait(false);
     }
 
     private void CaptureModes(JsonElement result)
     {
-        if (!result.TryGetProperty("modes", out var modes)
-            || modes.ValueKind != JsonValueKind.Object)
+        lock (_sessionMutationSync)
         {
-            _modes = Array.Empty<AcpMode>();
-            _currentModeId = null;
-            return;
-        }
+            if (!result.TryGetProperty("modes", out var modes)
+                || modes.ValueKind != JsonValueKind.Object)
+            {
+                _modes = Array.Empty<AcpMode>();
+                _currentModeId = null;
+                return;
+            }
 
-        _currentModeId = GetString(modes, "currentModeId");
-        if (modes.TryGetProperty("availableModes", out var availableModes)
-            && availableModes.ValueKind == JsonValueKind.Array)
-        {
-            _modes = availableModes.EnumerateArray()
-                .Select(mode => new AcpMode
-                {
-                    Id = GetString(mode, "id"),
-                    Name = GetString(mode, "name"),
-                    Description = GetString(mode, "description")
-                })
-                .Where(mode => !string.IsNullOrWhiteSpace(mode.Id))
-                .ToArray();
-        }
+            _currentModeId = GetString(modes, "currentModeId");
+            if (modes.TryGetProperty("availableModes", out var availableModes)
+                && availableModes.ValueKind == JsonValueKind.Array)
+            {
+                _modes = availableModes.EnumerateArray()
+                    .Select(mode => new AcpMode
+                    {
+                        Id = GetString(mode, "id"),
+                        Name = GetString(mode, "name"),
+                        Description = GetString(mode, "description")
+                    })
+                    .Where(mode => !string.IsNullOrWhiteSpace(mode.Id))
+                    .ToArray();
+            }
 
-        _currentThread.ModeId = _currentModeId;
+            _currentThread.ModeId = _currentModeId;
+        }
     }
 
     private void CaptureConfigOptions(JsonElement result)
     {
-        if (!result.TryGetProperty("configOptions", out var configOptions)
-            || configOptions.ValueKind != JsonValueKind.Array)
+        lock (_sessionMutationSync)
         {
-            return;
-        }
-
-        _configOptions = configOptions.EnumerateArray()
-            .Select(option => new AcpConfigOption
+            if (!result.TryGetProperty("configOptions", out var configOptions)
+                || configOptions.ValueKind != JsonValueKind.Array)
             {
-                Id = GetString(option, "id"),
-                Name = GetString(option, "name"),
-                Description = GetString(option, "description"),
-                Category = GetString(option, "category"),
-                Type = GetString(option, "type"),
-                CurrentValue = GetString(option, "currentValue"),
-                BooleanValue = TryGetBoolean(option, "currentValue"),
-                Options = ReadConfigOptionValues(option)
-            })
-            .Where(option => !string.IsNullOrWhiteSpace(option.Id)
-                             && ((option.Type == "select" && option.Options.Count > 0)
-                                 || (option.Type == "boolean" && option.BooleanValue.HasValue)))
-            .ToArray();
+                return;
+            }
 
-        var modeOption = _configOptions.FirstOrDefault(option => option.Id == "mode");
-        if (!string.IsNullOrWhiteSpace(modeOption?.CurrentValue))
-        {
-            _currentModeId = modeOption.CurrentValue;
-            _currentThread.ModeId = _currentModeId;
+            _configOptions = configOptions.EnumerateArray()
+                .Select(option => new AcpConfigOption
+                {
+                    Id = GetString(option, "id"),
+                    Name = GetString(option, "name"),
+                    Description = GetString(option, "description"),
+                    Category = GetString(option, "category"),
+                    Type = GetString(option, "type"),
+                    CurrentValue = GetString(option, "currentValue"),
+                    BooleanValue = TryGetBoolean(option, "currentValue"),
+                    Options = ReadConfigOptionValues(option)
+                })
+                .Where(option => !string.IsNullOrWhiteSpace(option.Id)
+                                 && ((option.Type == "select" && option.Options.Count > 0)
+                                     || (option.Type == "boolean" && option.BooleanValue.HasValue)))
+                .ToArray();
+
+            var modeOption = _configOptions.FirstOrDefault(option => option.Id == "mode");
+            if (!string.IsNullOrWhiteSpace(modeOption?.CurrentValue))
+            {
+                _currentModeId = modeOption.CurrentValue;
+                _currentThread.ModeId = _currentModeId;
+            }
         }
     }
 
@@ -3411,8 +3620,11 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         if (entries.Count == 0 && string.IsNullOrWhiteSpace(text))
             return;
 
-        UpsertPlanMessage(_currentThread.Messages, runId, entries, text);
-        SaveCurrentThread();
+        lock (_sessionMutationSync)
+        {
+            UpsertPlanMessage(_currentThread.Messages, runId, entries, text);
+            SaveCurrentThreadCore();
+        }
 
         await _bridgeService.SendEventAsync(new
         {
@@ -3464,57 +3676,64 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     /// </summary>
     private void PersistRunOutput(string? runId, string thinkingText, string assistantText)
     {
-        var changed = false;
-        if (!string.IsNullOrWhiteSpace(thinkingText))
+        lock (_sessionMutationSync)
         {
-            _currentThread.Messages.Add(new AgentMessage
+            var changed = false;
+            if (!string.IsNullOrWhiteSpace(thinkingText))
             {
-                Role = "thinking",
-                Text = thinkingText,
-                RunId = runId,
-                CreatedAt = DateTimeOffset.Now
-            });
-            ThinkingMessageNormalizer.Normalize(_currentThread.Messages);
-            changed = true;
-        }
+                _currentThread.Messages.Add(new AgentMessage
+                {
+                    Role = "thinking",
+                    Text = thinkingText,
+                    RunId = runId,
+                    CreatedAt = DateTimeOffset.Now
+                });
+                ThinkingMessageNormalizer.Normalize(_currentThread.Messages);
+                changed = true;
+            }
 
-        if (!string.IsNullOrWhiteSpace(assistantText))
-        {
-            _currentThread.Messages.Add(new AgentMessage
+            if (!string.IsNullOrWhiteSpace(assistantText))
             {
-                Role = "assistant",
-                Text = assistantText,
-                RunId = runId,
-                CreatedAt = DateTimeOffset.Now
-            });
-            changed = true;
-        }
+                _currentThread.Messages.Add(new AgentMessage
+                {
+                    Role = "assistant",
+                    Text = assistantText,
+                    RunId = runId,
+                    CreatedAt = DateTimeOffset.Now
+                });
+                changed = true;
+            }
 
-        if (changed)
-            SaveCurrentThread();
+            if (changed)
+                SaveCurrentThreadCore();
+        }
     }
 
     private void AddMessage(string role, string text, string? name = null, IReadOnlyList<AgentAttachment>? attachments = null)
     {
-        if (role == "user" && _currentThread.Messages.Count == 0)
-            _currentThread.Title = BuildMessageTitle(text);
-
-        if (role == "user" && attachments is { Count: > 0 })
-            _currentThread.ContainsImages = true;
-
-        _currentThread.Messages.Add(new AgentMessage
+        lock (_sessionMutationSync)
         {
-            Role = role,
-            Text = text,
-            Name = name,
-            RunId = role is "user" or "assistant" or "thinking" ? _currentRunId : null,
-            Attachments = attachments?.Select(CloneAttachment).ToList(),
-            CreatedAt = DateTimeOffset.Now
-        });
-        SaveCurrentThread();
+            if (role == "user" && _currentThread.Messages.Count == 0)
+                _currentThread.Title = BuildMessageTitle(text);
+
+            if (role == "user" && attachments is { Count: > 0 })
+                _currentThread.ContainsImages = true;
+
+            _currentThread.Messages.Add(new AgentMessage
+            {
+                Role = role,
+                Text = text,
+                Name = name,
+                RunId = role is "user" or "assistant" or "thinking" ? _currentRunId : null,
+                Attachments = attachments?.Select(CloneAttachment).ToList(),
+                CreatedAt = DateTimeOffset.Now
+            });
+            SaveCurrentThreadCore();
+        }
     }
 
-    private void AddToolMessage(string text, string name, string? runId,
+    /// <summary>Requires <see cref="_sessionMutationSync"/>.</summary>
+    private void AddToolMessageCore(string text, string name, string? runId,
         string? toolCallId, string? toolOutput, string? toolStatus, string? summary)
     {
         _currentThread.Messages.Add(new AgentMessage
@@ -3530,10 +3749,18 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             Summary = summary,
             CreatedAt = DateTimeOffset.Now
         });
-        SaveCurrentThread();
+        SaveCurrentThreadCore();
     }
 
     private void SaveCurrentThread()
+    {
+        lock (_sessionMutationSync)
+        {
+            SaveCurrentThreadCore();
+        }
+    }
+
+    private void SaveCurrentThreadCore()
     {
         if (IsBoundProviderThread(_currentThread))
         {
@@ -3571,28 +3798,31 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     private void ApplyThread(AgentThread thread)
     {
-        if (DocumentDecisionSnapshotMerger.InterruptPending(thread))
-            _threadStore.SaveThread(thread);
+        lock (_sessionMutationSync)
+        {
+            if (DocumentDecisionSnapshotMerger.InterruptPending(thread))
+                _threadStore.SaveThread(thread);
 
-        ClearAvailableAgentCommands();
-        EnsureImageContextFlag(thread);
-        _workingDirectory = Directory.Exists(thread.Cwd) ? thread.Cwd : ResolveWorkspaceRoot();
-        _acpSessionId = null;
-        _sessionIdForTransportRecovery = null;
-        _transportRecoveryRequired = false;
-        _currentModeId = thread.ModeId;
-        _adapterVersion = thread.AdapterVersion;
-        _status = IsBoundProviderThread(thread) ? "ready" : "transcript_only";
-        _thinkingBuffer.Clear();
-        _assistantBuffer.Clear();
-        _toolNames.Clear();
-        _toolSummaries.Clear();
-        _toolInputs.Clear();
-        _toolOutputs.Clear();
-        _toolPendingParamSnapshots.Clear();
-        _startedToolCallIds.Clear();
-        _documentDecisionToolCallIds.Clear();
-        _currentRunId = null;
+            ClearAvailableAgentCommands();
+            EnsureImageContextFlag(thread);
+            _workingDirectory = Directory.Exists(thread.Cwd) ? thread.Cwd : ResolveWorkspaceRoot();
+            _acpSessionId = null;
+            _sessionIdForTransportRecovery = null;
+            _transportRecoveryRequired = false;
+            _currentModeId = thread.ModeId;
+            _adapterVersion = thread.AdapterVersion;
+            _status = IsBoundProviderThread(thread) ? "ready" : "transcript_only";
+            _thinkingBuffer.Clear();
+            _assistantBuffer.Clear();
+            _toolNames.Clear();
+            _toolSummaries.Clear();
+            _toolInputs.Clear();
+            _toolOutputs.Clear();
+            _toolPendingParamSnapshots.Clear();
+            _startedToolCallIds.Clear();
+            _documentDecisionToolCallIds.Clear();
+            _currentRunId = null;
+        }
     }
 
     private void EnsureImageContextFlag(AgentThread thread)
@@ -3944,6 +4174,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     private void UpsertDocumentDecisionMessage(
         PermissionPresentation presentation,
+        string decisionSnapshotId,
         string requestId,
         string toolCallId,
         string title,
@@ -3951,67 +4182,104 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         IReadOnlyList<AgentDecisionOption> options,
         string state)
     {
-        var role = GetDocumentDecisionRole(presentation);
-        var index = _currentThread.Messages.FindLastIndex(message =>
-            message.Role == role
-            && (string.Equals(message.RequestId, requestId, StringComparison.Ordinal)
-                || (!string.IsNullOrWhiteSpace(toolCallId)
-                    && string.Equals(message.ToolCallId, toolCallId, StringComparison.Ordinal))));
-
-        if (index < 0 && !string.IsNullOrWhiteSpace(toolCallId))
+        lock (_sessionMutationSync)
         {
-            index = _currentThread.Messages.FindLastIndex(message =>
-                message.Role == "tool"
-                && string.Equals(message.ToolCallId, toolCallId, StringComparison.Ordinal));
+            var role = GetDocumentDecisionRole(presentation);
+            var index = -1;
+            if (!string.IsNullOrWhiteSpace(decisionSnapshotId))
+            {
+                index = _currentThread.Messages.FindLastIndex(message =>
+                    message.Role == role
+                    && string.Equals(message.DecisionSnapshotId, decisionSnapshotId, StringComparison.Ordinal));
+            }
+
+            if (index < 0)
+            {
+                index = _currentThread.Messages.FindLastIndex(message =>
+                    message.Role == role
+                    && IsActiveDocumentDecisionState(message.DecisionState)
+                    && string.Equals(message.RequestId, requestId, StringComparison.Ordinal));
+            }
+
+            if (index < 0 && !string.IsNullOrWhiteSpace(toolCallId))
+            {
+                index = _currentThread.Messages.FindLastIndex(message =>
+                    message.Role == "tool"
+                    && string.Equals(message.ToolCallId, toolCallId, StringComparison.Ordinal)
+                    && string.Equals(message.RunId, _currentRunId, StringComparison.Ordinal));
+            }
+
+            var existing = index >= 0 ? _currentThread.Messages[index] : null;
+            var message = new AgentMessage
+            {
+                Role = role,
+                Name = title,
+                Text = documentText,
+                RunId = existing?.RunId ?? _currentRunId,
+                ToolCallId = toolCallId,
+                RequestId = requestId,
+                DecisionSnapshotId = decisionSnapshotId,
+                DecisionState = state,
+                DecisionOptions = options.Select(DocumentDecisionSnapshotMerger.CloneOption).ToList(),
+                CreatedAt = existing?.CreatedAt ?? DateTimeOffset.Now
+            };
+
+            if (index >= 0)
+                _currentThread.Messages[index] = message;
+            else
+                _currentThread.Messages.Add(message);
+
+            if (!string.IsNullOrWhiteSpace(toolCallId))
+            {
+                _currentThread.Messages.RemoveAll(candidate =>
+                    !ReferenceEquals(candidate, message)
+                    && candidate.Role == "tool"
+                    && string.Equals(candidate.ToolCallId, toolCallId, StringComparison.Ordinal)
+                    && string.Equals(candidate.RunId, message.RunId, StringComparison.Ordinal));
+            }
+
+            SaveCurrentThreadCore();
         }
-
-        var existing = index >= 0 ? _currentThread.Messages[index] : null;
-        var message = new AgentMessage
-        {
-            Role = role,
-            Name = title,
-            Text = documentText,
-            RunId = existing?.RunId ?? _currentRunId,
-            ToolCallId = toolCallId,
-            RequestId = requestId,
-            DecisionState = state,
-            DecisionOptions = options.Select(DocumentDecisionSnapshotMerger.CloneOption).ToList(),
-            CreatedAt = existing?.CreatedAt ?? DateTimeOffset.Now
-        };
-
-        if (index >= 0)
-            _currentThread.Messages[index] = message;
-        else
-            _currentThread.Messages.Add(message);
-
-        if (!string.IsNullOrWhiteSpace(toolCallId))
-        {
-            _currentThread.Messages.RemoveAll(candidate =>
-                !ReferenceEquals(candidate, message)
-                && candidate.Role is "tool" or "mode_transition" or "document_permission"
-                && string.Equals(candidate.ToolCallId, toolCallId, StringComparison.Ordinal));
-        }
-
-        SaveCurrentThread();
     }
 
     private void UpdateDocumentDecisionState(
         string requestId,
         PermissionPresentation presentation,
         string state,
-        string? selectedOptionId = null)
+        string? selectedOptionId = null,
+        string? decisionSnapshotId = null)
     {
-        var role = GetDocumentDecisionRole(presentation);
-        var message = _currentThread.Messages.FindLast(candidate =>
-            candidate.Role == role
-            && string.Equals(candidate.RequestId, requestId, StringComparison.Ordinal));
-        if (message == null)
-            return;
+        lock (_sessionMutationSync)
+        {
+            var role = GetDocumentDecisionRole(presentation);
+            AgentMessage? message = null;
+            if (!string.IsNullOrWhiteSpace(decisionSnapshotId))
+            {
+                message = _currentThread.Messages.FindLast(candidate =>
+                    candidate.Role == role
+                    && string.Equals(candidate.DecisionSnapshotId, decisionSnapshotId, StringComparison.Ordinal));
+            }
 
-        message.DecisionState = state;
-        message.SelectedOptionId = selectedOptionId;
-        SaveCurrentThread();
+            if (message == null)
+            {
+                message = _currentThread.Messages.FindLast(candidate =>
+                    candidate.Role == role
+                    && string.Equals(candidate.RequestId, requestId, StringComparison.Ordinal)
+                    && IsActiveDocumentDecisionState(candidate.DecisionState));
+            }
+
+            if (message == null)
+                return;
+
+            message.DecisionState = state;
+            message.SelectedOptionId = selectedOptionId;
+            SaveCurrentThreadCore();
+        }
     }
+
+    private static bool IsActiveDocumentDecisionState(string? state) =>
+        string.Equals(state, "pending", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(state, "sending", StringComparison.OrdinalIgnoreCase);
 
     private static string GetDocumentDecisionRole(PermissionPresentation presentation)
     {

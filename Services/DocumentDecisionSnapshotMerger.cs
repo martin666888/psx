@@ -34,6 +34,7 @@ internal static class DocumentDecisionSnapshotMerger
             RunId = message.RunId,
             ToolCallId = message.ToolCallId,
             RequestId = message.RequestId,
+            DecisionSnapshotId = message.DecisionSnapshotId,
             DecisionState = message.DecisionState is "pending" or "sending"
                 ? "interrupted"
                 : message.DecisionState,
@@ -48,14 +49,51 @@ internal static class DocumentDecisionSnapshotMerger
         foreach (var snapshot in snapshots)
         {
             var message = CloneMessage(snapshot);
-            var index = !string.IsNullOrWhiteSpace(message.ToolCallId)
-                ? replayMessages.FindLastIndex(candidate =>
-                    candidate.Role is "tool" or "mode_transition" or "document_permission"
-                    && string.Equals(candidate.ToolCallId, message.ToolCallId, StringComparison.Ordinal))
-                : -1;
+            var index = -1;
+            if (!string.IsNullOrWhiteSpace(message.DecisionSnapshotId))
+            {
+                index = replayMessages.FindLastIndex(candidate =>
+                    IsDocumentDecision(candidate)
+                    && string.Equals(
+                        candidate.DecisionSnapshotId,
+                        message.DecisionSnapshotId,
+                        StringComparison.Ordinal));
+            }
 
+            // Backward compatibility for snapshots written before
+            // DecisionSnapshotId existed: only the same logical decision may
+            // replace an earlier state. A reused toolCallId by itself is never
+            // enough to merge two persisted decisions.
+            if (index < 0 && string.IsNullOrWhiteSpace(message.DecisionSnapshotId))
+            {
+                index = replayMessages.FindLastIndex(candidate =>
+                    candidate.Role == message.Role
+                    && string.Equals(candidate.RequestId, message.RequestId, StringComparison.Ordinal)
+                    && string.Equals(candidate.ToolCallId, message.ToolCallId, StringComparison.Ordinal));
+            }
+
+            // Promote the raw replay tool card for this run into the persisted
+            // decision card. Prefer the snapshot's run when the provider replay
+            // preserved it; otherwise consume only the newest raw tool card and
+            // never another historical decision.
+            if (index < 0 && !string.IsNullOrWhiteSpace(message.ToolCallId))
+            {
+                index = replayMessages.FindLastIndex(candidate =>
+                    candidate.Role == "tool"
+                    && string.Equals(candidate.ToolCallId, message.ToolCallId, StringComparison.Ordinal)
+                    && string.Equals(candidate.RunId, message.RunId, StringComparison.Ordinal));
+                if (index < 0)
+                {
+                    index = replayMessages.FindLastIndex(candidate =>
+                        candidate.Role == "tool"
+                        && string.Equals(candidate.ToolCallId, message.ToolCallId, StringComparison.Ordinal));
+                }
+            }
+
+            string? matchedRunId = null;
             if (index >= 0)
             {
+                matchedRunId = replayMessages[index].RunId;
                 message.RunId = replayMessages[index].RunId ?? message.RunId;
                 replayMessages[index] = message;
             }
@@ -64,12 +102,13 @@ internal static class DocumentDecisionSnapshotMerger
                 replayMessages.Add(message);
             }
 
-            if (!string.IsNullOrWhiteSpace(message.ToolCallId))
+            if (!string.IsNullOrWhiteSpace(message.ToolCallId) && matchedRunId != null)
             {
                 replayMessages.RemoveAll(candidate =>
                     !ReferenceEquals(candidate, message)
-                    && candidate.Role is "tool" or "mode_transition" or "document_permission"
-                    && string.Equals(candidate.ToolCallId, message.ToolCallId, StringComparison.Ordinal));
+                    && candidate.Role == "tool"
+                    && string.Equals(candidate.ToolCallId, message.ToolCallId, StringComparison.Ordinal)
+                    && string.Equals(candidate.RunId, matchedRunId, StringComparison.Ordinal));
             }
         }
     }

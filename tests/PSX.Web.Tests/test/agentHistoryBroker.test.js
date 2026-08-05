@@ -4,8 +4,8 @@ import { appModule } from './agentHarness.js';
 
 // Global History: the AgentHistoryStore owns the normalized list + provider
 // catalog, the AgentHistoryRequestBroker owns channel selection, the request
-// status machine, timeout/retry, invalidation coalescing and late-response
-// guards. These tests drive the pair directly with a fake workspace host.
+// status machine, timeout/retry, invalidation coalescing and requestId guards.
+// Every history command carries a requestId; only the matching reply resolves.
 
 const {
   AgentHistoryStore,
@@ -35,8 +35,8 @@ function makeRig({ timeoutMs = 5000 } = {}) {
       return {
         sendAgentMessage() {},
         uploadAgentAttachment() {},
-        sendAgentCommand(command) {
-          commands.push({ workspaceId: id, command });
+        sendAgentCommand(command, value, requestId) {
+          commands.push({ workspaceId: id, command, value, requestId });
         },
         sendAgentPermissionResponse() {},
         sendAgentQuestionResponse() {},
@@ -64,6 +64,24 @@ function removeWorkspace(rig, id) {
 
 function historyCommands(commands) {
   return commands.filter((entry) => entry.command === 'history');
+}
+
+function latestHistoryRequest(commands) {
+  return historyCommands(commands).at(-1);
+}
+
+function assertHistoryRequestId(requestId) {
+  assert.match(requestId, /^h-[0-9a-f-]{36}-\d+$/);
+}
+
+function threadsReply(rig, workspaceId, payload) {
+  const requestId = latestHistoryRequest(rig.commands)?.requestId ?? '';
+  rig.broker.handleThreads(workspaceId, { ...payload, requestId });
+}
+
+function historyErrorReply(rig, workspaceId, payload) {
+  const requestId = latestHistoryRequest(rig.commands)?.requestId ?? '';
+  rig.broker.handleHistoryError(workspaceId, { ...payload, requestId });
 }
 
 // --- store normalization -----------------------------------------------------
@@ -113,9 +131,11 @@ test('broker: prefers the originating workspace as the request channel', () => {
   rig.host.active = 'a';
 
   rig.broker.requestRefresh('b');
-  assert.deepEqual(historyCommands(rig.commands), [{ workspaceId: 'b', command: 'history' }]);
+  const sent = latestHistoryRequest(rig.commands);
+  assert.equal(sent.command, 'history');
+  assertHistoryRequestId(sent.requestId);
 
-  rig.broker.handleThreads('b', { threads: [] });
+  threadsReply(rig, 'b', { threads: [] });
   assert.equal(rig.store.getState().status, 'idle');
   assert.equal(rig.notices.at(-1).kind, 'threads');
 });
@@ -130,7 +150,7 @@ test('broker: falls back to the active agent workspace, then the most recently a
   assert.equal(historyCommands(rig.commands).at(-1).workspaceId, 'a');
 
   // Without an active agent workspace the most recently activated wins.
-  rig.broker.handleThreads('a', { threads: [] });
+  threadsReply(rig, 'a', { threads: [] });
   rig.host.active = '';
   rig.broker.activateWorkspace('a');
   rig.broker.activateWorkspace('b');
@@ -144,7 +164,12 @@ test('broker: any live workspace can carry the request when none is active', () 
   // workspaces stay valid channels, so the broker only tracks liveness.
   addWorkspace(rig, 'only');
   rig.broker.requestRefresh('');
-  assert.deepEqual(historyCommands(rig.commands), [{ workspaceId: 'only', command: 'history' }]);
+  const [sent] = historyCommands(rig.commands);
+  assert.deepEqual(
+    { workspaceId: sent.workspaceId, command: sent.command, value: sent.value },
+    { workspaceId: 'only', command: 'history', value: undefined }
+  );
+  assertHistoryRequestId(sent.requestId);
 });
 
 test('broker: without a live workspace the request is unavailable and keeps the cached list', () => {
@@ -177,9 +202,9 @@ test('broker: retries on another channel when the carrier closes mid-request', (
   assert.equal(retried[1].workspaceId, 'b');
 
   // A late response from the closed carrier is dropped; the new channel lands.
-  rig.broker.handleThreads('a', { threads: [{ threadId: 'stale' }] });
+  rig.broker.handleThreads('a', { threads: [{ threadId: 'stale' }], requestId: 'h0' });
   assert.equal(rig.store.getState().threads.length, 0);
-  rig.broker.handleThreads('b', { threads: [{ threadId: 'fresh' }] });
+  threadsReply(rig, 'b', { threads: [{ threadId: 'fresh' }] });
   const state = rig.store.getState();
   assert.equal(state.status, 'idle');
   assert.equal(state.dirty, false);
@@ -244,12 +269,12 @@ test('broker: queues at most one follow-up when invalidated mid-request', async 
   await sleep(5);
   assert.equal(historyCommands(rig.commands).length, 1, 'no parallel request while in flight');
 
-  rig.broker.handleThreads('a', { threads: [] });
+  threadsReply(rig, 'a', { threads: [] });
   assert.equal(historyCommands(rig.commands).length, 2, 'one follow-up after the landing');
 
   rig.broker.handleInvalidated('a');
   await sleep(5);
-  rig.broker.handleThreads('a', { threads: [] });
+  threadsReply(rig, 'a', { threads: [] });
   assert.equal(historyCommands(rig.commands).length, 3, 'still one follow-up per landing');
 });
 
@@ -272,7 +297,7 @@ test('broker: times out, retries once, then enters the error state', async () =>
   // Manual retry is still possible from the error state.
   rig.broker.requestRefresh('a');
   assert.equal(historyCommands(rig.commands).length, 3);
-  rig.broker.handleThreads('a', { threads: [] });
+  threadsReply(rig, 'a', { threads: [] });
   assert.equal(rig.store.getState().status, 'idle');
 });
 
@@ -302,8 +327,64 @@ test('broker: refresh keeps the cached list while refreshing', () => {
   assert.equal(refreshing.status, 'refreshing');
   assert.equal(refreshing.threads[0].threadId, 't1');
 
-  rig.broker.handleThreads('a', { threads: [{ threadId: 't2', title: 'Two' }] });
+  threadsReply(rig, 'a', { threads: [{ threadId: 't2', title: 'Two' }] });
   assert.equal(rig.store.getState().threads[0].threadId, 't2');
+});
+
+test('broker: history command includes requestId and matching reply applies threads', () => {
+  const rig = makeRig();
+  addWorkspace(rig, 'a');
+
+  rig.broker.requestRefresh('a');
+  const sent = latestHistoryRequest(rig.commands);
+  assertHistoryRequestId(sent.requestId);
+
+  threadsReply(rig, 'a', { threads: [{ threadId: 't1', title: 'One' }] });
+  assert.equal(rig.store.getState().threads[0].threadId, 't1');
+  assert.equal(rig.store.getState().status, 'idle');
+});
+
+test('broker: request IDs stay unique when the broker is recreated', () => {
+  const first = makeRig();
+  const second = makeRig();
+  addWorkspace(first, 'a');
+  addWorkspace(second, 'a');
+
+  first.broker.requestRefresh('a');
+  second.broker.requestRefresh('a');
+
+  const firstId = latestHistoryRequest(first.commands).requestId;
+  const secondId = latestHistoryRequest(second.commands).requestId;
+  assertHistoryRequestId(firstId);
+  assertHistoryRequestId(secondId);
+  assert.notEqual(firstId, secondId);
+});
+
+test('broker: drops a stale requestId even when workspaceId matches', () => {
+  const rig = makeRig();
+  addWorkspace(rig, 'a');
+
+  rig.broker.requestRefresh('a');
+  const current = latestHistoryRequest(rig.commands).requestId;
+
+  rig.broker.handleThreads('a', {
+    threads: [{ threadId: 'stale' }],
+    requestId: 'h0'
+  });
+  assert.equal(rig.store.getState().status, 'initial-loading');
+  assert.equal(rig.store.getState().threads.length, 0);
+
+  rig.broker.handleThreads('a', {
+    threads: [{ threadId: 'wrong' }],
+    requestId: current + '-superseded'
+  });
+  assert.equal(rig.store.getState().threads.length, 0);
+
+  rig.broker.handleThreads('a', {
+    threads: [{ threadId: 'good' }],
+    requestId: current
+  });
+  assert.equal(rig.store.getState().threads[0].threadId, 'good');
 });
 
 test('broker: drops late responses from a stale channel while a request is in flight', () => {
@@ -312,11 +393,11 @@ test('broker: drops late responses from a stale channel while a request is in fl
   addWorkspace(rig, 'b');
 
   rig.broker.requestRefresh('a');
-  rig.broker.handleThreads('b', { threads: [{ threadId: 'stale' }] });
+  rig.broker.handleThreads('b', { threads: [{ threadId: 'stale' }], requestId: 'h0' });
   assert.equal(rig.store.getState().status, 'initial-loading');
   assert.equal(rig.store.getState().threads.length, 0);
 
-  rig.broker.handleThreads('a', { threads: [{ threadId: 'good' }] });
+  threadsReply(rig, 'a', { threads: [{ threadId: 'good' }] });
   assert.equal(rig.store.getState().threads[0].threadId, 'good');
 });
 

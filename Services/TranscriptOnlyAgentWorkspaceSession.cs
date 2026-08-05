@@ -41,18 +41,19 @@ internal sealed class TranscriptOnlyAgentWorkspaceSession : IAgentWorkspaceSessi
 
     public Task ChangeDirectoryAsync(string path) => SendReadOnlyErrorAsync();
 
-    public async Task ListThreadsAsync()
+    public async Task ListThreadsAsync(string? requestId = null)
     {
         try
         {
             await _bridge.SendEventAsync(
-                AgentThreadBridgePayload.ThreadList(_threadStore.ListThreads())).ConfigureAwait(false);
+                AgentThreadBridgePayload.ThreadList(_threadStore.ListThreads(), requestId)).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             await _bridge.SendEventAsync(new
             {
                 type = "agent_history_error",
+                requestId = string.IsNullOrWhiteSpace(requestId) ? null : requestId,
                 text = $"Unable to load Agent thread history. {ex.Message}"
             }).ConfigureAwait(false);
         }
@@ -151,7 +152,7 @@ internal sealed class TranscriptOnlyAgentWorkspaceSession : IAgentWorkspaceSessi
                 await PublishRuntimeUpdateUnavailableAsync().ConfigureAwait(false);
                 break;
             case "history":
-                await ListThreadsAsync().ConfigureAwait(false);
+                await ListThreadsAsync(args.RequestId).ConfigureAwait(false);
                 break;
             case "delete":
                 _threadStore.DeleteThread(_thread.ThreadId);

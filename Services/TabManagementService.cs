@@ -214,4 +214,9 @@ public sealed class TabManagementService : ITabManagementService, IDisposable
         // ConPtyService.Dispose handles session cleanup
         _conPtyService.Dispose();
     }
+
+    public Task ShutdownAsync(TimeSpan? timeout = null)
+    {
+        return _conPtyService.ShutdownAsync(timeout);
+    }
 }

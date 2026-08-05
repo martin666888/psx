@@ -102,9 +102,10 @@ public sealed class AgentThreadStoreTests
         var store = new AgentThreadStore(temporaryDirectory.Path);
         var threadDirectory = Path.Combine(temporaryDirectory.Path, "agent", "threads");
         Directory.CreateDirectory(threadDirectory);
-        File.WriteAllText(Path.Combine(threadDirectory, "legacy.json"), """
+        var threadId = Guid.NewGuid().ToString();
+        File.WriteAllText(Path.Combine(threadDirectory, threadId + ".json"), $$"""
             {
-              "threadId": "legacy",
+              "threadId": "{{threadId}}",
               "title": "Legacy thread",
               "cwd": "C:\\legacy",
               "provider": "claude-cli",
@@ -114,7 +115,7 @@ public sealed class AgentThreadStoreTests
             }
             """);
 
-        var loaded = store.LoadThread("legacy");
+        var loaded = store.LoadThread(threadId);
 
         Assert.IsNotNull(loaded);
         Assert.IsNull(loaded.AcpSessionId);
@@ -159,6 +160,17 @@ public sealed class AgentThreadStoreTests
 
         Assert.IsFalse(Directory.Exists(Path.Combine(store.AttachmentsDirectory, "thread-one")));
         Assert.IsTrue(File.Exists(second.Path));
+    }
+
+    [TestMethod]
+    public void LoadThread_RejectsPathTraversalThreadId()
+    {
+        using var temporaryDirectory = TestWorkspace.Create(nameof(LoadThread_RejectsPathTraversalThreadId));
+        var store = new AgentThreadStore(temporaryDirectory.Path);
+
+        Assert.ThrowsExactly<InvalidOperationException>(() => store.LoadThread(@"..\escape"));
+        Assert.ThrowsExactly<InvalidOperationException>(() => store.LoadThread(@"C:\Windows\notepad"));
+        Assert.ThrowsExactly<InvalidOperationException>(() => store.DeleteThread("not-a-guid"));
     }
 
 }

@@ -44,8 +44,9 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
         public required AgentWorkspaceSessionHandle Handle { get; init; }
         public IAgentWorkspaceSession Session => Handle.Session;
         public AgentWorkspaceEventSink EventSink => Handle.EventSink;
-        public bool WaitingForPermission { get; set; }
-        public bool WaitingForInput { get; set; }
+        public object StateSync { get; } = new();
+        public HashSet<string> PendingPermissionIds { get; } = new(StringComparer.Ordinal);
+        public HashSet<string> PendingInputIds { get; } = new(StringComparer.Ordinal);
         public bool Closing { get; set; }
     }
 
@@ -379,48 +380,85 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
 
         if (type == "agent_state")
         {
-            entry.Descriptor.Title = message["title"]?.GetValue<string>() ?? entry.Descriptor.Title;
-            entry.Descriptor.WorkingDirectory = message["cwd"]?.GetValue<string>() ?? entry.Descriptor.WorkingDirectory;
-            entry.Descriptor.AgentState = ResolveState(message, entry);
+            lock (entry.StateSync)
+            {
+                entry.Descriptor.Title = message["title"]?.GetValue<string>() ?? entry.Descriptor.Title;
+                entry.Descriptor.WorkingDirectory = message["cwd"]?.GetValue<string>() ?? entry.Descriptor.WorkingDirectory;
+                entry.Descriptor.AgentState = ResolveStateLocked(message, entry);
+            }
             WorkspaceChanged?.Invoke(this, new AgentWorkspaceEventArgs { Workspace = entry.Descriptor });
         }
         else if (type == "user_message")
         {
-            entry.Descriptor.Title = message["title"]?.GetValue<string>() ?? entry.Descriptor.Title;
-            entry.Descriptor.AgentState = AgentWorkspaceState.Running;
+            lock (entry.StateSync)
+            {
+                entry.Descriptor.Title = message["title"]?.GetValue<string>() ?? entry.Descriptor.Title;
+                entry.Descriptor.AgentState = DerivePendingStateLocked(entry, AgentWorkspaceState.Running);
+            }
             WorkspaceChanged?.Invoke(this, new AgentWorkspaceEventArgs { Workspace = entry.Descriptor });
         }
         else if (type == "permission_request")
         {
-            entry.WaitingForPermission = true;
-            entry.Descriptor.AgentState = AgentWorkspaceState.WaitingForPermission;
+            var requestId = message["requestId"]?.GetValue<string>();
+            lock (entry.StateSync)
+            {
+                if (!string.IsNullOrWhiteSpace(requestId))
+                    entry.PendingPermissionIds.Add(requestId);
+                entry.Descriptor.AgentState = DerivePendingStateLocked(entry, AgentWorkspaceState.Running);
+            }
             WorkspaceChanged?.Invoke(this, new AgentWorkspaceEventArgs { Workspace = entry.Descriptor });
         }
         else if (type is "question_request" or "elicitation_request")
         {
-            entry.WaitingForInput = true;
-            entry.Descriptor.AgentState = AgentWorkspaceState.WaitingForInput;
+            var requestId = message["requestId"]?.GetValue<string>();
+            lock (entry.StateSync)
+            {
+                if (!string.IsNullOrWhiteSpace(requestId))
+                    entry.PendingInputIds.Add(requestId);
+                entry.Descriptor.AgentState = DerivePendingStateLocked(entry, AgentWorkspaceState.Running);
+            }
             WorkspaceChanged?.Invoke(this, new AgentWorkspaceEventArgs { Workspace = entry.Descriptor });
         }
-        else if (type is "permission_resolved" or "permission_cancelled" or "elicitation_cancelled")
+        else if (type is "permission_resolved" or "permission_cancelled")
         {
-            entry.WaitingForPermission = false;
-            entry.WaitingForInput = false;
-            entry.Descriptor.AgentState = AgentWorkspaceState.Running;
+            var requestId = message["requestId"]?.GetValue<string>();
+            lock (entry.StateSync)
+            {
+                if (!string.IsNullOrWhiteSpace(requestId))
+                    entry.PendingPermissionIds.Remove(requestId);
+                entry.Descriptor.AgentState = DerivePendingStateLocked(entry, AgentWorkspaceState.Running);
+            }
+            WorkspaceChanged?.Invoke(this, new AgentWorkspaceEventArgs { Workspace = entry.Descriptor });
+        }
+        else if (type == "elicitation_cancelled")
+        {
+            var requestId = message["requestId"]?.GetValue<string>();
+            lock (entry.StateSync)
+            {
+                if (!string.IsNullOrWhiteSpace(requestId))
+                    entry.PendingInputIds.Remove(requestId);
+                entry.Descriptor.AgentState = DerivePendingStateLocked(entry, AgentWorkspaceState.Running);
+            }
             WorkspaceChanged?.Invoke(this, new AgentWorkspaceEventArgs { Workspace = entry.Descriptor });
         }
         else if (type == "run_finished")
         {
-            entry.WaitingForPermission = false;
-            entry.WaitingForInput = false;
-            entry.Descriptor.AgentState = AgentWorkspaceState.Idle;
+            lock (entry.StateSync)
+            {
+                entry.PendingPermissionIds.Clear();
+                entry.PendingInputIds.Clear();
+                entry.Descriptor.AgentState = AgentWorkspaceState.Idle;
+            }
             WorkspaceChanged?.Invoke(this, new AgentWorkspaceEventArgs { Workspace = entry.Descriptor });
         }
         else if (type == "run_failed")
         {
-            entry.WaitingForPermission = false;
-            entry.WaitingForInput = false;
-            entry.Descriptor.AgentState = AgentWorkspaceState.Error;
+            lock (entry.StateSync)
+            {
+                entry.PendingPermissionIds.Clear();
+                entry.PendingInputIds.Clear();
+                entry.Descriptor.AgentState = AgentWorkspaceState.Error;
+            }
             WorkspaceChanged?.Invoke(this, new AgentWorkspaceEventArgs { Workspace = entry.Descriptor });
         }
 
@@ -430,7 +468,7 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
         return true;
     }
 
-    private static AgentWorkspaceState ResolveState(JsonObject message, Entry entry)
+    private static AgentWorkspaceState ResolveStateLocked(JsonObject message, Entry entry)
     {
         var status = message["status"]?.GetValue<string>() ?? "";
         var busy = message["busy"]?.GetValue<bool>() ?? false;
@@ -438,13 +476,19 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
             return AgentWorkspaceState.TranscriptOnly;
         if (string.Equals(status, "error", StringComparison.OrdinalIgnoreCase))
             return AgentWorkspaceState.Error;
-        if (entry.WaitingForPermission)
+        var fallback = busy
+            ? AgentWorkspaceState.Running
+            : entry.Session.IsDraft ? AgentWorkspaceState.Draft : AgentWorkspaceState.Idle;
+        return DerivePendingStateLocked(entry, fallback);
+    }
+
+    private static AgentWorkspaceState DerivePendingStateLocked(Entry entry, AgentWorkspaceState fallback)
+    {
+        if (entry.PendingPermissionIds.Count > 0)
             return AgentWorkspaceState.WaitingForPermission;
-        if (entry.WaitingForInput)
+        if (entry.PendingInputIds.Count > 0)
             return AgentWorkspaceState.WaitingForInput;
-        if (busy)
-            return AgentWorkspaceState.Running;
-        return entry.Session.IsDraft ? AgentWorkspaceState.Draft : AgentWorkspaceState.Idle;
+        return fallback;
     }
 
     private string ResolveDraftWorkingDirectory(string? requested)
@@ -513,14 +557,22 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
 
         if (args.Command == "agent_permission_response")
         {
-            entry.WaitingForPermission = false;
-            entry.Descriptor.AgentState = AgentWorkspaceState.Running;
+            lock (entry.StateSync)
+            {
+                if (!string.IsNullOrWhiteSpace(args.RequestId))
+                    entry.PendingPermissionIds.Remove(args.RequestId);
+                entry.Descriptor.AgentState = DerivePendingStateLocked(entry, AgentWorkspaceState.Running);
+            }
             WorkspaceChanged?.Invoke(this, new AgentWorkspaceEventArgs { Workspace = entry.Descriptor });
         }
         else if (args.Command is "agent_question_response" or "agent_elicitation_response")
         {
-            entry.WaitingForInput = false;
-            entry.Descriptor.AgentState = AgentWorkspaceState.Running;
+            lock (entry.StateSync)
+            {
+                if (!string.IsNullOrWhiteSpace(args.RequestId))
+                    entry.PendingInputIds.Remove(args.RequestId);
+                entry.Descriptor.AgentState = DerivePendingStateLocked(entry, AgentWorkspaceState.Running);
+            }
             WorkspaceChanged?.Invoke(this, new AgentWorkspaceEventArgs { Workspace = entry.Descriptor });
         }
 

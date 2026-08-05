@@ -141,6 +141,8 @@ export interface DecisionItem {
   id: string;
   kind: 'permission' | 'question' | 'elicitation' | 'mode_transition' | 'document_permission';
   requestId: string;
+  /** Optional persisted snapshot key; live resolve stays requestId-based. */
+  decisionSnapshotId?: string;
   title: string;
   /** Raw input JSON / message / document markdown depending on kind. */
   text: string;
@@ -703,6 +705,7 @@ export class TimelineProjection {
       id: this.nextId('dec'),
       kind,
       requestId: asString(raw.requestId),
+      decisionSnapshotId: asString(raw.decisionSnapshotId) || undefined,
       title:
         asString(raw.title) || (kind === 'permission' ? 'Permission request' : assistantName + ' question'),
       text: asString(raw.text),
@@ -728,6 +731,7 @@ export class TimelineProjection {
       id: this.nextId('dec'),
       kind: 'elicitation',
       requestId: asString(raw.requestId),
+      decisionSnapshotId: asString(raw.decisionSnapshotId) || undefined,
       title: assistantName + ' Agent needs input',
       text: '',
       description: '',
@@ -772,6 +776,7 @@ export class TimelineProjection {
       id: this.nextId('dec'),
       kind,
       requestId: asString(raw.requestId),
+      decisionSnapshotId: asString(raw.decisionSnapshotId) || undefined,
       title: asString(raw.title) || asString(raw.name) || 'Review the proposed direction',
       text: asString(raw.documentText) || asString(raw.text),
       description: '',
@@ -934,6 +939,7 @@ export class TimelineProjection {
         this.appendDocumentDecision(
           {
             requestId: asString(msg.requestId),
+            decisionSnapshotId: asString(msg.decisionSnapshotId),
             toolCallId: asString(msg.toolCallId),
             title: asString(msg.name),
             documentText: asString(msg.text),

@@ -91,7 +91,7 @@ function ThreadRow(
       }
       data-thread-id={thread.threadId || ''}
       aria-current={isActive ? 'true' : 'false'}
-      title={fullDescription || undefined}
+      title={[titleText, fullDescription].filter((part) => part).join(' — ') || undefined}
       aria-label={[titleText, badgeText, fullDescription].filter((part) => part).join(', ')}
       onClick={() => {
         if (thread.threadId) onOpenThread(thread.threadId);
@@ -106,7 +106,7 @@ function ThreadRow(
         <ProviderIcon iconKey={thread.providerIcon} />
       </span>
       <span className="agent-history-heading flex min-w-0 flex-1 items-baseline gap-2">
-        <strong className="min-w-0 flex-1 truncate font-medium text-[13px]">{titleText}</strong>
+        <strong className="agent-history-title min-w-0 flex-1 font-medium text-[13px]">{titleText}</strong>
         {isActive && (
           <Badge className="agent-history-current shrink-0 rounded-full text-[10px]" variant="secondary">
             Current

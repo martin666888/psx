@@ -13,6 +13,7 @@ public sealed class ConPtyService : IDisposable
     private readonly Dictionary<Guid, TerminalSession> _sessions = new();
     private readonly Dictionary<Guid, Task> _readTasks = new();
     private readonly HashSet<Guid> _closingSessions = new();
+    private readonly Dictionary<Guid, Task> _closeTasks = new();
     private readonly object _sessionsLock = new();
     private readonly object _writeLock = new();
     private bool _disposed;
@@ -164,17 +165,19 @@ public sealed class ConPtyService : IDisposable
 
         lock (_sessionsLock)
         {
+            if (_closeTasks.TryGetValue(sessionId, out var existingClose))
+                return existingClose;
+
             if (!_sessions.TryGetValue(sessionId, out session))
                 return Task.CompletedTask;
 
-            if (!_closingSessions.Add(sessionId))
-                return Task.CompletedTask;
-
+            _closingSessions.Add(sessionId);
             _sessions.Remove(sessionId);
             _readTasks.TryGetValue(sessionId, out readTask);
+            var closeTask = Task.Run(() => CloseSessionCoreAsync(session, readTask));
+            _closeTasks[sessionId] = closeTask;
+            return closeTask;
         }
-
-        return Task.Run(() => CloseSessionCoreAsync(session, readTask));
     }
 
     public TerminalSession? GetSession(Guid sessionId)
@@ -303,12 +306,22 @@ public sealed class ConPtyService : IDisposable
 
             if (notifyExit)
             {
-                SessionExited?.Invoke(this, new SessionExitedEventArgs
+                try
                 {
-                    SessionId = session.SessionId
-                });
-
-                _ = Task.Run(() => DisposeSessionResources(session, killProcess: false, disposeOutputPipe: true));
+                    SessionExited?.Invoke(this, new SessionExitedEventArgs
+                    {
+                        SessionId = session.SessionId
+                    });
+                }
+                finally
+                {
+                    // Natural exits are already running on the read-loop task.
+                    // Finish cleanup synchronously so shutdown cannot complete
+                    // while an untracked resource-disposal task is still live.
+                    DisposeSessionResources(session, killProcess: false, disposeOutputPipe: true);
+                    try { session.CancellationTokenSource.Dispose(); }
+                    catch { }
+                }
             }
         }
     }
@@ -339,6 +352,7 @@ public sealed class ConPtyService : IDisposable
             {
                 _readTasks.Remove(session.SessionId);
                 _closingSessions.Remove(session.SessionId);
+                _closeTasks.Remove(session.SessionId);
             }
         }
     }
@@ -393,8 +407,46 @@ public sealed class ConPtyService : IDisposable
         }
 
         foreach (var sessionId in sessionIds)
-        {
             _ = CloseSessionAsync(sessionId);
+    }
+
+    /// <summary>
+    /// Closes every live session and waits for ConPTY/process cleanup up to
+    /// <paramref name="timeout"/>. Prefer this over Dispose during app exit.
+    /// </summary>
+    public async Task ShutdownAsync(TimeSpan? timeout = null)
+    {
+        Guid[] sessionIds;
+        Task[] existingCloses;
+        lock (_sessionsLock)
+        {
+            if (_disposed && _sessions.Count == 0 && _closeTasks.Count == 0)
+                return;
+            sessionIds = _sessions.Keys.ToArray();
+            existingCloses = _closeTasks.Values.ToArray();
+            _disposed = true;
+        }
+
+        if (sessionIds.Length == 0 && existingCloses.Length == 0)
+            return;
+
+        var closes = existingCloses
+            .Concat(sessionIds.Select(CloseSessionAsync))
+            .Distinct()
+            .ToArray();
+        var wait = Task.WhenAll(closes);
+        var limit = timeout ?? TimeSpan.FromSeconds(3);
+        try
+        {
+            await wait.WaitAsync(limit).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            Debug.WriteLine("ConPtyService.ShutdownAsync timed out waiting for sessions to close.");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine("ConPtyService.ShutdownAsync failed: " + ex);
         }
     }
 }

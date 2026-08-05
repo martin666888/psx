@@ -362,6 +362,11 @@ test('shell: composer and conversation share the same reading-column rules', () 
     /\.agent-usage-panel\s*\{[\s\S]*?border:\s*1px solid var\(--agent-border-strong\)/,
     'Usage dialog shell uses the strong theme border so it separates from the dark overlay'
   );
+  assert.match(
+    usage,
+    /\.agent-usage-avatar-button:focus-visible[\s\S]*?outline:\s*2px solid var\(--agent-focus-ring\)\s*!important/,
+    'Usage native controls keep a visible keyboard focus ring against the global outline:none policy'
+  );
   // Desktop breathing room is the dedicated token (24px); narrow windows use
   // the smaller spacing step, never zero.
   assert.match(shell, /--agent-composer-bottom-space: 24px/);
@@ -432,5 +437,19 @@ test('shell: the History dock is a free-standing rounded workbench panel', () =>
   assert.ok(
     !/\.agent-history-dock\s*\{[^}]*overflow\s*:\s*hidden/.test(history),
     'dock must not clip the resizer with overflow: hidden'
+  );
+});
+
+test('shell: long History titles fade before the dock edge without painting a theme color', () => {
+  const history = readCss('history.css');
+  assert.match(
+    history,
+    /\.agent-history-title\s*\{[^}]*text-overflow:\s*clip;[^}]*-webkit-mask-image:\s*linear-gradient\([^}]*mask-image:\s*linear-gradient\(/,
+    'thread titles use the Chromium-prefixed and standard alpha masks'
+  );
+  assert.match(
+    history,
+    /transparent calc\(100% - var\(--agent-space-1\)\)/,
+    'the fade leaves an optical gap before the row edge'
   );
 });

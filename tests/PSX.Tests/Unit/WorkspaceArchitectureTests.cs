@@ -381,6 +381,36 @@ public sealed class AgentWorkspaceCoordinatorTests
     }
 
     [TestMethod]
+    public async Task PendingPermissionEvents_ConcurrentUpdates_KeepWorkspaceStateConsistent()
+    {
+        using var workspace = TestWorkspace.Create(nameof(PendingPermissionEvents_ConcurrentUpdates_KeepWorkspaceStateConsistent));
+        var store = new AgentThreadStore(Path.Combine(workspace.Path, "store"));
+        var bridge = new RecordingAgentBridgeService();
+        var provider = new TestProvider("test", "Test Agent", new CountingRuntime(workspace.Path), []);
+        var registry = new AgentProviderRegistry(
+            [provider],
+            new AgentProviderOptions { DefaultProviderKey = "test" });
+        using var history = new AgentHistoryCatalog();
+        var factory = new BarrierWorkspaceFactory(bridge, expectedCancellations: 1);
+        using var coordinator = new AgentWorkspaceCoordinator(
+            bridge, store, registry, factory, history);
+        var workspaceId = (await coordinator.CreateAsync("test", workspace.Path))!.Value;
+        var eventSink = factory.EventSinks[workspaceId];
+
+        await Task.WhenAll(Enumerable.Range(0, 100).Select(index => Task.Run(() =>
+            eventSink.SendEventAsync(new { type = "permission_request", requestId = $"p{index}" }))));
+        await Task.WhenAll(Enumerable.Range(0, 99).Select(index => Task.Run(() =>
+            eventSink.SendEventAsync(new { type = "permission_resolved", requestId = $"p{index}" }))));
+
+        Assert.AreEqual(AgentWorkspaceState.WaitingForPermission, coordinator.Workspaces.Single().AgentState);
+
+        await eventSink.SendEventAsync(new { type = "permission_resolved", requestId = "p99" });
+
+        Assert.AreEqual(AgentWorkspaceState.Running, coordinator.Workspaces.Single().AgentState);
+        factory.ReleaseCancellations.TrySetResult();
+    }
+
+    [TestMethod]
     public async Task ShutdownAsync_FiveWorkspaces_BeginsAllCancellationsInParallel()
     {
         using var workspace = TestWorkspace.Create(nameof(ShutdownAsync_FiveWorkspaces_BeginsAllCancellationsInParallel));
@@ -564,6 +594,7 @@ internal sealed class RecordingTabManagementService : ITabManagementService
     public Task SwitchTabAsync(Guid sessionId) => Task.CompletedTask;
     public Task ResizeTabAsync(Guid sessionId, int cols, int rows) => Task.CompletedTask;
     public TerminalSession? GetSession(Guid sessionId) => null;
+    public Task ShutdownAsync(TimeSpan? timeout = null) => Task.CompletedTask;
 }
 
 internal sealed class StubAgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
@@ -590,6 +621,7 @@ internal sealed class BarrierWorkspaceFactory(
 {
     private int _startedCancellations;
 
+    public System.Collections.Concurrent.ConcurrentDictionary<Guid, AgentWorkspaceEventSink> EventSinks { get; } = new();
     public TaskCompletionSource AllCancellationsStarted { get; } =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     public TaskCompletionSource ReleaseCancellations { get; } =
@@ -602,6 +634,7 @@ internal sealed class BarrierWorkspaceFactory(
         Func<System.Text.Json.Nodes.JsonObject, bool> beforeEvent)
     {
         var eventSink = new AgentWorkspaceEventSink(workspaceId, bridge, beforeEvent);
+        EventSinks[workspaceId] = eventSink;
         return new AgentWorkspaceSessionHandle
         {
             EventSink = eventSink,
@@ -640,7 +673,7 @@ internal sealed class BarrierWorkspaceSession(
         await cancellationRelease.ConfigureAwait(false);
     }
     public Task ChangeDirectoryAsync(string path) => Task.CompletedTask;
-    public Task ListThreadsAsync() => Task.CompletedTask;
+    public Task ListThreadsAsync(string? requestId = null) => Task.CompletedTask;
     public Task PublishStateAsync() => Task.CompletedTask;
     public Task RestoreAsync() => Task.CompletedTask;
     public void Dispose() { }

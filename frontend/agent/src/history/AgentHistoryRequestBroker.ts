@@ -3,10 +3,11 @@
 // History data is global, but the bridge command must travel through one live
 // Agent workspace. This broker picks the channel, owns the request status
 // machine (idle / initial-loading / refreshing / unavailable / error) and
-// guards the ID-less agent_threads response with an in-flight workspace match
-// plus a monotonic epoch for its own timer callbacks. Every `history` command
-// is broker-initiated, so a response with no matching in-flight request is
-// dropped.
+// guards agent_threads / agent_history_error with a matching requestId (late or
+// superseded replies are dropped) plus an in-flight workspace match and a
+// monotonic epoch for its own timer callbacks. Every `history` command is
+// broker-initiated and carries a requestId; a response with no matching
+// in-flight request is dropped.
 //
 // Rules (approved design):
 //   channel priority: originating workspace (alive) → active Agent workspace
@@ -55,6 +56,9 @@ export class AgentHistoryRequestBroker {
   private readonly channels: WorkspaceChannelSelector;
 
   private inFlightWorkspaceId = '';
+  private inFlightRequestId = '';
+  private readonly requestInstanceId = crypto.randomUUID();
+  private requestCounter = 0;
   private inFlightEpoch = 0;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private epoch = 0;
@@ -136,11 +140,13 @@ export class AgentHistoryRequestBroker {
     }, 0);
   }
 
-  /** agent_threads response: accepted only from the in-flight channel. Every
-   * `history` command is broker-initiated, so a response with no in-flight
-   * request (or from a stale/closed channel) is dropped. */
+  /** agent_threads response: accepted only when requestId and workspaceId match
+   * the in-flight attempt. Every `history` command is broker-initiated, so a
+   * response with no in-flight request (or from a stale/superseded attempt) is
+   * dropped. */
   handleThreads(workspaceId: string, raw: RawHostMessage): void {
     if (this.disposed || !this.channels.has(workspaceId)) return;
+    if (!this.inFlightRequestId || asString(raw.requestId) !== this.inFlightRequestId) return;
     if (!this.inFlightWorkspaceId || this.inFlightWorkspaceId !== workspaceId) return;
     this.clearInFlight();
     this.store.applyThreads(normalizeHistoryThreads(raw.threads));
@@ -150,6 +156,7 @@ export class AgentHistoryRequestBroker {
   /** agent_history_error response: same acceptance rules as agent_threads. */
   handleHistoryError(workspaceId: string, raw: RawHostMessage): void {
     if (this.disposed || !this.channels.has(workspaceId)) return;
+    if (!this.inFlightRequestId || asString(raw.requestId) !== this.inFlightRequestId) return;
     if (!this.inFlightWorkspaceId || this.inFlightWorkspaceId !== workspaceId) return;
     this.clearInFlight();
     this.refreshQueued = false;
@@ -217,12 +224,14 @@ export class AgentHistoryRequestBroker {
       this.store.applyUnavailable();
       return;
     }
+    const requestId = this.nextId();
     this.epoch++;
     this.inFlightWorkspaceId = channel;
+    this.inFlightRequestId = requestId;
     this.inFlightEpoch = this.epoch;
     const status = this.store.getState().threads.length > 0 ? 'refreshing' : 'initial-loading';
     this.store.applyLoading(status, channel);
-    bridge.sendAgentCommand('history');
+    bridge.sendAgentCommand('history', undefined, requestId);
     const epoch = this.epoch;
     this.timer = setTimeout(() => this.onTimeout(epoch), this.timeoutMs);
   }
@@ -249,6 +258,7 @@ export class AgentHistoryRequestBroker {
 
   private clearInFlight(): void {
     this.inFlightWorkspaceId = '';
+    this.inFlightRequestId = '';
     if (this.timer !== null) {
       clearTimeout(this.timer);
       this.timer = null;
@@ -263,5 +273,10 @@ export class AgentHistoryRequestBroker {
 
   private pickChannelExcept(excluded: string): string {
     return this.channels.pickExcept(excluded);
+  }
+
+  private nextId(): string {
+    this.requestCounter += 1;
+    return `h-${this.requestInstanceId}-${this.requestCounter}`;
   }
 }

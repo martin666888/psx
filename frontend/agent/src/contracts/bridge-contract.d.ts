@@ -269,6 +269,7 @@ interface AgentGenericEvent extends AgentWorkspaceEventBase {
     status?: string;
     busy?: boolean;
     isDraft?: boolean;
+    requestId?: string;
 }
 
 interface WorkspaceHostEvent extends BridgeInboundMessageBase {

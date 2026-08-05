@@ -32,6 +32,7 @@ internal static class AgentThreadBridgePayload
                 toolOutput = message.ToolOutput,
                 toolStatus = message.ToolStatus,
                 requestId = message.RequestId,
+                decisionSnapshotId = message.DecisionSnapshotId ?? "",
                 decisionState = message.DecisionState,
                 selectedOptionId = message.SelectedOptionId,
                 decisionOptions = message.DecisionOptions?.Select(option => new
@@ -51,11 +52,12 @@ internal static class AgentThreadBridgePayload
         };
     }
 
-    public static object ThreadList(IReadOnlyList<AgentThreadSummary> threads)
+    public static object ThreadList(IReadOnlyList<AgentThreadSummary> threads, string? requestId = null)
     {
         return new
         {
             type = "agent_threads",
+            requestId = string.IsNullOrWhiteSpace(requestId) ? null : requestId,
             threads = threads.Select(thread => new
             {
                 threadId = thread.ThreadId,

@@ -272,6 +272,7 @@ internal sealed class NullTabManagementService : ITabManagementService
     public Task SwitchTabAsync(Guid sessionId) => Task.CompletedTask;
     public Task ResizeTabAsync(Guid sessionId, int cols, int rows) => Task.CompletedTask;
     public TerminalSession? GetSession(Guid sessionId) => null;
+    public Task ShutdownAsync(TimeSpan? timeout = null) => Task.CompletedTask;
 }
 
 internal sealed class NullTerminalBridgeService : ITerminalBridgeService

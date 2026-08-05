@@ -177,6 +177,16 @@ public partial class MainWindow : Window
         {
             System.Diagnostics.Debug.WriteLine("Agent Workspace shutdown failed: " + ex);
         }
+
+        try
+        {
+            if (_tabService != null)
+                await _tabService.ShutdownAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine("Terminal Workspace shutdown failed: " + ex);
+        }
         finally
         {
             (_agentWorkspaceCoordinator as IDisposable)?.Dispose();

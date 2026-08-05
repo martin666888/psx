@@ -9,6 +9,8 @@ public interface ITabManagementService
     Task SwitchTabAsync(Guid sessionId);
     Task ResizeTabAsync(Guid sessionId, int cols, int rows);
     TerminalSession? GetSession(Guid sessionId);
+    /// <summary>Await ConPTY session teardown before app exit.</summary>
+    Task ShutdownAsync(TimeSpan? timeout = null);
 
     event EventHandler<TabCreatedEventArgs>? TabCreated;
     event EventHandler<TabClosedEventArgs>? TabClosed;

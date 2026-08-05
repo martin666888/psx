@@ -37,6 +37,17 @@ const THREADS = [
   thread({ threadId: 't3', title: 'Write docs', cwd: 'D:/other', updatedAt: '2026-07-18 10:00:00Z' })
 ];
 
+function historyRequestId(posted) {
+  const command = [...posted].reverse().find(
+    (message) => message.type === 'agent_command' && message.command === 'history'
+  );
+  return command?.requestId ?? '';
+}
+
+function agentThreads(posted, threads) {
+  return { type: 'agent_threads', workspaceId: WS, requestId: historyRequestId(posted), threads };
+}
+
 async function fixture() {
   const runtime = installAgentRuntime();
   // Warm the island module only after the jsdom globals exist: react-dom
@@ -80,15 +91,18 @@ async function settle(run, predicate) {
 }
 
 test('loading, grouped list and empty states render semantically', async () => {
-  const { app, content } = await fixture();
+  const { app, content, posted } = await fixture();
   await settle(() => {}, () => !!content().querySelector('.agent-history-state'));
   assert.match(content().textContent, /Loading|No Agent workspace/);
   await settle(
-    () => app.handle({ type: 'agent_threads', workspaceId: WS, threads: THREADS }),
+    () => app.handle(agentThreads(posted, THREADS)),
     () => !!content().querySelector('.agent-history-group')
   );
   assert.equal(content().querySelectorAll('.agent-history-group').length, 2);
   assert.equal(content().querySelectorAll('.agent-history-item').length, 3);
+  const firstRow = content().querySelector('[data-thread-id="t1"]');
+  assert.ok(firstRow.querySelector('.agent-history-title'), 'thread title owns the edge-fade treatment');
+  assert.match(firstRow.title, /^Fix the build — /, 'the unclipped title remains available on hover');
   // The island host is the dock host element the portal renders into.
   assert.equal(document.querySelector('[data-role="history-dock-host"]').dataset.islandState, 'mounted');
   assert.ok(
@@ -99,7 +113,7 @@ test('loading, grouped list and empty states render semantically', async () => {
   await settle(
     () => {
       document.querySelector('[data-role="history-refresh"]').click();
-      app.handle({ type: 'agent_threads', workspaceId: WS, threads: [] });
+      app.handle(agentThreads(posted, []));
     },
     () => !!content().querySelector('.agent-history-empty')
   );
@@ -109,7 +123,7 @@ test('loading, grouped list and empty states render semantically', async () => {
 test('clicking a row emits the exact load_thread bridge command', async () => {
   const { app, content, posted } = await fixture();
   await settle(
-    () => app.handle({ type: 'agent_threads', workspaceId: WS, threads: THREADS }),
+    () => app.handle(agentThreads(posted, THREADS)),
     () => !!content().querySelector('[data-thread-id="t2"]')
   );
   await act(async () => content().querySelector('[data-thread-id="t2"]').click());
@@ -133,15 +147,11 @@ test('rows carry catalog-driven provider brand icons with the agent fallback', a
           { key: 'kimi-code', displayName: 'Kimi Code', assistantName: 'Kimi', isDefault: false, iconKey: 'kimi' }
         ]
       });
-      app.handle({
-        type: 'agent_threads',
-        workspaceId: WS,
-        threads: [
+      app.handle(agentThreads(posted, [
           thread({ threadId: 'c1', provider: 'claude-code', updatedAt: '2026-07-20 10:00:00Z' }),
           thread({ threadId: 'k1', provider: 'kimi-code', updatedAt: '2026-07-19 10:00:00Z' }),
           thread({ threadId: 'u1', provider: 'legacy-provider', updatedAt: '2026-07-18 10:00:00Z' })
-        ]
-      });
+        ]));
     },
     () => !!content().querySelector('[data-thread-id="u1"]')
   );
@@ -168,9 +178,9 @@ test('show-more, folding and search update the React list', async () => {
   const many = Array.from({ length: 7 }, (_, i) =>
     thread({ threadId: 'm' + i, title: 'Task ' + i, updatedAt: `2026-07-${19 - i} 10:00:00Z` })
   );
-  const { app, content } = await fixture();
+  const { app, content, posted } = await fixture();
   await settle(
-    () => app.handle({ type: 'agent_threads', workspaceId: WS, threads: many }),
+    () => app.handle(agentThreads(posted, many)),
     () => !!content().querySelector('.agent-history-group')
   );
   assert.equal(content().querySelectorAll('.agent-history-item').length, 5);
@@ -195,9 +205,9 @@ test('show-more, folding and search update the React list', async () => {
 });
 
 test('thread-open error remains local and supports dismiss', async () => {
-  const { app, content } = await fixture();
+  const { app, content, posted } = await fixture();
   await settle(
-    () => app.handle({ type: 'agent_threads', workspaceId: WS, threads: THREADS }),
+    () => app.handle(agentThreads(posted, THREADS)),
     () => !!content().querySelector('.agent-history-group')
   );
   await act(async () => {

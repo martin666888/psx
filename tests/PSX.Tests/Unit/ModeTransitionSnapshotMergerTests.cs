@@ -72,6 +72,28 @@ public sealed class DocumentDecisionSnapshotMergerTests
     }
 
     [TestMethod]
+    public void Merge_ReusedToolCallId_PreservesDistinctHistoricalDecisions()
+    {
+        var replay = new List<AgentMessage>();
+        var historical = CreateTransition("request-old", "tool-reused", "selected");
+        historical.DecisionSnapshotId = "snapshot-old";
+        historical.RunId = "run-old";
+        var current = CreateTransition("request-new", "tool-reused", "selected");
+        current.DecisionSnapshotId = "snapshot-new";
+        current.RunId = "run-new";
+
+        DocumentDecisionSnapshotMerger.Merge(replay, [historical, current]);
+
+        Assert.HasCount(2, replay);
+        CollectionAssert.AreEquivalent(
+            new[] { "snapshot-old", "snapshot-new" },
+            replay.Select(message => message.DecisionSnapshotId).ToArray());
+        CollectionAssert.AreEquivalent(
+            new[] { "run-old", "run-new" },
+            replay.Select(message => message.RunId).ToArray());
+    }
+
+    [TestMethod]
     public void Merge_PreservesDocumentPermissionRoleAndReplacesItsToolCard()
     {
         var replay = new List<AgentMessage>

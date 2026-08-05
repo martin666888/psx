@@ -49,6 +49,28 @@
     min-height: 0;
 }
 
+/* Long thread titles dissolve before the dock edge instead of ending on a
+ * hard clip. A mask follows text alpha rather than painting a surface-colored
+ * overlay, so the fade remains seamless on default, hover and selected rows
+ * in every theme. Short titles end before the masked region and stay intact. */
+.agent-history-title {
+    overflow: hidden;
+    text-overflow: clip;
+    white-space: nowrap;
+    -webkit-mask-image: linear-gradient(
+        to right,
+        #000 0,
+        #000 calc(100% - var(--agent-space-6)),
+        transparent calc(100% - var(--agent-space-1))
+    );
+    mask-image: linear-gradient(
+        to right,
+        #000 0,
+        #000 calc(100% - var(--agent-space-6)),
+        transparent calc(100% - var(--agent-space-1))
+    );
+}
+
 /* --- Profile footer (opens the global Usage panel) ------------------------- */
 
 .agent-history-dock-footer {

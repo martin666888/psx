@@ -541,7 +541,14 @@ public sealed class AgentThreadStore : IAgentThreadStore
 
     private string GetThreadPath(string threadId)
     {
-        return Path.Combine(_threadsDirectory, $"{threadId}.json");
+        var safeThreadId = RequireSafeThreadId(threadId);
+        var path = Path.GetFullPath(Path.Combine(_threadsDirectory, safeThreadId + ".json"));
+        var root = Path.GetFullPath(_threadsDirectory)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        if (!path.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Invalid thread id.");
+        return path;
     }
 
     private string GetAttachmentThreadDirectory(string threadId)
@@ -551,6 +558,15 @@ public sealed class AgentThreadStore : IAgentThreadStore
             throw new InvalidOperationException("Invalid thread id.");
 
         return Path.Combine(AttachmentsDirectory, safeThreadId);
+    }
+
+    private static string RequireSafeThreadId(string threadId)
+    {
+        if (!Guid.TryParse(threadId, out var guid))
+            throw new InvalidOperationException("Invalid thread id.");
+
+        // Canonical form matches CreateThread (Guid.NewGuid().ToString()).
+        return guid.ToString();
     }
 
     private string GetAttachmentMetadataPath(string threadId, string attachmentId)

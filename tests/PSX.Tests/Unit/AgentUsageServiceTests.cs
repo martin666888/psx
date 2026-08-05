@@ -37,6 +37,40 @@ public sealed class AgentUsageServiceTests
         }
     }
 
+    /// <summary>
+    /// Blocks the first Collect until <paramref name="release"/> completes, then
+    /// subsequent Collects return the forced records immediately.
+    /// </summary>
+    private sealed class StaleThenFreshUsageSource(
+        IReadOnlyList<AgentUsageRecord> staleRecords,
+        IReadOnlyList<AgentUsageRecord> freshRecords,
+        TaskCompletionSource entered,
+        Task release) : IAgentUsageSource
+    {
+        private int _calls;
+
+        public AgentUsageSourceStatus Collect(
+            IReadOnlyCollection<string> sessionIds,
+            IAgentUsageRecordSink sink,
+            CancellationToken cancellationToken)
+        {
+            var call = Interlocked.Increment(ref _calls);
+            var records = call == 1 ? staleRecords : freshRecords;
+            if (call == 1)
+            {
+                entered.TrySetResult();
+                release.GetAwaiter().GetResult();
+            }
+
+            foreach (var record in records)
+                sink.Add(record);
+            return Status(
+                AgentUsageSourceStatus.Available,
+                expectedSessions: sessionIds.Count,
+                matchedSessions: sessionIds.Count);
+        }
+    }
+
     private static AgentUsageSourceStatus Status(
         string status,
         int skippedFiles = 0,
@@ -400,6 +434,43 @@ public sealed class AgentUsageServiceTests
 
         await service.CollectAsync(force: true, CancellationToken.None);
         Assert.AreEqual(2, source.CollectCount, "force must re-scan");
+    }
+
+    [TestMethod]
+    public async Task Collect_ForceRefresh_DoesNotLetOlderScanOverwriteCache()
+    {
+        using var workspace = TestWorkspace.Create(nameof(Collect_ForceRefresh_DoesNotLetOlderScanOverwriteCache));
+        var store = NewStore(workspace);
+        AddThread(store, "acp-claude", "psx-session");
+        var now = new DateTimeOffset(2026, 7, 20, 12, 0, 0, TimeSpan.Zero);
+
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var source = new StaleThenFreshUsageSource(
+            [new AgentUsageRecord(now, "m", 1, 0, 0, 0)],
+            [new AgentUsageRecord(now, "m", 100, 0, 0, 0)],
+            entered,
+            release.Task);
+        var service = new AgentUsageService(
+            store,
+            RegistryWith(workspace, source),
+            new FixedTimeProvider(now, TimeZoneInfo.Utc));
+
+        var staleTask = service.CollectAsync(force: false, CancellationToken.None);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var fresh = await service.CollectAsync(force: true, CancellationToken.None);
+        Assert.AreEqual(100, fresh.Report.Today.TotalTokens);
+
+        release.TrySetResult();
+        var stale = await staleTask;
+        Assert.AreEqual(1, stale.Report.Today.TotalTokens, "stale scan still returns its own result");
+
+        var cached = await service.CollectAsync(force: false, CancellationToken.None);
+        Assert.AreEqual(
+            100,
+            cached.Report.Today.TotalTokens,
+            "cache must keep the newer forced scan, not the late stale publish");
     }
 
     [TestMethod]

@@ -99,7 +99,7 @@ const INIT_STUB = `(() => {
         if (typeof message === 'string') { try { message = JSON.parse(message); } catch { return; } }
         if (message && message.type === 'agent_command' && message.command === 'history') {
           setTimeout(() => window.__psxEmit({
-            type: 'agent_threads', workspaceId: message.workspaceId,
+            type: 'agent_threads', workspaceId: message.workspaceId, requestId: message.requestId,
             threads: [
               { threadId: 'h1', title: 'Ship the release notes', cwd: 'D:/proj', updatedAt: '2026-07-20 10:00:00Z', sessionId: '', provider: 'claude-code', providerKey: 'claude-code' },
               { threadId: 'h2', title: 'Refactor the storage layer', cwd: 'D:/proj', updatedAt: '2026-07-19 10:00:00Z', sessionId: '', provider: 'claude-code', providerKey: 'claude-code' },

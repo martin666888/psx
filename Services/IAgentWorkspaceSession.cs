@@ -10,7 +10,7 @@ public interface IAgentWorkspaceSession : IDisposable
     Task SubmitMessageAsync(string text, IReadOnlyList<string>? attachmentIds = null);
     Task CancelAsync();
     Task ChangeDirectoryAsync(string path);
-    Task ListThreadsAsync();
+    Task ListThreadsAsync(string? requestId = null);
     Task PublishStateAsync();
     Task RestoreAsync();
 

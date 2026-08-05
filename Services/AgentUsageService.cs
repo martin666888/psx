@@ -23,6 +23,8 @@ public sealed class AgentUsageService
     private readonly object _gate = new();
     private Task<AgentUsageResult>? _inFlight;
     private bool _inFlightIsForced;
+    private long _scanGeneration;
+    private long _publishedGeneration;
     private AgentUsageResult? _cached;
     private DateTimeOffset _cachedAt;
 
@@ -54,6 +56,7 @@ public sealed class AgentUsageService
                 return _inFlight;
 
             _inFlightIsForced = force;
+            var generation = ++_scanGeneration;
             _inFlight = Task.Run(() => Collect(cancellationToken), cancellationToken);
             var task = _inFlight;
             _ = task.ContinueWith(completed =>
@@ -62,8 +65,13 @@ public sealed class AgentUsageService
                 {
                     if (ReferenceEqualityComparer.Instance.Equals(_inFlight, completed))
                         _inFlight = null;
-                    if (completed.Status == TaskStatus.RanToCompletion)
+                    // Only the newest completed scan may publish. An older
+                    // non-forced scan that finishes after a forced refresh must
+                    // not overwrite fresher cache contents.
+                    if (completed.Status == TaskStatus.RanToCompletion
+                        && generation >= _publishedGeneration)
                     {
+                        _publishedGeneration = generation;
                         _cached = completed.Result;
                         _cachedAt = _timeProvider.GetUtcNow();
                     }

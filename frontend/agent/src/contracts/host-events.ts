@@ -42,9 +42,10 @@ export interface WorkspaceLifecycleEvent {
 // ---------------------------------------------------------------------------
 // Scope 3 — global Agent events (no workspaceId required).
 //
-// agent_threads / agent_history_error / agent_history_invalidated still carry
-// the sender's workspaceId, but they feed the global AgentHistoryStore through
-// the AgentHistoryRequestBroker, never a per-workspace state slice.
+// agent_threads / agent_history_error carry the sender's workspaceId and echo
+// the broker's requestId; they feed the global AgentHistoryStore through the
+// AgentHistoryRequestBroker, never a per-workspace state slice. Only the
+// matching in-flight requestId resolves; late or superseded replies are dropped.
 // agent_thread_open_error is broker-free by design: it reports a failed
 // load_thread straight to the dock, even after the source workspace closed.
 // ---------------------------------------------------------------------------
@@ -62,6 +63,7 @@ export interface AgentGlobalEvent {
   scope: 'agent-global';
   type: AgentGlobalEventType;
   workspaceId?: string;
+  requestId?: string;
   providers?: unknown[];
   text?: string;
   threadId?: string;
