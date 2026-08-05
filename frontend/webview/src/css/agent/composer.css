@@ -12,9 +12,9 @@
     display: contents;
 }
 
-/* The card follows exactly the same window-centred reading column as the
- * conversation. It deliberately lives inside the canvas instead of creating
- * another full-width application bar. */
+/* The card follows exactly the same conversation-panel-centred reading
+ * column as the thread. It deliberately lives inside the canvas instead of
+ * creating another full-width application bar. */
 .agent-composer-main {
     position: relative;
     z-index: 1;

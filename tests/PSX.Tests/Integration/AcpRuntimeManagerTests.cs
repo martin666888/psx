@@ -9,10 +9,10 @@ namespace PSX.Tests.Integration;
 public sealed class AcpRuntimeManagerTests
 {
     [TestMethod]
-    public async Task EnsureInstalled_FirstInstall_UsesPinnedNpmCiAndActivatesCurrent()
+    public async Task EnsureInstalled_FirstInstall_InstallsRegistryLatestAndActivatesCurrent()
     {
-        using var fixture = new FakeNpmFixture(nameof(EnsureInstalled_FirstInstall_UsesPinnedNpmCiAndActivatesCurrent));
-        fixture.Configure(Success("ci", "acp-current", "1.2.3"));
+        using var fixture = new FakeNpmFixture(nameof(EnsureInstalled_FirstInstall_InstallsRegistryLatestAndActivatesCurrent));
+        fixture.Configure(Success("install", "acp-current", "1.2.3"));
 
         var result = await fixture.Manager.EnsureInstalledAsync();
 
@@ -20,19 +20,42 @@ public sealed class AcpRuntimeManagerTests
         Assert.IsTrue(fixture.Manager.IsReady());
         Assert.AreEqual("current", File.ReadAllText(fixture.Paths.AcpActivePointerFile));
         Assert.AreEqual("1.2.3", fixture.Manager.GetVersionInfo().CurrentAcpVersion);
-        Assert.IsTrue(File.Exists(Path.Combine(fixture.Paths.AcpCurrentDirectory, "package-lock.json")));
+        Assert.IsFalse(File.Exists(Path.Combine(fixture.Paths.AcpCurrentDirectory, "package-lock.json")));
         var invocation = fixture.ReadInvocations().Single();
-        Assert.AreEqual("ci", invocation.Command);
+        Assert.AreEqual("install", invocation.Command);
+        CollectionAssert.Contains(invocation.Arguments, "@agentclientprotocol/claude-agent-acp@latest");
         CollectionAssert.Contains(invocation.Arguments, "--include=optional");
         CollectionAssert.Contains(invocation.Arguments, "--no-audit");
         CollectionAssert.Contains(invocation.Arguments, "--no-fund");
     }
 
     [TestMethod]
+    [DataRow(false, true)]
+    [DataRow(true, false)]
+    public async Task EnsureInstalled_IncompleteRegistryResult_IsNotActivated(
+        bool createAdapter,
+        bool createClaude)
+    {
+        using var fixture = new FakeNpmFixture(
+            $"{nameof(EnsureInstalled_IncompleteRegistryResult_IsNotActivated)}-{createAdapter}-{createClaude}");
+        var scenario = Success("install", "acp-current", "1.2.3");
+        scenario.CreateAdapter = createAdapter;
+        scenario.CreateClaude = createClaude;
+        fixture.Configure(scenario);
+
+        var result = await fixture.Manager.EnsureInstalledAsync();
+
+        Assert.AreEqual(AcpRuntimeOperationKind.Failed, result.Kind);
+        Assert.IsFalse(fixture.Manager.IsReady());
+        Assert.IsFalse(File.Exists(fixture.Paths.AcpActivePointerFile));
+        Assert.HasCount(1, fixture.ReadInvocations());
+    }
+
+    [TestMethod]
     public async Task EnsureInstalled_ConcurrentCalls_RunNpmOnceAndSecondObservesReadyRuntime()
     {
         using var fixture = new FakeNpmFixture(nameof(EnsureInstalled_ConcurrentCalls_RunNpmOnceAndSecondObservesReadyRuntime));
-        var scenario = Success("ci", "acp-current", "1.0.0");
+        var scenario = Success("install", "acp-current", "1.0.0");
         scenario.DelayMilliseconds = 250;
         fixture.Configure(scenario);
 
@@ -46,28 +69,26 @@ public sealed class AcpRuntimeManagerTests
     }
 
     [TestMethod]
-    public async Task EnsureInstalled_NpmCiLocalFailure_FallsBackToUnlockedNpmInstall()
+    public async Task EnsureInstalled_RegistryFailure_DoesNotActivateOrRetryFromSeed()
     {
-        using var fixture = new FakeNpmFixture(nameof(EnsureInstalled_NpmCiLocalFailure_FallsBackToUnlockedNpmInstall));
-        fixture.Configure(
-            Failure("ci", "acp-current", "invalid lockfile"),
-            Success("install", "acp-current", "1.0.1"));
+        using var fixture = new FakeNpmFixture(nameof(EnsureInstalled_RegistryFailure_DoesNotActivateOrRetryFromSeed));
+        fixture.Configure(Failure("install", "acp-current", "registry failure"));
 
         var result = await fixture.Manager.EnsureInstalledAsync();
 
-        Assert.AreEqual(AcpRuntimeOperationKind.Success, result.Kind);
-        var invocations = fixture.ReadInvocations();
-        Assert.HasCount(2, invocations);
-        Assert.AreEqual("ci", invocations[0].Command);
-        Assert.AreEqual("install", invocations[1].Command);
-        CollectionAssert.Contains(invocations[1].Arguments, "--package-lock=false");
+        Assert.AreEqual(AcpRuntimeOperationKind.Failed, result.Kind);
+        var invocation = fixture.ReadInvocations().Single();
+        Assert.AreEqual("install", invocation.Command);
+        CollectionAssert.Contains(invocation.Arguments, "@agentclientprotocol/claude-agent-acp@latest");
+        Assert.IsFalse(fixture.Manager.IsReady());
+        Assert.IsFalse(File.Exists(fixture.Paths.AcpActivePointerFile));
     }
 
     [TestMethod]
     public async Task EnsureInstalled_NetworkFailure_DoesNotRunFallbackInstall()
     {
         using var fixture = new FakeNpmFixture(nameof(EnsureInstalled_NetworkFailure_DoesNotRunFallbackInstall));
-        fixture.Configure(Failure("ci", "acp-current", "getaddrinfo ENOTFOUND registry.npmjs.org"));
+        fixture.Configure(Failure("install", "acp-current", "getaddrinfo ENOTFOUND registry.npmjs.org"));
 
         var result = await fixture.Manager.EnsureInstalledAsync();
 
@@ -80,7 +101,7 @@ public sealed class AcpRuntimeManagerTests
     public async Task EnsureInstalled_CancelledProcess_IsKilledAndReportedCancelled()
     {
         using var fixture = new FakeNpmFixture(nameof(EnsureInstalled_CancelledProcess_IsKilledAndReportedCancelled));
-        fixture.Configure(Hanging("ci", "acp-current"));
+        fixture.Configure(Hanging("install", "acp-current"));
         using var cancellation = new CancellationTokenSource();
         var operation = fixture.Manager.EnsureInstalledAsync(cancellationToken: cancellation.Token);
         await TestWorkspace.WaitUntilAsync(
@@ -109,16 +130,14 @@ public sealed class AcpRuntimeManagerTests
         using var fixture = new FakeNpmFixture(
             nameof(EnsureInstalled_ProcessTimeout_IsKilledAndReportedFailed),
             TimeSpan.FromSeconds(5));
-        fixture.Configure(
-            Hanging("ci", "acp-current"),
-            Hanging("install", "acp-current"));
+        fixture.Configure(Hanging("install", "acp-current"));
 
         var result = await fixture.Manager.EnsureInstalledAsync();
         var invocations = fixture.ReadInvocations();
 
         Assert.AreEqual(AcpRuntimeOperationKind.Failed, result.Kind);
         StringAssert.Contains(result.Message, "timed out");
-        Assert.HasCount(2, invocations);
+        Assert.HasCount(1, invocations);
         foreach (var processId in invocations.Select(invocation => invocation.ProcessId))
         {
             await TestWorkspace.WaitUntilAsync(

@@ -101,7 +101,7 @@ const INIT_STUB = `(() => {
           setTimeout(() => window.__psxEmit({
             type: 'agent_threads', workspaceId: message.workspaceId, requestId: message.requestId,
             threads: [
-              { threadId: 'h1', title: 'Ship the release notes', cwd: 'D:/proj', updatedAt: '2026-07-20 10:00:00Z', sessionId: '', provider: 'claude-code', providerKey: 'claude-code' },
+              { threadId: 'h1', title: 'PSX Terminal — independent product surface and complete release coordination checklist', cwd: 'D:/proj', updatedAt: '2026-07-20 10:00:00Z', sessionId: '', provider: 'claude-code', providerKey: 'claude-code' },
               { threadId: 'h2', title: 'Refactor the storage layer', cwd: 'D:/proj', updatedAt: '2026-07-19 10:00:00Z', sessionId: '', provider: 'claude-code', providerKey: 'claude-code' },
               { threadId: 'h3', title: 'Fix flaky terminal test', cwd: 'D:/other', updatedAt: '2026-07-18 10:00:00Z', sessionId: '', provider: 'gemini', providerKey: 'gemini' }
             ]
@@ -190,6 +190,36 @@ async function stageHistoryComposer(page) {
     }
   });
   await page.waitForSelector('.agent-history-item', { timeout: 5000 });
+  const fadeProbe = await page.$eval('.agent-history-title', (element) => {
+    const style = window.getComputedStyle(element);
+    return {
+      width: element.getBoundingClientRect().width,
+      scrollWidth: element.scrollWidth,
+      overflow: style.overflow,
+      maskImage: style.maskImage,
+      webkitMaskImage: style.webkitMaskImage
+    };
+  });
+  if (fadeProbe.scrollWidth <= fadeProbe.width) {
+    throw new Error(`History overflow fixture did not constrain the title: ${JSON.stringify(fadeProbe)}`);
+  }
+  if (!fadeProbe.maskImage.includes('linear-gradient')) {
+    throw new Error(`History title fade mask is not active: ${JSON.stringify(fadeProbe)}`);
+  }
+  const composerProbe = await page.evaluate(() => {
+    const panel = document.querySelector('.agent-panel:not([hidden])');
+    const composer = panel?.querySelector('.agent-composer-main');
+    if (!panel || !composer) return null;
+    const panelRect = panel.getBoundingClientRect();
+    const composerRect = composer.getBoundingClientRect();
+    return {
+      leftInset: composerRect.left - panelRect.left,
+      rightInset: panelRect.right - composerRect.right
+    };
+  });
+  if (!composerProbe || composerProbe.leftInset < 10 || composerProbe.rightInset < 10) {
+    throw new Error(`Composer is not inset from both panel edges: ${JSON.stringify(composerProbe)}`);
+  }
   await page.evaluate(() => {
     const input = document.querySelector('[data-role="input"]');
     const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;

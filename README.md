@@ -78,7 +78,7 @@ runtime.
 
 Terminal mode works immediately and never starts an npm download. The first
 time you open Agent mode, PSX shows an installation card. Choose **Install Agent
-runtime** to download the pinned ACP dependencies from the official npm
+runtime** to download the latest compatible ACP dependencies from the official npm
 registry. The UI shows progress and supports cancellation and retry. Agent input
 remains disabled until installation succeeds; no restart is required afterward.
 
@@ -222,7 +222,7 @@ in environments where installing a heavier application is inconvenient.
 - `wwwroot/` - WebView2 frontend for xterm.js and Agent mode
 - `theme-presets/` - preset theme configuration files
 - `tools/build-release.ps1` - portable release builder
-- `tools/acp-seed/` - pinned manifests used for the user-confirmed Agent install
+- `tools/acp-seed/` - manifest and Windows platform policy used for the user-confirmed latest Agent install
 
 ## Release Notes For Maintainers
 

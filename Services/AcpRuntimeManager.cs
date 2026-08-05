@@ -297,17 +297,22 @@ public sealed class AcpRuntimeManager : IAcpAgentRuntime
         try
         {
             Directory.CreateDirectory(paths.RuntimeRoot);
+            // A failed or interrupted first install can leave an old manifest,
+            // lockfile or partial node_modules tree behind. Start from an empty
+            // target so npm resolves the registry's current latest package
+            // instead of preserving anything from that stale tree.
+            if (Directory.Exists(paths.AcpCurrentDirectory))
+                Directory.Delete(paths.AcpCurrentDirectory, recursive: true);
             Directory.CreateDirectory(paths.AcpCurrentDirectory);
-            // Wipe any stale "next" contents from a prior failed update.
-            // Otherwise `npm ci` would refuse to install a non-empty next
-            // dir (npm ci requires an absent or fully-aligned node_modules).
+            // Wipe any stale "next" contents from a prior failed update so a
+            // later toolbar refresh cannot promote an unrelated partial tree.
             if (Directory.Exists(paths.AcpNextDirectory))
             {
                 try { Directory.Delete(paths.AcpNextDirectory, recursive: true); }
                 catch (Exception ex) { Log($"WARN: could not clear stale acp-next: {ex.Message}"); }
             }
 
-            SeedDirectoryFromInstallDirectory(paths, paths.AcpCurrentDirectory);
+            SeedDirectoryForRegistryInstall(paths, paths.AcpCurrentDirectory);
         }
         catch (Exception ex)
         {
@@ -317,33 +322,37 @@ public sealed class AcpRuntimeManager : IAcpAgentRuntime
                 $"Failed to seed runtime: {ex.Message}");
         }
 
-        // First install: use `npm ci` so we install EXACTLY what the seed
-        // lockfile pinned. Fall back to `npm install` only for a local npm/lock
-        // failure; cancellation and network failures return immediately.
-        var ciResult = await RunNpmCiAsync(paths, paths.AcpCurrentDirectory, progress, cancellationToken).ConfigureAwait(false);
-        if (ciResult.Kind == AcpRuntimeOperationKind.Success
-            || ciResult.Kind == AcpRuntimeOperationKind.AlreadyReady)
+        // First install is deliberately registry-driven. The release contains
+        // only a manifest and platform policy; it never pins or bundles Claude
+        // Code. Explicit @latest also prevents a stale manifest range from
+        // silently selecting the release-time adapter version.
+        var installResult = await RunNpmAsync(
+            paths,
+            paths.AcpCurrentDirectory,
+            "install",
+            progress,
+            cancellationToken,
+            "@agentclientprotocol/claude-agent-acp@latest").ConfigureAwait(false);
+        if (installResult.Kind is AcpRuntimeOperationKind.Success
+            or AcpRuntimeOperationKind.AlreadyReady)
         {
-            WriteActivePointer(paths, ActiveCurrentToken);
-            StatusChanged?.Invoke(BuildStatusText());
-            return ciResult;
+            if (IsAdapterCompleteInDirectory(paths.AcpCurrentDirectory)
+                && IsBundledClaudeCodeCompleteInDirectory(paths.AcpCurrentDirectory))
+            {
+                WriteActivePointer(paths, ActiveCurrentToken);
+                StatusChanged?.Invoke(BuildStatusText());
+                return installResult;
+            }
+
+            Log("First-install validation failed: adapter entry point or bundled claude.exe is missing.");
+            installResult = new AcpRuntimeOperationResult(
+                AcpRuntimeOperationKind.Failed,
+                "Installed ACP runtime is incomplete; not activating it.");
         }
 
-        if (ciResult.Kind is AcpRuntimeOperationKind.Cancelled
-            or AcpRuntimeOperationKind.NetworkUnavailable)
+        if (installResult.Kind is AcpRuntimeOperationKind.Cancelled)
         {
-            StatusChanged?.Invoke(ciResult.Kind == AcpRuntimeOperationKind.Cancelled
-                ? "ACP 安装已取消"
-                : "ACP 安装失败，Agent 暂不可用，请检查网络后重试");
-            return ciResult;
-        }
-
-        Log($"npm ci failed ({ciResult.Message}); falling back to npm install.");
-        var installResult = await RunNpmAsync(paths, paths.AcpCurrentDirectory, "install", progress, cancellationToken).ConfigureAwait(false);
-        if (installResult.Kind == AcpRuntimeOperationKind.Success)
-        {
-            WriteActivePointer(paths, ActiveCurrentToken);
-            StatusChanged?.Invoke(BuildStatusText());
+            StatusChanged?.Invoke("ACP 安装已取消");
         }
         else
         {
@@ -383,9 +392,8 @@ public sealed class AcpRuntimeManager : IAcpAgentRuntime
         try
         {
             StatusChanged?.Invoke(BuildStatusText("正在检查更新"));
-            // Refresh target is acp-next only. Do NOT copy package-lock.json:
-            // the seed lock pins the first-install baseline; refresh must be
-            // free to pull the latest registry version into staging.
+            // Refresh target is acp-next only. Like first install, it resolves
+            // the latest adapter without a release-time lockfile.
             try
             {
                 if (Directory.Exists(paths.AcpNextDirectory))
@@ -401,15 +409,16 @@ public sealed class AcpRuntimeManager : IAcpAgentRuntime
                     $"Failed to prepare acp-next: {ex.Message}");
             }
 
-            // Explicit @latest so npm does not stay on a seed-pinned lockfile
-            // version. package.json uses "*" so the installed tree stays valid.
+            // Explicit @latest keeps refresh aligned with first-install
+            // behavior. package.json uses "*" so the installed tree stays valid.
             var updateResult = await RunNpmAsync(
                 paths,
                 paths.AcpNextDirectory,
                 "install",
                 progress,
                 cancellationToken,
-                "@agentclientprotocol/claude-agent-acp@latest").ConfigureAwait(false);
+                "@agentclientprotocol/claude-agent-acp@latest",
+                isUpdate: true).ConfigureAwait(false);
 
             if (updateResult.Kind != AcpRuntimeOperationKind.Success)
             {
@@ -570,28 +579,22 @@ public sealed class AcpRuntimeManager : IAcpAgentRuntime
 
     // ---- internals ----
 
-    private void SeedDirectoryFromInstallDirectory(RuntimePaths paths, string destination)
+    private void SeedDirectoryForRegistryInstall(RuntimePaths paths, string destination)
     {
-        // First install: package.json + lock + .npmrc so `npm ci` is reproducible.
+        // First install: package.json + .npmrc only, so npm resolves latest.
         // node_modules is filled by npm — never copy it; it's 100s of MB.
-        SeedManifestFiles(paths, destination, includePackageLock: true);
+        SeedManifestFiles(paths, destination);
     }
 
     private void SeedDirectoryForRefresh(RuntimePaths paths, string destination)
     {
-        // Background refresh: package.json + .npmrc only. Omitting the seed
-        // lockfile lets `npm install ...@latest` resolve the newest registry
-        // version instead of reinstalling the pin from package-lock.json.
-        SeedManifestFiles(paths, destination, includePackageLock: false);
+        // Background refresh follows the same registry-driven manifest policy.
+        SeedManifestFiles(paths, destination);
     }
 
-    private void SeedManifestFiles(RuntimePaths paths, string destination, bool includePackageLock)
+    private void SeedManifestFiles(RuntimePaths paths, string destination)
     {
-        var names = includePackageLock
-            ? new[] { "package.json", "package-lock.json", ".npmrc" }
-            : new[] { "package.json", ".npmrc" };
-
-        foreach (var name in names)
+        foreach (var name in new[] { "package.json", ".npmrc" })
         {
             var source = Path.Combine(paths.AcpSeedDirectory, name);
             if (!File.Exists(source)) continue;
@@ -671,53 +674,14 @@ public sealed class AcpRuntimeManager : IAcpAgentRuntime
         }
     }
 
-    private async Task<AcpRuntimeOperationResult> RunNpmCiAsync(
-        RuntimePaths paths,
-        string workingDirectory,
-        IProgress<string>? progress,
-        CancellationToken cancellationToken)
-    {
-        if (paths.PortableNpmCliPath == null)
-        {
-            return new AcpRuntimeOperationResult(AcpRuntimeOperationKind.Failed,
-                "npm CLI not found next to node.exe; cannot run npm.");
-        }
-
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = paths.PortableNodePath,
-            WorkingDirectory = workingDirectory,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8,
-        };
-
-        // npm ci is strict: requires lockfile to exist; fails if lock +
-        // package.json disagree. We seeded a lock, so precondition is met.
-        startInfo.ArgumentList.Add(paths.PortableNpmCliPath);
-        startInfo.ArgumentList.Add("ci");
-        startInfo.ArgumentList.Add("--include=optional");
-        startInfo.ArgumentList.Add("--no-audit");
-        startInfo.ArgumentList.Add("--no-fund");
-
-        const string label = "npm ci";
-        Log($"Starting: {label} in {workingDirectory}");
-        progress?.Report("正在安装 ACP Adapter");
-        StatusChanged?.Invoke("正在安装 ACP Adapter");
-
-        return await RunNpmProcessAsync(startInfo, label, progress, cancellationToken).ConfigureAwait(false);
-    }
-
     private async Task<AcpRuntimeOperationResult> RunNpmAsync(
         RuntimePaths paths,
         string workingDirectory,
         string command,
         IProgress<string>? progress,
         CancellationToken cancellationToken,
-        string? packageName = null)
+        string packageName,
+        bool isUpdate = false)
     {
         if (paths.PortableNpmCliPath == null)
         {
@@ -739,26 +703,15 @@ public sealed class AcpRuntimeManager : IAcpAgentRuntime
 
         startInfo.ArgumentList.Add(paths.PortableNpmCliPath);
         startInfo.ArgumentList.Add(command);
-        if (!string.IsNullOrEmpty(packageName))
-            startInfo.ArgumentList.Add(packageName);
+        startInfo.ArgumentList.Add(packageName);
         startInfo.ArgumentList.Add("--include=optional");
         startInfo.ArgumentList.Add("--no-audit");
         startInfo.ArgumentList.Add("--no-fund");
-        // install without packageName: fallback when npm ci fails — keep lock
-        // untouched. install with packageName (@latest refresh): allow npm to
-        // write a lock that matches the resolved registry version.
-        if (command == "install" && string.IsNullOrEmpty(packageName))
-        {
-            startInfo.ArgumentList.Add("--package-lock=false");
-        }
 
-        var label = packageName != null
-            ? $"npm {command} {packageName}"
-            : $"npm {command}";
+        var label = $"npm {command} {packageName}";
 
         Log($"Starting: {label} in {workingDirectory}");
-        var isRefreshInstall = command == "install" && !string.IsNullOrEmpty(packageName);
-        var status = command == "update" || isRefreshInstall
+        var status = isUpdate
             ? BuildStatusText("正在更新 ACP")
             : "正在安装 ACP Adapter";
         progress?.Report(status);

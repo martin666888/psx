@@ -115,12 +115,9 @@
         "workspace"
         "composer";
     grid-template-rows: auto auto minmax(0, 1fr) auto;
-    /* Reading stays centered at its comfortable maximum width until the
-     * viewport itself reaches its side padding. Column offsets are viewport
-     * (100vw) based, so the panel's own left inset must be subtracted. A
-     * dock-open override moves the column only when it would collide with
-     * History; it never creates a mirrored History-width blank strip on the
-     * right. */
+    /* With History closed, the symmetric panel gutters make the reading
+     * column both panel-centred and viewport-centred. The dock-open override
+     * centres it in the remaining conversation panel instead. */
     --agent-viewport-padding: var(--agent-space-6);
     --agent-reading-column-max: min(
         var(--agent-reading-max-width),
@@ -141,23 +138,26 @@
     display: none;
 }
 
-/* Dock open: the panel yields its left edge to History plus one panel gap
- * while keeping the reading column at its normal maximum width. It remains
- * window-centered when possible, otherwise moves right just enough to clear
- * the dock. If the normal width would no longer fit, Shell temporarily
- * collapses History; a manually reopened dock uses the remaining width
- * rather than overflowing. */
+/* Dock open: the panel yields its left edge to History plus one panel gap.
+ * The reading column is always centred inside that remaining panel, so a
+ * wider History dock moves it monotonically at half the dock delta instead
+ * of moving the panel right while applying an equal left compensation. If
+ * the normal width no longer fits, Shell temporarily collapses History; a
+ * manually reopened dock uses the available width rather than overflowing. */
 #agent-workspace-container.agent-history-dock-open .agent-panel {
     left: calc(
         var(--agent-workbench-gutter) + var(--agent-history-width-effective) + var(--agent-panel-gap)
     );
+    --agent-main-panel-inline-size: calc(
+        100vw - 2 * var(--agent-workbench-gutter) - var(--agent-history-width-effective) - var(--agent-panel-gap)
+    );
     --agent-reading-column-max: min(
         var(--agent-reading-max-width),
-        calc(100vw - var(--agent-workbench-gutter) - var(--agent-history-width-effective) - var(--agent-panel-gap) - var(--agent-viewport-padding))
+        calc(var(--agent-main-panel-inline-size) - 2 * var(--agent-panel-gap))
     );
     --agent-reading-column-start: max(
         var(--agent-panel-gap),
-        calc((100vw - var(--agent-reading-column-max)) / 2 - var(--agent-workbench-gutter) - var(--agent-history-width-effective) - var(--agent-panel-gap))
+        calc((var(--agent-main-panel-inline-size) - var(--agent-reading-column-max)) / 2)
     );
 }
 
@@ -283,9 +283,9 @@
     min-height: 0;
 }
 
-/* Keep the floating return-to-bottom control centred on the same collision-
- * aware reading column as messages and Composer, including when History
- * shifts that column away from the workspace viewport centre. */
+/* Keep the floating return-to-bottom control centred on the same reading
+ * column as messages and Composer, including when History centres that
+ * column in the remaining conversation panel. */
 .agent-thread-scroll-button {
     left: calc(
         max(0px, var(--agent-reading-column-start)) +

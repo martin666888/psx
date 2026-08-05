@@ -49,7 +49,8 @@ public sealed class RuntimeLocator
     /// collapse current and next onto the same path and let
     /// <c>AcpRuntimeManager</c> delete the in-use runtime.
     /// Agent mode populates <c>runtime/acp-current</c> only after the user
-    /// confirms installation (npm ci from <c>tools/acp-seed</c>); there is no
+    /// confirms installation (npm install of the registry's latest adapter,
+    /// using platform policy from <c>tools/acp-seed</c>); there is no
     /// pre-installed fallback or first-message installation path.
     /// </summary>
     public RuntimePaths Locate()

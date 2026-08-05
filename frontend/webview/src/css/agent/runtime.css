@@ -9,7 +9,7 @@
     align-items: center;
     gap: 14px;
     /* Same reading column as the conversation and the composer: the card is
-     * canvas content, not chrome, so it shares the window-center track. */
+     * canvas content, not chrome, so it shares the remaining-panel centre. */
     width: var(--agent-reading-column-max);
     max-width: 100%;
     box-sizing: border-box;

@@ -171,7 +171,7 @@ internal sealed class FakeNpmFixture : IDisposable
     {
         var destination = Path.Combine(InstallDirectory, "tools", "acp-seed");
         Directory.CreateDirectory(destination);
-        foreach (var name in new[] { "package.json", "package-lock.json", ".npmrc" })
+        foreach (var name in new[] { "package.json", ".npmrc" })
         {
             File.Copy(
                 Path.Combine(TestWorkspace.RepositoryRoot, "tools", "acp-seed", name),

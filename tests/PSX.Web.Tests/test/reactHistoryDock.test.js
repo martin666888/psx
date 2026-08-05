@@ -8,6 +8,7 @@ import {
   installBreakpoint,
   agentTemplateMarkup,
   createAgentWorkspace,
+  flushAgentAnimationFrames,
   registerAgentCleanup,
   appModule
 } from './agentHarness.js';
@@ -88,6 +89,12 @@ async function settle(run, predicate) {
     await act(async () => new Promise((resolve) => setTimeout(resolve, 5)));
   }
   assert.ok(predicate(), 'history island did not settle');
+}
+
+function dispatchPointer(target, type, { clientX, pointerId = 1, button = 0 }) {
+  const event = new window.MouseEvent(type, { bubbles: true, cancelable: true, clientX, button });
+  Object.defineProperty(event, 'pointerId', { value: pointerId });
+  target.dispatchEvent(event);
 }
 
 test('loading, grouped list and empty states render semantically', async () => {
@@ -238,4 +245,41 @@ test('dock footer anchors the profile button between the list and the resizer', 
     footer.compareDocumentPosition(resizer) & Node.DOCUMENT_POSITION_FOLLOWING,
     'footer precedes the resizer'
   );
+});
+
+test('dock resize batches live layout writes and derives width from the drag start', async () => {
+  await fixture();
+  const container = document.getElementById('agents');
+  const dock = document.querySelector('[data-role="history-dock"]');
+  const resizer = dock.querySelector('[data-role="history-dock-resizer"]');
+  assert.equal(container.style.getPropertyValue('--agent-history-width'), '280px');
+
+  // A drag must never measure geometry after live width writes begin. The
+  // start coordinate + start width are sufficient and remain stable.
+  dock.getBoundingClientRect = () => {
+    throw new Error('resize hot path must not read dock layout');
+  };
+
+  await act(async () => {
+    dispatchPointer(resizer, 'pointerdown', { clientX: 300, pointerId: 7 });
+    dispatchPointer(resizer, 'pointermove', { clientX: 320, pointerId: 7 });
+    dispatchPointer(resizer, 'pointermove', { clientX: 350, pointerId: 7 });
+    dispatchPointer(resizer, 'pointermove', { clientX: 370, pointerId: 7 });
+  });
+
+  assert.equal(
+    container.style.getPropertyValue('--agent-history-width'),
+    '280px',
+    'pointer events only queue the newest preview until the next frame'
+  );
+
+  await act(async () => flushAgentAnimationFrames());
+  assert.equal(container.style.getPropertyValue('--agent-history-width'), '350px');
+  assert.equal(resizer.getAttribute('aria-valuenow'), '350');
+
+  await act(async () => {
+    dispatchPointer(resizer, 'pointerup', { clientX: 370, pointerId: 7 });
+  });
+  assert.equal(window.localStorage.getItem('psx.agent.historyDockWidth'), '350');
+  assert.equal(document.body.classList.contains('agent-history-dock-resizing'), false);
 });

@@ -117,7 +117,7 @@ powershell -ExecutionPolicy Bypass -File tools/test.ps1 -Suite Full
 - `wwwroot/`：WebView2 前端、xterm.js 和 Agent 界面
 - `theme-presets/`：主题配置模板
 - `tools/build-release.ps1`：便携发布包构建脚本
-- `tools/acp-seed/`：用户确认安装 Agent 时使用的固定依赖清单
+- `tools/acp-seed/`：用户确认安装 Agent 时使用的依赖清单与 Windows 平台策略；实际安装解析 npm 官方源的最新兼容版本
 
 ## 维护者发布说明
 

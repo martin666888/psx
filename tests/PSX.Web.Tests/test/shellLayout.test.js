@@ -6,7 +6,7 @@ import { mountAgentApp, createAgentWorkspace, composerReady, repositoryRoot } fr
 
 // AgentShell layered layout (step 5): History dock at the bottom layer, the
 // conversation canvas above it, the Plan card as a right-edge overlay. The
-// reading column center is pinned to viewportWidth / 2 by explicit vw-based
+// reading column is centred in the remaining conversation panel by explicit
 // offsets in shell.css — pixel verification is manual (docs/testing.md); here
 // we pin the DOM structure and the CSS contract the mechanism relies on.
 
@@ -249,10 +249,14 @@ test('shell: structural tokens and the centerline mechanism exist in shell.css',
   // panel-gap token between the two panels.
   assert.ok(!shell.includes('--agent-dock-gap'));
   assert.ok(!shell.includes('--agent-radius-workspace-canvas'));
-  // Dock-open preserves the reading width and only moves its start enough to
-  // clear History. There is no mirrored dock-width clearance on the right.
+  // Dock-open centres the reading column inside the remaining main panel.
   assert.match(shell, /#agent-workspace-container\.agent-history-dock-open \.agent-panel/);
+  assert.match(shell, /--agent-main-panel-inline-size: calc\(/);
   assert.match(shell, /--agent-reading-column-start: max\(\s*var\(--agent-panel-gap\),/);
+  assert.match(
+    shell,
+    /calc\(\(var\(--agent-main-panel-inline-size\) - var\(--agent-reading-column-max\)\) \/ 2\)/
+  );
   assert.ok(!shell.includes('--agent-canvas-offset'));
   assert.ok(!shell.includes('--agent-side-clearance'));
   // Shadows derive from the theme-driven --agent-shadow, never hardcoded colors.
@@ -408,11 +412,15 @@ test('shell: dock width stays persisted in wide mode and becomes fixed only whil
   );
   assert.match(
     shell,
-    /calc\(100vw - var\(--agent-workbench-gutter\) - var\(--agent-history-width-effective\) - var\(--agent-panel-gap\) - var\(--agent-viewport-padding\)\)/
+    /calc\(var\(--agent-main-panel-inline-size\) - 2 \* var\(--agent-panel-gap\)\)/
   );
   assert.match(
     shell,
-    /calc\(\(100vw - var\(--agent-reading-column-max\)\) \/ 2 - var\(--agent-workbench-gutter\) - var\(--agent-history-width-effective\) - var\(--agent-panel-gap\)\)/
+    /--agent-main-panel-inline-size: calc\(\s*100vw - 2 \* var\(--agent-workbench-gutter\) - var\(--agent-history-width-effective\) - var\(--agent-panel-gap\)\s*\)/
+  );
+  assert.match(
+    shell,
+    /calc\(\(var\(--agent-main-panel-inline-size\) - var\(--agent-reading-column-max\)\) \/ 2\)/
   );
   const history = readCss('history.css');
   assert.match(history, /width: var\(--agent-history-width-effective, 280px\)/);
@@ -442,6 +450,16 @@ test('shell: the History dock is a free-standing rounded workbench panel', () =>
 
 test('shell: long History titles fade before the dock edge without painting a theme color', () => {
   const history = readCss('history.css');
+  assert.match(
+    history,
+    /\.agent-history-dock-content > div\s*\{[^}]*display:\s*block\s*!important;[^}]*width:\s*100%;[^}]*min-width:\s*0\s*!important;/,
+    'the Radix measurement wrapper cannot expand past the History viewport'
+  );
+  assert.match(
+    history,
+    /\.agent-history-list\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/,
+    'the History grid track is allowed to shrink below a long title\'s min-content width'
+  );
   assert.match(
     history,
     /\.agent-history-title\s*\{[^}]*text-overflow:\s*clip;[^}]*-webkit-mask-image:\s*linear-gradient\([^}]*mask-image:\s*linear-gradient\(/,

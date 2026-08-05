@@ -4,8 +4,9 @@
 // panels temporarily collapse and manually reopened panels are exclusive. At
 // wider sizes, History remains a dock only while the full reading column fits
 // beside it; otherwise History temporarily yields and the conversation keeps
-// its comfortable width instead of leaving a mirrored blank strip on the
-// right. Plan remains an overlay and never participates in this calculation.
+// its comfortable width. While docked, the reading column is centred in the
+// remaining conversation panel. Plan remains an overlay and never
+// participates in this calculation.
 
 /** Flat seam the registry builds over the History dock + Plan controllers. */
 export interface AgentShellLayoutHost {
@@ -87,12 +88,16 @@ export class AgentShellLayoutController {
 
   private historyWouldSqueezeReading(): boolean {
     // Keep the 920px reading column intact whenever it can sit to the right of
-    // the dock with the workbench gutter, one panel gap and the normal right
-    // viewport padding. This deliberately does not reserve a mirrored
-    // History-width strip on the right: the column is centered when possible
-    // and otherwise yields left.
+    // the dock with the workbench gutter, the inter-panel gap, one inner
+    // reading inset and the normal right viewport padding. CSS centres that
+    // column in the remaining panel with equal insets on both sides.
     const requiredWidth =
-      WORKBENCH_GUTTER + this.host.historyWidth() + PANEL_GAP + READING_MAX_WIDTH + VIEWPORT_PADDING;
+      WORKBENCH_GUTTER +
+      this.host.historyWidth() +
+      PANEL_GAP +
+      PANEL_GAP +
+      READING_MAX_WIDTH +
+      VIEWPORT_PADDING;
     return this.viewportWidth() < requiredWidth;
   }
 

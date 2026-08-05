@@ -269,7 +269,6 @@ $requiredFiles = @(
     "tools\node\node_modules\npm\LICENSE",
     "tools\node\node_modules\npm\bin\npm-cli.js",
     "tools\acp-seed\package.json",
-    "tools\acp-seed\package-lock.json",
     "tools\acp-seed\.npmrc",
     "tools\kimi\package.json",
     "tools\kimi\package-lock.json",

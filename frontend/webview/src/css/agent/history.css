@@ -49,6 +49,31 @@
     min-height: 0;
 }
 
+/* Radix ScrollArea inserts a display:table measurement wrapper directly
+ * inside the viewport. An unbroken thread title can otherwise enlarge that
+ * table to its intrinsic width, leaving the viewport to hard-clip the row
+ * before the title's own fade boundary is reached. History is vertical-only,
+ * so constrain that internal wrapper to the viewport width. */
+.agent-history-dock-content > div {
+    display: block !important;
+    width: 100%;
+    min-width: 0 !important;
+    max-width: 100%;
+}
+
+/* The list is a one-column grid. Its implicit auto track otherwise keeps the
+ * title's min-content width even after the Radix wrapper is constrained. */
+.agent-history-list {
+    width: 100%;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.agent-history-group,
+.agent-history-group-threads {
+    min-width: 0;
+}
+
 /* Long thread titles dissolve before the dock edge instead of ending on a
  * hard clip. A mask follows text alpha rather than painting a surface-colored
  * overlay, so the fade remains seamless on default, hover and selected rows
