@@ -36,6 +36,8 @@ export class SessionRuntimeController implements FeatureController {
   private contextUsageHost: HTMLElement | null = null;
   private runtimeHost: HTMLElement | null = null;
   private runtimeState = 'missing';
+  private runtimeGuideUrl = '';
+  private runtimeGuideCommand = '';
   private runtimeIsland: IslandLoader<WorkspaceRuntimeState> | null = null;
   private contextUsageIsland: IslandLoader<ContextUsageProps> | null = null;
   // The ComposerView island (3-0) renders the context-usage host
@@ -165,6 +167,8 @@ export class SessionRuntimeController implements FeatureController {
     const host = this.runtimeHost;
     if (!host) return;
     this.runtimeState = runtime.state;
+    this.runtimeGuideUrl = runtime.guideUrl ?? '';
+    this.runtimeGuideCommand = runtime.guideCommand ?? '';
     this.runtimeIsland ??= createIslandLoader<WorkspaceRuntimeState>({
       name: 'runtime-card',
       load: async () => {
@@ -172,7 +176,9 @@ export class SessionRuntimeController implements FeatureController {
         return (islandHost, reportFailure) =>
           mod.mountRuntimeIsland(islandHost, reportFailure, {
             onInstall: () => this.requestInstall(),
-            onCancel: () => this.requestCancelInstall()
+            onCancel: () => this.requestCancelInstall(),
+            onOpenGuide: () => this.openGuideUrl(this.runtimeGuideUrl),
+            onCopyGuideCommand: () => this.copyGuideCommand(this.runtimeGuideCommand)
           });
       },
       host
@@ -181,12 +187,30 @@ export class SessionRuntimeController implements FeatureController {
   }
 
   private requestInstall(): void {
-    if (this.runtimeState === 'installing' || this.runtimeState === 'ready') return;
+    if (this.runtimeState === 'installing' || this.runtimeState === 'ready' || this.runtimeState === 'external_ready') {
+      return;
+    }
     this.host.bridgeFor(this.workspaceId)?.sendAgentCommand('install_runtime');
   }
 
   private requestCancelInstall(): void {
     if (this.runtimeState !== 'installing') return;
     this.host.bridgeFor(this.workspaceId)?.sendAgentCommand('cancel_runtime_install');
+  }
+
+  private openGuideUrl(guideUrl?: string): void {
+    const url = guideUrl?.trim();
+    if (!url) return;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+
+  private async copyGuideCommand(guideCommand?: string): Promise<void> {
+    const command = guideCommand?.trim();
+    if (!command) return;
+    try {
+      await navigator.clipboard.writeText(command);
+    } catch {
+      // Clipboard access may be denied in some hosts; ignore silently.
+    }
   }
 }

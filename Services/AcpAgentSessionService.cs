@@ -232,7 +232,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         _runtimeCoordinator = runtimeCoordinator;
         if (IsAgentRuntimeReady())
         {
-            _runtimeInstallState = "ready";
+            _runtimeInstallState = ResolveReadyRuntimeState();
             _runtimeInstallMessage = "Agent runtime is ready.";
         }
         _currentThread = initialThread;
@@ -880,6 +880,12 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     private async Task InstallRuntimeAsync()
     {
+        if (_runtime.OwnershipKind == AcpRuntimeOwnershipKind.External)
+        {
+            await PublishRuntimeStatusAsync(probeExternal: true).ConfigureAwait(false);
+            return;
+        }
+
         CancellationTokenSource? installCts;
         lock (_runtimeInstallLock)
         {
@@ -888,7 +894,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
             if (IsAgentRuntimeReady())
             {
-                _runtimeInstallState = "ready";
+                _runtimeInstallState = ResolveReadyRuntimeState();
                 _runtimeInstallMessage = "Agent runtime is ready.";
                 installCts = null;
             }
@@ -920,7 +926,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 {
                     case AcpRuntimeOperationKind.Success:
                     case AcpRuntimeOperationKind.AlreadyReady:
-                        _runtimeInstallState = "ready";
+                        _runtimeInstallState = ResolveReadyRuntimeState();
                         _runtimeInstallMessage = "Agent runtime installed successfully.";
                         break;
                     case AcpRuntimeOperationKind.Cancelled:
@@ -975,8 +981,14 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         await PublishRuntimeStatusAsync().ConfigureAwait(false);
     }
 
-    private Task PublishRuntimeStatusAsync()
+    private async Task PublishRuntimeStatusAsync(bool probeExternal = false)
     {
+        if (_runtime.OwnershipKind == AcpRuntimeOwnershipKind.External)
+        {
+            await PublishExternalRuntimeStatusAsync(probeExternal).ConfigureAwait(false);
+            return;
+        }
+
         string state;
         string message;
         bool canCancel;
@@ -985,10 +997,10 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         {
             if (!_runtimeInstallInProgress && IsAgentRuntimeReady())
             {
-                _runtimeInstallState = "ready";
+                _runtimeInstallState = ResolveReadyRuntimeState();
                 _runtimeInstallMessage = "Agent runtime is ready.";
             }
-            else if (_runtimeInstallState == "ready")
+            else if (_runtimeInstallState is "ready" or "external_ready")
             {
                 _runtimeInstallState = "missing";
                 _runtimeInstallMessage = "Agent runtime is not installed.";
@@ -999,7 +1011,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             canCancel = _runtimeInstallInProgress;
         }
 
-        return _bridgeService.SendEventAsync(new
+        await _bridgeService.SendEventAsync(new
         {
             type = "runtime_status",
             providerKey = _provider.Descriptor.Key,
@@ -1007,9 +1019,103 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             state,
             message,
             canInstall = state is "missing" or "failed" or "cancelled",
-            canCancel
-        });
+            canCancel,
+            ownership = "managed",
+            canGuide = false
+        }).ConfigureAwait(false);
     }
+
+    private async Task PublishExternalRuntimeStatusAsync(bool probeExternal)
+    {
+        var hints = _runtime.GetExternalUiHints();
+        if (probeExternal || (_runtime.HasDiscoveredEntry && !IsAgentRuntimeReady()))
+        {
+            using var probeCts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            try
+            {
+                var result = await _runtime.EnsureInstalledAsync(probeCts.Token).ConfigureAwait(false);
+                lock (_runtimeInstallLock)
+                {
+                    _runtimeInstallMessage = result.Message;
+                    if (result.Kind is AcpRuntimeOperationKind.Success or AcpRuntimeOperationKind.AlreadyReady)
+                    {
+                        _runtimeInstallState = "external_ready";
+                    }
+                    else if (!_runtime.HasDiscoveredEntry)
+                    {
+                        _runtimeInstallState = "external_missing";
+                    }
+                    else
+                    {
+                        _runtimeInstallState = "external_unsupported_version";
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                lock (_runtimeInstallLock)
+                {
+                    _runtimeInstallState = _runtime.HasDiscoveredEntry
+                        ? "external_unsupported_version"
+                        : "external_missing";
+                    _runtimeInstallMessage = "Qoder CLI 版本检查超时，请稍后重试。";
+                }
+            }
+        }
+        else
+        {
+            lock (_runtimeInstallLock)
+            {
+                if (IsAgentRuntimeReady())
+                {
+                    _runtimeInstallState = "external_ready";
+                    _runtimeInstallMessage = _runtime.BuildStatusText();
+                }
+                else if (!_runtime.HasDiscoveredEntry)
+                {
+                    _runtimeInstallState = "external_missing";
+                    _runtimeInstallMessage = hints?.OwnershipLabel != null
+                        ? $"未找到 qodercli。{hints.OwnershipLabel}"
+                        : "未在 PATH 中找到 qodercli。";
+                }
+                else
+                {
+                    _runtimeInstallState = "external_unsupported_version";
+                    _runtimeInstallMessage = _runtimeInstallMessage is { Length: > 0 }
+                        ? _runtimeInstallMessage
+                        : "Qoder CLI 版本不受支持或尚未完成版本检查。";
+                }
+            }
+        }
+
+        string state;
+        string message;
+        lock (_runtimeInstallLock)
+        {
+            state = _runtimeInstallState;
+            message = _runtimeInstallMessage;
+        }
+
+        var canGuide = state is "external_missing" or "external_unsupported_version";
+        await _bridgeService.SendEventAsync(new
+        {
+            type = "runtime_status",
+            providerKey = _provider.Descriptor.Key,
+            agentName = _provider.Descriptor.DisplayName,
+            state,
+            message,
+            canInstall = false,
+            canCancel = false,
+            ownership = "external",
+            canGuide,
+            guideUrl = canGuide ? hints?.InstallDocsUrl ?? "" : "",
+            guideCommand = canGuide ? hints?.InstallCommandHint ?? "" : "",
+            ownershipLabel = hints?.OwnershipLabel ?? ""
+        }).ConfigureAwait(false);
+    }
+
+    private string ResolveReadyRuntimeState()
+        => _runtime.OwnershipKind == AcpRuntimeOwnershipKind.External ? "external_ready" : "ready";
 
     /// <summary>
     /// User-requested update check. The runtime coordinator single-flights
@@ -1019,6 +1125,15 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     /// </summary>
     private async Task CheckRuntimeUpdateAsync()
     {
+        if (_runtime.OwnershipKind == AcpRuntimeOwnershipKind.External)
+        {
+            var hints = _runtime.GetExternalUiHints();
+            await PublishRuntimeUpdateStatusAsync(
+                "external_managed",
+                hints?.OwnershipLabel ?? "外部安装，由 Qoder 管理").ConfigureAwait(false);
+            return;
+        }
+
         if (!_runtime.SupportsSelfUpdate)
         {
             await PublishRuntimeUpdateStatusAsync("unsupported").ConfigureAwait(false);
@@ -1056,6 +1171,14 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     /// </summary>
     private Task PublishRuntimeUpdateSnapshotAsync()
     {
+        if (_runtime.OwnershipKind == AcpRuntimeOwnershipKind.External)
+        {
+            var hints = _runtime.GetExternalUiHints();
+            return PublishRuntimeUpdateStatusAsync(
+                "external_managed",
+                hints?.OwnershipLabel ?? "外部安装，由 Qoder 管理");
+        }
+
         if (!_runtime.SupportsSelfUpdate)
             return PublishRuntimeUpdateStatusAsync("unsupported");
         if (!IsAgentRuntimeReady())
@@ -1464,7 +1587,18 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         => "'" + value.Replace("'", "''") + "'";
 
     private string BuildLoginRequiredMessage()
-        => $"{_provider.Descriptor.DisplayName} 需要登录后才能继续：已打开登录终端，请在其中完成登录（设备码或 API key），完成后返回并重新发送消息即可继续。";
+    {
+        var authHint = _authMethods
+            .Select(method => method.Description)
+            .FirstOrDefault(description => !string.IsNullOrWhiteSpace(description));
+        var baseMessage =
+            $"{_provider.Descriptor.DisplayName} 需要登录后才能继续：已打开登录终端，请在其中完成登录（设备码或 API key），完成后返回并重新发送消息即可继续。";
+        if (!string.IsNullOrWhiteSpace(authHint))
+            return $"{baseMessage} {authHint}";
+        if (_runtime.OwnershipKind == AcpRuntimeOwnershipKind.External)
+            return $"{baseMessage} 请在外部 CLI 中完成登录（例如 qodercli login）。";
+        return baseMessage;
+    }
 
     private async Task StartAcpRunAsync(string prompt, IReadOnlyList<string>? attachmentIds = null)
     {

@@ -32,6 +32,11 @@ export interface WorkspaceRuntimeState {
   message: string;
   canInstall: boolean;
   canCancel: boolean;
+  ownership?: string;
+  canGuide?: boolean;
+  guideUrl?: string;
+  guideCommand?: string;
+  ownershipLabel?: string;
 }
 
 /** Toolbar Update button state folded from runtime_update_status.
@@ -164,7 +169,12 @@ export function createInitialWorkspaceState(workspaceId: string): AgentWorkspace
       state: 'missing',
       message: 'Agent runtime is not installed.',
       canInstall: false,
-      canCancel: false
+      canCancel: false,
+      ownership: 'managed',
+      canGuide: false,
+      guideUrl: '',
+      guideCommand: '',
+      ownershipLabel: ''
     },
     runtimeUpdate: {
       state: 'idle',

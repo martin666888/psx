@@ -12,6 +12,8 @@ import { mountReactIsland } from '../core/reactIsland.js';
 export interface RuntimeIslandHandlers {
   onInstall: () => void;
   onCancel: () => void;
+  onOpenGuide?: () => void;
+  onCopyGuideCommand?: () => void;
 }
 
 export function mountRuntimeIsland(
@@ -23,7 +25,9 @@ export function mountRuntimeIsland(
       createElement(SessionRuntimeCard, {
         runtime,
         onInstall: handlers.onInstall,
-        onCancel: handlers.onCancel
+        onCancel: handlers.onCancel,
+        onOpenGuide: handlers.onOpenGuide,
+        onCopyGuideCommand: handlers.onCopyGuideCommand
       })
   );
 }

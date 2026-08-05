@@ -32,7 +32,10 @@ const RUNTIME_STATES: ReadonlySet<string> = new Set([
   'installing',
   'ready',
   'failed',
-  'cancelled'
+  'cancelled',
+  'external_missing',
+  'external_unsupported_version',
+  'external_ready'
 ]);
 
 const RUNTIME_UPDATE_STATES: ReadonlySet<string> = new Set([
@@ -41,6 +44,7 @@ const RUNTIME_UPDATE_STATES: ReadonlySet<string> = new Set([
   'up_to_date',
   'staged_restart_required',
   'unsupported',
+  'external_managed',
   'install_required',
   'unavailable',
   'failed'
@@ -274,7 +278,12 @@ export function reduceWorkspaceState(
           state: runtimeState,
           message: asString(raw.message) || 'Agent runtime is not installed.',
           canInstall: !!raw.canInstall,
-          canCancel: !!raw.canCancel
+          canCancel: !!raw.canCancel,
+          ownership: asString(raw.ownership) || 'managed',
+          canGuide: !!raw.canGuide,
+          guideUrl: asString(raw.guideUrl),
+          guideCommand: asString(raw.guideCommand),
+          ownershipLabel: asString(raw.ownershipLabel)
         }
       };
     }

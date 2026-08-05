@@ -163,6 +163,18 @@ test('reducer: runtime_status accepts allowed states and rejects others', () => 
   assert.equal(state.runtime.message, 'Downloading');
   assert.equal(state.runtime.canCancel, true);
 
+  state = reduceWorkspaceState(state, workspaceEvent({
+    type: 'runtime_status',
+    state: 'external_ready',
+    message: 'Ready',
+    ownership: 'external',
+    canGuide: false,
+    ownershipLabel: '外部安装，由 Qoder 管理'
+  }));
+  assert.equal(state.runtime.state, 'external_ready');
+  assert.equal(state.runtime.ownership, 'external');
+  assert.equal(state.runtime.ownershipLabel, '外部安装，由 Qoder 管理');
+
   state = reduceWorkspaceState(state, workspaceEvent({ type: 'runtime_status', state: 'bogus' }));
   assert.equal(state.runtime.state, 'missing');
   assert.equal(state.runtime.message, 'Agent runtime is not installed.');

@@ -255,7 +255,9 @@ export class ComposerController implements FeatureController {
   private get configOptions(): ComposerConfigOption[] { return this.state.composer.configOptions; }
   private get currentModeId(): string { return this.state.composer.currentModeId; }
 
-  private runtimeReady(): boolean { return this.state.runtime.state === 'ready'; }
+  private runtimeReady(): boolean {
+    return this.state.runtime.state === 'ready' || this.state.runtime.state === 'external_ready';
+  }
 
   private configControlsDisabled(): boolean {
     return this.isBusy || this.isRestoring || this.isTranscriptOnly || !this.runtimeReady();

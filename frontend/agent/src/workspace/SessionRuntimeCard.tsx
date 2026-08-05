@@ -16,8 +16,14 @@ const RUNTIME_TITLES: Readonly<Record<string, string>> = {
   missing: 'Agent runtime required',
   installing: 'Installing Agent runtime',
   failed: 'Agent runtime installation failed',
-  cancelled: 'Agent runtime installation cancelled'
+  cancelled: 'Agent runtime installation cancelled',
+  external_missing: 'Qoder CLI required',
+  external_unsupported_version: 'Qoder CLI version unsupported'
 };
+
+function isRuntimeCardHidden(state: string): boolean {
+  return state === 'ready' || state === 'external_ready';
+}
 
 function RuntimeIndicator({ state }: { state: string }): JSX.Element {
   if (state === 'installing') {
@@ -45,9 +51,19 @@ export interface SessionRuntimeCardProps {
   runtime: WorkspaceRuntimeState;
   onInstall: () => void;
   onCancel: () => void;
+  onOpenGuide?: () => void;
+  onCopyGuideCommand?: () => void;
 }
 
-export function SessionRuntimeCard({ runtime, onInstall, onCancel }: SessionRuntimeCardProps): JSX.Element {
+export function SessionRuntimeCard({
+  runtime,
+  onInstall,
+  onCancel,
+  onOpenGuide,
+  onCopyGuideCommand
+}: SessionRuntimeCardProps): JSX.Element {
+  const isExternal = runtime.ownership === 'external';
+
   return (
     <section
       data-role="runtime-card"
@@ -60,7 +76,7 @@ export function SessionRuntimeCard({ runtime, onInstall, onCancel }: SessionRunt
       aria-live="polite"
       data-state={runtime.state}
       aria-busy={runtime.state === 'installing'}
-      hidden={runtime.state === 'ready'}
+      hidden={isRuntimeCardHidden(runtime.state)}
     >
       <RuntimeIndicator state={runtime.state} />
       <div className="agent-runtime-copy min-w-0">
@@ -70,31 +86,65 @@ export function SessionRuntimeCard({ runtime, onInstall, onCancel }: SessionRunt
         <p className="mt-1 mb-0 break-words text-muted-foreground text-xs leading-normal" data-role="runtime-message">
           {runtime.message}
         </p>
-        <p className="agent-runtime-note mt-1 mb-0 text-muted-foreground text-xs leading-normal">
-          Downloads pinned components from the official npm registry into this PSX folder and reuses them on later
-          launches.
-        </p>
+        {runtime.ownershipLabel ? (
+          <p
+            className="agent-runtime-note mt-1 mb-0 text-muted-foreground text-xs leading-normal"
+            data-role="runtime-ownership"
+          >
+            {runtime.ownershipLabel}
+          </p>
+        ) : null}
+        {!isExternal ? (
+          <p className="agent-runtime-note mt-1 mb-0 text-muted-foreground text-xs leading-normal">
+            Downloads pinned components from the official npm registry into this PSX folder and reuses them on later
+            launches.
+          </p>
+        ) : null}
       </div>
       <div className="agent-runtime-actions flex items-center gap-2">
-        <Button
-          data-role="runtime-install"
-          size="sm"
-          hidden={!runtime.canInstall}
-          disabled={!runtime.canInstall}
-          onClick={onInstall}
-        >
-          {runtime.state === 'missing' ? 'Install runtime' : 'Retry installation'}
-        </Button>
-        <Button
-          data-role="runtime-cancel"
-          size="sm"
-          variant="outline"
-          hidden={!runtime.canCancel}
-          disabled={!runtime.canCancel}
-          onClick={onCancel}
-        >
-          Cancel
-        </Button>
+        {runtime.canGuide ? (
+          <>
+            <Button
+              data-role="runtime-guide-open"
+              size="sm"
+              disabled={!runtime.guideUrl}
+              onClick={onOpenGuide}
+            >
+              打开安装文档
+            </Button>
+            <Button
+              data-role="runtime-guide-copy"
+              size="sm"
+              variant="outline"
+              disabled={!runtime.guideCommand}
+              onClick={onCopyGuideCommand}
+            >
+              复制安装命令
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button
+              data-role="runtime-install"
+              size="sm"
+              hidden={!runtime.canInstall}
+              disabled={!runtime.canInstall}
+              onClick={onInstall}
+            >
+              {runtime.state === 'missing' ? 'Install runtime' : 'Retry installation'}
+            </Button>
+            <Button
+              data-role="runtime-cancel"
+              size="sm"
+              variant="outline"
+              hidden={!runtime.canCancel}
+              disabled={!runtime.canCancel}
+              onClick={onCancel}
+            >
+              Cancel
+            </Button>
+          </>
+        )}
       </div>
     </section>
   );
