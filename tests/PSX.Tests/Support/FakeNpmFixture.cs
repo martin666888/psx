@@ -149,6 +149,41 @@ internal sealed class FakeNpmFixture : IDisposable
             "// fake qwen acp entry");
     }
 
+    /// <summary>Creates a Qoder runtime that shares this fixture's fake node/npm.</summary>
+    public QoderCliAcpRuntime CreateQoderRuntime(TimeSpan? processTimeout = null) =>
+        new(Locator, Path.Combine(InstallDirectory, "logs"), processTimeout ?? TimeSpan.FromSeconds(10));
+
+    /// <summary>Installs the Qoder seed manifests under tools/qoder-seed.</summary>
+    public void InstallQoderSeed(string version = QoderCliAcpRuntime.SeededPackageVersion)
+    {
+        var seedRoot = Path.Combine(InstallDirectory, "tools", "qoder-seed");
+        WriteJson(
+            Path.Combine(seedRoot, "package.json"),
+            new
+            {
+                name = "psx-qoder-runtime",
+                dependencies = new Dictionary<string, string> { ["@qoder-ai/qodercli"] = version }
+            });
+        WriteFile(Path.Combine(seedRoot, ".npmrc"), "os=win32\ncpu=x64\n");
+        WriteFile(Path.Combine(seedRoot, "package-lock.json"), "{}");
+    }
+
+    /// <summary>Writes a valid Qoder package tree (manifest + bundle entry) into a root.</summary>
+    public void CreateQoderInstall(string directory, string version)
+    {
+        WriteJson(
+            Path.Combine(directory, "node_modules", "@qoder-ai", "qodercli", "package.json"),
+            new
+            {
+                name = "@qoder-ai/qodercli",
+                version,
+                bin = new Dictionary<string, string> { ["qodercli"] = "bundle/qodercli.js" }
+            });
+        WriteFile(
+            Path.Combine(directory, "node_modules", "@qoder-ai", "qodercli", "bundle", "qodercli.js"),
+            "// fake qoder acp entry");
+    }
+
     public IReadOnlyList<FakeNpmInvocation> ReadInvocations()
     {
         if (!File.Exists(InvocationLogPath))
@@ -250,10 +285,13 @@ internal sealed class FakeNpmScenario
     public bool KimiSmokeFails { get; set; }
     public bool CreateQwen { get; set; }
     public bool QwenSmokeFails { get; set; }
+    public bool CreateQoder { get; set; }
+    public bool QoderSmokeFails { get; set; }
     public string? AdapterVersion { get; set; }
     public string? ClaudeCodeVersion { get; set; }
     public string? KimiVersion { get; set; }
     public string? QwenVersion { get; set; }
+    public string? QoderVersion { get; set; }
 }
 
 internal sealed class FakeNpmInvocation

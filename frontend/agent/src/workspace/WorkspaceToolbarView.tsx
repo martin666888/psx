@@ -37,7 +37,7 @@ export interface WorkspaceToolbarProps {
     message: string;
     currentVersion: string;
     pendingVersion: string;
-    // Toolbar-facing product string ("Claude Code v2.1.0"); '' hides the
+    // Toolbar-facing product string (e.g. "Product v2.1.0"); '' hides the
     // resident version text (uninstalled / transcript-only / unavailable).
     versionLabel: string;
     // Tooltip-only ACP/runtime technical detail.
@@ -48,7 +48,6 @@ export interface WorkspaceToolbarProps {
 
 const UPDATE_DISABLED_STATES: ReadonlySet<string> = new Set([
   'unsupported',
-  'external_managed',
   'install_required',
   'unavailable',
   'checking',
@@ -71,7 +70,6 @@ function updateButtonLabel(state: string): string {
 }
 
 function updateButtonTitle(update: WorkspaceToolbarProps['update']): string {
-  if (update.state === 'external_managed') return '外部安装，由 Qoder 管理';
   if (update.state === 'unsupported') return 'Updates ship with PSX releases';
   if (update.state === 'install_required') return 'Install the Agent runtime first';
   if (update.state === 'unavailable') return 'Updates are not available for this workspace';
@@ -192,7 +190,6 @@ export function WorkspaceToolbar(props: WorkspaceToolbarProps): JSX.Element {
           variant="ghost"
           size="sm"
           className="h-7 border border-input text-xs"
-          hidden={props.update.state === 'external_managed'}
           disabled={UPDATE_DISABLED_STATES.has(props.update.state)}
           title={updateButtonTitle(props.update)}
           onClick={props.update.onRequest}

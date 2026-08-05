@@ -17,7 +17,10 @@ const SHARED_DIRS = ['core', 'workspace', 'timeline', 'composer', 'plan', 'histo
 const SRC_ROOT = path.join(repositoryRoot, 'frontend', 'agent', 'src');
 
 // Concrete provider/brand keys that must not be hardcoded in shared code.
-const BRAND_TOKENS = /\b(claude|anthropic|gemini|openai|chatgpt|codex|copilot|cursor|llama|qwen)\b|\bgpt-\d/i;
+// "cursor" is bounded so Tailwind `cursor-pointer` / `cursor-default` do not
+// count as the Cursor product brand.
+const BRAND_TOKENS =
+  /\b(claude|anthropic|gemini|openai|chatgpt|codex|copilot|llama|qwen|qoder|kimi)\b|(?<![\w-])cursor(?![\w-])|\bgpt-\d/i;
 
 // A per-provider-key business branch: comparing a provider identity to a
 // string literal (e.g. providerId === 'claude'). Dynamic-vs-dynamic identity
@@ -25,26 +28,30 @@ const BRAND_TOKENS = /\b(claude|anthropic|gemini|openai|chatgpt|codex|copilot|cu
 // and are intentionally allowed.
 const KEY_BRANCH = /(provider(Id|Key|Name)?|assistantName)\s*[!=]==?\s*['"`]/i;
 
-function collectTsFiles(dir) {
+function collectSourceFiles(dir) {
   const out = [];
   const walk = (abs) => {
     for (const entry of fs.readdirSync(abs, { withFileTypes: true })) {
       const child = path.join(abs, entry.name);
       if (entry.isDirectory()) walk(child);
-      else if (entry.name.endsWith('.ts')) out.push(child);
+      else if (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx')) out.push(child);
     }
   };
   if (fs.existsSync(dir)) walk(dir);
   return out;
 }
 
-const sharedFiles = SHARED_DIRS.flatMap((name) => collectTsFiles(path.join(SRC_ROOT, name)));
+const sharedFiles = SHARED_DIRS.flatMap((name) => collectSourceFiles(path.join(SRC_ROOT, name)));
 
 test('guardrail: shared directories exist and contain sources to scan', () => {
   for (const name of SHARED_DIRS) {
     assert.ok(fs.existsSync(path.join(SRC_ROOT, name)), `shared dir missing: ${name}`);
   }
   assert.ok(sharedFiles.length > 0, 'expected shared TypeScript sources to scan');
+  assert.ok(
+    sharedFiles.some((file) => file.endsWith('.tsx')),
+    'expected shared .tsx sources in the scan set'
+  );
 });
 
 test('guardrail: shared frontend never names a concrete provider brand', () => {
@@ -75,5 +82,8 @@ test('guardrail: shared frontend never branches on a provider key literal', () =
 
 test('template bootstrap copy stays provider-neutral', () => {
   const index = fs.readFileSync(path.join(repositoryRoot, 'frontend', 'webview', 'index.html'), 'utf8');
-  assert.doesNotMatch(index, /claude|anthropic|gemini|openai|chatgpt|codex|copilot|cursor|llama|qwen/iu);
+  assert.doesNotMatch(
+    index,
+    /claude|anthropic|gemini|openai|chatgpt|codex|copilot|(?<![\w-])cursor(?![\w-])|llama|qwen|qoder|kimi/iu
+  );
 });

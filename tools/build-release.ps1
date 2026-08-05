@@ -8,6 +8,7 @@
       - wwwroot/, psx.ini, theme-presets/   (copied from publish output)
       - tools/node/                          (portable Node 22.23.1, downloaded)
       - tools/acp-seed/                      (installed by the user on first Agent use)
+      - tools/qoder-seed/                    (installed by the user on first Qoder use)
       - tools/kimi/                          (Kimi Code ACP runtime, installed at
                                               build time from tools/kimi-seed/ via npm ci)
       - tools/qwen/                          (Qwen Code ACP runtime, installed at
@@ -118,7 +119,7 @@ if (-not [string]::IsNullOrWhiteSpace($WebView2FixedRuntimePath)) {
 Write-Host ""
 
 # ---- step 1: dotnet publish ----
-Write-Host "==> [1/5] dotnet publish (self-contained, win-x64, non-single-file)" -ForegroundColor Cyan
+Write-Host "==> [1/6] dotnet publish (self-contained, win-x64, non-single-file)" -ForegroundColor Cyan
 if (Test-Path $PublishOutput) {
     Remove-Item -Recurse -Force $PublishOutput
 }
@@ -134,7 +135,7 @@ if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed (exit $LASTEXITCODE)" }
 Write-Host ""
 
 # ---- step 2: stage publish output ----
-Write-Host "==> [2/5] Stage publish output" -ForegroundColor Cyan
+Write-Host "==> [2/6] Stage publish output" -ForegroundColor Cyan
 if (Test-Path $StagingDir) {
     Remove-Item -Recurse -Force $StagingDir
 }
@@ -148,12 +149,12 @@ $nodeDir = Join-Path $StagingDir "tools\node"
 $archivePath = Join-Path $BuildCacheDir $PortableNodeArchive
 New-Item -ItemType Directory -Path $BuildCacheDir -Force | Out-Null
 if ($SkipNodeDownload) {
-    Write-Host "==> [3/5] Use cached portable Node $PortableNodeVersion" -ForegroundColor Cyan
+    Write-Host "==> [3/6] Use cached portable Node $PortableNodeVersion" -ForegroundColor Cyan
     if (-not (Test-Path $archivePath)) {
         throw "-SkipNodeDownload requires the verified archive at: $archivePath"
     }
 } else {
-    Write-Host "==> [3/5] Download + extract portable Node $PortableNodeVersion" -ForegroundColor Cyan
+    Write-Host "==> [3/6] Download + extract portable Node $PortableNodeVersion" -ForegroundColor Cyan
     if (-not (Test-Path $archivePath)) {
         Write-Host "    Downloading $PortableNodeUrl"
         Invoke-WebRequest -Uri $PortableNodeUrl -OutFile $archivePath -UseBasicParsing
@@ -305,6 +306,8 @@ $requiredFiles = @(
     "licenses\kimi\THIRD-PARTY-NOTICES.md",
     "licenses\qwen\LICENSE",
     "licenses\qwen\THIRD-PARTY-NOTICES.md",
+    "licenses\qoder\LICENSE",
+    "licenses\qoder\THIRD-PARTY-NOTICES.md",
     "licenses\communitytoolkit.mvvm\License.md",
     "licenses\dotnet\LICENSE.txt",
     "licenses\microsoft.extensions\LICENSE.TXT",
@@ -326,6 +329,9 @@ $requiredFiles = @(
     "tools\node\node_modules\npm\bin\npm-cli.js",
     "tools\acp-seed\package.json",
     "tools\acp-seed\.npmrc",
+    "tools\qoder-seed\package.json",
+    "tools\qoder-seed\package-lock.json",
+    "tools\qoder-seed\.npmrc",
     "tools\kimi\package.json",
     "tools\kimi\package-lock.json",
     "tools\kimi\node_modules\@moonshot-ai\kimi-code\package.json",
@@ -348,6 +354,11 @@ foreach ($relativePath in $requiredFiles) {
 $forbiddenAcpRuntime = Join-Path $StagingDir "runtime\acp-current"
 if (Test-Path -LiteralPath $forbiddenAcpRuntime) {
     throw "Public release must not contain runtime/acp-current."
+}
+
+$forbiddenQoderRuntime = Join-Path $StagingDir "runtime\qoder-current"
+if (Test-Path -LiteralPath $forbiddenQoderRuntime) {
+    throw "Public release must not contain runtime/qoder-current."
 }
 
 $forbiddenFiles = @(Get-ChildItem -LiteralPath $StagingDir -Recurse -File | Where-Object {
@@ -421,6 +432,7 @@ try {
         # check; Node/npm and wwwroot/app/vendor files can ship source maps.
         $agentSourceArtifact = $normalized.StartsWith('wwwroot/app/', [StringComparison]::OrdinalIgnoreCase) -and (-not $normalized.StartsWith('wwwroot/app/vendor/', [StringComparison]::OrdinalIgnoreCase)) -and $extension -in @('.ts', '.map')
         $normalized.StartsWith('runtime/acp-current/', [StringComparison]::OrdinalIgnoreCase) `
+            -or $normalized.StartsWith('runtime/qoder-current/', [StringComparison]::OrdinalIgnoreCase) `
             -or $normalized.StartsWith('tests/', [StringComparison]::OrdinalIgnoreCase) `
             -or $normalized.StartsWith('TestResults/', [StringComparison]::OrdinalIgnoreCase) `
             -or $normalized.StartsWith('frontend/', [StringComparison]::OrdinalIgnoreCase) `

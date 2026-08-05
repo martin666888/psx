@@ -69,15 +69,29 @@ public sealed class QwenCodeAcpAgentProviderTests
     }
 
     [TestMethod]
-    public void CreateNativeTerminalProfile_ResumesWithSessionId()
+    public void CreateNativeTerminalProfile_UsesManagedNodeEntryWithResume()
+    {
+        using var fixture = new FakeNpmFixture(nameof(CreateNativeTerminalProfile_UsesManagedNodeEntryWithResume));
+        fixture.InstallQwenBundle();
+        var provider = new QwenCodeAcpAgentProvider(fixture.CreateQwenRuntime());
+
+        var profile = provider.CreateNativeTerminalProfile("C:/projects/app", "session-9");
+
+        Assert.IsNotNull(profile);
+        StringAssert.Contains(profile!.Arguments, "node.exe");
+        StringAssert.Contains(profile.Arguments, "cli-entry.js");
+        StringAssert.Contains(profile.Arguments, "--resume");
+        StringAssert.Contains(profile.Arguments, "session-9");
+        Assert.IsFalse(profile.Arguments.Contains("qwen --resume", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void CreateNativeTerminalProfile_IncompleteInstall_ReturnsNull()
     {
         var provider = CreateProvider(out var workspace);
         using (workspace)
         {
-            var profile = provider.CreateNativeTerminalProfile("C:/projects/app", "session-9");
-
-            Assert.IsNotNull(profile);
-            StringAssert.Contains(profile!.Arguments, "qwen --resume session-9");
+            Assert.IsNull(provider.CreateNativeTerminalProfile("C:/projects/app", "session-9"));
         }
     }
 

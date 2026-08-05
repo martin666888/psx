@@ -23,6 +23,10 @@ public sealed class RuntimeLocator
     private const string QwenCurrentSubdirectoryName = "qwen-current";
     private const string QwenNextSubdirectoryName = "qwen-next";
     private const string QwenActivePointerFileName = "qwen-active.txt";
+    private const string QoderSeedSubdirectoryName = "qoder-seed";
+    private const string QoderCurrentSubdirectoryName = "qoder-current";
+    private const string QoderNextSubdirectoryName = "qoder-next";
+    private const string QoderActivePointerFileName = "qoder-active.txt";
     private const string NpmCliRelativePath = "node_modules/npm/bin/npm-cli.js";
     private const string WebView2FixedRuntimeSubdirectoryName = "webview2-fixed";
     private const string WebView2ExecutableName = "msedgewebview2.exe";
@@ -98,6 +102,10 @@ public sealed class RuntimeLocator
             QwenCurrentDirectory = Path.Combine(runtimeRoot, QwenCurrentSubdirectoryName),
             QwenNextDirectory = Path.Combine(runtimeRoot, QwenNextSubdirectoryName),
             QwenActivePointerFile = Path.Combine(runtimeRoot, QwenActivePointerFileName),
+            QoderSeedDirectory = Path.Combine(installDirectory, "tools", QoderSeedSubdirectoryName),
+            QoderCurrentDirectory = Path.Combine(runtimeRoot, QoderCurrentSubdirectoryName),
+            QoderNextDirectory = Path.Combine(runtimeRoot, QoderNextSubdirectoryName),
+            QoderActivePointerFile = Path.Combine(runtimeRoot, QoderActivePointerFileName),
         };
     }
 

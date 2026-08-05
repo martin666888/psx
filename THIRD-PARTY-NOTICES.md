@@ -31,6 +31,10 @@ The portable release redistributes:
   respective owners.
 - Tailwind CSS — MIT; see `licenses/tailwindcss/LICENSE`.
 - ACP seed manifests — the adapter is Apache-2.0; see `licenses/acp/LICENSE`.
+- Qoder CLI seed manifests — Apache-2.0; see `licenses/qoder/LICENSE` and
+  `licenses/qoder/THIRD-PARTY-NOTICES.md`. The release ships only
+  `tools/qoder-seed/`; the installed tree under `runtime/qoder-current/` is
+  downloaded after user confirmation and is never redistributed in the ZIP.
 - Kimi Code ACP runtime — bundled under `tools/kimi/`; MIT. See
   `licenses/kimi/LICENSE` and `licenses/kimi/THIRD-PARTY-NOTICES.md` for the
   runtime and its production dependencies (`node-pty`, `node-addon-api`,
@@ -40,20 +44,20 @@ The portable release redistributes:
   runtime and its production dependencies (`sharp`, `node-pty`, clipboard
   helpers, and related packages).
 
-The release includes only the ACP package manifests and lockfile. It does not
-redistribute Claude Code, the Claude Agent SDK native binary, or an installed
-ACP runtime. When the user explicitly installs Agent support, npm downloads the
-locked packages from their publishers. Those downloaded packages retain their
-own license files and remain subject to their respective terms, including the
+The release includes only the ACP / Qoder package manifests and lockfiles. It
+does not redistribute Claude Code, the Claude Agent SDK native binary, an
+installed ACP runtime, or an installed Qoder CLI. When the user explicitly
+installs Agent support, npm downloads the locked packages from their
+publishers. Those downloaded packages retain their own license files and remain
+subject to their respective terms, including the
 [Anthropic legal agreements](https://code.claude.com/docs/en/legal-and-compliance).
 
 Copies of the license and notice files for the binary dependencies shipped by
 PSX are stored under `licenses/` and included in the portable release.
 
-Unlike the Claude ACP adapter (installed on first use from the seed lockfile),
-the Kimi Code and Qwen Code runtimes ARE redistributed inside the portable
-release under `tools/kimi/` and `tools/qwen/`. They are installed at build time
-from the pinned lockfiles in `tools/kimi-seed/` and `tools/qwen-seed/`
-(Windows x64 only) and remain subject to the license terms of each bundled
-package. Qoder CLI is not redistributed; PSX only detects an externally
-installed `qodercli` on the user machine.
+Unlike the Claude ACP adapter and Qoder CLI (installed on first use from their
+seed manifests), the Kimi Code and Qwen Code runtimes ARE redistributed inside
+the portable release under `tools/kimi/` and `tools/qwen/`. They are installed
+at build time from the pinned lockfiles in `tools/kimi-seed/` and
+`tools/qwen-seed/` (Windows x64 only) and remain subject to the license terms
+of each bundled package.

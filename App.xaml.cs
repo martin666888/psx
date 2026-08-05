@@ -93,10 +93,12 @@ public partial class App : Application
         services.AddSingleton<QwenCodeAcpAgentProvider>();
         services.AddSingleton<IAcpAgentProvider>(sp => sp.GetRequiredService<QwenCodeAcpAgentProvider>());
 
-        // Qoder CLI is external: PSX discovers qodercli on PATH and never
-        // installs or updates it under runtime/. Logs land next to the ACP logs.
+        // Qoder CLI is Claude-style managed: the release ships tools/qoder-seed
+        // only; user confirmation installs into runtime/qoder-current. Logs land
+        // next to the ACP logs.
         services.AddSingleton<QoderCliAcpRuntime>(sp =>
             new QoderCliAcpRuntime(
+                sp.GetRequiredService<RuntimeLocator>(),
                 Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "agent", "acp-logs")));
         services.AddSingleton<QoderCliAcpAgentProvider>();
         services.AddSingleton<IAcpAgentProvider>(sp => sp.GetRequiredService<QoderCliAcpAgentProvider>());

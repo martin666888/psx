@@ -64,15 +64,17 @@ public sealed class QwenCodeAcpAgentProvider : IAcpAgentProvider
 
     /// <summary>
     /// Only used for the explicit <c>/terminal</c> entry point and troubleshooting.
-    /// Uses the resolved portable Node + package entry so a clean machine without
-    /// a global <c>qwen</c> on PATH still works.
+    /// Uses the resolved portable Node + package entry. Returns null when the
+    /// install is incomplete so the shared session layer can surface a
+    /// provider-neutral message — never fall back to a PATH <c>qwen</c> shim.
     /// </summary>
-    public ShellProfile CreateNativeTerminalProfile(string workingDirectory, string? sessionId)
+    public ShellProfile? CreateNativeTerminalProfile(string workingDirectory, string? sessionId)
     {
-        var escapedCwd = workingDirectory.Replace("'", "''");
-        var command = _runtime.TryBuildInteractivePowerShellInvocation(sessionId)
-            ?? (string.IsNullOrWhiteSpace(sessionId) ? "qwen" : $"qwen --resume {sessionId}");
+        var command = _runtime.TryBuildInteractivePowerShellInvocation(sessionId);
+        if (command == null)
+            return null;
 
+        var escapedCwd = workingDirectory.Replace("'", "''");
         return new ShellProfile
         {
             Id = "qwen-code",

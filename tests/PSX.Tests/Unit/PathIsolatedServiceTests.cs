@@ -215,5 +215,9 @@ public sealed class RuntimeLocatorTests
         yield return paths.QwenCurrentDirectory;
         yield return paths.QwenNextDirectory;
         yield return paths.QwenActivePointerFile;
+        yield return paths.QoderSeedDirectory;
+        yield return paths.QoderCurrentDirectory;
+        yield return paths.QoderNextDirectory;
+        yield return paths.QoderActivePointerFile;
     }
 }

@@ -32,10 +32,7 @@ const RUNTIME_STATES: ReadonlySet<string> = new Set([
   'installing',
   'ready',
   'failed',
-  'cancelled',
-  'external_missing',
-  'external_unsupported_version',
-  'external_ready'
+  'cancelled'
 ]);
 
 const RUNTIME_UPDATE_STATES: ReadonlySet<string> = new Set([
@@ -44,7 +41,6 @@ const RUNTIME_UPDATE_STATES: ReadonlySet<string> = new Set([
   'up_to_date',
   'staged_restart_required',
   'unsupported',
-  'external_managed',
   'install_required',
   'unavailable',
   'failed'

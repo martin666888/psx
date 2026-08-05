@@ -147,4 +147,31 @@ public sealed record RuntimePaths
     /// <see cref="AcpActivePointerFile"/> ("current" or "next").
     /// </summary>
     public required string QwenActivePointerFile { get; init; }
+
+    /// <summary>
+    /// Path to the bundled Qoder seed directory (contains package.json,
+    /// package-lock.json, .npmrc). Source of truth for user-confirmed
+    /// installation into <see cref="QoderCurrentDirectory"/>; never written to.
+    /// </summary>
+    public required string QoderSeedDirectory { get; init; }
+
+    /// <summary>
+    /// Live Qoder CLI install under the writable <c>runtime/</c> root. Populated
+    /// only after explicit user confirmation (npm install of the pinned seed
+    /// package). Agent mode loads exclusively from here for the process lifetime.
+    /// </summary>
+    public required string QoderCurrentDirectory { get; init; }
+
+    /// <summary>
+    /// Staging directory for a user-requested Qoder update. Never read by the
+    /// live session; promoted to <see cref="QoderCurrentDirectory"/> on the
+    /// next PSX launch when the pointer says "next".
+    /// </summary>
+    public required string QoderNextDirectory { get; init; }
+
+    /// <summary>
+    /// Pending-update marker for the Qoder runtime, mirroring
+    /// <see cref="AcpActivePointerFile"/> ("current" or "next").
+    /// </summary>
+    public required string QoderActivePointerFile { get; init; }
 }

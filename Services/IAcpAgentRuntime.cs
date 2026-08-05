@@ -24,17 +24,6 @@ public sealed record RuntimeVersionSnapshot(
     public string? TechnicalDetails { get; init; }
 }
 
-public enum AcpRuntimeOwnershipKind
-{
-    Managed,
-    External
-}
-
-public sealed record RuntimeExternalUiHints(
-    string InstallDocsUrl,
-    string InstallCommandHint,
-    string OwnershipLabel);
-
 public interface IAcpAgentRuntime : IDisposable
 {
     /// <summary>
@@ -54,21 +43,6 @@ public interface IAcpAgentRuntime : IDisposable
     /// releases; the toolbar renders those as "updates ship with PSX".
     /// </summary>
     bool SupportsSelfUpdate { get; }
-
-    /// <summary>
-    /// Managed runtimes ship with PSX or install under the install directory;
-    /// external runtimes are discovered on PATH and owned by their vendor.
-    /// </summary>
-    AcpRuntimeOwnershipKind OwnershipKind => AcpRuntimeOwnershipKind.Managed;
-
-    /// <summary>
-    /// True when an external runtime has located its entry on disk without
-    /// executing it. Managed runtimes mirror <see cref="IsReady"/>.
-    /// </summary>
-    bool HasDiscoveredEntry => IsReady();
-
-    /// <summary>Optional UI hints for external runtimes. Null for managed.</summary>
-    RuntimeExternalUiHints? GetExternalUiHints() => null;
 
     bool IsReady();
     string BuildStatusText(string? suffix = null);

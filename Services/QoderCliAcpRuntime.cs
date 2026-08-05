@@ -1,166 +1,349 @@
 using System.Diagnostics;
 using System.IO;
 using System.Text;
-using System.Text.RegularExpressions;
+using System.Text.Json;
 using PSX.Models;
 
 namespace PSX.Services;
 
 /// <summary>
-/// External Qoder CLI runtime. PSX discovers <c>qodercli</c> on PATH at startup
-/// without executing it; version probing runs lazily when a Qoder Workspace needs
-/// readiness. Updates and installation are owned by Qoder, not PSX.
+/// Managed Qoder CLI runtime. The public release ships only
+/// <c>tools/qoder-seed/</c> (manifest + lockfile + platform policy). After
+/// explicit user confirmation, PSX installs the pinned
+/// <c>@qoder-ai/qodercli</c> into <c>runtime/qoder-current/</c> via portable
+/// Node with <c>--ignore-scripts</c> (the package postinstall is advisory and
+/// may mutate the user PATH on Windows). Updates stage into
+/// <c>runtime/qoder-next/</c>, flip <c>qoder-active.txt</c>, and promote on the
+/// next PSX launch — never mid-session.
+///
+/// Process form: <c>node &lt;bundle/qodercli.js&gt; --acp</c>. The entry is
+/// resolved from the package <c>bin.qodercli</c> field with a path-escape guard.
 /// </summary>
 public sealed class QoderCliAcpRuntime : IAcpAgentRuntime
 {
-    public static readonly Version MinimumCompatibleVersion = new(0, 2, 11);
+    public const string PackageName = "@qoder-ai/qodercli";
+    public const string SeededPackageVersion = "1.1.14";
+    public static readonly Version MinimumCompatibleVersion = new(1, 1, 14);
 
-    private static readonly TimeSpan VersionProbeTimeout = TimeSpan.FromSeconds(15);
-    private static readonly Regex VersionTokenPattern = new(@"\d+\.\d+\.\d+(?:[-+][\w.-]+)?", RegexOptions.Compiled);
+    private const string ActiveCurrentToken = "current";
+    private const string ActiveNextToken = "next";
+    private const string PackageLockName = "package-lock.json";
 
+    private static readonly TimeSpan DefaultProcessTimeout = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan SmokeCheckTimeout = TimeSpan.FromSeconds(30);
+
+    private static readonly string QoderPackageDirSubpath =
+        Path.Combine("node_modules", "@qoder-ai", "qodercli");
+    private static readonly string QoderPackageJsonSubpath =
+        Path.Combine(QoderPackageDirSubpath, "package.json");
+
+    private readonly RuntimeLocator _locator;
     private readonly string _logPath;
-    private readonly object _gate = new();
+    private readonly TimeSpan _processTimeout;
+    private readonly SemaphoreSlim _npmLock = new(1, 1);
 
-    private string? _discoveredPath;
-    private string? _probedVersion;
-    private bool _versionGatePassed;
-    private bool _versionProbeAttempted;
+    public event Action<string>? StatusChanged;
 
-    public QoderCliAcpRuntime(string logDirectory)
+    public QoderCliAcpRuntime(RuntimeLocator locator, string logDirectory)
+        : this(locator, logDirectory, DefaultProcessTimeout)
     {
+    }
+
+    internal QoderCliAcpRuntime(RuntimeLocator locator, string logDirectory, TimeSpan processTimeout)
+    {
+        if (processTimeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(processTimeout));
+        _locator = locator ?? throw new ArgumentNullException(nameof(locator));
+        _processTimeout = processTimeout;
         Directory.CreateDirectory(logDirectory);
         _logPath = Path.Combine(logDirectory, "qoder-runtime.log");
     }
 
-    public event Action<string>? StatusChanged;
-
     public string LogPath => _logPath;
 
-    public bool SupportsSelfUpdate => false;
+    public RuntimePaths Paths => _locator.Locate();
 
-    public AcpRuntimeOwnershipKind OwnershipKind => AcpRuntimeOwnershipKind.External;
-
-    /// <summary>
-    /// Path-only entry for terminal profiles and login. May return a discovered
-    /// shim before the version gate has passed (login must still be reachable).
-    /// </summary>
-    public string? TryGetDiscoveredEntryPath()
-    {
-        lock (_gate)
-        {
-            if (!string.IsNullOrWhiteSpace(_discoveredPath))
-                return _discoveredPath;
-        }
-
-        var discovered = DiscoverEntryPath();
-        lock (_gate)
-        {
-            _discoveredPath ??= discovered;
-            return _discoveredPath;
-        }
-    }
-
-    public bool HasDiscoveredEntry
-    {
-        get
-        {
-            lock (_gate)
-                return !string.IsNullOrWhiteSpace(_discoveredPath);
-        }
-    }
-
-    public RuntimeExternalUiHints GetExternalUiHints() => new(
-        InstallDocsUrl: "https://docs.qoder.com/cli/install",
-        InstallCommandHint: "npm install -g @qoder-ai/qodercli",
-        OwnershipLabel: "外部安装，由 Qoder 管理");
-
-    RuntimeExternalUiHints? IAcpAgentRuntime.GetExternalUiHints() => GetExternalUiHints();
+    public bool SupportsSelfUpdate => true;
 
     public bool IsReady()
     {
-        lock (_gate)
-            return _versionGatePassed;
+        var paths = Paths;
+        return ValidateQoderRoot(paths, paths.QoderCurrentDirectory, out _) == null;
     }
 
     public RuntimeVersionSnapshot GetVersionSnapshot()
     {
-        lock (_gate)
+        var paths = Paths;
+        var currentVersion = IsReady() ? ReadQoderVersion(paths.QoderCurrentDirectory) : null;
+        string? pendingVersion = null;
+        if (PointerSaysNext(paths)
+            && ValidateQoderRoot(paths, paths.QoderNextDirectory, out _) == null)
         {
-            return new RuntimeVersionSnapshot(
-                CurrentVersion: _probedVersion,
-                PendingVersion: null,
-                HasPendingUpdate: false)
-            {
-                ProductName = "Qoder CLI"
-            };
+            pendingVersion = ReadQoderVersion(paths.QoderNextDirectory);
         }
+
+        var hasPending = pendingVersion != null
+            && !string.Equals(pendingVersion, currentVersion, StringComparison.OrdinalIgnoreCase);
+        return new RuntimeVersionSnapshot(
+            CurrentVersion: currentVersion,
+            PendingVersion: hasPending ? pendingVersion : null,
+            HasPendingUpdate: hasPending)
+        {
+            ProductName = "Qoder CLI"
+        };
     }
 
     public string BuildStatusText(string? suffix = null)
     {
-        lock (_gate)
-        {
-            var version = _probedVersion;
-            var baseText = string.IsNullOrWhiteSpace(version)
-                ? "Qoder CLI（外部安装，由 Qoder 管理）"
-                : $"Qoder CLI {version}（外部安装，由 Qoder 管理）";
-            return string.IsNullOrWhiteSpace(suffix) ? baseText : $"{baseText} · {suffix}";
-        }
+        var version = GetVersionSnapshot().CurrentVersion;
+        var baseText = string.IsNullOrWhiteSpace(version)
+            ? (IsReady() ? "Qoder CLI" : "Qoder CLI 未安装 · 首次使用时安装")
+            : $"Qoder CLI {version}";
+        return string.IsNullOrWhiteSpace(suffix) ? baseText : $"{baseText} · {suffix}";
     }
 
-    public Task PrepareForStartupAsync(CancellationToken cancellationToken = default)
+    public async Task PrepareForStartupAsync(CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        var discovered = DiscoverEntryPath();
-        lock (_gate)
+        await _npmLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            _discoveredPath = discovered;
-            if (discovered == null)
+            var paths = Paths;
+            if (PointerSaysNext(paths))
             {
-                _probedVersion = null;
-                _versionGatePassed = false;
-                _versionProbeAttempted = false;
+                if (ValidateQoderRoot(paths, paths.QoderNextDirectory, out _) != null)
+                {
+                    Log("Qoder promote aborted: qoder-next is incomplete; reverting pointer to 'current'.");
+                    TryWriteActivePointer(paths, ActiveCurrentToken);
+                }
+                else
+                {
+                    PromoteNextToCurrent(paths);
+                }
+            }
+            else if (File.Exists(paths.QoderActivePointerFile))
+            {
+                TryWriteActivePointer(paths, ActiveCurrentToken);
             }
         }
-
-        if (discovered != null)
-            Log($"Discovered qodercli at {discovered} (path-only, no execution).");
-        else
-            Log("No qodercli entry found on PATH during startup discovery.");
-
-        return Task.CompletedTask;
+        finally
+        {
+            _npmLock.Release();
+        }
     }
 
     public async Task<AcpRuntimeOperationResult> EnsureInstalledAsync(
         CancellationToken cancellationToken = default)
     {
-        var probeResult = await ProbeVersionAsync(cancellationToken).ConfigureAwait(false);
-        StatusChanged?.Invoke(BuildStatusText());
-        return probeResult;
+        if (IsReady())
+        {
+            StatusChanged?.Invoke(BuildStatusText());
+            return new AcpRuntimeOperationResult(
+                AcpRuntimeOperationKind.AlreadyReady,
+                "Qoder CLI runtime is already installed.");
+        }
+
+        var writeFailure = await CheckRuntimeDirectoryWritableAsync(cancellationToken).ConfigureAwait(false);
+        if (writeFailure != null)
+            return writeFailure;
+
+        await _npmLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await EnsureInstalledCoreAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _npmLock.Release();
+        }
     }
 
-    public Task<AcpRuntimeOperationResult> RefreshAsync(
+    public async Task<AcpRuntimeOperationResult> RefreshAsync(
         CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        const string message = "Qoder 由外部管理，请使用 Qoder 自身更新";
-        StatusChanged?.Invoke(message);
-        return Task.FromResult(new AcpRuntimeOperationResult(
-            AcpRuntimeOperationKind.Failed, message));
+        var paths = Paths;
+        if (ValidateQoderRoot(paths, paths.QoderCurrentDirectory, out _) != null)
+        {
+            StatusChanged?.Invoke(BuildStatusText());
+            return new AcpRuntimeOperationResult(
+                AcpRuntimeOperationKind.AlreadyReady,
+                "Qoder CLI runtime is not installed; skipping refresh.");
+        }
+
+        if (paths.PortableNodePath == null || paths.PortableNpmCliPath == null)
+        {
+            StatusChanged?.Invoke(BuildStatusText("更新失败，当前版本可继续使用"));
+            return new AcpRuntimeOperationResult(
+                AcpRuntimeOperationKind.Failed,
+                "Portable npm is not available; cannot refresh Qoder CLI.");
+        }
+
+        await _npmLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            StatusChanged?.Invoke(BuildStatusText("正在检查更新"));
+
+            Directory.CreateDirectory(paths.RuntimeRoot);
+            var view = await RunNpmAsync(
+                paths,
+                paths.RuntimeRoot,
+                $"npm view {PackageName}@latest version",
+                new[] { "view", $"{PackageName}@latest", "version", "--json" },
+                cancellationToken).ConfigureAwait(false);
+            if (view.Kind != AcpRuntimeOperationKind.Success)
+            {
+                StatusChanged?.Invoke(BuildStatusText("更新失败，当前版本可继续使用"));
+                return new AcpRuntimeOperationResult(view.Kind, view.Message, view.ExitCode);
+            }
+
+            var candidate = ParseNpmViewVersion(view.Stdout);
+            var currentVersion = ReadQoderVersion(paths.QoderCurrentDirectory);
+            if (!string.IsNullOrWhiteSpace(candidate)
+                && !string.IsNullOrWhiteSpace(currentVersion)
+                && string.Equals(candidate, currentVersion, StringComparison.OrdinalIgnoreCase))
+            {
+                ClearStaleNext(paths);
+                TryWriteActivePointer(paths, ActiveCurrentToken);
+                StatusChanged?.Invoke(BuildStatusText("已是最新版本"));
+                return new AcpRuntimeOperationResult(
+                    AcpRuntimeOperationKind.AlreadyReady,
+                    $"Qoder CLI {currentVersion} 已是最新版本。");
+            }
+
+            if (!Version.TryParse(candidate, out var parsedCandidate)
+                || !Version.TryParse(currentVersion, out var parsedCurrent))
+            {
+                Log($"Qoder version comparison is unsafe: registry='{candidate}', current='{currentVersion}'. Not updating.");
+                StatusChanged?.Invoke(BuildStatusText("更新失败，当前版本可继续使用"));
+                return new AcpRuntimeOperationResult(
+                    AcpRuntimeOperationKind.Failed,
+                    "无法安全比较 Registry 版本，未执行更新。");
+            }
+
+            if (parsedCandidate < parsedCurrent)
+            {
+                Log($"Registry Qoder {candidate} is older than current {currentVersion}; refusing to downgrade.");
+                StatusChanged?.Invoke(BuildStatusText("已是最新版本"));
+                return new AcpRuntimeOperationResult(
+                    AcpRuntimeOperationKind.AlreadyReady,
+                    $"Registry 版本（{candidate}）低于当前版本（{currentVersion}），未执行更新。");
+            }
+
+            if (parsedCandidate < MinimumCompatibleVersion)
+            {
+                Log($"Registry Qoder {candidate} is below MinimumCompatibleVersion {MinimumCompatibleVersion}.");
+                StatusChanged?.Invoke(BuildStatusText("更新失败，当前版本可继续使用"));
+                return new AcpRuntimeOperationResult(
+                    AcpRuntimeOperationKind.Failed,
+                    $"Registry 版本（{candidate}）低于 PSX 所需的最低版本 {MinimumCompatibleVersion}，未执行更新。");
+            }
+
+            try
+            {
+                if (Directory.Exists(paths.QoderNextDirectory))
+                    Directory.Delete(paths.QoderNextDirectory, recursive: true);
+                Directory.CreateDirectory(paths.QoderNextDirectory);
+                SeedManifestFiles(paths, paths.QoderNextDirectory, includeLockfile: false);
+            }
+            catch (Exception ex)
+            {
+                Log($"Failed to prepare qoder-next: {ex}");
+                StatusChanged?.Invoke(BuildStatusText("更新失败，当前版本可继续使用"));
+                return new AcpRuntimeOperationResult(
+                    AcpRuntimeOperationKind.Failed,
+                    $"Failed to prepare qoder-next: {ex.Message}");
+            }
+
+            var installLabel = $"npm install {PackageName}@{candidate}";
+            StatusChanged?.Invoke(BuildStatusText("正在更新 Qoder CLI"));
+            var install = await RunNpmAsync(
+                paths,
+                paths.QoderNextDirectory,
+                installLabel,
+                new[]
+                {
+                    "install",
+                    $"{PackageName}@{candidate}",
+                    "--save-exact",
+                    "--omit=dev",
+                    "--ignore-scripts",
+                    "--no-audit",
+                    "--no-fund"
+                },
+                cancellationToken).ConfigureAwait(false);
+            if (install.Kind != AcpRuntimeOperationKind.Success)
+            {
+                StatusChanged?.Invoke(BuildStatusText("更新失败，当前版本可继续使用"));
+                return new AcpRuntimeOperationResult(install.Kind, install.Message, install.ExitCode);
+            }
+
+            var stagedError = ValidateQoderRoot(paths, paths.QoderNextDirectory, out var stagedEntry);
+            if (stagedError != null || stagedEntry == null)
+            {
+                Log($"Post-update validation failed: {stagedError}");
+                StatusChanged?.Invoke(BuildStatusText("更新失败，当前版本可继续使用"));
+                return new AcpRuntimeOperationResult(
+                    AcpRuntimeOperationKind.Failed,
+                    $"Updated Qoder CLI is incomplete; not switching to it. ({stagedError})");
+            }
+
+            var stagedVersion = ReadQoderVersion(paths.QoderNextDirectory);
+            if (!string.Equals(stagedVersion, candidate, StringComparison.OrdinalIgnoreCase))
+            {
+                Log($"Staged Qoder version '{stagedVersion}' does not match requested '{candidate}'.");
+                StatusChanged?.Invoke(BuildStatusText("更新失败，当前版本可继续使用"));
+                return new AcpRuntimeOperationResult(
+                    AcpRuntimeOperationKind.Failed,
+                    $"Staged Qoder CLI version ({stagedVersion}) does not match the requested {candidate}; not switching to it.");
+            }
+
+            var smokeError = await RunStagedSmokeCheckAsync(paths, stagedEntry, cancellationToken)
+                .ConfigureAwait(false);
+            if (smokeError != null)
+            {
+                Log($"Staged Qoder smoke check failed: {smokeError}");
+                StatusChanged?.Invoke(BuildStatusText("更新失败，当前版本可继续使用"));
+                return new AcpRuntimeOperationResult(
+                    AcpRuntimeOperationKind.Failed,
+                    $"Staged Qoder CLI failed its start check; not switching to it. ({smokeError})");
+            }
+
+            if (!TryWriteActivePointer(paths, ActiveNextToken))
+            {
+                StatusChanged?.Invoke(BuildStatusText("更新失败，当前版本可继续使用"));
+                return new AcpRuntimeOperationResult(
+                    AcpRuntimeOperationKind.Failed,
+                    "已下载更新，但无法写入激活指针，未切换版本。");
+            }
+
+            Log($"qoder-next staged at {candidate} and verified; active pointer flipped to 'next'.");
+            StatusChanged?.Invoke(BuildStatusText($"已更新到 Qoder CLI {candidate}，下次启动生效"));
+            return new AcpRuntimeOperationResult(
+                AcpRuntimeOperationKind.Success,
+                $"{installLabel} completed successfully.");
+        }
+        finally
+        {
+            _npmLock.Release();
+        }
     }
 
     public AcpProcessSpec CreateProcessSpec(string workingDirectory)
     {
-        string? entryPath;
-        lock (_gate)
+        var paths = Paths;
+        var validationError = ValidateQoderRoot(paths, paths.QoderCurrentDirectory, out var entryPath);
+        if (validationError != null || entryPath == null)
         {
-            if (!_versionGatePassed || string.IsNullOrWhiteSpace(_discoveredPath))
-            {
-                throw new InvalidOperationException(
-                    "Qoder CLI runtime is not ready. Install or upgrade qodercli before starting a session.");
-            }
+            throw new InvalidOperationException(
+                validationError
+                ?? $"Qoder CLI runtime is not installed under {paths.QoderCurrentDirectory}. " +
+                   "Confirm installation from Agent mode first.");
+        }
 
-            entryPath = _discoveredPath;
+        var nodePath = paths.PortableNodePath;
+        if (string.IsNullOrWhiteSpace(nodePath))
+        {
+            throw new InvalidOperationException(
+                "Portable Node.js was not found next to PSX.exe. The release zip should include tools/node/node.exe.");
         }
 
         var environment = new Dictionary<string, string?>();
@@ -169,181 +352,410 @@ public sealed class QoderCliAcpRuntime : IAcpAgentRuntime
 
         return new AcpProcessSpec
         {
-            FileName = entryPath,
+            FileName = nodePath,
             WorkingDirectory = workingDirectory,
-            Arguments = new[] { "--acp" },
+            Arguments = new[] { entryPath, "--acp" },
             Environment = environment
         };
     }
 
-    public void Dispose()
+    /// <summary>
+    /// Builds a PowerShell invocation for the interactive Qoder CLI using the
+    /// resolved portable Node + package entry (not a PATH-dependent shim).
+    /// Pass <paramref name="extraArgument"/> as <c>login</c> for the login
+    /// profile. Returns null when the install is incomplete.
+    /// </summary>
+    public string? TryBuildInteractivePowerShellInvocation(string? extraArgument = null)
     {
-    }
-
-    internal async Task<AcpRuntimeOperationResult> ProbeVersionAsync(CancellationToken cancellationToken)
-    {
-        string? entryPath;
-        lock (_gate)
-        {
-            entryPath = _discoveredPath ?? DiscoverEntryPath();
-            _discoveredPath = entryPath;
-            _versionProbeAttempted = true;
-        }
-
-        if (string.IsNullOrWhiteSpace(entryPath))
-        {
-            const string message =
-                "未在 PATH 中找到 qodercli。请安装 Qoder CLI：npm install -g @qoder-ai/qodercli，详见 https://docs.qoder.com/cli/install";
-            Log(message);
-            lock (_gate)
-            {
-                _probedVersion = null;
-                _versionGatePassed = false;
-            }
-
-            return new AcpRuntimeOperationResult(AcpRuntimeOperationKind.Failed, message);
-        }
-
-        var probe = await RunVersionProbeAsync(entryPath, cancellationToken).ConfigureAwait(false);
-        if (probe.Error != null)
-        {
-            var message =
-                $"无法读取 qodercli 版本：{probe.Error}。请确认已安装 Qoder CLI 并可通过 qodercli --version 运行。";
-            Log(message);
-            lock (_gate)
-            {
-                _probedVersion = null;
-                _versionGatePassed = false;
-            }
-
-            return new AcpRuntimeOperationResult(AcpRuntimeOperationKind.Failed, message, probe.ExitCode);
-        }
-
-        if (!TryParseVersion(probe.Output, out var parsedVersion, out var versionText))
-        {
-            const string message =
-                "无法解析 qodercli --version 输出。请升级 Qoder CLI 后重试。";
-            Log($"{message} Raw output: {probe.Output}");
-            lock (_gate)
-            {
-                _probedVersion = null;
-                _versionGatePassed = false;
-            }
-
-            return new AcpRuntimeOperationResult(AcpRuntimeOperationKind.Failed, message, probe.ExitCode);
-        }
-
-        lock (_gate)
-            _probedVersion = versionText;
-
-        if (parsedVersion < MinimumCompatibleVersion)
-        {
-            var message =
-                $"当前 Qoder CLI 版本 {versionText} 低于 PSX 所需的最低版本 {MinimumCompatibleVersion}。" +
-                "请通过 Qoder 自身更新 qodercli 后重试。";
-            Log(message);
-            lock (_gate)
-                _versionGatePassed = false;
-
-            return new AcpRuntimeOperationResult(AcpRuntimeOperationKind.Failed, message, probe.ExitCode);
-        }
-
-        Log($"Version gate passed: {versionText} >= {MinimumCompatibleVersion}.");
-        lock (_gate)
-            _versionGatePassed = true;
-
-        return new AcpRuntimeOperationResult(
-            AcpRuntimeOperationKind.AlreadyReady,
-            BuildStatusText());
-    }
-
-    internal bool VersionProbeAttempted
-    {
-        get
-        {
-            lock (_gate)
-                return _versionProbeAttempted;
-        }
-    }
-
-    internal static bool SkipNpmShimDiscovery { get; set; }
-
-    internal static string? DiscoverEntryPath()
-    {
-        foreach (var directory in EnumeratePathDirectories())
-        {
-            var cmdPath = Path.Combine(directory, "qodercli.cmd");
-            if (File.Exists(cmdPath))
-                return cmdPath;
-
-            var exePath = Path.Combine(directory, "qodercli.exe");
-            if (File.Exists(exePath))
-                return exePath;
-
-            var barePath = Path.Combine(directory, "qodercli");
-            if (File.Exists(barePath))
-                return barePath;
-        }
-
-        if (SkipNpmShimDiscovery)
+        var paths = Paths;
+        var validationError = ValidateQoderRoot(paths, paths.QoderCurrentDirectory, out var entryPath);
+        if (validationError != null || entryPath == null || string.IsNullOrWhiteSpace(paths.PortableNodePath))
             return null;
 
-        var npmShim = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "npm",
-            "qodercli.cmd");
-        return File.Exists(npmShim) ? npmShim : null;
+        var command = new StringBuilder();
+        command.Append("& ").Append(QuoteForPowerShell(paths.PortableNodePath));
+        command.Append(' ').Append(QuoteForPowerShell(entryPath));
+        if (!string.IsNullOrWhiteSpace(extraArgument))
+            command.Append(' ').Append(QuoteForPowerShell(extraArgument));
+        return command.ToString();
     }
 
-    private static IEnumerable<string> EnumeratePathDirectories()
+    public void Dispose()
     {
-        var pathValue = Environment.GetEnvironmentVariable("PATH");
-        if (string.IsNullOrWhiteSpace(pathValue))
-            yield break;
+        _npmLock.Dispose();
+    }
 
-        foreach (var segment in pathValue.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+    // ---- internals ----
+
+    private async Task<AcpRuntimeOperationResult> EnsureInstalledCoreAsync(
+        CancellationToken cancellationToken)
+    {
+        if (IsReady())
         {
-            if (!string.IsNullOrWhiteSpace(segment))
-                yield return segment;
+            StatusChanged?.Invoke(BuildStatusText());
+            return new AcpRuntimeOperationResult(
+                AcpRuntimeOperationKind.AlreadyReady,
+                "Qoder CLI runtime is already installed.");
+        }
+
+        StatusChanged?.Invoke("正在安装 Qoder CLI");
+
+        var paths = Paths;
+        if (paths.PortableNodePath == null || paths.PortableNpmCliPath == null)
+        {
+            StatusChanged?.Invoke("Qoder CLI 安装失败，Agent 暂不可用，请检查网络后重试");
+            return new AcpRuntimeOperationResult(
+                AcpRuntimeOperationKind.Failed,
+                "No node runtime available; cannot install Qoder CLI.");
+        }
+
+        if (!Directory.Exists(paths.QoderSeedDirectory)
+            || !File.Exists(Path.Combine(paths.QoderSeedDirectory, "package.json")))
+        {
+            StatusChanged?.Invoke("Qoder CLI 安装失败，Agent 暂不可用");
+            return new AcpRuntimeOperationResult(
+                AcpRuntimeOperationKind.Failed,
+                $"Qoder seed is missing at {paths.QoderSeedDirectory}.");
+        }
+
+        var pinnedVersion = ReadSeededPackageVersion(paths) ?? SeededPackageVersion;
+
+        try
+        {
+            Directory.CreateDirectory(paths.RuntimeRoot);
+            if (Directory.Exists(paths.QoderCurrentDirectory))
+                Directory.Delete(paths.QoderCurrentDirectory, recursive: true);
+            Directory.CreateDirectory(paths.QoderCurrentDirectory);
+            if (Directory.Exists(paths.QoderNextDirectory))
+            {
+                try { Directory.Delete(paths.QoderNextDirectory, recursive: true); }
+                catch (Exception ex) { Log($"WARN: could not clear stale qoder-next: {ex.Message}"); }
+            }
+
+            SeedManifestFiles(paths, paths.QoderCurrentDirectory, includeLockfile: true);
+        }
+        catch (Exception ex)
+        {
+            Log($"Failed to seed qoder-current: {ex}");
+            StatusChanged?.Invoke("Qoder CLI 安装失败，Agent 暂不可用，请检查网络后重试");
+            return new AcpRuntimeOperationResult(
+                AcpRuntimeOperationKind.Failed,
+                $"Failed to seed qoder-current: {ex.Message}");
+        }
+
+        var installLabel = $"npm install {PackageName}@{pinnedVersion}";
+        var install = await RunNpmAsync(
+            paths,
+            paths.QoderCurrentDirectory,
+            installLabel,
+            new[]
+            {
+                "install",
+                $"{PackageName}@{pinnedVersion}",
+                "--save-exact",
+                "--omit=dev",
+                "--ignore-scripts",
+                "--no-audit",
+                "--no-fund"
+            },
+            cancellationToken).ConfigureAwait(false);
+        if (install.Kind != AcpRuntimeOperationKind.Success)
+        {
+            if (install.Kind == AcpRuntimeOperationKind.Cancelled)
+                StatusChanged?.Invoke("Qoder CLI 安装已取消");
+            else
+                StatusChanged?.Invoke("Qoder CLI 安装失败，Agent 暂不可用，请检查网络后重试");
+            return new AcpRuntimeOperationResult(install.Kind, install.Message, install.ExitCode);
+        }
+
+        var validationError = ValidateQoderRoot(paths, paths.QoderCurrentDirectory, out var entryPath);
+        if (validationError != null || entryPath == null)
+        {
+            Log($"First-install validation failed: {validationError}");
+            StatusChanged?.Invoke("Qoder CLI 安装失败，Agent 暂不可用，请检查网络后重试");
+            return new AcpRuntimeOperationResult(
+                AcpRuntimeOperationKind.Failed,
+                $"Installed Qoder CLI is incomplete; not activating it. ({validationError})");
+        }
+
+        var installedVersion = ReadQoderVersion(paths.QoderCurrentDirectory);
+        if (!string.Equals(installedVersion, pinnedVersion, StringComparison.OrdinalIgnoreCase))
+        {
+            Log($"Installed Qoder version '{installedVersion}' does not match pinned '{pinnedVersion}'.");
+            StatusChanged?.Invoke("Qoder CLI 安装失败，Agent 暂不可用，请检查网络后重试");
+            return new AcpRuntimeOperationResult(
+                AcpRuntimeOperationKind.Failed,
+                $"Installed Qoder CLI version ({installedVersion}) does not match the pinned {pinnedVersion}; not activating it.");
+        }
+
+        var smokeError = await RunStagedSmokeCheckAsync(paths, entryPath, cancellationToken).ConfigureAwait(false);
+        if (smokeError != null)
+        {
+            Log($"First-install smoke check failed: {smokeError}");
+            StatusChanged?.Invoke("Qoder CLI 安装失败，Agent 暂不可用，请检查网络后重试");
+            return new AcpRuntimeOperationResult(
+                AcpRuntimeOperationKind.Failed,
+                $"Installed Qoder CLI failed its start check; not activating it. ({smokeError})");
+        }
+
+        if (!TryWriteActivePointer(paths, ActiveCurrentToken))
+        {
+            StatusChanged?.Invoke("Qoder CLI 安装失败，Agent 暂不可用");
+            return new AcpRuntimeOperationResult(
+                AcpRuntimeOperationKind.Failed,
+                "Installed Qoder CLI, but failed to write the active pointer.");
+        }
+
+        StatusChanged?.Invoke(BuildStatusText());
+        return new AcpRuntimeOperationResult(
+            AcpRuntimeOperationKind.Success,
+            $"{installLabel} completed successfully.");
+    }
+
+    private async Task<AcpRuntimeOperationResult?> CheckRuntimeDirectoryWritableAsync(
+        CancellationToken cancellationToken)
+    {
+        var paths = Paths;
+        string? probePath = null;
+        try
+        {
+            Directory.CreateDirectory(paths.RuntimeRoot);
+            probePath = Path.Combine(paths.RuntimeRoot, $".psx-write-probe-{Guid.NewGuid():N}.tmp");
+            await File.WriteAllTextAsync(probePath, "PSX runtime write probe", cancellationToken)
+                .ConfigureAwait(false);
+            File.Delete(probePath);
+            return null;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            if (probePath != null)
+            {
+                try { File.Delete(probePath); } catch { }
+            }
+
+            var message =
+                $"PSX cannot write to its runtime folder. Extract PSX to a writable folder and retry. {ex.Message}";
+            StatusChanged?.Invoke(message);
+            return new AcpRuntimeOperationResult(AcpRuntimeOperationKind.Failed, message);
         }
     }
 
-    private static bool TryParseVersion(string output, out Version parsed, out string versionText)
+    private static string? ValidateQoderRoot(
+        RuntimePaths paths,
+        string qoderRoot,
+        out string? entryPath)
     {
-        parsed = new Version(0, 0);
-        versionText = "";
-        var match = VersionTokenPattern.Match(output);
-        if (!match.Success)
-            return false;
+        entryPath = null;
 
-        versionText = match.Value ?? "";
-        if (!Version.TryParse(NormalizeVersionText(versionText), out var parsedVersion))
-            return false;
+        if (string.IsNullOrWhiteSpace(paths.PortableNodePath) || !File.Exists(paths.PortableNodePath))
+            return "portable Node.js (tools/node/node.exe) is missing";
 
-        parsed = parsedVersion;
-        return true;
+        if (!Directory.Exists(qoderRoot))
+            return $"Qoder directory is missing at {qoderRoot}";
+
+        var packageDir = Path.Combine(qoderRoot, QoderPackageDirSubpath);
+        var packageJsonPath = Path.Combine(qoderRoot, QoderPackageJsonSubpath);
+        if (!File.Exists(packageJsonPath))
+            return $"{PackageName} package.json is missing under {qoderRoot}";
+
+        string? binRelative;
+        try
+        {
+            using var document = JsonDocument.Parse(File.ReadAllText(packageJsonPath));
+            binRelative = ExtractBinPath(document.RootElement);
+        }
+        catch (Exception ex)
+        {
+            return $"failed to parse {PackageName} package.json: {ex.Message}";
+        }
+
+        if (string.IsNullOrWhiteSpace(binRelative))
+            return $"{PackageName} package.json does not declare a 'bin.qodercli' entry";
+
+        var packageDirFull = Path.GetFullPath(packageDir);
+        var resolvedEntry = Path.GetFullPath(Path.Combine(packageDirFull, binRelative));
+        var packageDirPrefix = packageDirFull.EndsWith(Path.DirectorySeparatorChar)
+            ? packageDirFull
+            : packageDirFull + Path.DirectorySeparatorChar;
+        if (!resolvedEntry.StartsWith(packageDirPrefix, StringComparison.OrdinalIgnoreCase))
+            return $"'bin.qodercli' path '{binRelative}' escapes the Qoder package directory";
+
+        if (!File.Exists(resolvedEntry))
+            return $"resolved Qoder entry point is missing at {resolvedEntry}";
+
+        entryPath = resolvedEntry;
+        return null;
     }
 
-    private static string NormalizeVersionText(string versionText)
+    private static string? ExtractBinPath(JsonElement root)
     {
-        var plusIndex = versionText.IndexOf('+');
-        if (plusIndex >= 0)
-            versionText = versionText[..plusIndex];
+        if (!root.TryGetProperty("bin", out var bin))
+            return null;
 
-        var dashIndex = versionText.IndexOf('-');
-        if (dashIndex >= 0)
-            versionText = versionText[..dashIndex];
+        if (bin.ValueKind == JsonValueKind.String)
+            return bin.GetString();
 
-        return versionText;
+        if (bin.ValueKind == JsonValueKind.Object)
+        {
+            if (bin.TryGetProperty("qodercli", out var qoderBin) && qoderBin.ValueKind == JsonValueKind.String)
+                return qoderBin.GetString();
+
+            foreach (var property in bin.EnumerateObject())
+            {
+                if (property.Value.ValueKind == JsonValueKind.String)
+                    return property.Value.GetString();
+            }
+        }
+
+        return null;
     }
 
-    private async Task<(string Output, string? Error, int? ExitCode)> RunVersionProbeAsync(
-        string entryPath,
+    private static string? ReadQoderVersion(string qoderRoot)
+    {
+        try
+        {
+            var packageJsonPath = Path.Combine(qoderRoot, QoderPackageJsonSubpath);
+            if (!File.Exists(packageJsonPath))
+                return null;
+
+            using var document = JsonDocument.Parse(File.ReadAllText(packageJsonPath));
+            if (document.RootElement.TryGetProperty("version", out var version)
+                && version.ValueKind == JsonValueKind.String)
+            {
+                return version.GetString();
+            }
+        }
+        catch
+        {
+            // Version display is best-effort.
+        }
+
+        return null;
+    }
+
+    private static string? ReadSeededPackageVersion(RuntimePaths paths)
+    {
+        try
+        {
+            var packageJsonPath = Path.Combine(paths.QoderSeedDirectory, "package.json");
+            if (!File.Exists(packageJsonPath))
+                return null;
+
+            using var document = JsonDocument.Parse(File.ReadAllText(packageJsonPath));
+            if (document.RootElement.TryGetProperty("dependencies", out var deps)
+                && deps.ValueKind == JsonValueKind.Object
+                && deps.TryGetProperty(PackageName, out var version)
+                && version.ValueKind == JsonValueKind.String)
+            {
+                return version.GetString()?.Trim().TrimStart('^', '~', '=', 'v', 'V');
+            }
+        }
+        catch
+        {
+            // Fall back to the compile-time pin.
+        }
+
+        return null;
+    }
+
+    private void SeedManifestFiles(RuntimePaths paths, string destination, bool includeLockfile)
+    {
+        var names = includeLockfile
+            ? new[] { "package.json", PackageLockName, ".npmrc" }
+            : new[] { "package.json", ".npmrc" };
+        foreach (var name in names)
+        {
+            var source = Path.Combine(paths.QoderSeedDirectory, name);
+            if (!File.Exists(source))
+                continue;
+            var dest = Path.Combine(destination, name);
+            File.Copy(source, dest, overwrite: true);
+            Log($"Seeded {name} -> {dest}");
+        }
+    }
+
+    private void PromoteNextToCurrent(RuntimePaths paths)
+    {
+        var backup = paths.QoderCurrentDirectory + ".old";
+        try
+        {
+            if (Directory.Exists(backup))
+                Directory.Delete(backup, recursive: true);
+
+            if (Directory.Exists(paths.QoderCurrentDirectory))
+                Directory.Move(paths.QoderCurrentDirectory, backup);
+
+            Directory.Move(paths.QoderNextDirectory, paths.QoderCurrentDirectory);
+            Directory.Delete(backup, recursive: true);
+        }
+        catch (Exception ex)
+        {
+            Log($"Qoder promote failed mid-swap: {ex}. Recovering.");
+            if (Directory.Exists(backup) && !Directory.Exists(paths.QoderCurrentDirectory))
+            {
+                try { Directory.Move(backup, paths.QoderCurrentDirectory); } catch { /* give up */ }
+            }
+            TryWriteActivePointer(paths, ActiveCurrentToken);
+            return;
+        }
+
+        TryWriteActivePointer(paths, ActiveCurrentToken);
+        Log("Qoder promote: qoder-next is now qoder-current.");
+        StatusChanged?.Invoke(BuildStatusText());
+    }
+
+    private void ClearStaleNext(RuntimePaths paths)
+    {
+        try
+        {
+            if (Directory.Exists(paths.QoderNextDirectory))
+                Directory.Delete(paths.QoderNextDirectory, recursive: true);
+        }
+        catch (Exception ex)
+        {
+            Log($"WARN: could not clear stale qoder-next: {ex.Message}");
+        }
+    }
+
+    private static string? ParseNpmViewVersion(string stdout)
+    {
+        var trimmed = stdout.Trim();
+        if (trimmed.Length == 0)
+            return null;
+        try
+        {
+            using var document = JsonDocument.Parse(trimmed);
+            return document.RootElement.ValueKind == JsonValueKind.String
+                ? document.RootElement.GetString()
+                : null;
+        }
+        catch
+        {
+            return trimmed.Contains('"') || trimmed.Contains('{') ? null : trimmed;
+        }
+    }
+
+    private sealed record NpmRunOutcome(
+        AcpRuntimeOperationKind Kind,
+        string Message,
+        int? ExitCode,
+        string Stdout);
+
+    private async Task<NpmRunOutcome> RunNpmAsync(
+        RuntimePaths paths,
+        string workingDirectory,
+        string label,
+        string[] arguments,
         CancellationToken cancellationToken)
     {
         var startInfo = new ProcessStartInfo
         {
-            FileName = entryPath,
+            FileName = paths.PortableNodePath,
+            WorkingDirectory = workingDirectory,
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -351,9 +763,12 @@ public sealed class QoderCliAcpRuntime : IAcpAgentRuntime
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8,
         };
-        startInfo.ArgumentList.Add("--version");
 
-        Log($"Probing version: {entryPath} --version");
+        startInfo.ArgumentList.Add(paths.PortableNpmCliPath!);
+        foreach (var argument in arguments)
+            startInfo.ArgumentList.Add(argument);
+
+        Log($"Starting: {label} in {workingDirectory}");
 
         Process? process;
         try
@@ -362,18 +777,23 @@ public sealed class QoderCliAcpRuntime : IAcpAgentRuntime
         }
         catch (Exception ex)
         {
-            return ("", ex.Message, null);
+            Log($"Failed to start {label}: {ex}");
+            return new NpmRunOutcome(AcpRuntimeOperationKind.Failed,
+                $"Failed to start {label}: {ex.Message}", null, "");
         }
 
         if (process == null)
-            return ("", "process did not start", null);
-
+        {
+            return new NpmRunOutcome(AcpRuntimeOperationKind.Failed,
+                $"{label} did not start.", null, "");
+        }
         using var processLifetime = process;
-        var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
+
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
 
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(VersionProbeTimeout);
+        timeoutCts.CancelAfter(_processTimeout);
 
         try
         {
@@ -382,39 +802,148 @@ public sealed class QoderCliAcpRuntime : IAcpAgentRuntime
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             TryKill(process);
-            return ("", $"--version timed out after {VersionProbeTimeout.TotalSeconds:0} seconds", null);
+            Log($"{label} timed out after {_processTimeout.TotalMinutes:0.##} minutes.");
+            return new NpmRunOutcome(AcpRuntimeOperationKind.Failed,
+                $"{label} timed out.", null, "");
         }
         catch (OperationCanceledException)
         {
             TryKill(process);
-            throw;
+            Log($"{label} was cancelled.");
+            return new NpmRunOutcome(AcpRuntimeOperationKind.Cancelled,
+                $"{label} was cancelled.", null, "");
+        }
+
+        var stdout = await stdoutTask.ConfigureAwait(false);
+        var stderr = await stderrTask.ConfigureAwait(false);
+        var exitCode = process.ExitCode;
+
+        if (!string.IsNullOrWhiteSpace(stdout))
+            Log($"stdout:\n{stdout.Trim()}");
+        if (!string.IsNullOrWhiteSpace(stderr))
+            Log($"stderr:\n{stderr.Trim()}");
+        Log($"{label} exited with code {exitCode}.");
+
+        if (exitCode != 0)
+        {
+            var kind = LooksLikeNetworkError(stderr)
+                ? AcpRuntimeOperationKind.NetworkUnavailable
+                : AcpRuntimeOperationKind.Failed;
+            return new NpmRunOutcome(kind,
+                $"{label} failed with exit code {exitCode}.", exitCode, stdout);
+        }
+
+        return new NpmRunOutcome(AcpRuntimeOperationKind.Success,
+            $"{label} completed successfully.", exitCode, stdout);
+    }
+
+    private async Task<string?> RunStagedSmokeCheckAsync(
+        RuntimePaths paths,
+        string entryPath,
+        CancellationToken cancellationToken)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = paths.PortableNodePath,
+            WorkingDirectory = Path.GetDirectoryName(entryPath)!,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
+        };
+        startInfo.ArgumentList.Add(entryPath);
+        startInfo.ArgumentList.Add("--version");
+
+        Process? process;
+        try
+        {
+            process = Process.Start(startInfo);
+        }
+        catch (Exception ex)
+        {
+            return $"failed to start the staged entry: {ex.Message}";
+        }
+        if (process == null)
+            return "the staged entry process did not start";
+        using var processLifetime = process;
+
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(SmokeCheckTimeout);
+        try
+        {
+            await process.WaitForExitAsync(timeoutCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            TryKill(process);
+            return $"--version did not finish within {SmokeCheckTimeout.TotalSeconds:0} seconds";
         }
 
         var stdout = (await stdoutTask.ConfigureAwait(false)).Trim();
         var stderr = (await stderrTask.ConfigureAwait(false)).Trim();
-        if (!string.IsNullOrWhiteSpace(stdout))
-            Log($"stdout:\n{stdout}");
-        if (!string.IsNullOrWhiteSpace(stderr))
-            Log($"stderr:\n{stderr}");
-        Log($"--version exited with code {process.ExitCode}.");
-
         if (process.ExitCode != 0)
-            return (stdout, string.IsNullOrWhiteSpace(stderr) ? $"exit code {process.ExitCode}" : stderr, process.ExitCode);
+        {
+            Log($"Staged smoke check stderr:\n{stderr}");
+            return $"--version exited with code {process.ExitCode}";
+        }
 
-        return (string.IsNullOrWhiteSpace(stdout) ? stderr : stdout, null, process.ExitCode);
+        Log($"Staged smoke check passed: --version -> {stdout}");
+        return null;
+    }
+
+    private bool PointerSaysNext(RuntimePaths paths)
+    {
+        try
+        {
+            if (!File.Exists(paths.QoderActivePointerFile))
+                return false;
+            var token = File.ReadAllText(paths.QoderActivePointerFile).Trim();
+            return string.Equals(token, ActiveNextToken, StringComparison.Ordinal);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private bool TryWriteActivePointer(RuntimePaths paths, string token)
+    {
+        try
+        {
+            Directory.CreateDirectory(paths.RuntimeRoot);
+            var tmp = paths.QoderActivePointerFile + ".tmp";
+            File.WriteAllText(tmp, token);
+            File.Move(tmp, paths.QoderActivePointerFile, overwrite: true);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log($"Failed to write Qoder active pointer '{token}': {ex}");
+            return false;
+        }
     }
 
     private static void TryKill(Process process)
     {
-        try
-        {
-            if (!process.HasExited)
-                process.Kill(entireProcessTree: true);
-        }
-        catch
-        {
-            // Best effort.
-        }
+        try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
+        catch { /* best effort */ }
+    }
+
+    private static bool LooksLikeNetworkError(string stderr)
+    {
+        if (string.IsNullOrEmpty(stderr)) return false;
+        var lowered = stderr.ToLowerInvariant();
+        return lowered.Contains("etimedout")
+            || lowered.Contains("enotfound")
+            || lowered.Contains("econnrefused")
+            || lowered.Contains("network")
+            || lowered.Contains("registry.npmjs.org")
+            || lowered.Contains("getaddrinfo");
     }
 
     private static void ForwardEnvironmentVariable(IDictionary<string, string?> environment, string name)
@@ -423,6 +952,9 @@ public sealed class QoderCliAcpRuntime : IAcpAgentRuntime
         if (!string.IsNullOrEmpty(value))
             environment[name] = value;
     }
+
+    private static string QuoteForPowerShell(string value)
+        => "'" + value.Replace("'", "''") + "'";
 
     private void Log(string message)
     {

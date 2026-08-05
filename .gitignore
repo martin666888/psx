@@ -389,6 +389,10 @@ Desktop.ini
 # PSX downloaded runtimes and local WebView2 user data
 /runtime/
 /tools/node/
+# Local/dev installs of the bundled Agent CLIs (release builds them into
+# staging from *-seed/; never commit these trees).
+/tools/kimi/
+/tools/qwen/
 *.WebView2/
 
 # Local environment files and private key material

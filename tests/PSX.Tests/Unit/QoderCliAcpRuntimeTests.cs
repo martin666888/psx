@@ -8,173 +8,90 @@ namespace PSX.Tests.Unit;
 [TestCategory("Unit")]
 public sealed class QoderCliAcpRuntimeTests
 {
+    private const string SeedVersion = QoderCliAcpRuntime.SeededPackageVersion;
+
     [TestMethod]
-    public async Task PrepareForStartupAsync_DiscoversPathWithoutExecuting()
+    public void IsReady_WithoutInstall_IsFalse()
     {
-        using var workspace = TestWorkspace.Create(nameof(PrepareForStartupAsync_DiscoversPathWithoutExecuting));
-        var binDirectory = CreateStubQoderCli(workspace, "0.2.11");
-        using var pathScope = new TemporaryPathPrepend(binDirectory);
+        using var fixture = new FakeNpmFixture(nameof(IsReady_WithoutInstall_IsFalse));
+        using var runtime = fixture.CreateQoderRuntime();
 
-        var runtime = new QoderCliAcpRuntime(Path.Combine(workspace.Path, "logs"));
-        await runtime.PrepareForStartupAsync();
-
-        Assert.IsTrue(runtime.HasDiscoveredEntry);
         Assert.IsFalse(runtime.IsReady());
-        Assert.IsFalse(runtime.VersionProbeAttempted);
+        Assert.IsNull(runtime.GetVersionSnapshot().CurrentVersion);
+        StringAssert.Contains(runtime.BuildStatusText(), "未安装");
     }
 
     [TestMethod]
-    public async Task EnsureInstalledAsync_AcceptsMinimumCompatibleVersion()
+    public void IsReady_WithValidCurrentInstall_IsTrue()
     {
-        using var workspace = TestWorkspace.Create(nameof(EnsureInstalledAsync_AcceptsMinimumCompatibleVersion));
-        var binDirectory = CreateStubQoderCli(workspace, "0.2.11");
-        using var pathScope = new TemporaryPathPrepend(binDirectory);
+        using var fixture = new FakeNpmFixture(nameof(IsReady_WithValidCurrentInstall_IsTrue));
+        fixture.InstallQoderSeed();
+        fixture.CreateQoderInstall(fixture.Paths.QoderCurrentDirectory, SeedVersion);
+        using var runtime = fixture.CreateQoderRuntime();
 
-        var runtime = new QoderCliAcpRuntime(Path.Combine(workspace.Path, "logs"));
-        await runtime.PrepareForStartupAsync();
+        Assert.IsTrue(runtime.IsReady());
+        Assert.AreEqual(SeedVersion, runtime.GetVersionSnapshot().CurrentVersion);
+    }
+
+    [TestMethod]
+    public void CreateProcessSpec_UsesPortableNodePlusBundleEntryAndAcp()
+    {
+        using var fixture = new FakeNpmFixture(nameof(CreateProcessSpec_UsesPortableNodePlusBundleEntryAndAcp));
+        fixture.InstallQoderSeed();
+        fixture.CreateQoderInstall(fixture.Paths.QoderCurrentDirectory, SeedVersion);
+        using var runtime = fixture.CreateQoderRuntime();
+
+        var spec = runtime.CreateProcessSpec(fixture.InstallDirectory);
+
+        Assert.AreEqual(fixture.Paths.PortableNodePath, spec.FileName);
+        Assert.HasCount(2, spec.Arguments);
+        StringAssert.Contains(spec.Arguments![0], Path.Combine("node_modules", "@qoder-ai", "qodercli"));
+        StringAssert.EndsWith(spec.Arguments[0], "qodercli.js");
+        Assert.AreEqual("--acp", spec.Arguments[1]);
+    }
+
+    [TestMethod]
+    public void TryBuildInteractivePowerShellInvocation_LoginUsesManagedEntry()
+    {
+        using var fixture = new FakeNpmFixture(nameof(TryBuildInteractivePowerShellInvocation_LoginUsesManagedEntry));
+        fixture.InstallQoderSeed();
+        fixture.CreateQoderInstall(fixture.Paths.QoderCurrentDirectory, SeedVersion);
+        using var runtime = fixture.CreateQoderRuntime();
+
+        var login = runtime.TryBuildInteractivePowerShellInvocation("login");
+
+        Assert.IsNotNull(login);
+        StringAssert.Contains(login!, fixture.Paths.PortableNodePath!);
+        StringAssert.Contains(login, "qodercli.js");
+        StringAssert.Contains(login, "'login'");
+        Assert.IsFalse(login.Contains("--acp", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public async Task EnsureInstalledAsync_WhenAlreadyReady_ReturnsAlreadyReady()
+    {
+        using var fixture = new FakeNpmFixture(nameof(EnsureInstalledAsync_WhenAlreadyReady_ReturnsAlreadyReady));
+        fixture.InstallQoderSeed();
+        fixture.CreateQoderInstall(fixture.Paths.QoderCurrentDirectory, SeedVersion);
+        using var runtime = fixture.CreateQoderRuntime();
 
         var result = await runtime.EnsureInstalledAsync();
 
         Assert.AreEqual(AcpRuntimeOperationKind.AlreadyReady, result.Kind);
-        Assert.IsTrue(runtime.IsReady());
-        Assert.AreEqual("0.2.11", runtime.GetVersionSnapshot().CurrentVersion);
+        Assert.HasCount(0, fixture.ReadInvocations());
     }
 
     [TestMethod]
-    public async Task EnsureInstalledAsync_RejectsUnsupportedVersion()
+    public async Task RefreshAsync_WhenNotInstalled_SkipsWithoutNpm()
     {
-        using var workspace = TestWorkspace.Create(nameof(EnsureInstalledAsync_RejectsUnsupportedVersion));
-        var binDirectory = CreateStubQoderCli(workspace, "0.2.10");
-        using var pathScope = new TemporaryPathPrepend(binDirectory);
-
-        var runtime = new QoderCliAcpRuntime(Path.Combine(workspace.Path, "logs"));
-        await runtime.PrepareForStartupAsync();
-
-        var result = await runtime.EnsureInstalledAsync();
-
-        Assert.AreEqual(AcpRuntimeOperationKind.Failed, result.Kind);
-        Assert.IsFalse(runtime.IsReady());
-        StringAssert.Contains(result.Message, "0.2.10");
-        StringAssert.Contains(result.Message, "0.2.11");
-    }
-
-    [TestMethod]
-    public async Task EnsureInstalledAsync_WhenMissingOnPath_ReturnsInstallGuidance()
-    {
-        using var workspace = TestWorkspace.Create(nameof(EnsureInstalledAsync_WhenMissingOnPath_ReturnsInstallGuidance));
-        var emptyBin = Path.Combine(workspace.Path, "empty-bin");
-        Directory.CreateDirectory(emptyBin);
-        QoderCliAcpRuntime.SkipNpmShimDiscovery = true;
-        using var pathScope = new IsolatedPath(emptyBin);
-        try
-        {
-            var runtime = new QoderCliAcpRuntime(Path.Combine(workspace.Path, "logs"));
-            await runtime.PrepareForStartupAsync();
-
-            var result = await runtime.EnsureInstalledAsync();
-
-            Assert.AreEqual(AcpRuntimeOperationKind.Failed, result.Kind);
-            Assert.IsFalse(runtime.HasDiscoveredEntry);
-            StringAssert.Contains(result.Message, "qodercli");
-        }
-        finally
-        {
-            QoderCliAcpRuntime.SkipNpmShimDiscovery = false;
-        }
-    }
-
-    [TestMethod]
-    public async Task RefreshAsync_ReportsExternalOwnershipMessage()
-    {
-        using var workspace = TestWorkspace.Create(nameof(RefreshAsync_ReportsExternalOwnershipMessage));
-        var runtime = new QoderCliAcpRuntime(Path.Combine(workspace.Path, "logs"));
+        using var fixture = new FakeNpmFixture(nameof(RefreshAsync_WhenNotInstalled_SkipsWithoutNpm));
+        fixture.InstallQoderSeed();
+        using var runtime = fixture.CreateQoderRuntime();
 
         var result = await runtime.RefreshAsync();
 
-        Assert.AreEqual(AcpRuntimeOperationKind.Failed, result.Kind);
-        StringAssert.Contains(result.Message, "Qoder 由外部管理");
-    }
-
-    [TestMethod]
-    public async Task CreateProcessSpec_UsesDiscoveredCmdWithAcpFlag()
-    {
-        using var workspace = TestWorkspace.Create(nameof(CreateProcessSpec_UsesDiscoveredCmdWithAcpFlag));
-        var binDirectory = CreateStubQoderCli(workspace, "0.2.11");
-        using var pathScope = new TemporaryPathPrepend(binDirectory);
-
-        var runtime = new QoderCliAcpRuntime(Path.Combine(workspace.Path, "logs"));
-        await runtime.EnsureInstalledAsync();
-
-        var spec = runtime.CreateProcessSpec(workspace.Path);
-
-        Assert.AreEqual(Path.Combine(binDirectory, "qodercli.cmd"), spec.FileName);
-        Assert.HasCount(1, spec.Arguments);
-        Assert.AreEqual("--acp", spec.Arguments[0]);
-    }
-
-    [TestMethod]
-    public void DiscoverEntryPath_PrefersCmdOverBareExecutable()
-    {
-        using var workspace = TestWorkspace.Create(nameof(DiscoverEntryPath_PrefersCmdOverBareExecutable));
-        var binDirectory = Path.Combine(workspace.Path, "bin");
-        Directory.CreateDirectory(binDirectory);
-        File.WriteAllText(Path.Combine(binDirectory, "qodercli"), "@echo bare");
-        File.WriteAllText(Path.Combine(binDirectory, "qodercli.cmd"), "@echo cmd");
-        using var pathScope = new TemporaryPathPrepend(binDirectory);
-
-        var discovered = QoderCliAcpRuntime.DiscoverEntryPath();
-
-        Assert.AreEqual(Path.Combine(binDirectory, "qodercli.cmd"), discovered);
-    }
-
-    private static string CreateStubQoderCli(TestWorkspace workspace, string version)
-    {
-        var binDirectory = Path.Combine(workspace.Path, "bin");
-        Directory.CreateDirectory(binDirectory);
-        var cmdPath = Path.Combine(binDirectory, "qodercli.cmd");
-        File.WriteAllText(cmdPath,
-            """
-            @echo off
-            if "%1"=="--version" (
-              echo Qoder CLI %VERSION%
-              exit /b 0
-            )
-            exit /b 1
-            """.Replace("%VERSION%", version, StringComparison.Ordinal));
-        return binDirectory;
-    }
-
-    private sealed class TemporaryPathPrepend : IDisposable
-    {
-        private readonly string? _previousPath;
-
-        public TemporaryPathPrepend(string directory)
-        {
-            _previousPath = Environment.GetEnvironmentVariable("PATH");
-            Environment.SetEnvironmentVariable(
-                "PATH",
-                directory + Path.PathSeparator + (_previousPath ?? string.Empty));
-        }
-
-        public void Dispose()
-        {
-            Environment.SetEnvironmentVariable("PATH", _previousPath);
-        }
-    }
-
-    private sealed class IsolatedPath : IDisposable
-    {
-        private readonly string? _previousPath;
-
-        public IsolatedPath(string directory)
-        {
-            _previousPath = Environment.GetEnvironmentVariable("PATH");
-            Environment.SetEnvironmentVariable("PATH", directory);
-        }
-
-        public void Dispose()
-        {
-            Environment.SetEnvironmentVariable("PATH", _previousPath);
-        }
+        Assert.AreEqual(AcpRuntimeOperationKind.AlreadyReady, result.Kind);
+        StringAssert.Contains(result.Message, "not installed");
+        Assert.HasCount(0, fixture.ReadInvocations());
     }
 }

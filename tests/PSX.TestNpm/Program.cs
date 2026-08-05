@@ -157,6 +157,27 @@ if (scenario.CreateQwen)
     }
 }
 
+if (scenario.CreateQoder)
+{
+    WriteJson(
+        Path.Combine(workingDirectory, "node_modules", "@qoder-ai", "qodercli", "package.json"),
+        new
+        {
+            name = "@qoder-ai/qodercli",
+            version = scenario.QoderVersion ?? "1.1.14",
+            bin = new Dictionary<string, string> { ["qodercli"] = "bundle/qodercli.js" }
+        });
+    WriteFile(
+        Path.Combine(workingDirectory, "node_modules", "@qoder-ai", "qodercli", "bundle", "qodercli.js"),
+        "// fake qoder acp entry");
+    if (scenario.QoderSmokeFails)
+    {
+        WriteFile(
+            Path.Combine(workingDirectory, "node_modules", "@qoder-ai", "qodercli", "smoke-fail.marker"),
+            "fail");
+    }
+}
+
 return scenario.ExitCode;
 
 static void WriteFile(string path, string contents)
@@ -190,8 +211,11 @@ internal sealed class FakeNpmScenario
     public bool KimiSmokeFails { get; set; }
     public bool CreateQwen { get; set; }
     public bool QwenSmokeFails { get; set; }
+    public bool CreateQoder { get; set; }
+    public bool QoderSmokeFails { get; set; }
     public string? AdapterVersion { get; set; }
     public string? ClaudeCodeVersion { get; set; }
     public string? KimiVersion { get; set; }
     public string? QwenVersion { get; set; }
+    public string? QoderVersion { get; set; }
 }

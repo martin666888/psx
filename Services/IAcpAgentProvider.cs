@@ -57,8 +57,8 @@ public interface IAcpAgentProvider
     /// <summary>
     /// When true, a timed-out first <c>session/new</c> is treated as a
     /// recoverable auth failure: open the login terminal and stay in
-    /// <c>auth_required</c> instead of a hard error. Used by external CLIs
-    /// that hang on session creation until the user logs in.
+    /// <c>auth_required</c> instead of a hard error. Used by providers whose
+    /// unauthenticated <c>session/new</c> can hang until the user logs in.
     /// </summary>
     bool TreatNewSessionTimeoutAsAuthRequired => false;
 }

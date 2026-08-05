@@ -165,15 +165,12 @@ test('reducer: runtime_status accepts allowed states and rejects others', () => 
 
   state = reduceWorkspaceState(state, workspaceEvent({
     type: 'runtime_status',
-    state: 'external_ready',
+    state: 'ready',
     message: 'Ready',
-    ownership: 'external',
-    canGuide: false,
-    ownershipLabel: '外部安装，由 Qoder 管理'
+    ownership: 'managed'
   }));
-  assert.equal(state.runtime.state, 'external_ready');
-  assert.equal(state.runtime.ownership, 'external');
-  assert.equal(state.runtime.ownershipLabel, '外部安装，由 Qoder 管理');
+  assert.equal(state.runtime.state, 'ready');
+  assert.equal(state.runtime.ownership, 'managed');
 
   state = reduceWorkspaceState(state, workspaceEvent({ type: 'runtime_status', state: 'bogus' }));
   assert.equal(state.runtime.state, 'missing');

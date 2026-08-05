@@ -49,12 +49,12 @@ async function settle(app, panel, event) {
 test('all runtime states render in one stable host', async () => {
   const { app, panel } = await fixture();
   const host = panel.querySelector('[data-role="runtime-host"]');
-  for (const state of ['missing', 'installing', 'failed', 'cancelled', 'ready', 'external_ready']) {
+  for (const state of ['missing', 'installing', 'failed', 'cancelled', 'ready']) {
     await settle(app, panel, runtimeEvent(state));
     const card = panel.querySelector('[data-role="runtime-card"]');
     assert.equal(card.dataset.state, state);
     assert.equal(card.getAttribute('aria-busy'), state === 'installing' ? 'true' : 'false');
-    assert.equal(card.hidden, state === 'ready' || state === 'external_ready');
+    assert.equal(card.hidden, state === 'ready');
     assert.equal(panel.querySelector('[data-role="runtime-host"]'), host);
     assert.equal(host.dataset.islandState, 'mounted');
   }

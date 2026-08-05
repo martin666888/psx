@@ -45,6 +45,11 @@
       supplies release-only artifacts such as Portable Node and WebView2.
     -->
     <Content Include="tools\acp-seed\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!--
+      Qoder seed mirrors acp-seed: manifests only. User confirmation installs
+      @qoder-ai/qodercli into runtime/qoder-current (npm ignore-scripts).
+    -->
+    <Content Include="tools\qoder-seed\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Resource Include="Assets\Icons\psx.ico" />
   </ItemGroup>
 
