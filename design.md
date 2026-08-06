@@ -40,7 +40,7 @@ The shape language is **Soft Workbench**: continuous, generous corner radii on a
 - The structural shell tokens `--agent-radius-context-card` / `--agent-workspace-radius` / `--agent-radius-composer` stay in shell.css and map onto this ladder; component CSS never defines its own radius values. The Agent page is a soft workbench: both the History dock and the main panel are free-standing rounded blocks floating on the `--agent-bg` backdrop, spaced by `--agent-workbench-gutter` / `--agent-panel-gap`.
 - Pills (`50%` / `999px`) are reserved for genuinely circular or capsule elements: the send button, switches, status dots, badge dots, scrollbar thumbs.
 - WPF chrome mirrors the ladder through `ControlCornerRadius` (8), `InputCornerRadius` (10), `CardCornerRadius` (14) in `Themes/Dark.xaml`.
-- Borders are 1px. PSX intentionally renders no standalone focus outline.
+- Borders are 1px. Focus indication uses the single uniform outline ring defined in Interaction states.
 
 ## Depth doctrine: borders, fills, and five floating layers
 
@@ -76,7 +76,7 @@ Every interactive element provides default, hover, active, and disabled states. 
 
 - Hover changes surface or border only on hover-capable devices.
 - Active controls move by at most 1px or use a stronger surface.
-- Keyboard navigation, programmatic focus, Escape handling, and focus restoration remain functional behavior, but PSX deliberately adds no outline, border, glow, or shadow solely to visualize focus in either WebView2 or WPF. Do not reintroduce an independent focus ring on pointer interaction, keyboard navigation, or `:focus-within`.
+- Focus uses one uniform outline ring: `2px solid var(--agent-focus-ring)` with `outline-offset: 2px`. It shows only on keyboard focus (`:focus-visible`; the Composer card rings via `:has([data-role="input"]:focus-visible)` so inner buttons keep their own ring), never on pointer click, and appears instantly (never animated). The ring color is theme-tuned for ≥3:1 contrast against its surface (WCAG 1.4.11; satisfies 2.4.7 Focus Visible). Documented exceptions: menu items keep their `focus:bg-accent` surface state without a ring, and edge-anchored controls (History dock footer/resizer) use an inset ring (`outline-offset: -2px`) to avoid clipping.
 - Disabled controls remain legible, use `textDim` only for nonessential copy, and expose an explanation through their title or adjacent status.
 - Motion is limited to the running spinner and disclosure chevrons. `prefers-reduced-motion` disables both.
 

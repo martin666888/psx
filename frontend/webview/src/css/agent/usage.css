@@ -137,12 +137,12 @@
     color: var(--agent-text);
 }
 
-/* tokens.css clears outlines with !important; restore a visible keyboard ring
- * for Usage native controls (avatar / name / window switch). */
+/* Usage native controls (avatar / name / window switch) show the uniform
+ * keyboard focus ring like every other focusable Agent control. */
 .agent-usage-avatar-button:focus-visible,
 .agent-usage-name:focus-visible,
 .agent-usage-window-switch button:focus-visible {
-    outline: 2px solid var(--agent-focus-ring) !important;
+    outline: 2px solid var(--agent-focus-ring);
     outline-offset: 2px;
 }
 

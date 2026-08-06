@@ -55,10 +55,7 @@
     --agent-composer-input-min-height: 34px;
 }
 
-/* Product-level focus policy: keyboard navigation and focus restoration stay
- * functional, but focus itself adds no visual outline. Selection and hover
- * continue to use their own border/background states. */
-*:focus,
-*:focus-visible {
-    outline: none !important;
-}
+/* Product-level focus policy: keyboard focus is visualized by one uniform
+ * outline ring (2px solid var(--agent-focus-ring), offset 2px) declared
+ * per component on :focus-visible. No global suppression and no global
+ * default ring; pointer clicks never show it. */

@@ -368,8 +368,8 @@ test('shell: composer and conversation share the same reading-column rules', () 
   );
   assert.match(
     usage,
-    /\.agent-usage-avatar-button:focus-visible[\s\S]*?outline:\s*2px solid var\(--agent-focus-ring\)\s*!important/,
-    'Usage native controls keep a visible keyboard focus ring against the global outline:none policy'
+    /\.agent-usage-avatar-button:focus-visible[\s\S]*?outline:\s*2px solid var\(--agent-focus-ring\)(?!\s*!important)/,
+    'Usage native controls show the uniform keyboard focus ring without needing !important'
   );
   // Desktop breathing room is the dedicated token (24px); narrow windows use
   // the smaller spacing step, never zero.

@@ -35,8 +35,9 @@
     transition: box-shadow var(--agent-duration-fast) var(--agent-ease-standard);
 }
 
-.agent-composer-card:focus-within {
-    box-shadow: var(--agent-shadow-composer);
+.agent-composer-card:has([data-role="input"]:focus-visible) {
+    outline: 2px solid var(--agent-focus-ring);
+    outline-offset: 2px;
 }
 
 /* Context usage retains its custom ring visualization; its surrounding
@@ -54,7 +55,8 @@
 
 .agent-context-usage:focus-visible {
     border-radius: 50%;
-    box-shadow: none;
+    outline: 2px solid var(--agent-focus-ring);
+    outline-offset: 2px;
 }
 
 .agent-context-ring {
