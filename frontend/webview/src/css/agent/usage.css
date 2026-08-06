@@ -383,6 +383,9 @@
     gap: var(--agent-space-3);
     min-width: 0;
     padding-top: var(--agent-space-2);
+    /* Stable height across provider tabs: the card scrolls internally instead
+       of resizing the dialog. Tracks the viewport, never the content. */
+    height: clamp(320px, 55vh, 520px);
 }
 
 .agent-config-provider-switch {
@@ -419,7 +422,11 @@
 }
 
 .agent-config-card {
+    flex: 1 1 auto;
     min-width: 0;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
     padding: var(--agent-space-3);
     border: 1px solid var(--agent-border);
     border-radius: var(--agent-radius-card);
