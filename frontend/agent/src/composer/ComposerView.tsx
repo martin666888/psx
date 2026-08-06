@@ -306,6 +306,7 @@ function ComposerTextarea(props: {
       spellCheck={false}
       className="agent-native-scroll min-h-[var(--agent-composer-input-min-height)] max-h-[180px] w-full resize-none overflow-y-auto border-0 bg-transparent p-0 font-mono text-sm leading-[1.45] text-foreground shadow-none placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-0"
       aria-autocomplete="list"
+      role="combobox"
       aria-haspopup="listbox"
       aria-expanded={props.commands.open}
       aria-controls={props.commands.id}
