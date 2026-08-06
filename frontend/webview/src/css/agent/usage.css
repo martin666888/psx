@@ -389,7 +389,8 @@
     display: flex;
     flex-wrap: wrap;
     align-items: stretch;
-    width: 100%;
+    /* Hug the tabs instead of spanning the full panel width. */
+    width: fit-content;
     max-width: 100%;
     box-sizing: border-box;
 }
