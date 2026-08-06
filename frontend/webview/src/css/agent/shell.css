@@ -201,7 +201,7 @@
 
 [data-role="status"] {
     color: var(--agent-text);
-    font-weight: 700;
+    font-weight: 600;
 }
 
 [data-role="status"][data-status="running"] {
