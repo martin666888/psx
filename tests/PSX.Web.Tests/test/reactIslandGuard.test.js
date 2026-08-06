@@ -64,6 +64,7 @@ describe('lazy React-island loading guard', () => {
     'history/HistoryList.tsx',
     'usage/usageIsland.ts',
     'usage/UsagePanel.tsx',
+    'usage/ConfigPanel.tsx',
     'composer/composerIsland.ts',
     'composer/ComposerView.tsx',
     'composer/ComposerBits.tsx',
