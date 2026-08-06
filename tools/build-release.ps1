@@ -13,6 +13,10 @@
                                               build time from tools/kimi-seed/ via npm ci)
       - tools/qwen/                          (Qwen Code ACP runtime, installed at
                                               build time from tools/qwen-seed/ via npm ci)
+      - tools/opencode/                      (OpenCode ACP runtime - native
+                                              Bun-compiled binary, installed at
+                                              build time from tools/opencode-seed/
+                                              via npm ci)
 
     The output zip is portable for end users: unzip and double-click PSX.exe.
     .NET and Node are bundled. Agent mode asks for confirmation before it
@@ -119,7 +123,7 @@ if (-not [string]::IsNullOrWhiteSpace($WebView2FixedRuntimePath)) {
 Write-Host ""
 
 # ---- step 1: dotnet publish ----
-Write-Host "==> [1/6] dotnet publish (self-contained, win-x64, non-single-file)" -ForegroundColor Cyan
+Write-Host "==> [1/7] dotnet publish (self-contained, win-x64, non-single-file)" -ForegroundColor Cyan
 if (Test-Path $PublishOutput) {
     Remove-Item -Recurse -Force $PublishOutput
 }
@@ -135,7 +139,7 @@ if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed (exit $LASTEXITCODE)" }
 Write-Host ""
 
 # ---- step 2: stage publish output ----
-Write-Host "==> [2/6] Stage publish output" -ForegroundColor Cyan
+Write-Host "==> [2/7] Stage publish output" -ForegroundColor Cyan
 if (Test-Path $StagingDir) {
     Remove-Item -Recurse -Force $StagingDir
 }
@@ -149,12 +153,12 @@ $nodeDir = Join-Path $StagingDir "tools\node"
 $archivePath = Join-Path $BuildCacheDir $PortableNodeArchive
 New-Item -ItemType Directory -Path $BuildCacheDir -Force | Out-Null
 if ($SkipNodeDownload) {
-    Write-Host "==> [3/6] Use cached portable Node $PortableNodeVersion" -ForegroundColor Cyan
+    Write-Host "==> [3/7] Use cached portable Node $PortableNodeVersion" -ForegroundColor Cyan
     if (-not (Test-Path $archivePath)) {
         throw "-SkipNodeDownload requires the verified archive at: $archivePath"
     }
 } else {
-    Write-Host "==> [3/6] Download + extract portable Node $PortableNodeVersion" -ForegroundColor Cyan
+    Write-Host "==> [3/7] Download + extract portable Node $PortableNodeVersion" -ForegroundColor Cyan
     if (-not (Test-Path $archivePath)) {
         Write-Host "    Downloading $PortableNodeUrl"
         Invoke-WebRequest -Uri $PortableNodeUrl -OutFile $archivePath -UseBasicParsing
@@ -186,7 +190,7 @@ Write-Host "    Installed Node into staging/tools/node/; wrote node-version.txt"
 Write-Host ""
 
 # ---- step 4: bundle Kimi Code ACP runtime (lockfile-driven, reproducible) ----
-Write-Host "==> [4/6] Install Kimi Code ACP runtime into staging/tools/kimi" -ForegroundColor Cyan
+Write-Host "==> [4/7] Install Kimi Code ACP runtime into staging/tools/kimi" -ForegroundColor Cyan
 $kimiSeedDir = Join-Path $RepoRoot "tools\kimi-seed"
 $kimiTargetDir = Join-Path $StagingDir "tools\kimi"
 foreach ($seedFile in @("package.json", "package-lock.json", ".npmrc")) {
@@ -225,7 +229,7 @@ Write-Host "    Installed Kimi Code into staging/tools/kimi/"
 Write-Host ""
 
 # ---- step 5: bundle Qwen Code ACP runtime (lockfile-driven, reproducible) ----
-Write-Host "==> [5/6] Install Qwen Code ACP runtime into staging/tools/qwen" -ForegroundColor Cyan
+Write-Host "==> [5/7] Install Qwen Code ACP runtime into staging/tools/qwen" -ForegroundColor Cyan
 $qwenSeedDir = Join-Path $RepoRoot "tools\qwen-seed"
 $qwenTargetDir = Join-Path $StagingDir "tools\qwen"
 foreach ($seedFile in @("package.json", "package-lock.json", ".npmrc")) {
@@ -276,10 +280,48 @@ Write-Host "    Qwen ACP initialize smoke passed"
 Write-Host "    Installed Qwen Code into staging/tools/qwen/"
 Write-Host ""
 
+# ---- step 6: bundle OpenCode ACP runtime (lockfile-driven, reproducible) ----
+Write-Host "==> [6/7] Install OpenCode ACP runtime into staging/tools/opencode" -ForegroundColor Cyan
+$opencodeSeedDir = Join-Path $RepoRoot "tools\opencode-seed"
+$opencodeTargetDir = Join-Path $StagingDir "tools\opencode"
+foreach ($seedFile in @("package.json", "package-lock.json", ".npmrc")) {
+    $seedSource = Join-Path $opencodeSeedDir $seedFile
+    if (-not (Test-Path -LiteralPath $seedSource -PathType Leaf)) {
+        throw "OpenCode seed file is missing: tools/opencode-seed/$seedFile"
+    }
+}
+New-Item -ItemType Directory -Path $opencodeTargetDir -Force | Out-Null
+Copy-Item (Join-Path $opencodeSeedDir "package.json") $opencodeTargetDir -Force
+Copy-Item (Join-Path $opencodeSeedDir "package-lock.json") $opencodeTargetDir -Force
+Copy-Item (Join-Path $opencodeSeedDir ".npmrc") $opencodeTargetDir -Force
+
+& $nodeExe $npmCli ci --prefix $opencodeTargetDir --omit=dev --include=optional --no-audit --no-fund | Out-Host
+if ($LASTEXITCODE -ne 0) { throw "npm ci for OpenCode failed (exit $LASTEXITCODE)" }
+
+# OpenCode ships as a native Bun-compiled executable inside the platform
+# package. PSX depends on opencode-windows-x64 directly - never the
+# opencode-ai wrapper, whose bin is a 479-byte placeholder hydrated by a
+# postinstall script.
+$opencodeExe = Join-Path $opencodeTargetDir "node_modules\opencode-windows-x64\bin\opencode.exe"
+if (-not (Test-Path -LiteralPath $opencodeExe -PathType Leaf)) {
+    throw "Bundled OpenCode executable is missing: $opencodeExe"
+}
+$opencodeVersionOutput = (& $opencodeExe --version 2>&1 | Out-String).Trim()
+if ($LASTEXITCODE -ne 0) { throw "Bundled OpenCode --version smoke failed (exit $LASTEXITCODE): $opencodeVersionOutput" }
+if ([string]::IsNullOrWhiteSpace($opencodeVersionOutput)) { throw "Bundled OpenCode --version smoke produced no output" }
+Write-Host "    OpenCode --version smoke passed: $opencodeVersionOutput"
+
+# Release/CI ACP smoke must NOT call session/new or prompt (no login / network).
+& $nodeExe $acpProbe -- $opencodeExe acp | Out-Host
+if ($LASTEXITCODE -ne 0) { throw "Bundled OpenCode ACP initialize smoke failed (exit $LASTEXITCODE)" }
+Write-Host "    OpenCode ACP initialize smoke passed"
+Write-Host "    Installed OpenCode into staging/tools/opencode/"
+Write-Host ""
+
 # ---- step 6: optional WebView2 Fixed Version runtime ----
 $fixedWebView2Source = Resolve-WebView2FixedRuntimeDirectory $WebView2FixedRuntimePath
 if ($fixedWebView2Source) {
-    Write-Host "==> [6/6] Bundle WebView2 Fixed Version runtime" -ForegroundColor Cyan
+    Write-Host "==> [7/7] Bundle WebView2 Fixed Version runtime" -ForegroundColor Cyan
     $fixedWebView2Target = Join-Path $StagingDir "runtime\webview2-fixed"
     if (Test-Path $fixedWebView2Target) {
         Remove-Item -Recurse -Force $fixedWebView2Target
@@ -288,7 +330,7 @@ if ($fixedWebView2Source) {
     Copy-Item -Recurse -Force (Join-Path $fixedWebView2Source "*") $fixedWebView2Target
     Write-Host "    Copied fixed runtime from $fixedWebView2Source"
 } else {
-    Write-Host "==> [6/6] WebView2 runtime is NOT bundled" -ForegroundColor Yellow
+    Write-Host "==> [7/7] WebView2 runtime is NOT bundled" -ForegroundColor Yellow
     Write-Host "    Users without WebView2 will see a prompt asking them to install it."
 }
 Write-Host ""
@@ -308,6 +350,8 @@ $requiredFiles = @(
     "licenses\qwen\THIRD-PARTY-NOTICES.md",
     "licenses\qoder\LICENSE",
     "licenses\qoder\THIRD-PARTY-NOTICES.md",
+    "licenses\opencode\LICENSE",
+    "licenses\opencode\THIRD-PARTY-NOTICES.md",
     "licenses\communitytoolkit.mvvm\License.md",
     "licenses\dotnet\LICENSE.txt",
     "licenses\microsoft.extensions\LICENSE.TXT",
@@ -338,7 +382,11 @@ $requiredFiles = @(
     "tools\kimi\node_modules\@moonshot-ai\kimi-code\dist\main.mjs",
     "tools\qwen\package.json",
     "tools\qwen\package-lock.json",
-    "tools\qwen\node_modules\@qwen-code\qwen-code\package.json"
+    "tools\qwen\node_modules\@qwen-code\qwen-code\package.json",
+    "tools\opencode\package.json",
+    "tools\opencode\package-lock.json",
+    "tools\opencode\node_modules\opencode-windows-x64\package.json",
+    "tools\opencode\node_modules\opencode-windows-x64\bin\opencode.exe"
 )
 # Keep the resolved Qwen bin entry in the required set (dynamic; not hardcoded
 # to cli-entry.js so a future bin rename still validates).
@@ -361,9 +409,14 @@ if (Test-Path -LiteralPath $forbiddenQoderRuntime) {
     throw "Public release must not contain runtime/qoder-current."
 }
 
+$forbiddenOpencodeRuntime = Join-Path $StagingDir "runtime\opencode-current"
+if (Test-Path -LiteralPath $forbiddenOpencodeRuntime) {
+    throw "Public release must not contain runtime/opencode-current."
+}
+
 $forbiddenFiles = @(Get-ChildItem -LiteralPath $StagingDir -Recurse -File | Where-Object {
     $relative = $_.FullName.Substring($StagingDir.Length).TrimStart('\').Replace('\', '/')
-    $strayNodeModules = ($relative -match '(^|/)node_modules/') -and (-not $relative.StartsWith('tools/node/node_modules/', [StringComparison]::OrdinalIgnoreCase)) -and (-not $relative.StartsWith('tools/kimi/node_modules/', [StringComparison]::OrdinalIgnoreCase)) -and (-not $relative.StartsWith('tools/qwen/node_modules/', [StringComparison]::OrdinalIgnoreCase))
+    $strayNodeModules = ($relative -match '(^|/)node_modules/') -and (-not $relative.StartsWith('tools/node/node_modules/', [StringComparison]::OrdinalIgnoreCase)) -and (-not $relative.StartsWith('tools/kimi/node_modules/', [StringComparison]::OrdinalIgnoreCase)) -and (-not $relative.StartsWith('tools/qwen/node_modules/', [StringComparison]::OrdinalIgnoreCase)) -and (-not $relative.StartsWith('tools/opencode/node_modules/', [StringComparison]::OrdinalIgnoreCase))
     # Source maps and TypeScript are forbidden only for the generated Vite
     # output (vendored passthrough files under wwwroot/app/vendor may ship
     # upstream maps). Portable Node/npm legitimately contains maps.
@@ -427,12 +480,13 @@ try {
         $normalized = $_.Replace('\', '/')
         $leaf = [IO.Path]::GetFileName($normalized)
         $extension = [IO.Path]::GetExtension($normalized)
-        $strayNodeModules = ($normalized -match '(^|/)node_modules/') -and (-not $normalized.StartsWith('tools/node/node_modules/', [StringComparison]::OrdinalIgnoreCase)) -and (-not $normalized.StartsWith('tools/kimi/node_modules/', [StringComparison]::OrdinalIgnoreCase)) -and (-not $normalized.StartsWith('tools/qwen/node_modules/', [StringComparison]::OrdinalIgnoreCase))
+        $strayNodeModules = ($normalized -match '(^|/)node_modules/') -and (-not $normalized.StartsWith('tools/node/node_modules/', [StringComparison]::OrdinalIgnoreCase)) -and (-not $normalized.StartsWith('tools/kimi/node_modules/', [StringComparison]::OrdinalIgnoreCase)) -and (-not $normalized.StartsWith('tools/qwen/node_modules/', [StringComparison]::OrdinalIgnoreCase)) -and (-not $normalized.StartsWith('tools/opencode/node_modules/', [StringComparison]::OrdinalIgnoreCase))
         # Keep this scoped to the Vite output for parity with the staging
         # check; Node/npm and wwwroot/app/vendor files can ship source maps.
         $agentSourceArtifact = $normalized.StartsWith('wwwroot/app/', [StringComparison]::OrdinalIgnoreCase) -and (-not $normalized.StartsWith('wwwroot/app/vendor/', [StringComparison]::OrdinalIgnoreCase)) -and $extension -in @('.ts', '.map')
         $normalized.StartsWith('runtime/acp-current/', [StringComparison]::OrdinalIgnoreCase) `
             -or $normalized.StartsWith('runtime/qoder-current/', [StringComparison]::OrdinalIgnoreCase) `
+            -or $normalized.StartsWith('runtime/opencode-current/', [StringComparison]::OrdinalIgnoreCase) `
             -or $normalized.StartsWith('tests/', [StringComparison]::OrdinalIgnoreCase) `
             -or $normalized.StartsWith('TestResults/', [StringComparison]::OrdinalIgnoreCase) `
             -or $normalized.StartsWith('frontend/', [StringComparison]::OrdinalIgnoreCase) `

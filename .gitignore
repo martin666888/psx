@@ -393,6 +393,7 @@ Desktop.ini
 # staging from *-seed/; never commit these trees).
 /tools/kimi/
 /tools/qwen/
+/tools/opencode/
 *.WebView2/
 
 # Local environment files and private key material

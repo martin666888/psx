@@ -10,7 +10,8 @@
                                      ClaudeIcon="{StaticResource AgentIconGeometry.Claude}"
                                      KimiIcon="{StaticResource AgentIconGeometry.Kimi}"
                                      QwenIcon="{StaticResource AgentIconGeometry.Qwen}"
-                                     QoderIcon="{StaticResource AgentIconGeometry.Qoder}"/>
+                                     QoderIcon="{StaticResource AgentIconGeometry.Qoder}"
+                                     OpencodeIcon="{StaticResource AgentIconGeometry.Opencode}"/>
 
         <Style x:Key="TabItemContainerStyle" TargetType="Border">
             <Setter Property="Background" Value="{DynamicResource WindowBackgroundBrush}"/>

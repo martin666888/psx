@@ -27,6 +27,10 @@ public sealed class RuntimeLocator
     private const string QoderCurrentSubdirectoryName = "qoder-current";
     private const string QoderNextSubdirectoryName = "qoder-next";
     private const string QoderActivePointerFileName = "qoder-active.txt";
+    private const string OpencodeSubdirectoryName = "opencode";
+    private const string OpencodeCurrentSubdirectoryName = "opencode-current";
+    private const string OpencodeNextSubdirectoryName = "opencode-next";
+    private const string OpencodeActivePointerFileName = "opencode-active.txt";
     private const string NpmCliRelativePath = "node_modules/npm/bin/npm-cli.js";
     private const string WebView2FixedRuntimeSubdirectoryName = "webview2-fixed";
     private const string WebView2ExecutableName = "msedgewebview2.exe";
@@ -106,6 +110,10 @@ public sealed class RuntimeLocator
             QoderCurrentDirectory = Path.Combine(runtimeRoot, QoderCurrentSubdirectoryName),
             QoderNextDirectory = Path.Combine(runtimeRoot, QoderNextSubdirectoryName),
             QoderActivePointerFile = Path.Combine(runtimeRoot, QoderActivePointerFileName),
+            BundledOpencodeDirectory = Path.Combine(installDirectory, "tools", OpencodeSubdirectoryName),
+            OpencodeCurrentDirectory = Path.Combine(runtimeRoot, OpencodeCurrentSubdirectoryName),
+            OpencodeNextDirectory = Path.Combine(runtimeRoot, OpencodeNextSubdirectoryName),
+            OpencodeActivePointerFile = Path.Combine(runtimeRoot, OpencodeActivePointerFileName),
         };
     }
 

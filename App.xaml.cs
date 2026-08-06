@@ -102,6 +102,19 @@ public partial class App : Application
                 Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "agent", "acp-logs")));
         services.AddSingleton<QoderCliAcpAgentProvider>();
         services.AddSingleton<IAcpAgentProvider>(sp => sp.GetRequiredService<QoderCliAcpAgentProvider>());
+
+        // OpenCode is MIT-licensed and pre-installed into tools/opencode/ at
+        // build time (a native Bun-compiled binary from the platform package,
+        // not the opencode-ai wrapper), so it uses its own bundled runtime
+        // with the same current/next self-update model as Kimi/Qwen. Machines
+        // without AVX2 install the baseline variant into
+        // runtime/opencode-current after user confirmation instead.
+        services.AddSingleton<OpencodeAcpRuntime>(sp =>
+            new OpencodeAcpRuntime(
+                sp.GetRequiredService<RuntimeLocator>(),
+                Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "agent", "acp-logs")));
+        services.AddSingleton<OpencodeAcpAgentProvider>();
+        services.AddSingleton<IAcpAgentProvider>(sp => sp.GetRequiredService<OpencodeAcpAgentProvider>());
         services.AddSingleton(new AgentProviderOptions { DefaultProviderKey = "acp-claude" });
         services.AddSingleton<IAgentProviderRegistry, AgentProviderRegistry>();
         services.AddSingleton<IAgentRuntimeCoordinator, AgentRuntimeCoordinator>();

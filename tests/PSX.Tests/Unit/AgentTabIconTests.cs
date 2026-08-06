@@ -33,21 +33,25 @@ public sealed class AgentTabIconTests
         var kimi = resources["AgentIconGeometry.Kimi"];
         var qwen = resources["AgentIconGeometry.Qwen"];
         var qoder = resources["AgentIconGeometry.Qoder"];
+        var opencode = resources["AgentIconGeometry.Opencode"];
         var converter = new ProviderIconConverter
         {
             DefaultIcon = fallback,
             ClaudeIcon = claude,
             KimiIcon = kimi,
             QwenIcon = qwen,
-            QoderIcon = qoder
+            QoderIcon = qoder,
+            OpencodeIcon = opencode
         };
 
         Assert.AreNotEqual(fallback.ToString(), claude.ToString());
         Assert.AreNotEqual(fallback.ToString(), kimi.ToString());
         Assert.AreNotEqual(fallback.ToString(), qwen.ToString());
         Assert.AreNotEqual(fallback.ToString(), qoder.ToString());
+        Assert.AreNotEqual(fallback.ToString(), opencode.ToString());
         Assert.AreNotEqual(claude.ToString(), kimi.ToString());
         Assert.AreNotEqual(qwen.ToString(), qoder.ToString());
+        Assert.AreNotEqual(qoder.ToString(), opencode.ToString());
         Assert.AreSame(
             claude,
             converter.Convert("claude", typeof(Geometry), null, CultureInfo.InvariantCulture));
@@ -60,6 +64,9 @@ public sealed class AgentTabIconTests
         Assert.AreSame(
             qoder,
             converter.Convert("QODER", typeof(Geometry), null, CultureInfo.InvariantCulture));
+        Assert.AreSame(
+            opencode,
+            converter.Convert("opencode", typeof(Geometry), null, CultureInfo.InvariantCulture));
         Assert.AreSame(
             fallback,
             converter.Convert("unregistered-provider", typeof(Geometry), null, CultureInfo.InvariantCulture));
@@ -77,6 +84,7 @@ public sealed class AgentTabIconTests
         StringAssert.Contains(source, "Data=\"{Binding IconKey, Converter={StaticResource ProviderIconConverter}}\"");
         StringAssert.Contains(source, "QwenIcon=\"{StaticResource AgentIconGeometry.Qwen}\"");
         StringAssert.Contains(source, "QoderIcon=\"{StaticResource AgentIconGeometry.Qoder}\"");
+        StringAssert.Contains(source, "OpencodeIcon=\"{StaticResource AgentIconGeometry.Opencode}\"");
         StringAssert.Contains(source, "x:Name=\"NewWorkspacePopup\"");
         Assert.IsFalse(source.Contains("new ContextMenu", StringComparison.Ordinal));
         Assert.IsFalse(source.Contains("AgentStateMarker", StringComparison.Ordinal));

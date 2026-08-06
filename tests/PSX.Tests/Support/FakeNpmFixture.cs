@@ -184,6 +184,51 @@ internal sealed class FakeNpmFixture : IDisposable
             "// fake qoder acp entry");
     }
 
+    /// <summary>Creates an OpenCode runtime that shares this fixture's fake node/npm.</summary>
+    public OpencodeAcpRuntime CreateOpencodeRuntime(bool supportsAvx2 = true, TimeSpan? processTimeout = null) =>
+        new(Locator, Path.Combine(InstallDirectory, "logs"), processTimeout ?? TimeSpan.FromSeconds(10), () => supportsAvx2);
+
+    /// <summary>Installs a structurally valid bundled OpenCode baseline under tools/opencode.</summary>
+    public void InstallOpencodeBundle(string version = OpencodeAcpRuntime.MinimumCompatibleVersion)
+    {
+        var bundleRoot = Path.Combine(InstallDirectory, "tools", "opencode");
+        WriteJson(
+            Path.Combine(bundleRoot, "package.json"),
+            new
+            {
+                name = "psx-opencode-runtime",
+                dependencies = new Dictionary<string, string> { ["opencode-windows-x64"] = version }
+            });
+        WriteFile(Path.Combine(bundleRoot, ".npmrc"), "os=win32\ncpu=x64\n");
+        WriteFile(Path.Combine(bundleRoot, "package-lock.json"), "{}");
+        CreateOpencodeInstall(bundleRoot, version);
+    }
+
+    /// <summary>
+    /// Writes a valid OpenCode platform package tree (manifest + native exe)
+    /// into a root. The exe is the fake npm process (plus its managed
+    /// siblings): invoked as <c>opencode.exe --version</c> it answers from the
+    /// sibling package.json.
+    /// </summary>
+    public void CreateOpencodeInstall(
+        string directory,
+        string version,
+        string packageName = OpencodeAcpRuntime.ModernPackageName)
+    {
+        WriteJson(
+            Path.Combine(directory, "node_modules", packageName, "package.json"),
+            new { name = packageName, version });
+        var binDirectory = Path.Combine(directory, "node_modules", packageName, "bin");
+        Directory.CreateDirectory(binDirectory);
+        var nodeDirectory = Path.Combine(InstallDirectory, "tools", "node");
+        foreach (var source in Directory.EnumerateFiles(nodeDirectory, "PSX.TestNpm.*"))
+            File.Copy(source, Path.Combine(binDirectory, Path.GetFileName(source)), overwrite: true);
+        File.Copy(
+            Path.Combine(nodeDirectory, "node.exe"),
+            Path.Combine(binDirectory, "opencode.exe"),
+            overwrite: true);
+    }
+
     public IReadOnlyList<FakeNpmInvocation> ReadInvocations()
     {
         if (!File.Exists(InvocationLogPath))
@@ -287,11 +332,15 @@ internal sealed class FakeNpmScenario
     public bool QwenSmokeFails { get; set; }
     public bool CreateQoder { get; set; }
     public bool QoderSmokeFails { get; set; }
+    public bool CreateOpencode { get; set; }
+    public bool OpencodeSmokeFails { get; set; }
     public string? AdapterVersion { get; set; }
     public string? ClaudeCodeVersion { get; set; }
     public string? KimiVersion { get; set; }
     public string? QwenVersion { get; set; }
     public string? QoderVersion { get; set; }
+    public string? OpencodeVersion { get; set; }
+    public string? OpencodePackageName { get; set; }
 }
 
 internal sealed class FakeNpmInvocation

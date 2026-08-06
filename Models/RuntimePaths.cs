@@ -174,4 +174,38 @@ public sealed record RuntimePaths
     /// <see cref="AcpActivePointerFile"/> ("current" or "next").
     /// </summary>
     public required string QoderActivePointerFile { get; init; }
+
+    /// <summary>
+    /// Root of the bundled OpenCode install shipped inside the release zip at
+    /// <c>{InstallDir}/tools/opencode/</c>. Pre-installed at build time and
+    /// never populated by a runtime <c>npm ci</c>. Contains
+    /// <c>package-lock.json</c> and <c>node_modules/opencode-windows-x64/</c>
+    /// (a native Bun-compiled binary, not a Node script). The directory is not
+    /// guaranteed to exist in a development build. It also doubles as the
+    /// OpenCode refresh seed (package.json / .npmrc) and is never written to.
+    /// </summary>
+    public required string BundledOpencodeDirectory { get; init; }
+
+    /// <summary>
+    /// Self-updated OpenCode install under the writable <c>runtime/</c> root.
+    /// When structurally valid it takes precedence over
+    /// <see cref="BundledOpencodeDirectory"/>; deleting it falls back to the
+    /// bundled copy. On machines without AVX2 this is also where the
+    /// user-confirmed <c>opencode-windows-x64-baseline</c> install lands, since
+    /// the bundled binary cannot run there.
+    /// </summary>
+    public required string OpencodeCurrentDirectory { get; init; }
+
+    /// <summary>
+    /// Staging directory for a background OpenCode update. Never read by the
+    /// live session; promoted to <see cref="OpencodeCurrentDirectory"/> on the
+    /// next PSX launch when the pointer says "next".
+    /// </summary>
+    public required string OpencodeNextDirectory { get; init; }
+
+    /// <summary>
+    /// Pending-update marker for the OpenCode runtime, mirroring
+    /// <see cref="AcpActivePointerFile"/> ("current" or "next").
+    /// </summary>
+    public required string OpencodeActivePointerFile { get; init; }
 }

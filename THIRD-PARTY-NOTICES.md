@@ -24,8 +24,8 @@ The portable release redistributes:
 - Radix UI — MIT; see `licenses/radix-ui/LICENSE`.
 - Lucide icons — ISC; see `licenses/lucide/LICENSE`.
 - Lobe Icons static SVG brand marks — MIT; see `licenses/lobe-icons/LICENSE`.
-  The pinned `claude.svg`, `kimi.svg`, `qwen.svg`, and `qoder.svg` assets from
-  `@lobehub/icons-static-svg` are retained under
+  The pinned `claude.svg`, `kimi.svg`, `qwen.svg`, `qoder.svg`, and
+  `opencode.svg` assets from `@lobehub/icons-static-svg` are retained under
   `Assets/AgentIcons/` and converted to WPF geometry for the
   TabBar. Provider names and marks remain trademarks of their
   respective owners.
@@ -43,6 +43,11 @@ The portable release redistributes:
   `licenses/qwen/LICENSE` and `licenses/qwen/THIRD-PARTY-NOTICES.md` for the
   runtime and its production dependencies (`sharp`, `node-pty`, clipboard
   helpers, and related packages).
+- OpenCode ACP runtime — bundled under `tools/opencode/`; MIT. See
+  `licenses/opencode/LICENSE` and `licenses/opencode/THIRD-PARTY-NOTICES.md`.
+  The bundled artifact is the `opencode-windows-x64` platform package: a
+  self-contained native executable (~175 MB) embedding the Bun runtime (MIT),
+  depended on directly rather than through the `opencode-ai` wrapper.
 
 The release includes only the ACP / Qoder package manifests and lockfiles. It
 does not redistribute Claude Code, the Claude Agent SDK native binary, an
@@ -56,8 +61,11 @@ Copies of the license and notice files for the binary dependencies shipped by
 PSX are stored under `licenses/` and included in the portable release.
 
 Unlike the Claude ACP adapter and Qoder CLI (installed on first use from their
-seed manifests), the Kimi Code and Qwen Code runtimes ARE redistributed inside
-the portable release under `tools/kimi/` and `tools/qwen/`. They are installed
-at build time from the pinned lockfiles in `tools/kimi-seed/` and
-`tools/qwen-seed/` (Windows x64 only) and remain subject to the license terms
-of each bundled package.
+seed manifests), the Kimi Code, Qwen Code, and OpenCode runtimes ARE
+redistributed inside the portable release under `tools/kimi/`, `tools/qwen/`,
+and `tools/opencode/`. They are installed at build time from the pinned
+lockfiles in `tools/kimi-seed/`, `tools/qwen-seed/`, and
+`tools/opencode-seed/` (Windows x64 only) and remain subject to the license
+terms of each bundled package. The AVX2-less OpenCode variant
+(`opencode-windows-x64-baseline`) is never redistributed; on machines without
+AVX2 it is downloaded after user confirmation, like the seed-based runtimes.

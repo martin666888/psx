@@ -1,16 +1,21 @@
 using System.Text.Json;
 
-if (args.Length < 2)
-    return 64;
-
-// `node <staged-entry> --version` — staged smoke checks for Kimi/Qwen.
-// Handled before configuration parsing because args[0] is the package entry
-// file here, not the fake npm configuration path.
-if (args.Contains("--version")
+// `node <staged-entry> --version` — staged smoke checks for Kimi/Qwen, and
+// `<variant>/bin/opencode.exe --version` — the native-exe smoke check for
+// OpenCode (argv is just "--version"). Handled before configuration parsing
+// because args[0] is the package entry file here — or absent entirely for
+// the native-exe form — not the fake npm configuration path.
+var isNodeEntrySmoke = args.Contains("--version")
+    && args.Length >= 2
     && (args[0].EndsWith(".mjs", StringComparison.OrdinalIgnoreCase)
-        || args[0].EndsWith(".js", StringComparison.OrdinalIgnoreCase)))
+        || args[0].EndsWith(".js", StringComparison.OrdinalIgnoreCase));
+var isNativeExeSmoke = args.Length == 1
+    && string.Equals(args[0], "--version", StringComparison.OrdinalIgnoreCase);
+if (isNodeEntrySmoke || isNativeExeSmoke)
 {
-    var entryDirectory = Path.GetDirectoryName(Path.GetFullPath(args[0]));
+    var entryDirectory = isNodeEntrySmoke
+        ? Path.GetDirectoryName(Path.GetFullPath(args[0]))
+        : Path.GetDirectoryName(Environment.ProcessPath ?? AppContext.BaseDirectory);
     string? packageDirectory = null;
     if (entryDirectory != null)
     {
@@ -44,6 +49,9 @@ if (args.Contains("--version")
         return 1;
     }
 }
+
+if (args.Length < 2)
+    return 64;
 
 var configPath = args[0];
 FakeNpmConfiguration? configuration;
@@ -178,6 +186,35 @@ if (scenario.CreateQoder)
     }
 }
 
+if (scenario.CreateOpencode)
+{
+    var opencodePackage = string.IsNullOrWhiteSpace(scenario.OpencodePackageName)
+        ? "opencode-windows-x64"
+        : scenario.OpencodePackageName;
+    var packageDirectory = Path.Combine(workingDirectory, "node_modules", opencodePackage);
+    WriteJson(
+        Path.Combine(packageDirectory, "package.json"),
+        new { name = opencodePackage, version = scenario.OpencodeVersion ?? "1.19.0" });
+    // The staged smoke check runs the executable directly, so make
+    // bin/opencode.exe a copy of this fake process (plus its managed
+    // siblings): invoked as `opencode.exe --version` it answers from the
+    // sibling package.json.
+    var binDirectory = Path.Combine(packageDirectory, "bin");
+    Directory.CreateDirectory(binDirectory);
+    foreach (var sibling in Directory.EnumerateFiles(AppContext.BaseDirectory, "PSX.TestNpm.*"))
+        File.Copy(sibling, Path.Combine(binDirectory, Path.GetFileName(sibling)), overwrite: true);
+    File.Copy(
+        Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "node.exe"),
+        Path.Combine(binDirectory, "opencode.exe"),
+        overwrite: true);
+    if (scenario.OpencodeSmokeFails)
+    {
+        WriteFile(
+            Path.Combine(packageDirectory, "smoke-fail.marker"),
+            "fail");
+    }
+}
+
 return scenario.ExitCode;
 
 static void WriteFile(string path, string contents)
@@ -213,9 +250,13 @@ internal sealed class FakeNpmScenario
     public bool QwenSmokeFails { get; set; }
     public bool CreateQoder { get; set; }
     public bool QoderSmokeFails { get; set; }
+    public bool CreateOpencode { get; set; }
+    public bool OpencodeSmokeFails { get; set; }
     public string? AdapterVersion { get; set; }
     public string? ClaudeCodeVersion { get; set; }
     public string? KimiVersion { get; set; }
     public string? QwenVersion { get; set; }
     public string? QoderVersion { get; set; }
+    public string? OpencodeVersion { get; set; }
+    public string? OpencodePackageName { get; set; }
 }

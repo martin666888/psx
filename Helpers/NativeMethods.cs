@@ -109,7 +109,16 @@ internal static class NativeMethods
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern void DeleteProcThreadAttributeList(IntPtr lpAttributeList);
 
+    // ── Processor features ──────────────────────────────────────────────────
+
+    [DllImport("kernel32.dll", ExactSpelling = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
+
     // ── Constants ───────────────────────────────────────────────────────────
+
+    /// <summary>PF_AVX2_INSTRUCTIONS_AVAILABLE — used to pick the OpenCode binary variant.</summary>
+    public const uint PF_AVX2_INSTRUCTIONS_AVAILABLE = 40;
 
     public const uint EXTENDED_STARTUPINFO_PRESENT = 0x00080000;
     public const uint CREATE_UNICODE_ENVIRONMENT = 0x00000400;

@@ -7,6 +7,7 @@ The original monochrome SVGs in `lobehub-1.94.0/` come from
 - `kimi.svg`
 - `qwen.svg`
 - `qoder.svg`
+- `opencode.svg`
 
 PSX converts these pinned SVG paths to WPF `StreamGeometry` resources in
 `Themes/AgentIcons.xaml`. The application never downloads icons at runtime.
