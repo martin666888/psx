@@ -333,14 +333,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .agent-panel *,
-    .agent-panel *::before,
-    .agent-panel *::after,
-    .agent-history-dock,
-    .agent-history-dock *,
-    .agent-history-trigger,
-    .agent-context-cards,
-    .agent-context-cards * {
+    .agent-ui *,
+    .agent-ui *::before,
+    .agent-ui *::after {
         scroll-behavior: auto !important;
         transition-duration: 0.01ms !important;
         animation-duration: 0.01ms !important;

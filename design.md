@@ -78,7 +78,7 @@ Every interactive element provides default, hover, active, and disabled states. 
 - Active controls move by at most 1px or use a stronger surface.
 - Focus uses one uniform outline ring: `2px solid var(--agent-focus-ring)` with `outline-offset: 2px`. It shows only on keyboard focus (`:focus-visible`; the Composer card rings via `:has([data-role="input"]:focus-visible)` so inner buttons keep their own ring), never on pointer click, and appears instantly (never animated). The ring color is theme-tuned for ≥3:1 contrast against its surface (WCAG 1.4.11; satisfies 2.4.7 Focus Visible). Documented exceptions: menu items keep their `focus:bg-accent` surface state without a ring, and edge-anchored controls (History dock footer/resizer) use an inset ring (`outline-offset: -2px`) to avoid clipping.
 - Disabled controls remain legible, use `textDim` only for nonessential copy, and expose an explanation through their title or adjacent status.
-- Motion is limited to the running spinner and disclosure chevrons. `prefers-reduced-motion` disables both.
+- Motion is limited to the running spinner, disclosure chevrons, and overlay entrances (fade/slide/zoom on dialogs, popovers, menus and tooltips). Animations use transform/opacity only, run within the `--agent-duration-fast`/`--agent-duration-state` budgets, and are never used for focus indication. `prefers-reduced-motion` disables all of them globally at the `.agent-ui` root.
 
 ## Component rules
 
