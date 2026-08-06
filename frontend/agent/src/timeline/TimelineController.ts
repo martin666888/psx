@@ -28,6 +28,7 @@ export class TimelineController implements FeatureController {
   private state: AgentWorkspaceState;
   private readonly projection = new TimelineProjection();
   private timelineIsland: IslandLoader<TimelineViewProps> | null = null;
+  private renderFrame: number | null = null;
 
   constructor(workspaceId: string, host: TimelineHost) {
     this.workspaceId = workspaceId;
@@ -43,11 +44,16 @@ export class TimelineController implements FeatureController {
   update(event: AgentWorkspaceEvent, state: AgentWorkspaceState): void {
     this.state = state;
     if (this.projection.apply(event.type, event.raw, this.assistantName)) {
-      this.render();
+      // Streaming deltas arrive many times per frame; coalesce to one render.
+      this.scheduleRender();
     }
   }
 
   dispose(): void {
+    if (this.renderFrame !== null) {
+      cancelAnimationFrame(this.renderFrame);
+      this.renderFrame = null;
+    }
     this.timelineIsland?.dispose();
     this.timelineIsland = null;
   }
@@ -55,6 +61,14 @@ export class TimelineController implements FeatureController {
   appendSystemMessage(text: string): void {
     this.projection.appendSystemMessage(text);
     this.render();
+  }
+
+  private scheduleRender(): void {
+    if (this.renderFrame !== null) return;
+    this.renderFrame = requestAnimationFrame(() => {
+      this.renderFrame = null;
+      this.render();
+    });
   }
 
   private render(): void {

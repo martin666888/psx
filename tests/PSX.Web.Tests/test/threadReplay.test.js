@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'vitest';
-import { mountAgentApp, createAgentWorkspace } from './agentHarness.js';
+import { mountAgentApp, createAgentWorkspace, flushAgentAnimationFrames } from './agentHarness.js';
 
 const workspaceId = '11111111-1111-4111-8111-111111111111';
 
@@ -38,6 +38,7 @@ async function mount() {
 async function render(run, predicate) {
   run();
   for (let attempt = 0; attempt < 200; attempt++) {
+    flushAgentAnimationFrames();
     if (predicate()) return;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }

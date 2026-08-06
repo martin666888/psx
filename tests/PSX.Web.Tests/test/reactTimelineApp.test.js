@@ -8,7 +8,8 @@ import {
   createAgentWorkspace,
   composerReady,
   modeTransitionEvent,
-  appModule
+  appModule,
+  flushAgentAnimationFrames
 } from './agentHarness.js';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = false;
@@ -27,10 +28,14 @@ async function flushReact(callback) {
 async function settle(run, predicate) {
   await flushReact(async () => {
     run();
+    flushAgentAnimationFrames();
     await new Promise((resolve) => setTimeout(resolve, 20));
   });
   for (let i = 0; i < 60 && !predicate(); i++) {
-    await flushReact(async () => new Promise((resolve) => setTimeout(resolve, 5)));
+    await flushReact(async () => {
+      flushAgentAnimationFrames();
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    });
   }
   assert.ok(predicate(), 'timeline island did not settle');
 }
@@ -282,9 +287,10 @@ test('workspace switching preserves independent React roots and state', async ()
     app.handle({ type: 'workspace_activated', workspaceId: OTHER, kind: 'agent' })
   );
   assert.equal(first.hidden, true);
-  await flushReact(async () =>
-    app.handle({ type: 'assistant_delta', workspaceId: WS, text: 'hidden update' })
-  );
+  await flushReact(async () => {
+    app.handle({ type: 'assistant_delta', workspaceId: WS, text: 'hidden update' });
+    flushAgentAnimationFrames();
+  });
   await flushReact(async () =>
     app.handle({ type: 'workspace_activated', workspaceId: WS, kind: 'agent' })
   );
