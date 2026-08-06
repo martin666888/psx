@@ -6,6 +6,10 @@
 .agent-turn {
     width: 100%;
     box-sizing: border-box;
+    /* Free DOM slimming for long threads: off-screen turns skip layout and
+     * paint while keeping their measured size (auto) or a 240px estimate. */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 240px;
 }
 
 /* appearance_settings drives the Agent font size; unlayered CSS outranks
