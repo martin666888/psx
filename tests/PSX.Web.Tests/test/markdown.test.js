@@ -72,3 +72,36 @@ test('escapes scripts, event handlers and attributes while preserving the small 
   assert.match(html, /<b>Safe<\/b>/);
   assert.doesNotMatch(html, /<details open>/);
 });
+
+test('memoized renderer is byte-identical to renderMarkdown (incl. streaming prefixes)', async () => {
+  const { renderMarkdownMemoized } = await appModule('core/markdown.js');
+  const documents = [
+    '',
+    'plain paragraph',
+    '# Title\n\nintro text\n\n## Sub\n\nmore',
+    '- a\n- b\n- c\n\n1. one\n2. two\n\n- mixed after ol',
+    '> quote line\n\n---\n\n***',
+    '| File | State |\n| --- | --- |\n| a.cs | changed |\n| b.cs | added |',
+    'para\n\n| H |\n| --- |\n| x |\n\ntail',
+    'before\n\n```csharp\nvar x = 1;\n// comment\n```\n\nafter',
+    '```\nno lang fence\n```',
+    'text with `inline code` and **bold** and [link](https://example.com)',
+    'paragraph with a > not-a-quote\n\n> real quote',
+    '1) alt ordered\n2) style',
+    'line one\nline two same paragraph',
+    'ends mid-word strea'
+  ];
+  for (const doc of documents) {
+    assert.equal(renderMarkdownMemoized(doc), renderMarkdown(doc), `mismatch for: ${JSON.stringify(doc.slice(0, 40))}`);
+  }
+  // Streaming simulation: every prefix of a growing document must also match.
+  const stream = '# Plan\n\nintro\n\n- a\n- b\n\n```ts\nconst x = 1;\n```\n\ntail paragraph grows';
+  for (let end = 1; end <= stream.length; end += 7) {
+    const prefix = stream.slice(0, end);
+    assert.equal(renderMarkdownMemoized(prefix), renderMarkdown(prefix), `mismatch at prefix ${end}`);
+  }
+  // Cache reuse must never change results on repeat calls.
+  for (const doc of documents) {
+    assert.equal(renderMarkdownMemoized(doc), renderMarkdown(doc), `repeat mismatch: ${JSON.stringify(doc.slice(0, 40))}`);
+  }
+});

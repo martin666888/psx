@@ -22,9 +22,10 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { renderMarkdown } from "@/core/markdown.js";
+import { renderMarkdownMemoized } from "@/core/markdown.js";
 import { PaperclipIcon, XIcon } from "lucide-react";
 import type { ComponentProps, HTMLAttributes } from "react";
+import { useMemo } from "react";
 
 /** Local replacement for the AI SDK UIMessage["role"]. */
 export type MessageRole = "system" | "user" | "assistant";
@@ -78,18 +79,23 @@ export type PsxMessageResponseProps = Omit<ComponentProps<"div">, "children"> & 
 
 /** PSX counterpart of the upstream Streamdown MessageResponse: the sanitized
  * renderMarkdown() HTML pipeline (sanitize/safeHref/fenced `pre > code`
- * untouched) inside the AI Elements message layout. */
+ * untouched) inside the AI Elements message layout. The markdown string is
+ * memoized on its value only: timeline items are mutated in place, so the
+ * component must stay unmemoized, but unchanged messages must never re-parse. */
 export const PsxMessageResponse = ({
   className,
   markdown,
   ...props
-}: PsxMessageResponseProps) => (
-  <div
-    className={cn("size-full", className)}
-    dangerouslySetInnerHTML={{ __html: renderMarkdown(markdown) }}
-    {...props}
-  />
-);
+}: PsxMessageResponseProps) => {
+  const html = useMemo(() => renderMarkdownMemoized(markdown), [markdown]);
+  return (
+    <div
+      className={cn("size-full", className)}
+      dangerouslySetInnerHTML={{ __html: html }}
+      {...props}
+    />
+  );
+};
 
 export type MessageActionsProps = ComponentProps<"div">;
 

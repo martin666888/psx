@@ -339,3 +339,118 @@ export function renderMarkdown(text: unknown): string {
     return renderMarkdownBlocks(segment);
   }).join('');
 }
+
+
+// ---- Block-level memoization (upstream Streamdown parse-blocks idea, ported) ----
+//
+// Streaming appends to the tail of a message, so every block except the last
+// is stable across tokens. Splitting each markdown segment into block slices
+// at exactly the flush boundaries of renderMarkdownBlocks' main loop lets us
+// cache rendered HTML per block source: re-rendering a document only parses
+// the block that is still growing. renderMarkdownMemoized output is
+// byte-identical to renderMarkdown by construction (each slice renders
+// through the same loop); markdown.test.js asserts this property.
+
+const BLOCK_CACHE_LIMIT = 500;
+const blockHtmlCache = new Map<string, string>();
+
+function cachedBlockHtml(key: string, render: () => string): string {
+  const hit = blockHtmlCache.get(key);
+  if (hit !== undefined) {
+    // LRU: refresh recency on hit.
+    blockHtmlCache.delete(key);
+    blockHtmlCache.set(key, hit);
+    return hit;
+  }
+  const html = render();
+  blockHtmlCache.set(key, html);
+  if (blockHtmlCache.size > BLOCK_CACHE_LIMIT) {
+    const oldest = blockHtmlCache.keys().next().value;
+    if (oldest !== undefined) blockHtmlCache.delete(oldest);
+  }
+  return html;
+}
+
+/** Splits a non-code segment into block slices at the same flush boundaries
+ * the renderMarkdownBlocks main loop uses (blank lines, tables, self-contained
+ * heading/hr/quote lines, list-kind changes). Rendering each slice through
+ * renderMarkdownBlocks and concatenating yields the full-segment output. */
+function splitMarkdownBlockSlices(segment: string): string[] {
+  const lines = segment.replace(/\r\n/g, '\n').split('\n');
+  const slices: string[] = [];
+  let current: string[] = [];
+  let currentKind: 'paragraph' | 'ul' | 'ol' | null = null;
+
+  const flush = (): void => {
+    if (current.length === 0) return;
+    slices.push(current.join('\n'));
+    current = [];
+    currentKind = null;
+  };
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      flush();
+      continue;
+    }
+
+    const table = tryReadTable(lines, index);
+    if (table) {
+      flush();
+      slices.push(lines.slice(index, table.endIndex + 1).join('\n'));
+      index = table.endIndex;
+      continue;
+    }
+
+    if (/^(#{1,6})\s+(.+)$/.test(trimmed)
+      || /^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)
+      || trimmed.startsWith('>')) {
+      flush();
+      slices.push(line);
+      continue;
+    }
+
+    if (/^[-*+]\s+(.+)$/.test(trimmed)) {
+      if (currentKind !== 'ul') {
+        flush();
+        currentKind = 'ul';
+      }
+      current.push(line);
+      continue;
+    }
+
+    if (/^\d+[.)]\s+(.+)$/.test(trimmed)) {
+      if (currentKind !== 'ol') {
+        flush();
+        currentKind = 'ol';
+      }
+      current.push(line);
+      continue;
+    }
+
+    if (currentKind !== 'paragraph') {
+      flush();
+      currentKind = 'paragraph';
+    }
+    current.push(line);
+  }
+
+  flush();
+  return slices;
+}
+
+/** Streaming-optimized counterpart of renderMarkdown: identical output, but
+ * unchanged blocks (and complete code segments) are served from a bounded LRU
+ * cache instead of being re-parsed on every token. */
+export function renderMarkdownMemoized(text: unknown): string {
+  const segments = String(text).split(/```/g);
+  return segments.map((segment, index) => {
+    if (index % 2 === 1) return cachedBlockHtml('c:' + segment, () => renderCodeBlock(segment));
+    return splitMarkdownBlockSlices(segment)
+      .map((slice) => cachedBlockHtml('m:' + slice, () => renderMarkdownBlocks(slice)))
+      .join('');
+  }).join('');
+}
