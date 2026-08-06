@@ -433,6 +433,39 @@
     background: var(--agent-surface);
 }
 
+/* Provider-switch transition: a short fade + lateral slide, replayed by the
+   keyed remount in ConfigPanel. Reduced-motion is neutralized globally by the
+   .agent-ui media query in shell.css. */
+@keyframes agent-config-slide-forward {
+    from {
+        opacity: 0;
+        transform: translateX(16px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes agent-config-slide-back {
+    from {
+        opacity: 0;
+        transform: translateX(-16px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.agent-config-card[data-slide="forward"] {
+    animation: agent-config-slide-forward 180ms ease-out;
+}
+
+.agent-config-card[data-slide="back"] {
+    animation: agent-config-slide-back 180ms ease-out;
+}
+
 .agent-config-card-header {
     display: flex;
     align-items: center;

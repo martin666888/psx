@@ -2,7 +2,7 @@
 // Secondary Agent tabs switch which provider is shown (no waterfall of cards).
 // Facts and notes render as plain text (never HTML/Markdown/auto-link).
 
-import { useEffect, useState, type JSX } from 'react';
+import { useEffect, useRef, useState, type JSX } from 'react';
 import { RefreshCwIcon } from 'lucide-react';
 import { ProviderIcon } from '../components/ProviderIcon.js';
 import { Button } from '../components/ui/button.js';
@@ -33,9 +33,12 @@ function StateBadge({ state }: { state: ConfigProviderState }): JSX.Element {
 }
 
 function ProviderConfigDetail({
-  provider
+  provider,
+  slideDirection
 }: {
   provider: ProviderConfigReport;
+  /** Slide-in direction for the provider-switch transition. */
+  slideDirection: 'forward' | 'back';
 }): JSX.Element {
   return (
     <article
@@ -43,6 +46,7 @@ function ProviderConfigDetail({
       data-role="config-provider-card"
       data-provider={provider.providerKey}
       data-state={provider.state}
+      data-slide={slideDirection}
     >
       <header className="agent-config-card-header">
         <span className="agent-config-card-icon" aria-hidden="true">
@@ -168,6 +172,19 @@ export function ConfigPanel(props: ConfigPanelProps): JSX.Element {
   const selected =
     providers.find((provider) => provider.providerKey === selectedKey) ?? null;
 
+  // Direction-aware slide: comparing against the previous index tells whether
+  // the new card enters from the right (forward) or the left (back). The ref
+  // updates after commit, so the render right after a switch still sees the
+  // old index. The keyed remount below replays the CSS animation per switch.
+  const selectedIndex = providers.findIndex(
+    (provider) => provider.providerKey === selectedKey
+  );
+  const prevIndexRef = useRef(-1);
+  const slideDirection = selectedIndex >= prevIndexRef.current ? 'forward' : 'back';
+  useEffect(() => {
+    prevIndexRef.current = selectedIndex;
+  }, [selectedIndex]);
+
   return (
     <div className="agent-config-panel" data-role="config-panel">
       <div className="agent-usage-toolbar">
@@ -234,7 +251,13 @@ export function ConfigPanel(props: ConfigPanelProps): JSX.Element {
               ))}
             </div>
 
-            {selected ? <ProviderConfigDetail provider={selected} /> : null}
+            {selected ? (
+              <ProviderConfigDetail
+                key={selected.providerKey}
+                provider={selected}
+                slideDirection={slideDirection}
+              />
+            ) : null}
           </div>
         )
       ) : null}
