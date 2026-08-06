@@ -56,6 +56,11 @@ public partial class App : Application
         services.AddSingleton(sp => new AgentUsageService(
             sp.GetRequiredService<IAgentThreadStore>(),
             sp.GetRequiredService<IAgentProviderRegistry>()));
+        // Global Config aggregation for the Usage panel「配置」tab. Singleton
+        // so its short-TTL cache is shared across requests. Distinct from live
+        // ACP agent_config_options (session Composer).
+        services.AddSingleton(sp => new AgentConfigService(
+            sp.GetRequiredService<IAgentProviderRegistry>()));
         services.AddSingleton<IAgentDirectoryPicker, WpfAgentDirectoryPicker>();
 
         // Runtime / ACP install pipeline. RuntimeLocator remains shared by

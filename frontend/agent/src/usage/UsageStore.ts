@@ -1,4 +1,5 @@
-// UsageStore.ts — process-global owner of the user profile + last usage report.
+// UsageStore.ts — process-global owner of the user profile + last usage/config
+// reports.
 //
 // Pure state + notify, mirroring AgentHistoryStore. The UsageRequestBroker
 // writes through the apply* methods; the footer and Usage panel subscribe.
@@ -7,8 +8,10 @@
 
 import type {
   AgentUserProfile,
+  ConfigReport,
   UsageCompleteness,
   UsageListener,
+  UsagePanelTab,
   UsageReport,
   UsageState
 } from '../contracts/agent-usage.js';
@@ -59,6 +62,35 @@ export class UsageStore {
 
   applyUsageError(text: string): void {
     this.set({ ...this.state, status: 'error', errorText: text });
+  }
+
+  applyConfigLoading(): void {
+    this.set({ ...this.state, configStatus: 'loading', configErrorText: '' });
+  }
+
+  applyConfigReport(report: ConfigReport, generatedAt: string): void {
+    this.set({
+      ...this.state,
+      configReport: report,
+      configGeneratedAt: generatedAt,
+      configStatus: 'idle',
+      configErrorText: '',
+      configLoadedOnce: true
+    });
+  }
+
+  applyConfigError(text: string): void {
+    this.set({
+      ...this.state,
+      configStatus: 'error',
+      configErrorText: text,
+      configLoadedOnce: true
+    });
+  }
+
+  setActiveTab(tab: UsagePanelTab): void {
+    if (this.state.activeTab === tab) return;
+    this.set({ ...this.state, activeTab: tab });
   }
 
   setPanelOpen(open: boolean): void {

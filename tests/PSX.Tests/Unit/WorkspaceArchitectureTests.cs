@@ -506,7 +506,8 @@ internal sealed class TestProvider(
     IAcpAgentRuntime runtime,
     IReadOnlyCollection<string> legacyKeys,
     string iconKey = "agent",
-    IAgentUsageSource? usageSource = null) : IAcpAgentProvider
+    IAgentUsageSource? usageSource = null,
+    IAgentConfigSource? configSource = null) : IAcpAgentProvider
 {
     public AgentDescriptor Descriptor { get; } = new(key, displayName, displayName, legacyKeys)
     {
@@ -514,6 +515,7 @@ internal sealed class TestProvider(
     };
     public IAcpAgentRuntime Runtime { get; } = runtime;
     public IAgentUsageSource? UsageSource { get; } = usageSource;
+    public IAgentConfigSource? ConfigSource { get; } = configSource;
     public AcpClientCapabilityProfile ClientCapabilities { get; } = new()
     {
         FileSystemReadText = true,

@@ -19,6 +19,10 @@ public sealed class ClaudeAcpAgentProvider : IAcpAgentProvider
     // PSX-owned session ids only.
     public IAgentUsageSource? UsageSource { get; } = new ClaudeSessionUsageSource();
 
+    // User-level settings / MCP / skills under CLAUDE_CONFIG_DIR ?? ~/.claude
+    // (plus ~/.claude.json mcpServers). Distinct from live ACP config options.
+    public IAgentConfigSource? ConfigSource { get; } = new ClaudeConfigSource();
+
     public AgentDescriptor Descriptor { get; } = new(
         Key: "acp-claude",
         DisplayName: "Claude Code",

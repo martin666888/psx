@@ -117,6 +117,17 @@ export class AgentWorkspaceRegistry {
       getState: () => this.usageStore.getState(),
       subscribe: (listener) => this.usageStore.subscribe(() => listener()),
       requestUsage: (force) => this.usageBroker.requestUsage(force),
+      requestConfig: (force) => this.usageBroker.requestConfig(force),
+      setActiveTab: (tab) => {
+        this.usageStore.setActiveTab(tab);
+        // Lazy-load config the first time the「配置」tab is selected.
+        if (tab === 'config') {
+          const state = this.usageStore.getState();
+          if (!state.configLoadedOnce && state.configStatus !== 'loading') {
+            this.usageBroker.requestConfig(false);
+          }
+        }
+      },
       setDisplayName: (name) => this.usageBroker.setDisplayName(name),
       setAvatar: (base64Png) => this.usageBroker.setAvatar(base64Png),
       close: () => this.usageStore.setPanelOpen(false)
@@ -223,6 +234,8 @@ export class AgentWorkspaceRegistry {
           this.usageBroker.handleProfile(event.raw);
         } else if (event.type === 'agent_usage_report') {
           this.usageBroker.handleUsageReport(event.raw);
+        } else if (event.type === 'agent_config_report') {
+          this.usageBroker.handleConfigReport(event.raw);
         } else if (event.type === 'agent_workspace_limit_reached') {
           this.showNotice(event.text ?? '');
         }

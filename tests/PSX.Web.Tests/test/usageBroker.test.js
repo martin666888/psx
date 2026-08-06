@@ -300,3 +300,82 @@ test('broker: retries on another channel when the carrier closes mid-scan', () =
   });
   assert.equal(rig.store.getState().status, 'idle');
 });
+
+// --- config_report (Usage panel「配置」tab) -----------------------------------
+
+function configCommands(commands) {
+  return commands.filter((entry) => entry.command === 'config_report');
+}
+
+function minimalConfigReport() {
+  return {
+    providers: [{
+      providerKey: 'acp-claude',
+      displayName: 'Claude Code',
+      iconKey: 'claude',
+      state: 'available',
+      facts: [{ label: '默认模型', value: 'sonnet' }],
+      models: [],
+      mcpServers: [],
+      skills: [{ name: 'demo' }],
+      notes: []
+    }]
+  };
+}
+
+test('broker: requestConfig sends config_report and applies a matching reply', () => {
+  const rig = makeRig();
+  addWorkspace(rig, 'a');
+  rig.broker.requestConfig(false);
+  const sent = configCommands(rig.commands).at(-1);
+  assert.equal(sent.command, 'config_report');
+  assert.equal(sent.value, 'cached');
+  assert.equal(rig.store.getState().configStatus, 'loading');
+
+  rig.broker.handleConfigReport({
+    requestId: sent.requestId,
+    generatedAt: '2026-08-06T00:00:00Z',
+    report: minimalConfigReport()
+  });
+  const state = rig.store.getState();
+  assert.equal(state.configStatus, 'idle');
+  assert.equal(state.configLoadedOnce, true);
+  assert.equal(state.configReport.providers[0].providerKey, 'acp-claude');
+  assert.equal(state.configReport.providers[0].facts[0].value, 'sonnet');
+});
+
+test('broker: drops late or superseded config_report replies', () => {
+  const rig = makeRig();
+  addWorkspace(rig, 'a');
+  rig.broker.requestConfig(false);
+  const first = configCommands(rig.commands).at(-1);
+  rig.broker.requestConfig(true);
+  const second = configCommands(rig.commands).at(-1);
+  assert.notEqual(first.requestId, second.requestId);
+  assert.equal(second.value, 'force');
+
+  rig.broker.handleConfigReport({
+    requestId: first.requestId,
+    report: minimalConfigReport()
+  });
+  assert.equal(rig.store.getState().configStatus, 'loading', 'late first reply is dropped');
+
+  rig.broker.handleConfigReport({
+    requestId: second.requestId,
+    generatedAt: '2026-08-06T01:00:00Z',
+    report: minimalConfigReport()
+  });
+  assert.equal(rig.store.getState().configStatus, 'idle');
+});
+
+test('broker: config error payload surfaces in the config slice', () => {
+  const rig = makeRig();
+  addWorkspace(rig, 'a');
+  rig.broker.requestConfig(false);
+  const sent = configCommands(rig.commands).at(-1);
+  rig.broker.handleConfigReport({ requestId: sent.requestId, error: '无法读取配置信息，请重试。' });
+  const state = rig.store.getState();
+  assert.equal(state.configStatus, 'error');
+  assert.match(state.configErrorText, /无法读取配置/);
+  assert.equal(state.configLoadedOnce, true);
+});

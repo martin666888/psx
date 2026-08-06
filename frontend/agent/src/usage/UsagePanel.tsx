@@ -19,17 +19,23 @@ import type {
   ProviderUsageReport,
   UsageCompleteness,
   UsageGapReason,
+  UsagePanelTab,
   UsageState,
   UsageWindowKey
 } from '../contracts/agent-usage.js';
+import { ConfigPanel } from './ConfigPanel.js';
 
 export interface UsagePanelProps {
   state: UsageState;
   onOpenChange(open: boolean): void;
-  /** Refresh button: bypasses the backend cache. */
+  /** Usage Refresh button: bypasses the backend cache. */
   onRefresh(): void;
-  /** Error retry: an ordinary cached load. */
+  /** Usage error retry: an ordinary cached load. */
   onRetry(): void;
+  /** Switch between 用量 / 配置 tabs (host persists activeTab). */
+  onSelectTab(tab: UsagePanelTab): void;
+  /** Config Refresh / first lazy load. */
+  onRequestConfig(force: boolean): void;
   onSetDisplayName(name: string): void;
   /** Raw base64 PNG (no data: prefix) produced by the canvas resize. */
   onSetAvatar(base64Png: string): void;
@@ -397,6 +403,7 @@ export function UsagePanel(props: UsagePanelProps): JSX.Element {
   const state = props.state;
   const [windowKey, setWindowKey] = useState<UsageWindowKey>('today');
   const [selectedProviderKey, setSelectedProviderKey] = useState<string | null>(null);
+  const activeTab = state.activeTab;
   const report = state.report;
   const selected = report ? report[windowKey] : null;
   const overallAvailable = state.completeness?.status === 'available';
@@ -429,14 +436,20 @@ export function UsagePanel(props: UsagePanelProps): JSX.Element {
   const heatmapScope = selectedProvider?.displayName ?? '全部 Agent';
   const heatmapUnavailable = !selectedProvider && !overallAvailable;
 
+  const selectTab = (tab: UsagePanelTab): void => {
+    props.onSelectTab(tab);
+  };
+
   return (
     <Dialog open={state.panelOpen} onOpenChange={props.onOpenChange}>
       <DialogContent
         className="agent-usage-panel max-h-[85vh] gap-0 sm:max-w-[640px]"
         data-role="usage-panel"
       >
-        <DialogTitle className="agent-usage-title">用量</DialogTitle>
-        <DialogDescription className="sr-only">全局用户资料与各 Agent 用量报告</DialogDescription>
+        <DialogTitle className="agent-usage-title">用量与配置</DialogTitle>
+        <DialogDescription className="sr-only">
+          全局用户资料、各 Agent 用量报告与只读用户级配置
+        </DialogDescription>
 
         <div className="agent-usage-panel-scroll">
           <ProfileCard
@@ -445,84 +458,124 @@ export function UsagePanel(props: UsagePanelProps): JSX.Element {
             onSetAvatar={props.onSetAvatar}
           />
 
-          <div className="agent-usage-toolbar">
-            <div className="agent-usage-window-switch" role="group" aria-label="统计窗口">
-              {WINDOW_LABELS.map((entry) => (
-                <button
-                  key={entry.key}
-                  type="button"
-                  data-role="usage-window-switch"
-                  data-window={entry.key}
-                  aria-pressed={windowKey === entry.key}
-                  onClick={() => setWindowKey(entry.key)}
-                >
-                  {entry.label}
-                </button>
-              ))}
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              data-role="usage-refresh"
-              aria-label="刷新用量"
-              disabled={state.status === 'loading'}
-              onClick={props.onRefresh}
+          <div
+            className="agent-usage-window-switch agent-usage-tab-switch"
+            role="tablist"
+            aria-label="面板页签"
+            data-role="usage-tab-switch"
+          >
+            <button
+              type="button"
+              role="tab"
+              data-role="usage-tab"
+              data-tab="usage"
+              aria-selected={activeTab === 'usage'}
+              aria-pressed={activeTab === 'usage'}
+              onClick={() => selectTab('usage')}
             >
-              <RefreshCwIcon className="size-3.5" aria-hidden="true" />
-              刷新
-            </Button>
+              用量
+            </button>
+            <button
+              type="button"
+              role="tab"
+              data-role="usage-tab"
+              data-tab="config"
+              aria-selected={activeTab === 'config'}
+              aria-pressed={activeTab === 'config'}
+              onClick={() => selectTab('config')}
+            >
+              配置
+            </button>
           </div>
 
-          {state.status === 'error' ? (
-            <div className="agent-usage-error" data-role="usage-error" role="alert">
-              <span>{state.errorText}</span>
-              <Button variant="outline" size="sm" data-role="usage-retry" onClick={props.onRetry}>
-                重试
-              </Button>
-            </div>
-          ) : null}
-
-          {state.status === 'loading' && !report ? (
-            <div className="agent-usage-loading" data-role="usage-loading">
-              正在统计…
-            </div>
-          ) : null}
-
-          {report && selected && state.completeness ? (
+          {activeTab === 'config' ? (
+            <ConfigPanel
+              state={state}
+              onRefresh={() => props.onRequestConfig(true)}
+              onRetry={() => props.onRequestConfig(false)}
+            />
+          ) : (
             <>
-              <section className="agent-usage-overview" data-role="usage-overview">
-                <div className="agent-usage-overview-label">
-                  <span>Token 总量</span>
+              <div className="agent-usage-toolbar">
+                <div className="agent-usage-window-switch" role="group" aria-label="统计窗口">
+                  {WINDOW_LABELS.map((entry) => (
+                    <button
+                      key={entry.key}
+                      type="button"
+                      data-role="usage-window-switch"
+                      data-window={entry.key}
+                      aria-pressed={windowKey === entry.key}
+                      onClick={() => setWindowKey(entry.key)}
+                    >
+                      {entry.label}
+                    </button>
+                  ))}
                 </div>
-                <div
-                  className="agent-usage-total"
-                  data-role="usage-total-tokens"
-                  aria-live="polite"
+                <Button
+                  variant="outline"
+                  size="sm"
+                  data-role="usage-refresh"
+                  aria-label="刷新用量"
+                  disabled={state.status === 'loading'}
+                  onClick={props.onRefresh}
                 >
-                  {formatCount(selected.totalTokens)}
+                  <RefreshCwIcon className="size-3.5" aria-hidden="true" />
+                  刷新
+                </Button>
+              </div>
+
+              {state.status === 'error' ? (
+                <div className="agent-usage-error" data-role="usage-error" role="alert">
+                  <span>{state.errorText}</span>
+                  <Button variant="outline" size="sm" data-role="usage-retry" onClick={props.onRetry}>
+                    重试
+                  </Button>
                 </div>
-                {state.completeness.status !== 'available' ? (
-                  <p className="agent-usage-overview-note" role="status">
-                    统计不完整；当前总量仅包含已读取到的精确 Token。
-                  </p>
-                ) : null}
-              </section>
-              <ProviderUsageList
-                providers={report.providers}
-                windowKey={windowKey}
-                selectedProviderKey={selectedProvider?.providerKey ?? null}
-                overallAvailable={overallAvailable}
-                onSelect={setSelectedProviderKey}
-              />
-              <Heatmap
-                dailyTokens={heatmapSeries}
-                startDate={report.heatmapStartDate}
-                timezone={state.timezone}
-                unavailable={heatmapUnavailable}
-                scopeLabel={heatmapScope}
-              />
+              ) : null}
+
+              {state.status === 'loading' && !report ? (
+                <div className="agent-usage-loading" data-role="usage-loading">
+                  正在统计…
+                </div>
+              ) : null}
+
+              {report && selected && state.completeness ? (
+                <>
+                  <section className="agent-usage-overview" data-role="usage-overview">
+                    <div className="agent-usage-overview-label">
+                      <span>Token 总量</span>
+                    </div>
+                    <div
+                      className="agent-usage-total"
+                      data-role="usage-total-tokens"
+                      aria-live="polite"
+                    >
+                      {formatCount(selected.totalTokens)}
+                    </div>
+                    {state.completeness.status !== 'available' ? (
+                      <p className="agent-usage-overview-note" role="status">
+                        统计不完整；当前总量仅包含已读取到的精确 Token。
+                      </p>
+                    ) : null}
+                  </section>
+                  <ProviderUsageList
+                    providers={report.providers}
+                    windowKey={windowKey}
+                    selectedProviderKey={selectedProvider?.providerKey ?? null}
+                    overallAvailable={overallAvailable}
+                    onSelect={setSelectedProviderKey}
+                  />
+                  <Heatmap
+                    dailyTokens={heatmapSeries}
+                    startDate={report.heatmapStartDate}
+                    timezone={state.timezone}
+                    unavailable={heatmapUnavailable}
+                    scopeLabel={heatmapScope}
+                  />
+                </>
+              ) : null}
             </>
-          ) : null}
+          )}
         </div>
       </DialogContent>
     </Dialog>

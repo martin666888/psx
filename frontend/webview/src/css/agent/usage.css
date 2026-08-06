@@ -365,3 +365,237 @@
     color: var(--agent-text-muted);
     font-size: 12px;
 }
+
+/* --- Config tab ------------------------------------------------------------- */
+
+.agent-usage-tab-switch {
+    margin: 0 0 var(--agent-space-3);
+}
+
+.agent-config-toolbar-label {
+    color: var(--agent-text-muted);
+    font-size: 12px;
+}
+
+.agent-config-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--agent-space-3);
+    min-width: 0;
+    padding-top: var(--agent-space-2);
+}
+
+.agent-config-provider-switch {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+.agent-config-provider-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: calc(var(--agent-space-1) / 2);
+    min-width: 0;
+    max-width: 100%;
+}
+
+.agent-config-provider-tab-icon {
+    display: inline-flex;
+    flex: 0 0 auto;
+    width: 14px;
+    height: 14px;
+    color: currentColor;
+}
+
+.agent-config-provider-tab-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.agent-config-card {
+    min-width: 0;
+    padding: var(--agent-space-3);
+    border: 1px solid var(--agent-border);
+    border-radius: var(--agent-radius-card);
+    background: var(--agent-surface);
+}
+
+.agent-config-card-header {
+    display: flex;
+    align-items: center;
+    gap: var(--agent-space-2);
+    min-width: 0;
+}
+
+.agent-config-card-icon {
+    display: inline-flex;
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    color: var(--agent-text);
+}
+
+.agent-config-card-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+    color: var(--agent-text);
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.agent-config-state {
+    flex: 0 0 auto;
+    padding: 1px var(--agent-space-2);
+    border-radius: var(--agent-radius-control);
+    background: var(--agent-surface-muted);
+    color: var(--agent-text-muted);
+    font-size: 11px;
+}
+
+.agent-config-state[data-state="partial"] {
+    color: var(--agent-text);
+}
+
+.agent-config-state[data-state="unavailable"] {
+    opacity: 0.75;
+}
+
+.agent-config-notes {
+    margin: var(--agent-space-2) 0 0;
+    padding: 0;
+    list-style: none;
+    color: var(--agent-text-muted);
+    font-size: 12px;
+}
+
+.agent-config-facts {
+    display: flex;
+    flex-direction: column;
+    gap: var(--agent-space-1);
+    margin: var(--agent-space-3) 0 0;
+}
+
+.agent-config-fact-row {
+    display: grid;
+    grid-template-columns: minmax(72px, 28%) minmax(0, 1fr);
+    gap: var(--agent-space-2);
+    font-size: 12px;
+}
+
+.agent-config-fact-row dt {
+    color: var(--agent-text-muted);
+}
+
+.agent-config-fact-row dd {
+    margin: 0;
+    min-width: 0;
+    color: var(--agent-text);
+    overflow-wrap: anywhere;
+}
+
+.agent-config-section {
+    margin-top: var(--agent-space-3);
+}
+
+.agent-config-section h4 {
+    margin: 0 0 var(--agent-space-1);
+    color: var(--agent-text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+.agent-config-section ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.agent-config-section li {
+    margin: 0 0 var(--agent-space-1);
+    color: var(--agent-text);
+    font-size: 12px;
+}
+
+.agent-config-mono {
+    font-family: var(--agent-font-mono);
+    font-size: 12px;
+    overflow-wrap: anywhere;
+}
+
+.agent-config-muted {
+    color: var(--agent-text-muted);
+}
+
+.agent-config-mcp-list > li {
+    padding: var(--agent-space-2) 0;
+    border-top: 1px solid var(--agent-border);
+}
+
+.agent-config-mcp-list > li:first-child {
+    border-top: 0;
+    padding-top: 0;
+}
+
+.agent-config-mcp-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--agent-space-2);
+}
+
+.agent-config-transport {
+    padding: 0 var(--agent-space-2);
+    border-radius: var(--agent-radius-control);
+    background: var(--agent-surface-muted);
+    color: var(--agent-text-muted);
+    font-family: var(--agent-font-mono);
+    font-size: 10px;
+    text-transform: uppercase;
+}
+
+.agent-config-mcp-name {
+    font-weight: 600;
+}
+
+.agent-config-mcp-target {
+    margin-top: 2px;
+    color: var(--agent-text-muted);
+}
+
+.agent-config-masked-keys {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--agent-space-1);
+    margin-top: var(--agent-space-1);
+}
+
+.agent-config-masked-keys > span {
+    padding: 0 var(--agent-space-2);
+    border-radius: var(--agent-radius-control);
+    background: var(--agent-surface-muted);
+    color: var(--agent-text-muted);
+    font-family: var(--agent-font-mono);
+    font-size: 10px;
+}
+
+.agent-config-skills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--agent-space-1);
+}
+
+.agent-config-skill-chip {
+    padding: 1px var(--agent-space-2);
+    border-radius: var(--agent-radius-control);
+    background: var(--agent-surface-muted);
+    color: var(--agent-text);
+    font-size: 12px;
+}

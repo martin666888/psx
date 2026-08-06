@@ -392,3 +392,100 @@ test('panel: refresh forces a rescan and accepts the matching reply', async () =
     () => document.querySelector('[data-role="usage-total-tokens"]').textContent === '201'
   );
 });
+
+test('panel: config tab lazy-loads config_report and switches agent sub-tabs', async () => {
+  const rig = await fixture();
+  await openPanelWith(rig, {
+    report: report(),
+    completeness: completeness()
+  });
+
+  const title = document.querySelector('.agent-usage-title');
+  assert.ok(title);
+  assert.equal(title.textContent, '用量与配置');
+
+  const configTab = () =>
+    document.querySelector('[data-role="usage-tab"][data-tab="config"]');
+  assert.ok(configTab());
+
+  function configCommands(posted) {
+    return posted.filter(
+      (message) => message.type === 'agent_command' && message.command === 'config_report'
+    );
+  }
+
+  await settle(
+    () => configTab().click(),
+    () => configCommands(rig.posted).length > 0,
+    'config_report command'
+  );
+  const request = configCommands(rig.posted).at(-1);
+  assert.equal(request.value, 'cached');
+
+  await settle(
+    () =>
+      rig.app.handle({
+        type: 'agent_config_report',
+        requestId: request.requestId,
+        generatedAt: '2026-08-06T00:00:00Z',
+        report: {
+          providers: [
+            {
+              providerKey: 'acp-claude',
+              displayName: 'Claude Code',
+              iconKey: 'claude',
+              state: 'available',
+              facts: [{ label: '默认模型', value: 'sonnet' }],
+              models: [],
+              mcpServers: [{
+                name: 'demo',
+                transport: 'stdio',
+                target: 'npx demo',
+                enabled: true,
+                envKeys: ['TOKEN'],
+                headerKeys: []
+              }],
+              skills: [{ name: 'skill-a' }],
+              notes: []
+            },
+            {
+              providerKey: 'acp-kimi',
+              displayName: 'Kimi Code',
+              iconKey: 'kimi',
+              state: 'available',
+              facts: [{ label: '默认模型', value: 'kimi-k2' }],
+              models: [],
+              mcpServers: [],
+              skills: [],
+              notes: []
+            }
+          ]
+        }
+      }),
+    () => document.querySelector('[data-role="config-provider-card"]'),
+    'config detail'
+  );
+
+  const tabs = [...document.querySelectorAll('[data-role="config-provider-tab"]')];
+  assert.equal(tabs.length, 2);
+  assert.equal(tabs[0].getAttribute('data-provider'), 'acp-claude');
+  assert.equal(tabs[0].getAttribute('aria-selected'), 'true');
+
+  let card = document.querySelector('[data-role="config-provider-card"]');
+  assert.equal(card.getAttribute('data-provider'), 'acp-claude');
+  assert.match(card.textContent, /sonnet/);
+  assert.equal(document.querySelectorAll('[data-role="config-provider-card"]').length, 1);
+
+  await settle(
+    () => tabs[1].click(),
+    () =>
+      document
+        .querySelector('[data-role="config-provider-card"]')
+        ?.getAttribute('data-provider') === 'acp-kimi',
+    'switch to Kimi'
+  );
+  card = document.querySelector('[data-role="config-provider-card"]');
+  assert.match(card.textContent, /kimi-k2/);
+  assert.doesNotMatch(card.textContent, /sonnet/);
+  assert.equal(document.querySelector('[data-role="usage-overview"]'), null);
+});

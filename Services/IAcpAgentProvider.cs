@@ -24,6 +24,14 @@ public interface IAcpAgentProvider
     /// </summary>
     IAgentUsageSource? UsageSource => null;
 
+    /// <summary>
+    /// Optional read-only user-level config source for the Usage panel「配置」
+    /// tab. Providers that expose disk-backed settings (models / MCP / skills)
+    /// return one here; shared aggregation never branches on provider names.
+    /// Distinct from live ACP <c>agent_config_options</c> (session Composer).
+    /// </summary>
+    IAgentConfigSource? ConfigSource => null;
+
     object CreateNewSessionParameters(string workingDirectory);
 
     /// <summary>

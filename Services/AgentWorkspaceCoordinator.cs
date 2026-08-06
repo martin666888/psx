@@ -63,6 +63,7 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
     private readonly IAgentHistoryCatalog _historyCatalog;
     private readonly AgentProfileStore _profileStore;
     private readonly AgentUsageService _usageService;
+    private readonly AgentConfigService _configService;
     private readonly CancellationTokenSource _shutdownCts = new();
     private readonly SemaphoreSlim _creationLock = new(1, 1);
     private readonly ConcurrentDictionary<Guid, Entry> _entries = new();
@@ -85,7 +86,8 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
         IAgentWorkspaceFactory workspaceFactory,
         IAgentHistoryCatalog historyCatalog,
         AgentProfileStore? profileStore = null,
-        AgentUsageService? usageService = null)
+        AgentUsageService? usageService = null,
+        AgentConfigService? configService = null)
     {
         _rootBridge = rootBridge;
         _threadStore = threadStore;
@@ -98,6 +100,7 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
         _profileStore = profileStore
             ?? new AgentProfileStore(Path.Combine(threadStore.RootDirectory, "profile"));
         _usageService = usageService ?? new AgentUsageService(threadStore, providerRegistry);
+        _configService = configService ?? new AgentConfigService(providerRegistry);
 
         _threadStore.DeleteEmptyDrafts();
 
@@ -555,6 +558,14 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
             return;
         }
 
+        if (args.Command == "config_report")
+        {
+            // Config aggregation mirrors usage: global, coordinator-owned,
+            // requestId-matched reply only to the requester.
+            _ = HandleConfigReportAsync(entry, args);
+            return;
+        }
+
         if (args.Command == "agent_permission_response")
         {
             lock (entry.StateSync)
@@ -771,6 +782,57 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
             {
                 System.Diagnostics.Debug.WriteLine(
                     $"Unable to report Agent usage failure: {reportException}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Aggregate the global Config report off the UI thread and return it only
+    /// to the requester, echoing its requestId. Failures reply on the same
+    /// event with an error field and never enter thread history. Distinct from
+    /// live ACP <c>agent_config_options</c>.
+    /// </summary>
+    private async Task HandleConfigReportAsync(Entry requester, AgentCommandEventArgs args)
+    {
+        var force = string.Equals(args.Value, "force", StringComparison.OrdinalIgnoreCase);
+        try
+        {
+            var result = await _configService
+                .CollectAsync(force, _shutdownCts.Token)
+                .ConfigureAwait(false);
+
+            await requester.EventSink.SendEventAsync(new
+            {
+                type = "agent_config_report",
+                requestId = args.RequestId,
+                generatedAt = result.GeneratedAt,
+                report = JsonSerializer.SerializeToNode(result.Report, UsageJsonOptions),
+                error = (string?)null
+            }).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Shutdown cancelled the scan; nothing to report.
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine(
+                $"Agent config scan failed: {ex}");
+            try
+            {
+                await requester.EventSink.SendEventAsync(new
+                {
+                    type = "agent_config_report",
+                    requestId = args.RequestId,
+                    generatedAt = DateTimeOffset.Now,
+                    report = (JsonNode?)null,
+                    error = AgentConfigNotes.ScanFailed
+                }).ConfigureAwait(false);
+            }
+            catch (Exception reportException)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"Unable to report Agent config failure: {reportException}");
             }
         }
     }

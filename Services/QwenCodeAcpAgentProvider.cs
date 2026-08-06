@@ -31,6 +31,8 @@ public sealed class QwenCodeAcpAgentProvider : IAcpAgentProvider
 
     public IAgentUsageSource? UsageSource { get; } = null;
 
+    public IAgentConfigSource? ConfigSource { get; } = new QwenConfigSource();
+
     public AcpClientCapabilityProfile ClientCapabilities { get; } = new()
     {
         FileSystemReadText = true,

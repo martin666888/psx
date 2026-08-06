@@ -34,6 +34,8 @@ public sealed class OpencodeAcpAgentProvider : IAcpAgentProvider
     // as unavailable rather than guessing.
     public IAgentUsageSource? UsageSource { get; } = null;
 
+    public IAgentConfigSource? ConfigSource { get; } = new OpencodeConfigSource();
+
     public AcpClientCapabilityProfile ClientCapabilities { get; } = new()
     {
         FileSystemReadText = true,

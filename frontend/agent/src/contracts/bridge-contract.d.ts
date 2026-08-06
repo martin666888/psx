@@ -371,11 +371,60 @@ interface AgentUsageReportEvent extends BridgeInboundMessageBase {
     error: string | null;
 }
 
+interface AgentConfigFactEvent {
+    label: string;
+    value: string;
+}
+
+interface AgentConfigModelEvent {
+    id: string;
+    name: string | null;
+    baseUrl: string | null;
+}
+
+interface AgentConfigMcpServerEvent {
+    name: string;
+    transport: 'stdio' | 'http' | 'sse' | string;
+    target: string;
+    enabled: boolean;
+    envKeys: string[];
+    headerKeys: string[];
+}
+
+interface AgentConfigSkillEvent {
+    name: string;
+}
+
+interface AgentProviderConfigReportEvent {
+    providerKey: string;
+    displayName: string;
+    iconKey: string;
+    state: 'available' | 'partial' | 'unavailable' | string;
+    facts: AgentConfigFactEvent[];
+    models: AgentConfigModelEvent[];
+    mcpServers: AgentConfigMcpServerEvent[];
+    skills: AgentConfigSkillEvent[];
+    notes: string[];
+}
+
+/** Disk-backed user config for the Usage panel「配置」tab — distinct from
+ * live ACP agent_config_options (session Composer). */
+interface AgentConfigReportEvent extends BridgeInboundMessageBase {
+    type: 'agent_config_report';
+    requestId: string;
+    generatedAt: string;
+    report: {
+        providers: AgentProviderConfigReportEvent[];
+    } | null;
+    error: string | null;
+}
+
 /** Agent-global events that deliberately do not belong to a workspace. */
 type AgentGlobalHostEvent =
     | AgentThreadOpenErrorEvent
     | AgentProfileEvent
-    | AgentUsageReportEvent;
+    | AgentUsageReportEvent
+    | AgentConfigReportEvent;
 
 /** Every event AgentThreadManager.handleEvent may receive. Narrowing on
  * `type === 'permission_request'` yields the concrete presentation variants

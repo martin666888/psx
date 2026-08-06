@@ -30,6 +30,8 @@ public sealed class QoderCliAcpAgentProvider : IAcpAgentProvider
 
     public IAgentUsageSource? UsageSource { get; } = null;
 
+    public IAgentConfigSource? ConfigSource { get; } = new QoderConfigSource();
+
     // Unauthenticated session/new can exceed 45s. Give headroom and map that
     // stall onto auth_required + managed login instead of a hard error.
     public TimeSpan NewSessionTimeout => TimeSpan.FromSeconds(90);

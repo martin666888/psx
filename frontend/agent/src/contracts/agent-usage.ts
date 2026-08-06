@@ -57,6 +57,50 @@ export interface UsageReport {
 
 export type UsageWindowKey = 'today' | 'last7Days' | 'last30Days';
 
+export type ConfigProviderState = 'available' | 'partial' | 'unavailable';
+
+export interface ConfigFact {
+  label: string;
+  value: string;
+}
+
+export interface ConfigModelEntry {
+  id: string;
+  name: string | null;
+  baseUrl: string | null;
+}
+
+export interface ConfigMcpServer {
+  name: string;
+  transport: string;
+  target: string;
+  enabled: boolean;
+  envKeys: string[];
+  headerKeys: string[];
+}
+
+export interface ConfigSkill {
+  name: string;
+}
+
+export interface ProviderConfigReport {
+  providerKey: string;
+  displayName: string;
+  iconKey: string;
+  state: ConfigProviderState;
+  facts: ConfigFact[];
+  models: ConfigModelEntry[];
+  mcpServers: ConfigMcpServer[];
+  skills: ConfigSkill[];
+  notes: string[];
+}
+
+export interface ConfigReport {
+  providers: ProviderConfigReport[];
+}
+
+export type UsagePanelTab = 'usage' | 'config';
+
 export interface UsageState {
   profile: AgentUserProfile;
   report: UsageReport | null;
@@ -66,6 +110,13 @@ export interface UsageState {
   status: 'idle' | 'loading' | 'error';
   errorText: string;
   panelOpen: boolean;
+  activeTab: UsagePanelTab;
+  configReport: ConfigReport | null;
+  configGeneratedAt: string;
+  configStatus: 'idle' | 'loading' | 'error';
+  configErrorText: string;
+  /** True after the first successful or failed config load in this process. */
+  configLoadedOnce: boolean;
 }
 
 export type UsageListener = (state: UsageState) => void;
@@ -79,6 +130,12 @@ export function createInitialUsageState(): UsageState {
     timezone: '',
     status: 'idle',
     errorText: '',
-    panelOpen: false
+    panelOpen: false,
+    activeTab: 'usage',
+    configReport: null,
+    configGeneratedAt: '',
+    configStatus: 'idle',
+    configErrorText: '',
+    configLoadedOnce: false
   };
 }

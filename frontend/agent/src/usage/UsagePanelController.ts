@@ -7,7 +7,7 @@
 // lifecycle. Opening the panel is the registry's job (footer click →
 // setPanelOpen(true) + a cached usage_report).
 
-import type { UsageState } from '../contracts/agent-usage.js';
+import type { UsagePanelTab, UsageState } from '../contracts/agent-usage.js';
 import { createIslandLoader, type IslandLoader } from '../core/islandHost.js';
 import type { UsagePanelProps } from './UsagePanel.js';
 
@@ -17,6 +17,8 @@ export interface UsagePanelHost {
   subscribe(listener: () => void): () => void;
   /** force=false → cached (open/retry); force=true → Refresh button. */
   requestUsage(force: boolean): void;
+  requestConfig(force: boolean): void;
+  setActiveTab(tab: UsagePanelTab): void;
   setDisplayName(name: string): void;
   setAvatar(base64Png: string): void;
   close(): void;
@@ -75,6 +77,8 @@ export class UsagePanelController {
       },
       onRefresh: () => this.host.requestUsage(true),
       onRetry: () => this.host.requestUsage(false),
+      onSelectTab: (tab) => this.host.setActiveTab(tab),
+      onRequestConfig: (force) => this.host.requestConfig(force),
       onSetDisplayName: (name) => this.host.setDisplayName(name),
       onSetAvatar: (base64Png) => this.host.setAvatar(base64Png)
     });
