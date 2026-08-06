@@ -173,7 +173,7 @@ function ThinkingRowView({ item }: { item: ThinkingItem }): JSX.Element {
         aria-busy="true"
       >
         <Shimmer as="span" duration={1}>
-          Thinking...
+          Thinking…
         </Shimmer>
       </div>
     );
@@ -198,7 +198,7 @@ function ThinkingElapsed(): JSX.Element {
   }, []);
   const text =
     elapsed < 1
-      ? 'Thinking...'
+      ? 'Thinking…'
       : 'Thinking for ' + elapsed + (elapsed === 1 ? ' second' : ' seconds');
   return <Shimmer duration={1}>{text}</Shimmer>;
 }

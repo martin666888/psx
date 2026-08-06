@@ -319,7 +319,7 @@ export function PromptInputAttachment({
   const attachment = (
     <div
       className={cn(
-        "group relative flex h-8 cursor-pointer select-none items-center gap-1.5 rounded-md border border-border px-1.5 font-medium text-sm transition-all hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
+        "group relative flex h-8 cursor-pointer select-none items-center gap-1.5 rounded-md border border-border px-1.5 font-medium text-sm transition-[color,background-color,border-color,box-shadow] hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
         className
       )}
       key={data.id}
@@ -344,7 +344,7 @@ export function PromptInputAttachment({
         {removable ? (
           <Button
             aria-label="Remove attachment"
-            className="absolute inset-0 size-5 cursor-pointer rounded p-0 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 [&>svg]:size-2.5"
+            className="absolute inset-0 size-5 cursor-pointer rounded p-0 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 focus-visible:opacity-100 [&>svg]:size-2.5"
             onClick={(e) => {
               e.stopPropagation();
               attachments.remove(data.id);
@@ -1250,7 +1250,7 @@ export const PromptInputSpeechButton = ({
   return (
     <PromptInputButton
       className={cn(
-        "relative transition-all duration-200",
+        "relative transition-[color,background-color,border-color,box-shadow] duration-200",
         isListening && "animate-pulse bg-accent text-accent-foreground",
         className
       )}

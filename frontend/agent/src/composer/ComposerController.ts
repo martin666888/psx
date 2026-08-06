@@ -899,7 +899,7 @@ export class ComposerController implements FeatureController {
     if (attachment.status === 'uploading') {
       const status = document.createElement('span');
       status.className = 'agent-attachment-status';
-      status.textContent = '...';
+      status.textContent = '…';
       tile.appendChild(status);
     }
 

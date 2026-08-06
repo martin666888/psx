@@ -195,7 +195,7 @@ export function HistoryList(props: HistoryListProps): JSX.Element {
     return <StateBox name="empty" text="Open an Agent workspace to load history." />;
   }
   if (state.status === 'initial-loading') {
-    return <StateBox name="loading" text="Loading history..." />;
+    return <StateBox name="loading" text="Loading history…" />;
   }
   if (state.status === 'unavailable') {
     return <StateBox name="empty" text="Open an Agent workspace to load history." />;
@@ -244,7 +244,7 @@ export function HistoryList(props: HistoryListProps): JSX.Element {
     return (
       <>
         {notice}
-        <StateBox name="empty" text={state.loaded ? 'No saved Agent threads.' : 'Loading history...'} />
+        <StateBox name="empty" text={state.loaded ? 'No saved Agent threads.' : 'Loading history…'} />
       </>
     );
   }
