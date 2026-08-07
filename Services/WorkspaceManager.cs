@@ -22,6 +22,19 @@ public interface IWorkspaceManager : IDisposable
     Task ActivateAsync(Guid workspaceId);
     Task CloseAsync(Guid workspaceId, WorkspaceCloseReason reason = WorkspaceCloseReason.User);
     Guid? FindOpenThread(string threadId);
+    /// <summary>Move a workspace into a fresh right-hand pane (split).</summary>
+    void SplitWorkspaceToNewPane(Guid workspaceId);
+    /// <summary>Focus a pane without changing assignments (click inside it).</summary>
+    void FocusPane(string paneId);
+    /// <summary>Collapse back to a single pane; other workspaces go background.</summary>
+    void CollapseToSinglePane();
+    /// <summary>Divider drag end: set one pane's width share.</summary>
+    void SetPaneRatio(string paneId, double ratio);
+    /// <summary>Creation transaction: the next created workspace lands here
+    /// (<see cref="WorkspaceLayoutService.NewPanePlacement"/> for a fresh pane).</summary>
+    void RecordPendingPlacement(string paneId);
+    /// <summary>Current requested-layout snapshot (panes, focus, ratios).</summary>
+    WorkspaceLayoutSnapshot LayoutSnapshot { get; }
     void BeginShutdown();
 
     event EventHandler<WorkspaceEventArgs>? WorkspaceCreated;
@@ -106,28 +119,16 @@ public sealed class WorkspaceManager : IWorkspaceManager
         if (workspace == null)
             return;
 
+        // Set before Assign so the layout-changed handler sees the activation
+        // as already applied and skips duplicate side effects.
         lock (_sync)
             _activeWorkspaceId = workspaceId;
 
         // The requested-layout truth source: activation assigns the workspace
-        // to the (Phase 0: single) pane and hands it the focus.
+        // into the focused pane (or focuses the pane already showing it).
         _layout.AssignActiveWorkspace(workspaceId, workspace.Kind);
 
-        if (workspace.Kind == WorkspaceKind.Terminal)
-        {
-            await _terminalTabs.SwitchTabAsync(workspaceId).ConfigureAwait(false);
-            await _bridge.SendEventAsync(new
-            {
-                type = "workspace_activated",
-                workspaceId,
-                kind = "terminal"
-            }).ConfigureAwait(false);
-            WorkspaceActivationRequested?.Invoke(this, workspaceId);
-        }
-        else
-        {
-            await _agents.ActivateAsync(workspaceId).ConfigureAwait(false);
-        }
+        await ApplyActiveWorkspaceAsync(workspace).ConfigureAwait(false);
     }
 
     public async Task CloseAsync(
@@ -148,6 +149,26 @@ public sealed class WorkspaceManager : IWorkspaceManager
     }
 
     public Guid? FindOpenThread(string threadId) => _agents.FindOpenThread(threadId);
+
+    public WorkspaceLayoutSnapshot LayoutSnapshot => _layout.Snapshot;
+
+    public void SplitWorkspaceToNewPane(Guid workspaceId)
+    {
+        WorkspaceDescriptor? workspace;
+        lock (_sync)
+            workspace = _workspaces.FirstOrDefault(item => item.WorkspaceId == workspaceId);
+        if (workspace == null)
+            return;
+        _layout.SplitWorkspaceToNewPane(workspaceId, workspace.Kind);
+    }
+
+    public void FocusPane(string paneId) => _layout.FocusPane(paneId);
+
+    public void CollapseToSinglePane() => _layout.CollapseToSinglePane();
+
+    public void SetPaneRatio(string paneId, double ratio) => _layout.SetPaneRatio(paneId, ratio);
+
+    public void RecordPendingPlacement(string paneId) => _layout.RecordPendingPlacement(paneId);
 
     public void BeginShutdown() => _shuttingDown = true;
 
@@ -212,26 +233,17 @@ public sealed class WorkspaceManager : IWorkspaceManager
     private void RemoveWorkspace(Guid workspaceId)
     {
         var removed = false;
-        Guid? nextWorkspaceId = null;
         var createReplacementTerminal = false;
         lock (_sync)
         {
             var workspace = _workspaces.FirstOrDefault(item => item.WorkspaceId == workspaceId);
             if (workspace != null)
             {
-                var removedIndex = _workspaces.IndexOf(workspace);
                 _workspaces.Remove(workspace);
                 removed = true;
 
                 if (_activeWorkspaceId == workspaceId)
-                {
                     _activeWorkspaceId = null;
-                    if (_workspaces.Count > 0)
-                    {
-                        var nextIndex = Math.Min(removedIndex, _workspaces.Count - 1);
-                        nextWorkspaceId = _workspaces[nextIndex].WorkspaceId;
-                    }
-                }
 
                 if (_workspaces.Count == 0 && !_shuttingDown && !_creatingReplacementTerminal)
                 {
@@ -240,19 +252,61 @@ public sealed class WorkspaceManager : IWorkspaceManager
                 }
             }
         }
-        if (removed)
-        {
-            _layout.RemoveWorkspace(workspaceId);
-            WorkspaceClosed?.Invoke(this, new WorkspaceClosedEventArgs { WorkspaceId = workspaceId });
-        }
-        if (nextWorkspaceId.HasValue)
-            _ = ActivateAsync(nextWorkspaceId.Value);
-        else if (createReplacementTerminal)
+        if (!removed)
+            return;
+        // The layout collapses the vacated pane or pulls the MRU background
+        // workspace in atomically; its changed event activates the new focus.
+        _layout.RemoveWorkspace(workspaceId);
+        WorkspaceClosed?.Invoke(this, new WorkspaceClosedEventArgs { WorkspaceId = workspaceId });
+        if (createReplacementTerminal)
             _ = CreateTerminalAsync();
     }
 
-    private void OnLayoutChanged(object? sender, WorkspaceLayoutSnapshot snapshot) =>
+    private void OnLayoutChanged(object? sender, WorkspaceLayoutSnapshot snapshot)
+    {
         _ = SendLayoutSnapshotAsync(snapshot);
+        // UI-initiated intents (focus a pane, close, collapse) change the
+        // focused workspace without going through ActivateAsync — sync the
+        // single active workspace from the focused pane.
+        var focused = _layout.FocusedWorkspaceId;
+        Guid? current;
+        lock (_sync)
+            current = _activeWorkspaceId;
+        if (focused.HasValue && focused.Value != current)
+            _ = ActivateFocusedWorkspaceAsync(focused.Value);
+    }
+
+    private async Task ActivateFocusedWorkspaceAsync(Guid workspaceId)
+    {
+        WorkspaceDescriptor? workspace;
+        lock (_sync)
+        {
+            workspace = _workspaces.FirstOrDefault(item => item.WorkspaceId == workspaceId);
+            if (workspace == null)
+                return;
+            _activeWorkspaceId = workspaceId;
+        }
+        await ApplyActiveWorkspaceAsync(workspace).ConfigureAwait(false);
+    }
+
+    private async Task ApplyActiveWorkspaceAsync(WorkspaceDescriptor workspace)
+    {
+        if (workspace.Kind == WorkspaceKind.Terminal)
+        {
+            await _terminalTabs.SwitchTabAsync(workspace.WorkspaceId).ConfigureAwait(false);
+            await _bridge.SendEventAsync(new
+            {
+                type = "workspace_activated",
+                workspaceId = workspace.WorkspaceId,
+                kind = "terminal"
+            }).ConfigureAwait(false);
+            WorkspaceActivationRequested?.Invoke(this, workspace.WorkspaceId);
+        }
+        else
+        {
+            await _agents.ActivateAsync(workspace.WorkspaceId).ConfigureAwait(false);
+        }
+    }
 
     private Task SendLayoutSnapshotAsync(WorkspaceLayoutSnapshot snapshot) =>
         _bridge.SendEventAsync(new
