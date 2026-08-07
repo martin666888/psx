@@ -171,7 +171,8 @@ export class AgentWorkspaceRegistry {
       focusActivePlanToggle: () => activePlan()?.focusToggle(),
       onActivePlanVisibilityChanged: (listener) => {
         this.planVisibilityListener = listener;
-      }
+      },
+      measurePaneWidth: () => this.host.focusedAgentPanelWidth()
     };
   }
 
@@ -194,11 +195,13 @@ export class AgentWorkspaceRegistry {
       case 'lifecycle':
         if (event.type === 'workspace_activated') {
           this.host.activate(event.workspaceId, event.kind === 'agent' ? 'agent' : 'terminal');
-          // Render throttling follows panel visibility: the shown Agent
-          // workspace renders live; every other workspace (including all of
-          // them while a Terminal is active) defers React work until shown.
-          for (const [id, controller] of this.controllers) {
-            controller.setVisible(event.kind === 'agent' && id === event.workspaceId);
+          // Render throttling follows panel visibility. When pane snapshots
+          // drive the layout, visibility comes from applyLayoutVisibility;
+          // the legacy path shows exactly the activated workspace.
+          if (!this.host.isLayoutDriven()) {
+            for (const [id, controller] of this.controllers) {
+              controller.setVisible(event.kind === 'agent' && id === event.workspaceId);
+            }
           }
           if (event.kind === 'agent') {
             this.historyBroker.activateWorkspace(event.workspaceId);
@@ -206,9 +209,11 @@ export class AgentWorkspaceRegistry {
             // The active workspace changed: re-evaluate the narrow rule.
             this.notifyPlanVisibility(event.workspaceId);
           } else {
-            // Switching to a terminal hides the whole Agent UI: the global
-            // Usage dialog must never float over the terminal view.
-            this.usageStore.setPanelOpen(false);
+            // The Usage dialog must never float over a pure terminal view;
+            // with an agent pane still visible beside it, the dialog stays.
+            if (!this.host.anyAgentWorkspaceVisible()) {
+              this.usageStore.setPanelOpen(false);
+            }
           }
           this.historyDock?.updateOpenState();
         } else if (event.type === 'agent_workspace_created') {
@@ -261,6 +266,18 @@ export class AgentWorkspaceRegistry {
 
   hasController(workspaceId: string): boolean {
     return this.controllers.has(workspaceId);
+  }
+
+  /** Pane-snapshot driven render throttling: a workspace renders while any
+   * pane shows it, visible or focused or not. */
+  applyLayoutVisibility(snapshot: {
+    panes: Array<{ workspaceId?: string | null; kind?: string | null }>;
+  }): void {
+    for (const [id, controller] of this.controllers) {
+      controller.setVisible(
+        snapshot.panes.some(p => p.kind === 'agent' && p.workspaceId === id)
+      );
+    }
   }
 
   private activeAgentWorkspace(): string {

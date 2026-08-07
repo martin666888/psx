@@ -32,6 +32,13 @@ import { TerminalManager } from './TerminalManager.js';
     let agentDisabled = false;
     let agentLoadStarted = false;
 
+    // The geometry engine projects pane rects onto both render systems; the
+    // Agent app joins lazily once its chunk loads.
+    paneLayout.onLayoutApplied((snapshot, rects) => {
+        terminalManager.applyLayout(snapshot, rects);
+        if (agentApp) agentApp.setPaneLayout(snapshot, rects);
+    });
+
     // Pre-load staging (CP3b). Config/state events only need their most
     // recent value, so they collapse instead of queueing; History
     // invalidations merge into one dirty marker; every workspace lifecycle /
@@ -165,10 +172,14 @@ import { TerminalManager } from './TerminalManager.js';
                 const app = module.createAgentApp({
                     terminalManager,
                     container: document.getElementById('agent-workspace-container'),
-                    template: document.getElementById('agent-workspace-template')
+                    template: document.getElementById('agent-workspace-template'),
+                    paneLayout
                 });
                 agentApp = app;
                 drainStagedEvents((staged) => app.handle(staged));
+                // The app may have missed earlier rect projections while its
+                // chunk loaded; replay the current layout once.
+                paneLayout.recompute();
             })
             .catch((error) => {
                 agentDisabled = true;

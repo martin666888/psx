@@ -1,15 +1,30 @@
-/* Neutral pane layout root shared by Terminal and Agent workspaces.
-   Split-pane Phase 0: a single .workspace-pane spans the whole content area,
-   so behavior is identical to the pre-split shell — the terminal container
-   fills it and the Agent overlay anchors to it (same size as <body> before).
-   Phase 1 creates additional pane slots and places one workspace layer into
-   each; keep this file free of Agent- or Terminal-specific styling. */
+/* Neutral pane layout (split panes).
+   Stacking model: the terminal layer sits at the bottom, the Agent overlay
+   above it, and #workspace-panes floats on top with pointer-events disabled —
+   pane slots are transparent frames that only draw the focused-pane ring (and
+   later the drop highlight + divider hit area). Workspace CONTENT is never
+   inside a slot: the geometry engine (PaneLayoutController) projects pane
+   rects onto the visible terminal wrappers and agent panels as inline styles,
+   so both render systems keep their existing single-layer DOM. */
 
-#workspace-panes {
+#workspace-stack {
     position: relative;
-    display: flex;
     width: 100%;
     height: 100%;
+}
+
+#terminal-container,
+#agent-workspace-container {
+    position: absolute;
+    inset: 0;
+}
+
+#workspace-panes {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    pointer-events: none;
+    /* Divider handles re-enable hit-testing on themselves (Phase 1). */
 }
 
 .workspace-pane {
@@ -17,4 +32,21 @@
     flex: 1 1 0;
     min-width: 0;
     min-height: 0;
+}
+
+/* Focused-pane ring: the only visual the slots paint. 2px outline ring reuses
+ * the shared focus token; unfocused panes never dim. */
+.workspace-pane[data-focused="true"]::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border: 2px solid var(--agent-focus-ring);
+    border-radius: var(--agent-workspace-radius, 12px);
+    pointer-events: none;
+}
+
+/* The terminal layer must not paint its own background over inactive panes:
+ * each visible wrapper carries the background within its rect. */
+#terminal-container {
+    background: transparent;
 }

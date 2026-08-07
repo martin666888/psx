@@ -17,10 +17,24 @@ export interface AgentAppOptions {
   terminalManager: { setViewVisible(visible: boolean): void };
   container: HTMLElement;
   template: HTMLTemplateElement;
+  /** Neutral pane geometry engine (webview layer); the dock inset feeds back
+   * so panes shift when the global History dock opens or resizes. */
+  paneLayout?: {
+    setDockInset(px: number): void;
+  };
 }
 
 export interface AgentApp {
   handle(message: RawHostMessage): void;
+  /** Pane snapshot + measured rects from the PaneLayoutController: projects
+   * visibility/rects onto panels and drives render throttling. */
+  setPaneLayout(
+    snapshot: {
+      focusedPaneId: string;
+      panes: Array<{ paneId: string; workspaceId?: string | null; kind?: string | null }>;
+    },
+    rects: Map<string, { left: number; top: number; width: number; height: number }>
+  ): void;
   /** Tears down every controller, global broker, island and layout listener.
    * The shipped app runs for the process lifetime; tests call this in
    * afterEach so no app instance, subscription or pending timer survives. */
@@ -48,17 +62,32 @@ export function createAgentApp(options: AgentAppOptions): AgentApp {
   const usagePanel = new UsagePanelController(registry.createUsagePanelHost());
   usagePanel.mount(options.container);
   // Shell layout: responsive narrow collapse + one-visible-panel rule.
-  const shellLayout = new AgentShellLayoutController(
-    options.container,
-    registry.createShellLayoutHost(historyDock)
-  );
+  const shellLayoutHost = registry.createShellLayoutHost(historyDock);
+  const shellLayout = new AgentShellLayoutController(options.container, shellLayoutHost);
   shellLayout.mount();
+
+  // The global History dock indents every pane: report its width (plus the
+  // workbench gutter and panel gap) to the neutral geometry engine.
+  if (options.paneLayout) {
+    const paneLayout = options.paneLayout;
+    const reportDockInset = (): void => {
+      paneLayout.setDockInset(shellLayoutHost.isHistoryOpen() ? shellLayoutHost.historyWidth() + 24 : 0);
+    };
+    shellLayoutHost.onHistoryOpenChanged(reportDockInset);
+    shellLayoutHost.onHistoryWidthChanged(reportDockInset);
+    reportDockInset();
+  }
 
   let disposed = false;
 
   return {
     handle(message: RawHostMessage): void {
       if (!disposed) registry.handle(message);
+    },
+    setPaneLayout(snapshot, rects): void {
+      if (disposed) return;
+      host.applyLayout(snapshot, rects);
+      registry.applyLayoutVisibility(snapshot);
     },
     dispose(): void {
       if (disposed) return;

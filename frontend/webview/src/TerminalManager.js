@@ -43,6 +43,7 @@ export class TerminalManager {
         this.container = container;
         this.terminals = new Map();
         this.activeSessionId = null;
+        this._layoutDriven = false;
         this._pendingPasteRequests = new Map();
         this.viewVisible = !container.hidden;
         this._encoder = new TextEncoder();
@@ -275,16 +276,75 @@ export class TerminalManager {
         const target = this.terminals.get(sessionId);
         if (!target) return;
 
-        for (const [id, entry] of this.terminals) {
-            entry.element.style.display = id === sessionId ? 'block' : 'none';
+        // Once the pane layout drives visibility, a switch only moves the
+        // active marker + focus; wrapper display and rects belong to
+        // applyLayout. The pre-layout fallback keeps the single-visible
+        // behavior (startup, tests).
+        if (!this._layoutDriven) {
+            for (const [id, entry] of this.terminals) {
+                entry.element.style.display = id === sessionId ? 'block' : 'none';
+            }
+            target.element.style.display = 'block';
         }
 
-        target.element.style.display = 'block';
         this.activeSessionId = sessionId;
         this._scheduleFit(target, { focusAfterFit: true, reason: 'tab-switch' });
     }
 
+    /**
+     * Project the pane layout onto terminal wrappers: every terminal assigned
+     * to a pane becomes visible at that pane's rect; every other terminal
+     * hides (its ConPTY session stays alive). Called by PaneLayoutController
+     * with the latest snapshot and measured pane rects.
+     */
+    applyLayout(snapshot, rects) {
+        if (!snapshot || !Array.isArray(snapshot.panes)) return;
+        this._layoutDriven = true;
+
+        const assigned = new Map();
+        for (const pane of snapshot.panes) {
+            if (pane.kind !== 'terminal' || !pane.workspaceId) continue;
+            const rect = rects?.get(pane.paneId);
+            if (rect) assigned.set(String(pane.workspaceId), rect);
+        }
+
+        for (const [id, entry] of this.terminals) {
+            const rect = assigned.get(id);
+            if (!rect) {
+                if (entry.element.style.display !== 'none') {
+                    entry.element.style.display = 'none';
+                    entry.needsFit = true;
+                }
+                continue;
+            }
+            const wasHidden = entry.element.style.display === 'none';
+            entry.element.style.display = 'block';
+            this._applyPaneRect(entry, rect);
+            if (wasHidden) entry.needsFit = true;
+            this._scheduleFit(entry, { reason: 'pane-layout' });
+        }
+
+        // The terminal layer only covers the window while no terminal is
+        // visible at all (pure Agent layout).
+        this.container.hidden = assigned.size === 0;
+        this.viewVisible = assigned.size > 0;
+    }
+
+    _applyPaneRect(entry, rect) {
+        const key = `${rect.left}:${rect.top}:${rect.width}:${rect.height}`;
+        const el = entry.element;
+        if (el.dataset.paneRect === key) return;
+        el.dataset.paneRect = key;
+        el.style.left = `${rect.left}px`;
+        el.style.top = `${rect.top}px`;
+        el.style.width = `${rect.width}px`;
+        el.style.height = `${rect.height}px`;
+        entry.needsFit = true;
+    }
+
     setViewVisible(visible) {
+        // In layout-driven mode applyLayout owns layer visibility.
+        if (this._layoutDriven) return;
         this.viewVisible = visible;
 
         if (!visible) {

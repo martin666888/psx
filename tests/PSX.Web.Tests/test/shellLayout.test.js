@@ -249,8 +249,10 @@ test('shell: structural tokens and the centerline mechanism exist in shell.css',
   // panel-gap token between the two panels.
   assert.ok(!shell.includes('--agent-dock-gap'));
   assert.ok(!shell.includes('--agent-radius-workspace-canvas'));
-  // Dock-open centres the reading column inside the remaining main panel.
-  assert.match(shell, /#agent-workspace-container\.agent-history-dock-open \.agent-panel/);
+  // Dock-open centres the reading column inside the remaining main panel
+  // (pre-layout fallback path; the JS dock inset supersedes it once the pane
+  // geometry engine drives rects).
+  assert.match(shell, /#agent-workspace-container\.agent-history-dock-open:not\(\.agent-layout-driven\) \.agent-panel/);
   assert.match(shell, /--agent-main-panel-inline-size: calc\(/);
   assert.match(shell, /--agent-reading-column-start: max\(\s*var\(--agent-panel-gap\),/);
   assert.match(
@@ -405,7 +407,7 @@ test('shell: dock width stays persisted in wide mode and becomes fixed only whil
   assert.match(shell, /#agent-workspace-container\.agent-shell-narrow \{\s*--agent-history-width-effective: var\(--agent-history-narrow-width\);?\s*\}/);
   // Canvas and the collision-aware reading rules consume the effective width,
   // never the raw one — with the workbench gutter and panel gap folded into
-  // every offset because column math is viewport (100vw) based.
+  // every offset (the pre-layout fallback block keeps the 100vw math).
   assert.match(
     shell,
     /left: calc\(\s*var\(--agent-workbench-gutter\) \+ var\(--agent-history-width-effective\) \+ var\(--agent-panel-gap\)\s*\)/

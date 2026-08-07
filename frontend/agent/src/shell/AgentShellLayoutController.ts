@@ -26,6 +26,9 @@ export interface AgentShellLayoutHost {
   closeActivePlan(): void;
   focusActivePlanToggle(): void;
   onActivePlanVisibilityChanged(listener: (visible: boolean) => void): void;
+  /** Focused agent pane width in px (split-aware); 0/undefined falls back to
+   * the container measurement. */
+  measurePaneWidth?(): number;
 }
 
 // Narrow breakpoint in pane pixels, mirrored by the shell.css narrow rules.
@@ -111,6 +114,8 @@ export class AgentShellLayoutController {
 
   /** Pane width when measurable; the viewport otherwise (fallback only). */
   private containerWidth(): number {
+    const paneWidth = this.host.measurePaneWidth?.() ?? 0;
+    if (paneWidth > 0) return paneWidth;
     if (this.container.clientWidth > 0) return this.container.clientWidth;
     const documentWidth = document.documentElement?.clientWidth ?? 0;
     return documentWidth > 0 ? documentWidth : window.innerWidth;

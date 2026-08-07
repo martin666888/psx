@@ -57,6 +57,9 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
   private activeWorkspaceId = '';
   private settings: AgentAppearanceSettings | null = null;
   private historyDockView: AgentViewVisibilityListener | null = null;
+  // Once the first workspace_layout snapshot arrives, pane assignment owns
+  // panel visibility/rects; activate() keeps only its side effects.
+  private layoutDriven = false;
 
   constructor(
     terminalManager: TerminalViewToggle,
@@ -73,6 +76,93 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
     // Radix portals must mount inside the boundary to see the themed
     // variables (a body-mounted tooltip/popup renders unstyled).
     setPortalContainer(this.container);
+  }
+
+  /**
+   * Project the pane layout onto agent panels: each workspace assigned to a
+   * pane shows at that pane's rect (with its reading-column geometry scoped
+   * to the pane width); every other panel hides keep-alive. Called by the
+   * PaneLayoutController with the latest snapshot and measured pane rects.
+   */
+  applyLayout(snapshot: {
+    focusedPaneId: string;
+    panes: Array<{ paneId: string; workspaceId?: string | null; kind?: string | null }>;
+  }, rects: Map<string, { left: number; top: number; width: number; height: number }>): void {
+    if (!snapshot || !Array.isArray(snapshot.panes)) return;
+    this.layoutDriven = true;
+    this.container.classList.add('agent-layout-driven');
+
+    const assignments = new Map<string, { paneId: string; rect: { left: number; top: number; width: number; height: number } }>();
+    for (const pane of snapshot.panes) {
+      if (pane.kind !== 'agent' || !pane.workspaceId) continue;
+      const rect = rects?.get(pane.paneId);
+      if (rect) assignments.set(String(pane.workspaceId), { paneId: pane.paneId, rect });
+    }
+
+    for (const [id, entry] of this.workspaces) {
+      const assignment = assignments.get(id);
+      if (!assignment) {
+        if (!entry.panel.hidden) this.setPanelVisible(entry.panel, false);
+        continue;
+      }
+      this.applyPanelRect(entry.panel, assignment.rect);
+      if (entry.panel.hidden) this.setPanelVisible(entry.panel, true);
+      entry.panel.dataset.paneFocused = assignment.paneId === snapshot.focusedPaneId ? 'true' : 'false';
+    }
+
+    const anyAgentVisible = assignments.size > 0;
+    this.container.classList.toggle('agent-split-active', snapshot.panes.length > 1);
+    // The Agent layer needs pointer events whenever any agent panel shows —
+    // including an unfocused pane beside a terminal (click-to-focus).
+    this.container.classList.toggle('agent-workspace-active', anyAgentVisible);
+    this.historyDockView?.setAgentViewActive(anyAgentVisible);
+  }
+
+  /** Width of the focused pane's agent panel, for pane-relative responsive
+   * rules; falls back to any visible agent panel. */
+  focusedAgentPanelWidth(): number {
+    const focused = [...this.workspaces.values()].find(
+      entry => !entry.panel.hidden && entry.panel.dataset.paneFocused === 'true'
+    );
+    const fallback = focused ?? [...this.workspaces.values()].find(entry => !entry.panel.hidden);
+    return fallback?.panel.clientWidth ?? 0;
+  }
+
+  /** Whether any agent panel is currently visible (split-aware). */
+  anyAgentWorkspaceVisible(): boolean {
+    for (const entry of this.workspaces.values()) {
+      if (!entry.panel.hidden) return true;
+    }
+    return false;
+  }
+
+  /** True once workspace_layout snapshots own panel visibility/rects. */
+  isLayoutDriven(): boolean {
+    return this.layoutDriven;
+  }
+
+  private applyPanelRect(
+    panel: HTMLElement,
+    rect: { left: number; top: number; width: number; height: number }
+  ): void {
+    // The panel floats on the workbench backdrop with a full gutter on every
+    // side (mirrors --agent-workbench-gutter in shell.css).
+    const gutter = 12;
+    const left = rect.left + gutter;
+    const top = rect.top + gutter;
+    const width = Math.max(0, rect.width - 2 * gutter);
+    const height = Math.max(0, rect.height - 2 * gutter);
+    const key = `${left}:${top}:${width}:${height}`;
+    if (panel.dataset.paneRect === key) return;
+    panel.dataset.paneRect = key;
+    panel.style.left = `${left}px`;
+    panel.style.top = `${top}px`;
+    panel.style.width = `${width}px`;
+    panel.style.height = `${height}px`;
+    panel.style.right = 'auto';
+    panel.style.bottom = 'auto';
+    // Reading-column geometry is pane-relative via the panel's own width.
+    panel.style.setProperty('--agent-pane-inline-size', `${width}px`);
   }
 
   createWorkspace(workspaceId: string): void {
@@ -120,6 +210,14 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
   activate(workspaceId: string, kind: 'terminal' | 'agent'): void {
     const id = String(workspaceId || '');
     this.activeWorkspaceId = id;
+
+    if (this.layoutDriven) {
+      // applyLayout owns visibility, rects, pointer events and the dock's
+      // active state once pane snapshots flow; activation only carries side
+      // effects (focus, brokers) there.
+      return;
+    }
+
     // The Agent root is an absolute layer above the terminal. It must only
     // receive pointer events while an Agent workspace is actually visible;
     // otherwise its transparent surface prevents blank-area terminal clicks
