@@ -13,10 +13,22 @@ export interface PaneVisibilityAware {
   setVisible(visible: boolean): void;
 }
 
+/** Feature controllers whose live regions should only announce while their
+ * pane is focused (a11y: unfocused panes never interrupt the reader). */
+export interface PaneFocusAware {
+  setPaneFocused(focused: boolean): void;
+}
+
 function isPaneVisibilityAware(
   feature: FeatureController
 ): feature is FeatureController & PaneVisibilityAware {
   return typeof (feature as Partial<PaneVisibilityAware>).setVisible === 'function';
+}
+
+function isPaneFocusAware(
+  feature: FeatureController
+): feature is FeatureController & PaneFocusAware {
+  return typeof (feature as Partial<PaneFocusAware>).setPaneFocused === 'function';
 }
 
 export class AgentWorkspaceController {
@@ -41,6 +53,15 @@ export class AgentWorkspaceController {
     if (this.disposed) return;
     for (const feature of this.features) {
       if (isPaneVisibilityAware(feature)) feature.setVisible(visible);
+    }
+  }
+
+  /** Pane focus from the layout: forwarded to features whose live regions
+   * must only announce in the focused pane. */
+  setPaneFocused(focused: boolean): void {
+    if (this.disposed) return;
+    for (const feature of this.features) {
+      if (isPaneFocusAware(feature)) feature.setPaneFocused(focused);
     }
   }
 

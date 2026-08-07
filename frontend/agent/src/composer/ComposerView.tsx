@@ -13,6 +13,7 @@
 // projection that arrived while the island chunk was loading.
 
 import { useEffect, useLayoutEffect, useRef, useState, type JSX, type RefObject } from 'react';
+import { AnnounceContext } from '../ui/announce.js';
 import {
   AttachmentStrip,
   CommandHint,
@@ -142,6 +143,8 @@ export interface ComposerViewProps {
   hint: CommandHintProps;
   modeTransitionPrompt: ComposerModeTransitionPromptVM | null;
   preview: ComposerPreviewProps;
+  /** Live regions only announce while the workspace's pane is focused. */
+  announce?: boolean;
   /** First-commit signal used to replay the latest controller projection. */
   onReady(): void;
 }
@@ -456,7 +459,7 @@ export function ComposerView(props: ComposerViewProps): JSX.Element {
   };
 
   return (
-    <>
+    <AnnounceContext.Provider value={props.announce !== false}>
       <div className="agent-composer-main">
         <PromptInput
           accept="image/*"
@@ -519,7 +522,7 @@ export function ComposerView(props: ComposerViewProps): JSX.Element {
               data-role="command-hint"
               className="agent-command-hint whitespace-pre-line px-[var(--agent-space-3)] pb-[var(--agent-space-2)] text-xs leading-[1.45] text-muted-foreground"
               role="status"
-              aria-live="polite"
+              aria-live={props.announce !== false ? 'polite' : 'off'}
               hidden={!props.hint.visible}
             >
               <CommandHint {...props.hint} />
@@ -556,6 +559,6 @@ export function ComposerView(props: ComposerViewProps): JSX.Element {
         <ComposerCommandMenu menu={props.commands} />
       </div>
       <ComposerImagePreview preview={props.preview} />
-    </>
+    </AnnounceContext.Provider>
   );
 }

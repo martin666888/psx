@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type JSX } from 'react';
+import { useAnnounceLive } from '../ui/announce.js';
 import { Button } from '../components/ui/button.js';
 import { DecisionOptionPills } from '../decisions/DecisionOptionPills.js';
 
@@ -25,6 +26,7 @@ export function ModeTransitionPrompt({
 }: {
   prompt: ComposerModeTransitionPromptVM;
 }): JSX.Element {
+  const live = useAnnounceLive();
   const [decisionState, setDecisionState] = useState(
     prompt.interactive ? 'active' : 'error'
   );
@@ -110,7 +112,7 @@ export function ModeTransitionPrompt({
           (decisionState === 'sending' ? 'text-primary' : 'text-muted-foreground')
         }
         role="status"
-        aria-live="polite"
+        aria-live={live}
       >
         {status}
       </div>

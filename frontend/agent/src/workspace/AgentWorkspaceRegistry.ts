@@ -201,6 +201,7 @@ export class AgentWorkspaceRegistry {
           if (!this.host.isLayoutDriven()) {
             for (const [id, controller] of this.controllers) {
               controller.setVisible(event.kind === 'agent' && id === event.workspaceId);
+              controller.setPaneFocused(event.kind === 'agent' && id === event.workspaceId);
             }
           }
           if (event.kind === 'agent') {
@@ -268,15 +269,20 @@ export class AgentWorkspaceRegistry {
     return this.controllers.has(workspaceId);
   }
 
-  /** Pane-snapshot driven render throttling: a workspace renders while any
-   * pane shows it, visible or focused or not. */
+  /** Pane-snapshot driven render throttling and live-region gating: a
+   * workspace renders while any pane shows it, but only the focused pane's
+   * workspace may announce. */
   applyLayoutVisibility(snapshot: {
-    panes: Array<{ workspaceId?: string | null; kind?: string | null }>;
+    focusedPaneId: string;
+    panes: Array<{ paneId: string; workspaceId?: string | null; kind?: string | null }>;
   }): void {
+    const focusedWorkspaceId =
+      snapshot.panes.find(p => p.paneId === snapshot.focusedPaneId)?.workspaceId ?? null;
     for (const [id, controller] of this.controllers) {
       controller.setVisible(
         snapshot.panes.some(p => p.kind === 'agent' && p.workspaceId === id)
       );
+      controller.setPaneFocused(id === focusedWorkspaceId);
     }
   }
 

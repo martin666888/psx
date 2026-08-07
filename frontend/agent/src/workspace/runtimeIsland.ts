@@ -5,7 +5,7 @@
 
 import { createElement } from 'react';
 import { SessionRuntimeCard } from './SessionRuntimeCard.js';
-import type { WorkspaceRuntimeState } from '../contracts/workspace-state.js';
+import type { RuntimeIslandProps } from './SessionRuntimeCard.js';
 import type { IslandFailureReporter, IslandHandle } from '../core/islandHost.js';
 import { mountReactIsland } from '../core/reactIsland.js';
 
@@ -18,10 +18,11 @@ export function mountRuntimeIsland(
   host: HTMLElement,
   reportFailure: IslandFailureReporter,
   handlers: RuntimeIslandHandlers
-): IslandHandle<WorkspaceRuntimeState> {
-  return mountReactIsland('runtime-card', host, reportFailure, (runtime) =>
+): IslandHandle<RuntimeIslandProps> {
+  return mountReactIsland('runtime-card', host, reportFailure, (props) =>
       createElement(SessionRuntimeCard, {
-        runtime,
+        runtime: props.runtime,
+        announce: props.announce,
         onInstall: handlers.onInstall,
         onCancel: handlers.onCancel
       })

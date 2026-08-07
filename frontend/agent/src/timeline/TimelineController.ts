@@ -33,11 +33,19 @@ export class TimelineController implements FeatureController {
   // projection but defer the React render; showing re-projects one snapshot.
   private visible = true;
   private renderPending = false;
+  // Live regions only announce while this workspace's pane is focused.
+  private paneFocused = true;
 
   constructor(workspaceId: string, host: TimelineHost) {
     this.workspaceId = workspaceId;
     this.host = host;
     this.state = createInitialWorkspaceState(workspaceId);
+  }
+
+  setPaneFocused(focused: boolean): void {
+    if (this.paneFocused === focused) return;
+    this.paneFocused = focused;
+    this.render();
   }
 
   setVisible(visible: boolean): void {
@@ -115,6 +123,7 @@ export class TimelineController implements FeatureController {
     this.timelineIsland.render({
       rows: this.projection.snapshot().rows,
       assistantName: this.assistantName,
+      announce: this.visible && this.paneFocused,
       callbacks: this.callbacks()
     });
   }

@@ -96,6 +96,14 @@ export class ComposerController implements FeatureController {
   private readonly host: ComposerHost;
 
   private panel: HTMLElement | null = null;
+  // Live regions only announce while this workspace's pane is focused.
+  private paneFocused = true;
+
+  setPaneFocused(focused: boolean): void {
+    if (this.paneFocused === focused) return;
+    this.paneFocused = focused;
+    this.renderComposerIsland();
+  }
 
   private state: AgentWorkspaceState;
   private psxCommands: MenuCommand[] = [];
@@ -784,6 +792,7 @@ export class ComposerController implements FeatureController {
       host
     });
     this.composerIsland.render({
+      announce: this.paneFocused,
       attachmentBridge: {
         readOnly: this.configControlsDisabled() || !this.supportsImage,
         resetToken: this.attachmentResetToken,

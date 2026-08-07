@@ -16,6 +16,7 @@ import type { AgentWorkspaceState, WorkspaceRuntimeState } from '../contracts/wo
 import { createIslandLoader, type IslandLoader } from '../core/islandHost.js';
 import { computeContextUsageView, formatStatus } from './sessionFormat.js';
 import type { ContextUsageProps, SessionMetaProps } from './SessionToolbar.js';
+import type { RuntimeIslandProps } from './SessionRuntimeCard.js';
 import type { WorkspaceToolbarController } from './WorkspaceToolbarController.js';
 
 export interface SessionRuntimeHost {
@@ -36,7 +37,10 @@ export class SessionRuntimeController implements FeatureController {
   private contextUsageHost: HTMLElement | null = null;
   private runtimeHost: HTMLElement | null = null;
   private runtimeState = 'missing';
-  private runtimeIsland: IslandLoader<WorkspaceRuntimeState> | null = null;
+  private lastRuntime: WorkspaceRuntimeState | null = null;
+  // Live regions only announce while this workspace's pane is focused.
+  private paneFocused = true;
+  private runtimeIsland: IslandLoader<RuntimeIslandProps> | null = null;
   private contextUsageIsland: IslandLoader<ContextUsageProps> | null = null;
   // The ComposerView island (3-0) renders the context-usage host
   // asynchronously, so the latest props are stashed and replayed once the
@@ -55,6 +59,12 @@ export class SessionRuntimeController implements FeatureController {
     if (!panel) return;
     this.panel = panel;
     this.runtimeHost = role(panel, 'runtime-host');
+  }
+
+  setPaneFocused(focused: boolean): void {
+    if (this.paneFocused === focused) return;
+    this.paneFocused = focused;
+    if (this.lastRuntime) this.renderRuntime(this.lastRuntime);
   }
 
   update(event: AgentWorkspaceEvent, state: AgentWorkspaceState): void {
@@ -165,7 +175,8 @@ export class SessionRuntimeController implements FeatureController {
     const host = this.runtimeHost;
     if (!host) return;
     this.runtimeState = runtime.state;
-    this.runtimeIsland ??= createIslandLoader<WorkspaceRuntimeState>({
+    this.lastRuntime = runtime;
+    this.runtimeIsland ??= createIslandLoader<RuntimeIslandProps>({
       name: 'runtime-card',
       load: async () => {
         const mod = await import('./runtimeIsland.js');
@@ -177,7 +188,7 @@ export class SessionRuntimeController implements FeatureController {
       },
       host
     });
-    this.runtimeIsland.render(runtime);
+    this.runtimeIsland.render({ runtime, announce: this.paneFocused });
   }
 
   private requestInstall(): void {

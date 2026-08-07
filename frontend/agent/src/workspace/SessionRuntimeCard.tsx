@@ -47,12 +47,22 @@ function RuntimeIndicator({ state }: { state: string }): JSX.Element {
 
 export interface SessionRuntimeCardProps {
   runtime: WorkspaceRuntimeState;
+  /** Live regions only announce while the workspace's pane is focused. */
+  announce?: boolean;
   onInstall: () => void;
   onCancel: () => void;
 }
 
+/** Island render payload (kept here so the controller can type its loader
+ * without a static import of runtimeIsland.js). */
+export interface RuntimeIslandProps {
+  runtime: WorkspaceRuntimeState;
+  announce?: boolean;
+}
+
 export function SessionRuntimeCard({
   runtime,
+  announce,
   onInstall,
   onCancel
 }: SessionRuntimeCardProps): JSX.Element {
@@ -65,7 +75,7 @@ export function SessionRuntimeCard({
           ? 'border-destructive/50 bg-destructive/10'
           : 'bg-card')
       }
-      aria-live="polite"
+      aria-live={announce !== false ? 'polite' : 'off'}
       data-state={runtime.state}
       aria-busy={runtime.state === 'installing'}
       hidden={isRuntimeCardHidden(runtime.state)}

@@ -2,6 +2,7 @@
 // mode-transition thread cards.
 
 import { useRef, useState, type JSX } from 'react';
+import { useAnnounceLive } from '../ui/announce.js';
 import {
   defaultOptionValue,
   orderElicitationFields,
@@ -145,6 +146,7 @@ function DocumentDecisionCard({
   item: DecisionItem;
   callbacks: DecisionCallbacks;
 }): JSX.Element {
+  const live = useAnnounceLive();
   const isModeTransition = item.kind === 'mode_transition';
   const pending = item.decisionState === 'active';
   const [technicalDetailsOpen, setTechnicalDetailsOpen] = useState(false);
@@ -229,7 +231,7 @@ function DocumentDecisionCard({
             />
           )}
         </div>
-        <div className="agent-mode-transition-status min-h-[17px] px-4 pt-2 pb-3 text-xs leading-snug text-muted-foreground" aria-live="polite">
+        <div className="agent-mode-transition-status min-h-[17px] px-4 pt-2 pb-3 text-xs leading-snug text-muted-foreground" aria-live={live}>
           {statusText}
         </div>
         </CollapsibleContent>

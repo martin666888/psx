@@ -11,6 +11,7 @@
 // TimelineDecisions.tsx and render inside the same tree.
 
 import { useEffect, useLayoutEffect, useRef, useState, type JSX, type ReactNode } from 'react';
+import { AnnounceContext, useAnnounceLive } from '../ui/announce.js';
 import {
   TOOL_STATE_LABELS,
   type DecisionItem,
@@ -69,6 +70,8 @@ export interface TimelineCallbacks extends DecisionCallbacks {
 export interface TimelineViewProps {
   rows: TimelineRow[];
   assistantName: string;
+  /** Live regions only announce while the workspace's pane is focused. */
+  announce?: boolean;
   callbacks: TimelineCallbacks;
 }
 
@@ -133,11 +136,12 @@ function SystemRow({ item }: { item: SystemItem }): JSX.Element {
 }
 
 function RecoveryCard({ item, callbacks }: { item: RecoveryItem; callbacks: TimelineCallbacks }): JSX.Element {
+  const live = useAnnounceLive();
   return (
     <section
       className="agent-recovery mb-4 grid w-full gap-3 rounded-lg border border-yellow-600/50 bg-yellow-600/10 p-4"
       role="status"
-      aria-live="polite"
+      aria-live={live}
       aria-atomic="true"
     >
       <div className="agent-recovery-content grid min-w-0 gap-2">
@@ -164,12 +168,13 @@ function RecoveryCard({ item, callbacks }: { item: RecoveryItem; callbacks: Time
 }
 
 function ThinkingRowView({ item }: { item: ThinkingItem }): JSX.Element {
+  const live = useAnnounceLive();
   if (item.variant === 'row') {
     return (
       <div
         className="agent-thinking mb-4 flex items-center gap-2 text-muted-foreground text-sm"
         role="status"
-        aria-live="polite"
+        aria-live={live}
         aria-busy="true"
       >
         <Shimmer as="span" duration={1}>
@@ -601,7 +606,7 @@ function renderItem(
   }
 }
 
-export function TimelineView({ rows, assistantName, callbacks }: TimelineViewProps): JSX.Element {
+export function TimelineView({ rows, assistantName, announce, callbacks }: TimelineViewProps): JSX.Element {
   // Group rows by turn id into agent-turn sections. Rows of one turn always
   // collect into a single block anchored at the turn's first row — mirroring
   // legacy, where the turn <section> node persists and later rows keep
@@ -627,11 +632,12 @@ export function TimelineView({ rows, assistantName, callbacks }: TimelineViewPro
   // the single scroll node (WorkspaceHost snapshots it across tab hide/show).
   // initial/resize stay "instant" to match the legacy pinned-jump behavior.
   return (
+    <AnnounceContext.Provider value={announce !== false}>
     <Conversation
       data-role="thread"
       className="agent-thread"
       aria-label="Agent conversation"
-      aria-live="polite"
+      aria-live={announce !== false ? 'polite' : 'off'}
       aria-relevant="additions"
       initial="instant"
       resize="instant"
@@ -657,5 +663,6 @@ export function TimelineView({ rows, assistantName, callbacks }: TimelineViewPro
       </ConversationContent>
       <ConversationScrollButton className="agent-thread-scroll-button" />
     </Conversation>
+    </AnnounceContext.Provider>
   );
 }
