@@ -41,10 +41,16 @@ export class PaneLayoutController {
         // area; the requested layout is untouched and a second toggle (or a
         // focus move, which the zoom follows) restores every pane.
         this.zoomed = false;
+        // RO callbacks must not recompute synchronously: mutating layout from
+        // inside the notification loop raises "ResizeObserver loop completed"
+        // errors. Defer to the next frame and dedupe identical sizes.
+        this.resizeRafId = null;
+        this.lastStackWidth = -1;
+        this.lastStackHeight = -1;
 
         if (typeof ResizeObserver === 'function') {
-            this.resizeObserver = new ResizeObserver(() => this.recompute());
-            this.resizeObserver.observe(root);
+            this.resizeObserver = new ResizeObserver(() => this.scheduleRecompute());
+            this.resizeObserver.observe(root.parentElement ?? root);
         }
 
         // Tab drag-in: the WPF TabBar sends a text/plain workspace id; the
@@ -100,7 +106,27 @@ export class PaneLayoutController {
     dispose() {
         this.resizeObserver?.disconnect();
         this.resizeObserver = null;
+        if (this.resizeRafId !== null && typeof cancelAnimationFrame === 'function') {
+            cancelAnimationFrame(this.resizeRafId);
+            this.resizeRafId = null;
+        }
         this.listeners.clear();
+    }
+
+    scheduleRecompute() {
+        if (this.resizeRafId !== null || typeof requestAnimationFrame !== 'function') {
+            if (typeof requestAnimationFrame !== 'function') this.recompute();
+            return;
+        }
+        this.resizeRafId = requestAnimationFrame(() => {
+            this.resizeRafId = null;
+            const width = this.root.parentElement?.clientWidth ?? 0;
+            const height = this.root.parentElement?.clientHeight ?? 0;
+            if (width === this.lastStackWidth && height === this.lastStackHeight) return;
+            this.lastStackWidth = width;
+            this.lastStackHeight = height;
+            this.recompute();
+        });
     }
 
     get paneCount() {
