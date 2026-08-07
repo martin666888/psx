@@ -12,7 +12,8 @@
 .agent-decision pre::-webkit-scrollbar,
 .agent-tool-card-content::-webkit-scrollbar,
 .agent-command-menu-scroll::-webkit-scrollbar,
-.agent-usage-panel-scroll::-webkit-scrollbar {
+.agent-usage-panel-scroll::-webkit-scrollbar,
+.agent-config-card::-webkit-scrollbar {
     width: 8px;
     height: 8px;
 }
@@ -25,7 +26,8 @@
 .agent-decision pre::-webkit-scrollbar-track,
 .agent-tool-card-content::-webkit-scrollbar-track,
 .agent-command-menu-scroll::-webkit-scrollbar-track,
-.agent-usage-panel-scroll::-webkit-scrollbar-track {
+.agent-usage-panel-scroll::-webkit-scrollbar-track,
+.agent-config-card::-webkit-scrollbar-track {
     /* Scroll containers now sit on the rounded panel surfaces; a painted
      * track would read as a strip of workbench backdrop inside the panel. */
     background: transparent;
@@ -39,7 +41,8 @@
 .agent-decision pre::-webkit-scrollbar-thumb,
 .agent-tool-card-content::-webkit-scrollbar-thumb,
 .agent-command-menu-scroll::-webkit-scrollbar-thumb,
-.agent-usage-panel-scroll::-webkit-scrollbar-thumb {
+.agent-usage-panel-scroll::-webkit-scrollbar-thumb,
+.agent-config-card::-webkit-scrollbar-thumb {
     background: var(--agent-scrollbar);
     border-radius: 999px;
 }
@@ -56,7 +59,8 @@
 .agent-decision pre::-webkit-scrollbar-button,
 .agent-tool-card-content::-webkit-scrollbar-button,
 .agent-command-menu-scroll::-webkit-scrollbar-button,
-.agent-usage-panel-scroll::-webkit-scrollbar-button {
+.agent-usage-panel-scroll::-webkit-scrollbar-button,
+.agent-config-card::-webkit-scrollbar-button {
     display: none;
     width: 0;
     height: 0;
