@@ -52,4 +52,33 @@ public sealed class QwenConfigSourceTests
         Assert.IsTrue(report.Skills.Any(s => s.Name == "qwen-skill"));
         Assert.DoesNotContain(Canary, json);
     }
+
+    [TestMethod]
+    public void Collect_StdioMcp_MasksLongTokenArgs()
+    {
+        using var workspace = TestWorkspace.Create(nameof(Collect_StdioMcp_MasksLongTokenArgs));
+        var home = Path.Combine(workspace.Path, ".qwen");
+        Directory.CreateDirectory(home);
+        File.WriteAllText(Path.Combine(home, "settings.json"), $$"""
+            {
+              "mcpServers": {
+                "local": {
+                  "command": "node",
+                  "args": ["server.js", "--token", "{{Canary}}"],
+                  "env": { "API_KEY": "{{Canary}}" }
+                }
+              }
+            }
+            """);
+
+        var report = new QwenConfigSource(() => home).Collect(CancellationToken.None);
+        var json = JsonSerializer.Serialize(report);
+
+        Assert.AreEqual(AgentProviderConfigReport.Available, report.State);
+        var server = report.McpServers.Single(m => m.Name == "local");
+        Assert.AreEqual(AgentConfigMcpServer.TransportStdio, server.Transport);
+        Assert.StartsWith("node server.js --token", server.Target);
+        Assert.IsTrue(server.EnvKeys.Contains("API_KEY"));
+        Assert.DoesNotContain(Canary, json);
+    }
 }

@@ -73,11 +73,8 @@ public sealed class ClaudeConfigSource : IAgentConfigSource
         {
             if (!AgentConfigSanitizer.TryReadBoundedText(localPath, out var localText, out var oversized))
             {
-                if (oversized)
-                {
-                    state = AgentProviderConfigReport.Partial;
-                    notes.Add(AgentConfigNotes.FileTooLarge);
-                }
+                state = AgentProviderConfigReport.Partial;
+                notes.Add(oversized ? AgentConfigNotes.FileTooLarge : AgentConfigNotes.ParseFailed);
             }
             else
             {
@@ -90,11 +87,8 @@ public sealed class ClaudeConfigSource : IAgentConfigSource
         {
             if (!AgentConfigSanitizer.TryReadBoundedText(claudeJsonPath, out var jsonText, out var oversized))
             {
-                if (oversized)
-                {
-                    state = AgentProviderConfigReport.Partial;
-                    notes.Add(AgentConfigNotes.FileTooLarge);
-                }
+                state = AgentProviderConfigReport.Partial;
+                notes.Add(oversized ? AgentConfigNotes.FileTooLarge : AgentConfigNotes.ParseFailed);
             }
             else
             {

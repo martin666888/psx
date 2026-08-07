@@ -45,4 +45,30 @@ public sealed class KimiConfigSourceTests
         Assert.DoesNotContain(Canary, json);
         Assert.IsFalse(report.Facts.Any(f => f.Value.Contains(Canary)));
     }
+
+    [TestMethod]
+    public void Collect_NestedMcpServersWrapper_ListsServers()
+    {
+        using var workspace = TestWorkspace.Create(nameof(Collect_NestedMcpServersWrapper_ListsServers));
+        var home = Path.Combine(workspace.Path, ".kimi-code");
+        Directory.CreateDirectory(home);
+        File.WriteAllText(Path.Combine(home, "config.toml"), "default_model = \"kimi-k2\"");
+        File.WriteAllText(Path.Combine(home, "mcp.json"), $$"""
+            {
+              "mcpServers": {
+                "docs": {
+                  "command": "npx",
+                  "args": ["docs-server", "{{Canary}}"]
+                }
+              }
+            }
+            """);
+
+        var report = new KimiConfigSource(() => home).Collect(CancellationToken.None);
+        var json = JsonSerializer.Serialize(report);
+
+        Assert.AreEqual(AgentProviderConfigReport.Available, report.State);
+        Assert.IsTrue(report.McpServers.Any(s => s.Name == "docs"));
+        Assert.DoesNotContain(Canary, json);
+    }
 }

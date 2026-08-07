@@ -379,3 +379,28 @@ test('broker: config error payload surfaces in the config slice', () => {
   assert.match(state.configErrorText, /无法读取配置/);
   assert.equal(state.configLoadedOnce, true);
 });
+
+test('broker: retries config on another channel when the carrier closes mid-scan', () => {
+  const rig = makeRig();
+  addWorkspace(rig, 'a');
+  addWorkspace(rig, 'b');
+  rig.host.active = 'a';
+
+  rig.broker.requestConfig(false);
+  const first = configCommands(rig.commands).at(-1);
+  assert.equal(first.workspaceId, 'a');
+
+  removeWorkspace(rig, 'a');
+  const retried = configCommands(rig.commands);
+  assert.equal(retried.length, 2, 'the closed carrier triggers one retry elsewhere');
+  assert.equal(retried[1].workspaceId, 'b');
+
+  // The current channel lands; the late reply from the closed carrier is dropped.
+  rig.broker.handleConfigReport({ requestId: first.requestId, report: minimalConfigReport() });
+  assert.equal(rig.store.getState().configStatus, 'loading');
+  rig.broker.handleConfigReport({
+    requestId: retried[1].requestId,
+    report: minimalConfigReport()
+  });
+  assert.equal(rig.store.getState().configStatus, 'idle');
+});
