@@ -34,6 +34,8 @@ public interface IWorkspaceManager : IDisposable
     void CollapseToSinglePane();
     /// <summary>Divider drag end: set one pane's width share.</summary>
     void SetPaneRatio(string paneId, double ratio);
+    /// <summary>Toggle presentation-only zoom on the focused pane.</summary>
+    void TogglePaneZoom();
     /// <summary>Creation transaction: the next created workspace lands here
     /// (<see cref="WorkspaceLayoutService.NewPanePlacement"/> for a fresh pane).</summary>
     void RecordPendingPlacement(string paneId);
@@ -187,6 +189,9 @@ public sealed class WorkspaceManager : IWorkspaceManager
     public void SetPaneRatio(string paneId, double ratio) => _layout.SetPaneRatio(paneId, ratio);
 
     public void RecordPendingPlacement(string paneId) => _layout.RecordPendingPlacement(paneId);
+
+    public void TogglePaneZoom() =>
+        _ = _bridge.SendEventAsync(new { type = "pane_zoom_toggle" });
 
     public void BeginShutdown() => _shuttingDown = true;
 

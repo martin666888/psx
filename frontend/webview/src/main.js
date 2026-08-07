@@ -232,6 +232,9 @@ import { TerminalManager } from './TerminalManager.js';
                 // always-loaded layer, never staged for the Agent chunk.
                 paneLayout.applySnapshot(message);
                 return;
+            case BridgeEventType.PaneZoomToggle:
+                paneLayout.toggleZoom();
+                return;
             default:
                 // Every other event is Agent-owned (lifecycle, providers,
                 // content). The decoder inside the Agent app ignores any wire

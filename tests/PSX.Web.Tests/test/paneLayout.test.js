@@ -261,3 +261,48 @@ test('tab drag-in highlights the target pane and sends pane_move on drop', async
   assert.equal(runtime.postedMessages.filter(m => m.type === 'pane_move').length, 1);
   layout.dispose();
 });
+
+test('zoom shows only the focused pane, follows focus, and toggles back', async () => {
+  installAgentRuntime();
+  const { PaneLayoutController } = await import(
+    pathToFileURL(path.join(webviewRoot, 'src', 'PaneLayoutController.js')).href
+  );
+  document.body.innerHTML =
+    '<div id="workspace-stack"><div id="workspace-panes"></div></div>';
+  const stack = document.getElementById('workspace-stack');
+  Object.defineProperty(stack, 'clientWidth', { configurable: true, value: 1600 });
+  Object.defineProperty(stack, 'clientHeight', { configurable: true, value: 900 });
+  const layout = new PaneLayoutController(document.getElementById('workspace-panes'));
+  const applied = [];
+  layout.onLayoutApplied((snapshot) => applied.push(snapshot));
+  layout.applySnapshot({
+    revision: 1,
+    focusedPaneId: 'pane-2',
+    panes: [
+      { paneId: 'pane-1', workspaceId: 'a', kind: 'agent', ratio: 0.5 },
+      { paneId: 'pane-2', workspaceId: 'b', kind: 'terminal', ratio: 0.5 }
+    ]
+  });
+
+  assert.equal(layout.toggleZoom(), true);
+  const zoomed = applied.at(-1);
+  assert.equal(zoomed.panes.length, 1, 'only the focused pane survives zoom');
+  assert.equal(zoomed.panes[0].paneId, 'pane-2');
+  assert.equal(layout.paneCount, 1);
+  assert.equal(layout.snapshot.panes.length, 2, 'requested layout untouched');
+
+  // Focus moving while zoomed switches the zoomed pane.
+  layout.applySnapshot({
+    revision: 2,
+    focusedPaneId: 'pane-1',
+    panes: [
+      { paneId: 'pane-1', workspaceId: 'a', kind: 'agent', ratio: 0.5 },
+      { paneId: 'pane-2', workspaceId: 'b', kind: 'terminal', ratio: 0.5 }
+    ]
+  });
+  assert.equal(applied.at(-1).panes[0].paneId, 'pane-1');
+
+  assert.equal(layout.toggleZoom(), false);
+  assert.equal(applied.at(-1).panes.length, 2, 'toggle back restores every pane');
+  layout.dispose();
+});

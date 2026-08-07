@@ -37,6 +37,10 @@ export class PaneLayoutController {
         this.dragging = null;
         this.areaLeft = 0;
         this.areaWidth = 0;
+        // Presentation-only zoom: the focused pane temporarily takes the whole
+        // area; the requested layout is untouched and a second toggle (or a
+        // focus move, which the zoom follows) restores every pane.
+        this.zoomed = false;
 
         if (typeof ResizeObserver === 'function') {
             this.resizeObserver = new ResizeObserver(() => this.recompute());
@@ -128,6 +132,13 @@ export class PaneLayoutController {
         this.recompute();
     }
 
+    /** Presentation-only zoom on the focused pane. Returns the new state. */
+    toggleZoom() {
+        this.zoomed = !this.zoomed;
+        this.recompute();
+        return this.zoomed;
+    }
+
     /** Apply a C# workspace_layout snapshot. Returns true when accepted. */
     applySnapshot(message) {
         const revision = Number(message?.revision);
@@ -172,7 +183,10 @@ export class PaneLayoutController {
         const visibleCount = areaWidth > 0
             ? Math.max(1, Math.min(panes.length, Math.floor(areaWidth / PaneLayoutController.minPaneWidth)))
             : panes.length;
-        const effectivePanes = panes.slice(0, visibleCount);
+        let effectivePanes = panes.slice(0, visibleCount);
+        if (this.zoomed) {
+            effectivePanes = [panes.find(p => p.paneId === focusedPaneId) ?? panes[0]];
+        }
         // Focus never points into a collapsed pane: it falls to the rightmost
         // remaining pane for this presentation.
         const effectiveFocused = effectivePanes.some(p => p.paneId === focusedPaneId)

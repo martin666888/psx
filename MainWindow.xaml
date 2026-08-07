@@ -18,6 +18,7 @@
         <KeyBinding Gesture="Ctrl+Shift+W" Command="{Binding CloseTabCommand}" CommandParameter="{Binding ActiveTab.SessionId}"/>
         <KeyBinding Gesture="Ctrl+Alt+Right" Command="{Binding FocusAdjacentPaneCommand}" CommandParameter="1"/>
         <KeyBinding Gesture="Ctrl+Alt+Left" Command="{Binding FocusAdjacentPaneCommand}" CommandParameter="-1"/>
+        <KeyBinding Gesture="Ctrl+Alt+Enter" Command="{Binding TogglePaneZoomCommand}"/>
     </Window.InputBindings>
 
     <Grid>

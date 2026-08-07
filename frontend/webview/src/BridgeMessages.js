@@ -48,6 +48,7 @@ export const BridgeEventType = Object.freeze({
     ViewMode: 'view_mode',
     WorkspaceActivated: 'workspace_activated',
     WorkspaceLayout: 'workspace_layout',
+    PaneZoomToggle: 'pane_zoom_toggle',
     AgentWorkspaceCreated: 'agent_workspace_created',
     AgentWorkspaceClosed: 'agent_workspace_closed',
     AgentWorkspaceLimitReached: 'agent_workspace_limit_reached',

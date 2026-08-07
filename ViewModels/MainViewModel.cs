@@ -109,6 +109,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private void FocusAdjacentPane(int delta) => _workspaceManager.FocusAdjacentPane(delta);
 
     [RelayCommand]
+    private void TogglePaneZoom() => _workspaceManager.TogglePaneZoom();
+
+    [RelayCommand]
     private void CloseTab(Guid sessionId)
     {
         if (sessionId == Guid.Empty)
