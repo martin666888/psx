@@ -26,6 +26,10 @@ public interface IWorkspaceManager : IDisposable
     void SplitWorkspaceToNewPane(Guid workspaceId);
     /// <summary>Focus a pane without changing assignments (click inside it).</summary>
     void FocusPane(string paneId);
+    /// <summary>Move the focus by one pane (keyboard shortcut path).</summary>
+    void FocusAdjacentPane(int delta);
+    /// <summary>Exchange the two panes' workspace assignments.</summary>
+    void SwapPanes();
     /// <summary>Collapse back to a single pane; other workspaces go background.</summary>
     void CollapseToSinglePane();
     /// <summary>Divider drag end: set one pane's width share.</summary>
@@ -168,6 +172,10 @@ public sealed class WorkspaceManager : IWorkspaceManager
     }
 
     public void FocusPane(string paneId) => _layout.FocusPane(paneId);
+
+    public void FocusAdjacentPane(int delta) => _layout.FocusAdjacentPane(delta);
+
+    public void SwapPanes() => _layout.SwapPanes();
 
     public void CollapseToSinglePane() => _layout.CollapseToSinglePane();
 

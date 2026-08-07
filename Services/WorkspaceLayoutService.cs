@@ -179,6 +179,41 @@ public sealed class WorkspaceLayoutService
             LayoutChanged?.Invoke(this, changed);
     }
 
+    /// <summary>Move the focus by one pane (wraps). Keyboard shortcut path.</summary>
+    public void FocusAdjacentPane(int delta)
+    {
+        WorkspaceLayoutSnapshot? changed = null;
+        lock (_sync)
+        {
+            if (_panes.Count < 2)
+                return;
+            var index = _panes.FindIndex(p => p.PaneId == _focusedPaneId);
+            var next = _panes[((index + delta) % _panes.Count + _panes.Count) % _panes.Count];
+            _focusedPaneId = next.PaneId;
+            if (next.WorkspaceId.HasValue && next.Kind.HasValue)
+                TouchMruLocked(next.WorkspaceId.Value, next.Kind.Value);
+            changed = BumpRevisionLocked();
+        }
+        if (changed != null)
+            LayoutChanged?.Invoke(this, changed);
+    }
+
+    /// <summary>Exchange the workspace assignments of the two panes (the
+    /// focus stays on the same pane slot).</summary>
+    public void SwapPanes()
+    {
+        WorkspaceLayoutSnapshot? changed = null;
+        lock (_sync)
+        {
+            if (_panes.Count != 2)
+                return;
+            (_panes[0].WorkspaceId, _panes[1].WorkspaceId) = (_panes[1].WorkspaceId, _panes[0].WorkspaceId);
+            (_panes[0].Kind, _panes[1].Kind) = (_panes[1].Kind, _panes[0].Kind);
+            changed = BumpRevisionLocked();
+        }
+        LayoutChanged?.Invoke(this, changed);
+    }
+
     /// <summary>Collapse back to one pane; the focused pane survives and its
     /// content stays, every other workspace goes background.</summary>
     public void CollapseToSinglePane()

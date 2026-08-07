@@ -22,6 +22,11 @@ public partial class TabItemViewModel : ObservableObject
     [ObservableProperty]
     private bool _isPaneVisible;
 
+    /// <summary>Mirror of the window split state, used by the tab
+    /// context menu to show pane actions.</summary>
+    [ObservableProperty]
+    private bool _isSplit;
+
     [ObservableProperty]
     private string _toolTip = "";
 

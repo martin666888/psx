@@ -63,15 +63,50 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void NewTab()
     {
+        RecordPendingPlacementIfNeeded();
         _ = _workspaceManager.CreateTerminalAsync();
     }
 
     [RelayCommand]
     private void NewAgent(string providerKey)
     {
-        if (!string.IsNullOrWhiteSpace(providerKey))
-            _ = _workspaceManager.CreateAgentAsync(providerKey);
+        if (string.IsNullOrWhiteSpace(providerKey))
+            return;
+        RecordPendingPlacementIfNeeded();
+        _ = _workspaceManager.CreateAgentAsync(providerKey);
     }
+
+    /// <summary>Creation transaction: when the「+」popover's「新建到右侧列」
+    /// toggle is on, the next created workspace lands in a fresh pane.</summary>
+    private void RecordPendingPlacementIfNeeded()
+    {
+        if (!NewWorkspaceToNewPane) return;
+        _workspaceManager.RecordPendingPlacement(WorkspaceLayoutService.NewPanePlacement);
+        NewWorkspaceToNewPane = false;
+    }
+
+    [ObservableProperty]
+    private bool _newWorkspaceToNewPane;
+
+    [ObservableProperty]
+    private bool _isSplit;
+
+    [RelayCommand]
+    private void MoveTabToNewPane(Guid sessionId)
+    {
+        if (sessionId == Guid.Empty)
+            return;
+        _workspaceManager.SplitWorkspaceToNewPane(sessionId);
+    }
+
+    [RelayCommand]
+    private void SwapPanes() => _workspaceManager.SwapPanes();
+
+    [RelayCommand]
+    private void CollapseToSinglePane() => _workspaceManager.CollapseToSinglePane();
+
+    [RelayCommand]
+    private void FocusAdjacentPane(int delta) => _workspaceManager.FocusAdjacentPane(delta);
 
     [RelayCommand]
     private void CloseTab(Guid sessionId)
@@ -132,6 +167,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         System.Windows.Application.Current.Dispatcher.BeginInvoke(() =>
         {
             if (_disposed) return;
+            IsSplit = snapshot.Panes.Count > 1;
             // Tab three-state: focused pane's workspace = active, other visible
             // panes = muted underline, everything else unmarked.
             var visible = new Dictionary<Guid, bool>();
@@ -146,10 +182,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 {
                     tab.IsActive = false;
                     tab.IsPaneVisible = false;
+                    tab.IsSplit = IsSplit;
                     continue;
                 }
                 tab.IsActive = focused;
                 tab.IsPaneVisible = !focused;
+                tab.IsSplit = IsSplit;
                 if (focused) ActiveTab = tab;
             }
         });
