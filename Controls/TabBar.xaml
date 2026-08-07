@@ -232,7 +232,7 @@
                             <Border.ContextMenu>
                                 <ContextMenu>
                                     <MenuItem Header="移到新列"
-                                              Visibility="{Binding IsSplit, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Invert}"
+                                              Visibility="{Binding CanSplitFurther, Converter={StaticResource BoolToVisibilityConverter}}"
                                               Command="{Binding PlacementTarget.Tag.MoveTabToNewPaneCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                                               CommandParameter="{Binding SessionId}"/>
                                     <MenuItem Header="交换两列"

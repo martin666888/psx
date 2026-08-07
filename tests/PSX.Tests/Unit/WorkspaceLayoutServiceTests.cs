@@ -108,7 +108,7 @@ public sealed class WorkspaceLayoutServiceSplitTests
     }
 
     [TestMethod]
-    public void Split_AtCap_VisibleWorkspace_OnlyFocusesItsPane()
+    public void Split_VisibleWorkspaceBelowCap_MovesItToAFreshRightPane()
     {
         var (layout, _) = Create();
         var a = Guid.NewGuid();
@@ -118,12 +118,12 @@ public sealed class WorkspaceLayoutServiceSplitTests
 
         layout.SplitWorkspaceToNewPane(a, WorkspaceKind.Agent);
 
-        // At the cap, splitting an already-visible workspace degrades to the
-        // visible-tab rule: focus its pane, never duplicate or displace.
+        // Below the cap, splitting an already-visible workspace moves it to a
+        // fresh right-hand pane; the vacated pane collapses.
         var snapshot = layout.Snapshot;
         Assert.HasCount(2, snapshot.Panes);
-        Assert.AreEqual(a, snapshot.Panes[0].WorkspaceId);
-        Assert.AreEqual(b, snapshot.Panes[1].WorkspaceId);
+        Assert.AreEqual(b, snapshot.Panes[0].WorkspaceId);
+        Assert.AreEqual(a, snapshot.Panes[1].WorkspaceId);
         Assert.AreEqual(a, layout.FocusedWorkspaceId);
     }
 
@@ -254,5 +254,89 @@ public sealed class WorkspaceLayoutServiceSplitTests
         layout.FocusPane(WorkspaceLayoutService.FirstPaneId);
 
         Assert.IsEmpty(broadcasts);
+    }
+}
+
+[TestClass]
+[TestCategory("Unit")]
+public sealed class WorkspaceLayoutServiceMultiColumnTests
+{
+    private static (WorkspaceLayoutService layout, List<WorkspaceLayoutSnapshot> broadcasts) Create()
+    {
+        var layout = new WorkspaceLayoutService();
+        var broadcasts = new List<WorkspaceLayoutSnapshot>();
+        layout.LayoutChanged += (_, snapshot) => broadcasts.Add(snapshot);
+        return (layout, broadcasts);
+    }
+
+    [TestMethod]
+    public void Split_ToFourColumns_NormalizesRatios()
+    {
+        var (layout, _) = Create();
+        var ids = Enumerable.Range(0, 4).Select(_ => Guid.NewGuid()).ToArray();
+        layout.AssignActiveWorkspace(ids[0], WorkspaceKind.Agent);
+        layout.SplitWorkspaceToNewPane(ids[1], WorkspaceKind.Agent);
+        layout.SplitWorkspaceToNewPane(ids[2], WorkspaceKind.Terminal);
+        layout.SplitWorkspaceToNewPane(ids[3], WorkspaceKind.Agent);
+
+        var snapshot = layout.Snapshot;
+        Assert.HasCount(4, snapshot.Panes);
+        foreach (var pane in snapshot.Panes)
+            Assert.AreEqual(0.25, pane.Ratio);
+        Assert.AreEqual(snapshot.Panes[3].PaneId, snapshot.FocusedPaneId);
+        Assert.AreEqual(ids[3], layout.FocusedWorkspaceId);
+    }
+
+    [TestMethod]
+    public void Split_AtFourColumnCap_BackgroundWorkspaceReplacesFocusedPane()
+    {
+        var (layout, _) = Create();
+        var ids = Enumerable.Range(0, 4).Select(_ => Guid.NewGuid()).ToArray();
+        layout.AssignActiveWorkspace(ids[0], WorkspaceKind.Agent);
+        for (var i = 1; i < 4; i++)
+            layout.SplitWorkspaceToNewPane(ids[i], WorkspaceKind.Agent);
+        var fifth = Guid.NewGuid();
+
+        layout.SplitWorkspaceToNewPane(fifth, WorkspaceKind.Terminal);
+
+        var snapshot = layout.Snapshot;
+        Assert.HasCount(4, snapshot.Panes);
+        Assert.AreEqual(fifth, snapshot.Panes[3].WorkspaceId, "the cap degrades to replacing the focused pane");
+        Assert.AreEqual(fifth, layout.FocusedWorkspaceId);
+    }
+
+    [TestMethod]
+    public void RemoveWorkspace_MiddlePane_CollapsesAndFocusFallsLeft()
+    {
+        var (layout, _) = Create();
+        var ids = Enumerable.Range(0, 4).Select(_ => Guid.NewGuid()).ToArray();
+        layout.AssignActiveWorkspace(ids[0], WorkspaceKind.Agent);
+        for (var i = 1; i < 4; i++)
+            layout.SplitWorkspaceToNewPane(ids[i], WorkspaceKind.Agent);
+        layout.FocusPane(layout.Snapshot.Panes[1].PaneId);
+
+        layout.RemoveWorkspace(ids[1]);
+
+        var snapshot = layout.Snapshot;
+        Assert.HasCount(3, snapshot.Panes);
+        Assert.AreEqual(ids[0], layout.FocusedWorkspaceId, "focus falls to the left neighbor");
+        foreach (var pane in snapshot.Panes)
+            Assert.AreEqual(Math.Round(1.0 / 3, 4), pane.Ratio);
+        Assert.IsFalse(snapshot.Panes.Any(p => p.WorkspaceId == ids[1]));
+    }
+
+    [TestMethod]
+    public void FocusAdjacentPane_WrapsAroundAllColumns()
+    {
+        var (layout, _) = Create();
+        var ids = Enumerable.Range(0, 3).Select(_ => Guid.NewGuid()).ToArray();
+        layout.AssignActiveWorkspace(ids[0], WorkspaceKind.Agent);
+        layout.SplitWorkspaceToNewPane(ids[1], WorkspaceKind.Agent);
+        layout.SplitWorkspaceToNewPane(ids[2], WorkspaceKind.Terminal);
+
+        layout.FocusAdjacentPane(1);
+        Assert.AreEqual(ids[0], layout.FocusedWorkspaceId, "wraps past the last column");
+        layout.FocusAdjacentPane(-1);
+        Assert.AreEqual(ids[2], layout.FocusedWorkspaceId, "wraps back");
     }
 }

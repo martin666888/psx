@@ -168,6 +168,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         {
             if (_disposed) return;
             IsSplit = snapshot.Panes.Count > 1;
+            var canSplitFurther = snapshot.Panes.Count < WorkspaceLayoutService.MaxPanes;
             // Tab three-state: focused pane's workspace = active, other visible
             // panes = muted underline, everything else unmarked.
             var visible = new Dictionary<Guid, bool>();
@@ -184,6 +185,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     tab.IsActive = false;
                     tab.IsPaneVisible = false;
                     tab.IsSplit = IsSplit;
+                    tab.CanSplitFurther = canSplitFurther;
                     tab.NeedsAttention = _workspaceManager.IsAttentionNeeded(tab.SessionId);
                     if (tab.NeedsAttention && !hadAttention)
                         AttentionAppeared?.Invoke(this, EventArgs.Empty);
@@ -192,6 +194,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 tab.IsActive = focused;
                 tab.IsPaneVisible = !focused;
                 tab.IsSplit = IsSplit;
+                tab.CanSplitFurther = canSplitFurther;
                 tab.NeedsAttention = !focused && _workspaceManager.IsAttentionNeeded(tab.SessionId);
                 if (tab.NeedsAttention && !hadAttention)
                     AttentionAppeared?.Invoke(this, EventArgs.Empty);

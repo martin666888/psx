@@ -19,8 +19,9 @@ namespace PSX.Services;
 /// </summary>
 public sealed class WorkspaceLayoutService
 {
-    /// <summary>Phase 1 allows two columns; Phase 2 raises this.</summary>
-    public const int MaxPanes = 2;
+    /// <summary>Column cap: two columns are the primary form, 3/4 columns are
+    /// the degraded monitoring form (narrow-pane rules apply per pane).</summary>
+    public const int MaxPanes = 4;
     public const string FirstPaneId = "pane-1";
 
     private sealed class PaneState

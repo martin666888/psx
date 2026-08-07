@@ -32,6 +32,11 @@ public partial class TabItemViewModel : ObservableObject
     [ObservableProperty]
     private bool _needsAttention;
 
+    /// <summary>More columns can still be created (below the cap);
+    /// drives the 移到新列 menu item.</summary>
+    [ObservableProperty]
+    private bool _canSplitFurther;
+
     [ObservableProperty]
     private string _toolTip = "";
 
