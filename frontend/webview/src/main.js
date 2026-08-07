@@ -13,12 +13,20 @@
 
 import './css/tailwind.css';
 import './css/terminal.css';
+import './css/panes.css';
 import './css/agent/index.css';
 import { Bridge } from './Bridge.js';
 import { BridgeEventType } from './BridgeMessages.js';
+import { PaneLayoutController } from './PaneLayoutController.js';
 import { TerminalManager } from './TerminalManager.js';
 
 (function () {
+    // Neutral pane layout root (split-pane Phase 0 seam, always loaded — a
+    // Terminal-only session must be able to split without the Agent chunk).
+    // Phase 0 holds exactly one pane; Phase 1 drives slots from the C#
+    // WorkspaceLayoutService snapshots.
+    const paneLayout = new PaneLayoutController(document.getElementById('workspace-panes'));
+    void paneLayout;
     const terminalManager = new TerminalManager(document.getElementById('terminal-container'));
 
     let agentApp = null;
