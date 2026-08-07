@@ -57,12 +57,12 @@ export class TerminalManager {
         };
 
         this._resizeObserver = typeof ResizeObserver === 'function'
-            ? new ResizeObserver(() => this.fitActiveTerminal('container-resize'))
+            ? new ResizeObserver(() => this.fitVisibleTerminals('container-resize'))
             : null;
         this._resizeObserver?.observe(this.container);
 
         if (document.fonts?.ready) {
-            document.fonts.ready.then(() => this.fitActiveTerminal('initial-fonts-ready'));
+            document.fonts.ready.then(() => this.fitVisibleTerminals('initial-fonts-ready'));
         }
     }
 
@@ -313,6 +313,16 @@ export class TerminalManager {
         this._scheduleFit(entry, { reason });
     }
 
+    // Fit is visibility-driven, not activation-driven: every terminal whose
+    // wrapper is displayed (Phase 0: exactly the active one; split panes will
+    // show several) measures and resizes independently on its own fitAddon.
+    fitVisibleTerminals(reason = 'visible-fit') {
+        for (const entry of this.terminals.values()) {
+            if (entry.element.style.display === 'none') continue;
+            this._scheduleFit(entry, { reason });
+        }
+    }
+
     writeOutput(sessionId, base64Data) {
         const entry = this.terminals.get(sessionId);
         if (!entry) return;
@@ -468,9 +478,7 @@ export class TerminalManager {
         const ready = document.fonts?.ready || Promise.resolve();
         ready.then(() => {
             if (generation !== this._fontFitGeneration) return;
-            const active = this.terminals.get(this.activeSessionId);
-            if (!active) return;
-            this._scheduleFit(active, { reason: 'font-changed' });
+            this.fitVisibleTerminals('font-changed');
         });
     }
 
