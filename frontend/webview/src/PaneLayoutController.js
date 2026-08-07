@@ -93,7 +93,8 @@ export class PaneLayoutController {
                 workspaceId: pane.workspaceId ? String(pane.workspaceId) : null,
                 kind: pane.kind ? String(pane.kind) : null,
                 ratio: Number(pane.ratio) > 0 ? Number(pane.ratio) : 1,
-                attention: pane.attention === true
+                attention: pane.attention === true,
+                sharedWorktree: pane.sharedWorktree === true
             })) : []
         };
         this.recompute();
@@ -160,6 +161,12 @@ export class PaneLayoutController {
             slot.style.flexGrow = String(ratioOf(pane));
             slot.dataset.focused = pane.paneId === focusedPaneId ? 'true' : 'false';
             slot.dataset.attention = pane.attention === true ? 'true' : 'false';
+            slot.dataset.sharedWorktree = pane.sharedWorktree === true ? 'true' : 'false';
+            if (pane.sharedWorktree === true) {
+                slot.title = '两个可见 Agent 指向同一 worktree；分屏不等于安全的并行开发';
+            } else {
+                slot.removeAttribute('title');
+            }
         });
         for (const slot of [...this.root.querySelectorAll('.workspace-pane')]) {
             if (!seen.has(slot.dataset.paneId)) slot.remove();

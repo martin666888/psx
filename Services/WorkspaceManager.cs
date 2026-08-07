@@ -397,8 +397,31 @@ public sealed class WorkspaceManager : IWorkspaceManager
     private Task SendLayoutSnapshotAsync(WorkspaceLayoutSnapshot snapshot)
     {
         HashSet<Guid> attention;
+        Dictionary<Guid, string?> directories;
         lock (_sync)
+        {
             attention = new HashSet<Guid>(_attention);
+            directories = _workspaces.ToDictionary(w => w.WorkspaceId, w => w.WorkingDirectory);
+        }
+
+        // Two visible agents sharing one git top-level get a non-blocking
+        // warning flag: split panes are not safe parallel development.
+        var agentRoots = new Dictionary<Guid, string>();
+        foreach (var pane in snapshot.Panes)
+        {
+            if (pane.Kind != WorkspaceKind.Agent || !pane.WorkspaceId.HasValue)
+                continue;
+            if (!directories.TryGetValue(pane.WorkspaceId.Value, out var cwd))
+                continue;
+            var root = GitRootResolver.Resolve(cwd);
+            if (!string.IsNullOrEmpty(root))
+                agentRoots[pane.WorkspaceId.Value] = root;
+        }
+        var sharedRoots = agentRoots
+            .GroupBy(entry => entry.Value, StringComparer.OrdinalIgnoreCase)
+            .Where(group => group.Count() > 1)
+            .SelectMany(group => group.Select(entry => entry.Key))
+            .ToHashSet();
 
         return _bridge.SendEventAsync(new
         {
@@ -411,7 +434,8 @@ public sealed class WorkspaceManager : IWorkspaceManager
                 workspaceId = p.WorkspaceId,
                 kind = p.Kind?.ToString().ToLowerInvariant(),
                 ratio = p.Ratio,
-                attention = p.WorkspaceId.HasValue && attention.Contains(p.WorkspaceId.Value)
+                attention = p.WorkspaceId.HasValue && attention.Contains(p.WorkspaceId.Value),
+                sharedWorktree = p.WorkspaceId.HasValue && sharedRoots.Contains(p.WorkspaceId.Value)
             }).ToArray()
         });
     }

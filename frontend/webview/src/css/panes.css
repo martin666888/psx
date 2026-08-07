@@ -60,6 +60,17 @@
     z-index: 2;
 }
 
+/* Same-worktree warning: two visible agents point at one git top-level. An
+ * amber dot painted as a background layer beside the attention slot (avoids
+ * colliding with the focus ring's ::after); the slot title carries the reason. */
+.workspace-pane[data-shared-worktree="true"] {
+    background-image: radial-gradient(
+        circle 4px at calc(100% - 22px) 10px,
+        var(--agent-warning, #d3ae68) 98%,
+        transparent 100%);
+    background-repeat: no-repeat;
+}
+
 /* The terminal layer must not paint its own background over inactive panes:
  * each visible wrapper carries the background within its rect. */
 #terminal-container {
