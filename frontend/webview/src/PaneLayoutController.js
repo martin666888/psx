@@ -113,12 +113,25 @@ export class PaneLayoutController {
             : [{ paneId: 'pane-1', workspaceId: null, kind: null, ratio: 1 }];
         const focusedPaneId = this.snapshot?.focusedPaneId || 'pane-1';
 
-        this.syncPaneSlots(panes, focusedPaneId);
-
+        // Effective presentation only: panes that no longer meet the minimum
+        // interactive width collapse from the right into the background. The
+        // requested layout (C#) is never rewritten — widening restores them.
         const areaLeft = Math.min(this.dockInset, Math.max(0, width));
         const areaWidth = Math.max(0, width - areaLeft);
         this.areaLeft = areaLeft;
         this.areaWidth = areaWidth;
+        const visibleCount = areaWidth > 0
+            ? Math.max(1, Math.min(panes.length, Math.floor(areaWidth / PaneLayoutController.minPaneWidth)))
+            : panes.length;
+        const effectivePanes = panes.slice(0, visibleCount);
+        // Focus never points into a collapsed pane: it falls to the rightmost
+        // remaining pane for this presentation.
+        const effectiveFocused = effectivePanes.some(p => p.paneId === focusedPaneId)
+            ? focusedPaneId
+            : effectivePanes[effectivePanes.length - 1].paneId;
+
+        this.syncPaneSlots(effectivePanes, effectiveFocused);
+
         // The slot row indents as one block; slots then flow inside it.
         this.root.style.left = `${areaLeft}px`;
 
@@ -126,8 +139,8 @@ export class PaneLayoutController {
 
         const rects = new Map();
         let x = areaLeft;
-        panes.forEach((pane, index) => {
-            const paneWidth = index === panes.length - 1
+        effectivePanes.forEach((pane, index) => {
+            const paneWidth = index === effectivePanes.length - 1
                 ? areaLeft + areaWidth - x // last pane absorbs rounding
                 : Math.round(areaWidth * ratioOf(pane));
             rects.set(pane.paneId, { left: x, top: 0, width: Math.max(0, paneWidth), height });
@@ -137,8 +150,8 @@ export class PaneLayoutController {
 
         const effective = {
             revision: this.snapshot?.revision ?? 0,
-            focusedPaneId,
-            panes
+            focusedPaneId: effectiveFocused,
+            panes: effectivePanes
         };
         for (const listener of this.listeners) listener(effective, rects);
     }
@@ -233,5 +246,11 @@ export class PaneLayoutController {
      * the same way shell.css does (agent panel only; terminals fill the pane). */
     static get gutter() {
         return WORKBENCH_GUTTER;
+    }
+
+    /** Minimum interactive pane width in px; narrower panes collapse into the
+     * background (effective presentation only, never the requested layout). */
+    static get minPaneWidth() {
+        return 400;
     }
 }

@@ -164,3 +164,49 @@ test('divider drag previews locally and sends one ratio intent on pointerup', as
   assert.equal(layout.previewRatios, null);
   layout.dispose();
 });
+
+test('narrow stacks collapse right-hand panes effectively and restore on widen', async () => {
+  installAgentRuntime();
+  const { PaneLayoutController } = await import(
+    pathToFileURL(path.join(webviewRoot, 'src', 'PaneLayoutController.js')).href
+  );
+  document.body.innerHTML =
+    '<div id="workspace-stack"><div id="workspace-panes"></div></div>';
+  const stack = document.getElementById('workspace-stack');
+  const setWidth = (value) =>
+    Object.defineProperty(stack, 'clientWidth', { configurable: true, value });
+  setWidth(1600);
+  Object.defineProperty(stack, 'clientHeight', { configurable: true, value: 900 });
+  const layout = new PaneLayoutController(document.getElementById('workspace-panes'));
+  const applied = [];
+  layout.onLayoutApplied((snapshot) => applied.push(snapshot));
+  layout.applySnapshot({
+    revision: 1,
+    focusedPaneId: 'pane-3',
+    panes: [
+      { paneId: 'pane-1', workspaceId: 'a', kind: 'agent', ratio: 1 / 3 },
+      { paneId: 'pane-2', workspaceId: 'b', kind: 'terminal', ratio: 1 / 3 },
+      { paneId: 'pane-3', workspaceId: 'c', kind: 'agent', ratio: 1 / 3 }
+    ]
+  });
+  assert.equal(applied.at(-1).panes.length, 3, 'all panes fit at 1600px');
+
+  // 900px only fits two 400px panes: pane-3 collapses, focus falls left.
+  setWidth(900);
+  layout.recompute();
+  const collapsed = applied.at(-1);
+  assert.equal(collapsed.panes.length, 2);
+  assert.equal(collapsed.focusedPaneId, 'pane-2', 'focus never points into a collapsed pane');
+  assert.equal(layout.paneById('pane-3'), null, 'the collapsed slot is removed');
+  // The requested snapshot itself is untouched.
+  assert.equal(layout.snapshot.panes.length, 3);
+
+  // Widening restores the collapsed pane with its original assignment.
+  setWidth(1600);
+  layout.recompute();
+  const restored = applied.at(-1);
+  assert.equal(restored.panes.length, 3);
+  assert.equal(restored.focusedPaneId, 'pane-3');
+  assert.ok(layout.paneById('pane-3'));
+  layout.dispose();
+});
