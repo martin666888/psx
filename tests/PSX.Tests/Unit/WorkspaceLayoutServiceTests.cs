@@ -73,6 +73,6 @@ public sealed class WorkspaceLayoutServiceTests
         Assert.IsNull(broadcasts[1].Panes.Single().Kind);
         // Focus stays on the pane itself, never on a removed workspace.
         Assert.AreEqual(WorkspaceLayoutService.SinglePaneId, broadcasts[1].FocusedPaneId);
-        Assert.IsTrue(broadcasts[1].LayoutRevision > broadcasts[0].LayoutRevision);
+        Assert.IsGreaterThan(broadcasts[0].LayoutRevision, broadcasts[1].LayoutRevision);
     }
 }
