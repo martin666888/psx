@@ -27,6 +27,11 @@ public partial class TabItemViewModel : ObservableObject
     [ObservableProperty]
     private bool _isSplit;
 
+    /// <summary>The workspace needs the user (waiting for input,
+    /// erred, or finished) while its pane is unfocused.</summary>
+    [ObservableProperty]
+    private bool _needsAttention;
+
     [ObservableProperty]
     private string _toolTip = "";
 

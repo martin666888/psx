@@ -55,6 +55,14 @@ public partial class MainWindow : Window
 
         DataContext = _viewModel;
 
+        // Flash the taskbar button when a workspace newly needs attention
+        // while this window is inactive (split-pane attention signal).
+        _viewModel.AttentionAppeared += (_, _) =>
+        {
+            if (!IsActive)
+                PSX.Helpers.NativeMethods.FlashWindow(new WindowInteropHelper(this).Handle, true);
+        };
+
         Loaded += OnLoaded;
         Closing += OnClosing;
         Closed += OnClosed;

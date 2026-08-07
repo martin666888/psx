@@ -71,6 +71,14 @@
                                                Foreground="{TemplateBinding Foreground}"
                                                TextTrimming="CharacterEllipsis"
                                                MaxWidth="150"/>
+                                    <!-- Attention dot: the workspace waits for
+                                         input, erred, or finished while its
+                                         pane was unfocused. -->
+                                    <Ellipse Width="6" Height="6"
+                                             Margin="6,0,0,0"
+                                             VerticalAlignment="Center"
+                                             Fill="{DynamicResource AccentBrush}"
+                                             Visibility="{Binding NeedsAttention, Converter={StaticResource BoolToVisibilityConverter}}"/>
                                 </StackPanel>
                             </Border>
                             <Border x:Name="ActiveIndicator"

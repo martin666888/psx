@@ -45,6 +45,21 @@
     pointer-events: none;
 }
 
+/* Attention badge: an unfocused pane whose workspace waits for input, erred,
+ * or finished a run shows a small accent dot in its top corner. */
+.workspace-pane[data-attention="true"]::before {
+    content: "";
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--agent-focus-ring);
+    pointer-events: none;
+    z-index: 2;
+}
+
 /* The terminal layer must not paint its own background over inactive panes:
  * each visible wrapper carries the background within its rect. */
 #terminal-container {

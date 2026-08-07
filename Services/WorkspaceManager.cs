@@ -37,6 +37,8 @@ public interface IWorkspaceManager : IDisposable
     /// <summary>Creation transaction: the next created workspace lands here
     /// (<see cref="WorkspaceLayoutService.NewPanePlacement"/> for a fresh pane).</summary>
     void RecordPendingPlacement(string paneId);
+    /// <summary>Tab badge source: needs attention and not focused-visible.</summary>
+    bool IsAttentionNeeded(Guid workspaceId);
     /// <summary>Current requested-layout snapshot (panes, focus, ratios).</summary>
     WorkspaceLayoutSnapshot LayoutSnapshot { get; }
     /// <summary>Requested layout changed (pane assignment, focus, ratios).</summary>
@@ -57,6 +59,8 @@ public sealed class WorkspaceManager : IWorkspaceManager
     private readonly WorkspaceLayoutService _layout;
     private readonly List<WorkspaceDescriptor> _workspaces = new();
     private readonly object _sync = new();
+    private readonly HashSet<Guid> _attention = new();
+    private readonly Dictionary<Guid, AgentWorkspaceState?> _lastStates = new();
     private Guid? _activeWorkspaceId;
     private bool _creatingReplacementTerminal;
     private bool _shuttingDown;
@@ -229,8 +233,63 @@ public sealed class WorkspaceManager : IWorkspaceManager
         WorkspaceCreated?.Invoke(this, new WorkspaceEventArgs { Workspace = args.Workspace });
     }
 
-    private void OnAgentChanged(object? sender, AgentWorkspaceEventArgs args) =>
+    private void OnAgentChanged(object? sender, AgentWorkspaceEventArgs args)
+    {
+        UpdateAttention(args.Workspace);
         WorkspaceChanged?.Invoke(this, new WorkspaceEventArgs { Workspace = args.Workspace });
+    }
+
+    /// <summary>Attention tracking: a workspace needs the user when it waits
+    /// for permission/input, errors, or finishes a run - but only while its
+    /// pane is unfocused. Focusing the pane acknowledges; returning to
+    /// Running clears (the request was answered).</summary>
+    private void UpdateAttention(WorkspaceDescriptor workspace)
+    {
+        if (workspace.Kind != WorkspaceKind.Agent)
+            return;
+
+        bool changed;
+        lock (_sync)
+        {
+            var previous = _lastStates.TryGetValue(workspace.WorkspaceId, out var prev) ? prev : null;
+            var current = workspace.AgentState;
+            _lastStates[workspace.WorkspaceId] = current;
+
+            var focused = _layout.FocusedWorkspaceId == workspace.WorkspaceId;
+            var needsAttention = !focused && current is
+                AgentWorkspaceState.WaitingForInput or
+                AgentWorkspaceState.WaitingForPermission or
+                AgentWorkspaceState.Error;
+            var finished = !focused
+                && previous == AgentWorkspaceState.Running
+                && current is AgentWorkspaceState.Idle or AgentWorkspaceState.WaitingForInput;
+
+            changed = needsAttention || finished
+                ? _attention.Add(workspace.WorkspaceId)
+                : _attention.Remove(workspace.WorkspaceId);
+            if (focused)
+                changed = _attention.Remove(workspace.WorkspaceId) || changed;
+        }
+
+        if (changed)
+            BroadcastLayout();
+    }
+
+    /// <summary>Attention lives in the layout payload, so a state-only change
+    /// rebroadcasts the current snapshot.</summary>
+    private void BroadcastLayout()
+    {
+        var snapshot = _layout.Snapshot;
+        _ = SendLayoutSnapshotAsync(snapshot);
+        LayoutChanged?.Invoke(this, snapshot);
+    }
+
+    /// <summary>Tab badge source: needs attention and not focused-visible.</summary>
+    public bool IsAttentionNeeded(Guid workspaceId)
+    {
+        lock (_sync)
+            return _attention.Contains(workspaceId);
+    }
 
     private void OnAgentClosed(object? sender, AgentWorkspaceClosedEventArgs args) =>
         RemoveWorkspace(args.WorkspaceId);
@@ -267,6 +326,11 @@ public sealed class WorkspaceManager : IWorkspaceManager
         }
         if (!removed)
             return;
+        lock (_sync)
+        {
+            _attention.Remove(workspaceId);
+            _lastStates.Remove(workspaceId);
+        }
         // The layout collapses the vacated pane or pulls the MRU background
         // workspace in atomically; its changed event activates the new focus.
         _layout.RemoveWorkspace(workspaceId);
@@ -305,6 +369,11 @@ public sealed class WorkspaceManager : IWorkspaceManager
 
     private async Task ApplyActiveWorkspaceAsync(WorkspaceDescriptor workspace)
     {
+        // Focusing a workspace acknowledges its attention.
+        bool cleared;
+        lock (_sync)
+            cleared = _attention.Remove(workspace.WorkspaceId);
+
         if (workspace.Kind == WorkspaceKind.Terminal)
         {
             await _terminalTabs.SwitchTabAsync(workspace.WorkspaceId).ConfigureAwait(false);
@@ -320,10 +389,18 @@ public sealed class WorkspaceManager : IWorkspaceManager
         {
             await _agents.ActivateAsync(workspace.WorkspaceId).ConfigureAwait(false);
         }
+
+        if (cleared)
+            BroadcastLayout();
     }
 
-    private Task SendLayoutSnapshotAsync(WorkspaceLayoutSnapshot snapshot) =>
-        _bridge.SendEventAsync(new
+    private Task SendLayoutSnapshotAsync(WorkspaceLayoutSnapshot snapshot)
+    {
+        HashSet<Guid> attention;
+        lock (_sync)
+            attention = new HashSet<Guid>(_attention);
+
+        return _bridge.SendEventAsync(new
         {
             type = "workspace_layout",
             revision = snapshot.LayoutRevision,
@@ -333,9 +410,11 @@ public sealed class WorkspaceManager : IWorkspaceManager
                 paneId = p.PaneId,
                 workspaceId = p.WorkspaceId,
                 kind = p.Kind?.ToString().ToLowerInvariant(),
-                ratio = p.Ratio
+                ratio = p.Ratio,
+                attention = p.WorkspaceId.HasValue && attention.Contains(p.WorkspaceId.Value)
             }).ToArray()
         });
+    }
 
     public void Dispose()
     {

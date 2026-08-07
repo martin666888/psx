@@ -115,6 +115,11 @@ internal static class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 
+    // ── Window attention ────────────────────────────────────────────────────
+    [DllImport("user32.dll", ExactSpelling = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool FlashWindow(IntPtr hwnd, [MarshalAs(UnmanagedType.Bool)] bool bInvert);
+
     // ── Constants ───────────────────────────────────────────────────────────
 
     /// <summary>PF_AVX2_INSTRUCTIONS_AVAILABLE — used to pick the OpenCode binary variant.</summary>

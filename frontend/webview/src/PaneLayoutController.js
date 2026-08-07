@@ -92,7 +92,8 @@ export class PaneLayoutController {
                 paneId: String(pane.paneId || ''),
                 workspaceId: pane.workspaceId ? String(pane.workspaceId) : null,
                 kind: pane.kind ? String(pane.kind) : null,
-                ratio: Number(pane.ratio) > 0 ? Number(pane.ratio) : 1
+                ratio: Number(pane.ratio) > 0 ? Number(pane.ratio) : 1,
+                attention: pane.attention === true
             })) : []
         };
         this.recompute();
@@ -158,6 +159,7 @@ export class PaneLayoutController {
             }
             slot.style.flexGrow = String(ratioOf(pane));
             slot.dataset.focused = pane.paneId === focusedPaneId ? 'true' : 'false';
+            slot.dataset.attention = pane.attention === true ? 'true' : 'false';
         });
         for (const slot of [...this.root.querySelectorAll('.workspace-pane')]) {
             if (!seen.has(slot.dataset.paneId)) slot.remove();

@@ -178,20 +178,31 @@ public partial class MainViewModel : ObservableObject, IDisposable
             }
             foreach (var tab in Tabs)
             {
+                var hadAttention = tab.NeedsAttention;
                 if (!visible.TryGetValue(tab.SessionId, out var focused))
                 {
                     tab.IsActive = false;
                     tab.IsPaneVisible = false;
                     tab.IsSplit = IsSplit;
+                    tab.NeedsAttention = _workspaceManager.IsAttentionNeeded(tab.SessionId);
+                    if (tab.NeedsAttention && !hadAttention)
+                        AttentionAppeared?.Invoke(this, EventArgs.Empty);
                     continue;
                 }
                 tab.IsActive = focused;
                 tab.IsPaneVisible = !focused;
                 tab.IsSplit = IsSplit;
+                tab.NeedsAttention = !focused && _workspaceManager.IsAttentionNeeded(tab.SessionId);
+                if (tab.NeedsAttention && !hadAttention)
+                    AttentionAppeared?.Invoke(this, EventArgs.Empty);
                 if (focused) ActiveTab = tab;
             }
         });
     }
+
+    /// <summary>A workspace newly needs attention while unfocused; MainWindow
+    /// flashes the taskbar button when the window itself is inactive.</summary>
+    public event EventHandler? AttentionAppeared;
 
     private void OnWorkspaceCreated(object? sender, WorkspaceEventArgs e)
     {
