@@ -381,8 +381,8 @@ test('shell: composer and conversation share the same reading-column rules', () 
   );
   assert.match(
     composer,
-    /@media \(max-width: 760px\)\s*\{\s*\.agent-composer\s*\{[\s\S]*?padding-bottom: var\(--agent-space-3\)/,
-    'narrow windows reduce but keep the bottom breathing room'
+    /@container agent-shell \(max-width: 760px\)\s*\{\s*\.agent-composer\s*\{[\s\S]*?padding-bottom: var\(--agent-space-3\)/,
+    'narrow panes reduce but keep the bottom breathing room'
   );
   // The lift stays restrained: no heavy dark halo on the composer card.
   assert.match(shell, /--agent-shadow-composer: 0 6px 18px color-mix\(in srgb, var\(--agent-shadow\) 12%, transparent\)/);

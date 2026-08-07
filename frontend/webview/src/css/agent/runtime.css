@@ -28,7 +28,7 @@
     min-width: 0;
 }
 
-@media (max-width: 720px) {
+@container agent-shell (max-width: 720px) {
     .agent-runtime-card {
         grid-template-columns: auto minmax(0, 1fr);
     }

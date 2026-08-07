@@ -115,9 +115,9 @@
     padding-top: var(--agent-space-3);
 }
 
-@media (max-width: 760px) {
+@container agent-shell (max-width: 760px) {
     .agent-composer {
-        /* Narrow windows keep some breathing room without squeezing input. */
+        /* Narrow panes keep some breathing room without squeezing input. */
         padding-bottom: var(--agent-space-3);
     }
 }
