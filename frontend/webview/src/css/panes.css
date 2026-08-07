@@ -103,3 +103,10 @@
 .workspace-pane-divider[data-dragging="true"]::after {
     background: var(--agent-border);
 }
+
+/* Tab drag-in target: the pane under the pointer shows a dashed inset ring
+ * until the drop lands or the pointer leaves. */
+.workspace-pane[data-drop-target="true"] {
+    outline: 2px dashed var(--agent-focus-ring);
+    outline-offset: -6px;
+}

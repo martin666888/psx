@@ -64,6 +64,12 @@ interface PaneRatioPayload {
     ratio: number;
 }
 
+interface PaneMovePayload {
+    type: 'pane_move';
+    workspaceId: string;
+    paneId: string;
+}
+
 interface AgentSubmitPayload {
     type: 'agent_submit';
     workspaceId: string;
@@ -123,6 +129,7 @@ type BridgeOutboundMessage =
     | TerminalReadyPayload
     | PaneFocusPayload
     | PaneRatioPayload
+    | PaneMovePayload
     | AgentSubmitPayload
     | AgentUploadAttachmentPayload
     | AgentCommandPayload

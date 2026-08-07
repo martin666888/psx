@@ -210,3 +210,54 @@ test('narrow stacks collapse right-hand panes effectively and restore on widen',
   assert.ok(layout.paneById('pane-3'));
   layout.dispose();
 });
+
+test('tab drag-in highlights the target pane and sends pane_move on drop', async () => {
+  const runtime = installAgentRuntime();
+  const { PaneLayoutController } = await import(
+    pathToFileURL(path.join(webviewRoot, 'src', 'PaneLayoutController.js')).href
+  );
+  document.body.innerHTML =
+    '<div id="workspace-stack"><div id="workspace-panes"></div></div>';
+  const stack = document.getElementById('workspace-stack');
+  Object.defineProperty(stack, 'clientWidth', { configurable: true, value: 1600 });
+  Object.defineProperty(stack, 'clientHeight', { configurable: true, value: 900 });
+  const layout = new PaneLayoutController(document.getElementById('workspace-panes'));
+  layout.applySnapshot({
+    revision: 1,
+    focusedPaneId: 'pane-1',
+    panes: [
+      { paneId: 'pane-1', workspaceId: 'a', kind: 'agent', ratio: 0.5 },
+      { paneId: 'pane-2', workspaceId: 'b', kind: 'terminal', ratio: 0.5 }
+    ]
+  });
+  const slot1 = layout.paneById('pane-1');
+  const slot2 = layout.paneById('pane-2');
+  slot1.getBoundingClientRect = () => ({ left: 0, right: 800, top: 0, bottom: 900 });
+  slot2.getBoundingClientRect = () => ({ left: 800, right: 1600, top: 0, bottom: 900 });
+
+  const fire = (type, props) => {
+    const event = new window.Event(type, { bubbles: true, cancelable: true });
+    Object.assign(event, props);
+    layout.root.dispatchEvent(event);
+    return event;
+  };
+  const workspaceId = 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa';
+  const transfer = { dropEffect: '', getData: () => workspaceId };
+
+  fire('dragover', { clientX: 1200, dataTransfer: transfer });
+  assert.equal(slot2.dataset.dropTarget, 'true');
+  assert.equal(slot1.dataset.dropTarget, 'false');
+  assert.equal(runtime.postedMessages.filter(m => m.type === 'pane_move').length, 0);
+
+  fire('drop', { clientX: 1200, dataTransfer: transfer });
+  const moves = runtime.postedMessages.filter(m => m.type === 'pane_move');
+  assert.equal(moves.length, 1);
+  assert.equal(moves[0].workspaceId, workspaceId);
+  assert.equal(moves[0].paneId, 'pane-2');
+  assert.equal(slot2.dataset.dropTarget, 'false');
+
+  // Non-workspace payloads never move anything.
+  fire('drop', { clientX: 1200, dataTransfer: { dropEffect: '', getData: () => 'not-a-guid' } });
+  assert.equal(runtime.postedMessages.filter(m => m.type === 'pane_move').length, 1);
+  layout.dispose();
+});

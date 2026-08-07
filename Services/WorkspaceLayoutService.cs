@@ -215,6 +215,47 @@ public sealed class WorkspaceLayoutService
         LayoutChanged?.Invoke(this, changed);
     }
 
+    /// <summary>Drag a workspace onto a pane: onto an occupied pane swaps the
+    /// two assignments; a background workspace replaces the target's content.
+    /// The target pane takes the focus.</summary>
+    public void MoveWorkspaceToPane(Guid workspaceId, WorkspaceKind kind, string paneId)
+    {
+        WorkspaceLayoutSnapshot? changed = null;
+        lock (_sync)
+        {
+            var target = _panes.FirstOrDefault(p => p.PaneId == paneId);
+            if (target == null)
+                return;
+            TouchMruLocked(workspaceId, kind);
+            var source = _panes.FirstOrDefault(p => p.WorkspaceId == workspaceId);
+            if (source == target)
+            {
+                if (_focusedPaneId != target.PaneId)
+                {
+                    _focusedPaneId = target.PaneId;
+                    changed = BumpRevisionLocked();
+                }
+            }
+            else
+            {
+                var displacedId = target.WorkspaceId;
+                var displacedKind = target.Kind;
+                target.WorkspaceId = workspaceId;
+                target.Kind = kind;
+                if (source != null)
+                {
+                    // Swap: the displaced workspace moves into the source pane.
+                    source.WorkspaceId = displacedId;
+                    source.Kind = displacedKind;
+                }
+                _focusedPaneId = target.PaneId;
+                changed = BumpRevisionLocked();
+            }
+        }
+        if (changed != null)
+            LayoutChanged?.Invoke(this, changed);
+    }
+
     /// <summary>Collapse back to one pane; the focused pane survives and its
     /// content stays, every other workspace goes background.</summary>
     public void CollapseToSinglePane()

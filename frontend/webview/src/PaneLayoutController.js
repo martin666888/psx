@@ -42,6 +42,55 @@ export class PaneLayoutController {
             this.resizeObserver = new ResizeObserver(() => this.recompute());
             this.resizeObserver.observe(root);
         }
+
+        // Tab drag-in: the WPF TabBar sends a text/plain workspace id; the
+        // slot under the pointer is the drop target (highlight only, no
+        // bridge traffic until drop).
+        this.root.addEventListener('dragover', (event) => this.onDragOver(event));
+        this.root.addEventListener('drop', (event) => this.onDrop(event));
+        this.root.addEventListener('dragleave', (event) => this.onDragLeave(event));
+    }
+
+    static get workspaceIdPattern() {
+        return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    }
+
+    slotAt(clientX) {
+        for (const slot of this.root.querySelectorAll('.workspace-pane')) {
+            const rect = slot.getBoundingClientRect();
+            if (clientX >= rect.left && clientX < rect.right) return slot;
+        }
+        return null;
+    }
+
+    markDropTarget(slot) {
+        for (const candidate of this.root.querySelectorAll('.workspace-pane')) {
+            candidate.dataset.dropTarget = candidate === slot ? 'true' : 'false';
+        }
+    }
+
+    onDragOver(event) {
+        const slot = this.slotAt(event.clientX);
+        if (!slot) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+        this.markDropTarget(slot);
+    }
+
+    onDrop(event) {
+        const slot = this.slotAt(event.clientX);
+        this.markDropTarget(null);
+        if (!slot) return;
+        event.preventDefault();
+        const workspaceId = event.dataTransfer.getData('text/plain');
+        if (PaneLayoutController.workspaceIdPattern.test(workspaceId)) {
+            Bridge.sendPaneMove(workspaceId, slot.dataset.paneId);
+        }
+    }
+
+    onDragLeave(event) {
+        if (event.relatedTarget && this.root.contains(event.relatedTarget)) return;
+        this.markDropTarget(null);
     }
 
     dispose() {

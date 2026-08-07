@@ -103,6 +103,14 @@ export const Bridge = {
         this.sendToHost({ type: BridgeSendType.PaneRatio, paneId: paneId, ratio: ratio });
     },
 
+    /** Drag a workspace onto a pane (swap when occupied, replace otherwise).
+     * @param {string} workspaceId
+     * @param {string} paneId
+     */
+    sendPaneMove(workspaceId, paneId) {
+        this.sendToHost({ type: BridgeSendType.PaneMove, workspaceId: workspaceId, paneId: paneId });
+    },
+
     /**
      * @param {string} workspaceId
      * @param {string} text

@@ -22,12 +22,20 @@ public interface ITerminalBridgeService
     event EventHandler<string>? PaneFocusRequested;
     /// <summary>Divider drag end: paneId + requested ratio.</summary>
     event EventHandler<PaneRatioEventArgs>? PaneRatioRequested;
+    /// <summary>Drag a workspace onto a pane (swap/replace).</summary>
+    event EventHandler<PaneMoveEventArgs>? PaneMoveRequested;
 }
 
 public sealed class PaneRatioEventArgs : EventArgs
 {
     public required string PaneId { get; init; }
     public double Ratio { get; init; }
+}
+
+public sealed class PaneMoveEventArgs : EventArgs
+{
+    public Guid WorkspaceId { get; init; }
+    public required string PaneId { get; init; }
 }
 
 public class TerminalInputEventArgs : EventArgs

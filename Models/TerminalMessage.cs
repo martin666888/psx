@@ -34,6 +34,9 @@ public sealed class TerminalMessage
     [JsonPropertyName("paneId")]
     public string? PaneId { get; set; }
 
+    [JsonPropertyName("workspaceId")]
+    public string? WorkspaceId { get; set; }
+
     [JsonPropertyName("ratio")]
     public double? Ratio { get; set; }
 

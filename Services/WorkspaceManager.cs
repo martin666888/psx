@@ -83,6 +83,7 @@ public sealed class WorkspaceManager : IWorkspaceManager
         _terminalTabs.TabTitleChanged += OnTerminalTitleChanged;
         _terminalTabs.PaneFocusRequested += (_, paneId) => _layout.FocusPane(paneId);
         _terminalTabs.PaneRatioRequested += (_, args) => _layout.SetPaneRatio(args.PaneId, args.Ratio);
+        _terminalTabs.PaneMoveRequested += OnPaneMoveRequested;
         _agents.WorkspaceCreated += OnAgentCreated;
         _agents.WorkspaceChanged += OnAgentChanged;
         _agents.WorkspaceClosed += OnAgentClosed;
@@ -337,6 +338,16 @@ public sealed class WorkspaceManager : IWorkspaceManager
         WorkspaceClosed?.Invoke(this, new WorkspaceClosedEventArgs { WorkspaceId = workspaceId });
         if (createReplacementTerminal)
             _ = CreateTerminalAsync();
+    }
+
+    private void OnPaneMoveRequested(object? sender, PaneMoveEventArgs args)
+    {
+        WorkspaceDescriptor? workspace;
+        lock (_sync)
+            workspace = _workspaces.FirstOrDefault(item => item.WorkspaceId == args.WorkspaceId);
+        if (workspace == null)
+            return;
+        _layout.MoveWorkspaceToPane(args.WorkspaceId, workspace.Kind, args.PaneId);
     }
 
     private void OnLayoutChanged(object? sender, WorkspaceLayoutSnapshot snapshot)

@@ -20,6 +20,8 @@ public interface ITabManagementService
     event EventHandler<string>? PaneFocusRequested;
     /// <summary>Divider drag end: paneId + requested ratio.</summary>
     event EventHandler<PaneRatioEventArgs>? PaneRatioRequested;
+    /// <summary>Drag a workspace onto a pane (swap/replace).</summary>
+    event EventHandler<PaneMoveEventArgs>? PaneMoveRequested;
 }
 
 public class TabCreatedEventArgs : EventArgs

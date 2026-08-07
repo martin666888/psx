@@ -253,6 +253,8 @@
                                         Style="{StaticResource TabSwitchButtonStyle}"
                                         ToolTip="{Binding ToolTip}"
                                         AutomationProperties.Name="{Binding Title}"
+                                        PreviewMouseLeftButtonDown="OnTabSwitchPreviewMouseDown"
+                                        PreviewMouseMove="OnTabSwitchPreviewMouseMove"
                                         Command="{Binding DataContext.SwitchTabCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                         CommandParameter="{Binding SessionId}"/>
                                 <Button Grid.Column="1"

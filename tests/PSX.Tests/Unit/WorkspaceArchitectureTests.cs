@@ -580,6 +580,7 @@ internal sealed class RecordingTabManagementService : ITabManagementService
     public event EventHandler<TabTitleChangedEventArgs>? TabTitleChanged { add { } remove { } }
     public event EventHandler<string>? PaneFocusRequested { add { } remove { } }
     public event EventHandler<PaneRatioEventArgs>? PaneRatioRequested { add { } remove { } }
+    public event EventHandler<PaneMoveEventArgs>? PaneMoveRequested { add { } remove { } }
 
     public Task<Guid> CreateTabAsync(ShellProfile? profile = null)
     {

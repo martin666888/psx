@@ -131,7 +131,8 @@ internal enum TerminalBridgeMessageKind
     PasteRequest,
     Ready,
     PaneFocus,
-    PaneRatio
+    PaneRatio,
+    PaneMove
 }
 
 internal sealed record TerminalBridgeMessage(
@@ -141,7 +142,8 @@ internal sealed record TerminalBridgeMessage(
     TerminalTitleEventArgs? Title = null,
     TerminalPasteRequest? PasteRequest = null,
     string? PaneId = null,
-    double? Ratio = null);
+    double? Ratio = null,
+    Guid? WorkspaceId = null);
 
 internal sealed record TerminalPasteRequest(Guid SessionId, Guid RequestId);
 
@@ -229,6 +231,14 @@ internal static class TerminalBridgeMessageParser
                     TerminalBridgeMessageKind.PaneRatio,
                     PaneId: source.PaneId,
                     Ratio: source.Ratio.Value);
+                return true;
+
+            case "pane_move" when !string.IsNullOrWhiteSpace(source.PaneId)
+                                  && Guid.TryParse(source.WorkspaceId, out var moveId):
+                message = new TerminalBridgeMessage(
+                    TerminalBridgeMessageKind.PaneMove,
+                    PaneId: source.PaneId,
+                    WorkspaceId: moveId);
                 return true;
         }
 
