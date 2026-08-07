@@ -29,11 +29,32 @@ export class TimelineController implements FeatureController {
   private readonly projection = new TimelineProjection();
   private timelineIsland: IslandLoader<TimelineViewProps> | null = null;
   private renderFrame: number | null = null;
+  // Visibility throttling: hidden workspaces keep folding ACP events into the
+  // projection but defer the React render; showing re-projects one snapshot.
+  private visible = true;
+  private renderPending = false;
 
   constructor(workspaceId: string, host: TimelineHost) {
     this.workspaceId = workspaceId;
     this.host = host;
     this.state = createInitialWorkspaceState(workspaceId);
+  }
+
+  setVisible(visible: boolean): void {
+    if (this.visible === visible) return;
+    this.visible = visible;
+    if (!visible) {
+      if (this.renderFrame !== null) {
+        cancelAnimationFrame(this.renderFrame);
+        this.renderFrame = null;
+        this.renderPending = true;
+      }
+      return;
+    }
+    if (this.renderPending) {
+      this.renderPending = false;
+      this.render();
+    }
   }
 
   mount(): void {
@@ -64,6 +85,10 @@ export class TimelineController implements FeatureController {
   }
 
   private scheduleRender(): void {
+    if (!this.visible) {
+      this.renderPending = true;
+      return;
+    }
     if (this.renderFrame !== null) return;
     this.renderFrame = requestAnimationFrame(() => {
       this.renderFrame = null;
@@ -72,6 +97,10 @@ export class TimelineController implements FeatureController {
   }
 
   private render(): void {
+    if (!this.visible) {
+      this.renderPending = true;
+      return;
+    }
     const host = this.conversationHost;
     if (!host) return;
     this.timelineIsland ??= createIslandLoader<TimelineViewProps>({

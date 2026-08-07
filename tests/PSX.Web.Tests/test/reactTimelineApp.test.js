@@ -316,3 +316,39 @@ test('closing mid-stream unmounts cleanly and ignores late events', async () => 
     app.handle({ type: 'assistant_delta', workspaceId: WS, text: 'late' })
   );
 });
+
+test('hidden workspace defers timeline render until re-activated', async () => {
+  const WS_B = '55555555-5555-4555-8555-555555555555';
+  const { app, panelFor } = await fixture();
+  createAgentWorkspace(app, WS_B);
+  // Activating A leaves B hidden: its controller enters the throttled state.
+  await flushReact(async () =>
+    app.handle({ type: 'workspace_activated', workspaceId: WS, kind: 'agent' })
+  );
+  const panelB = panelFor(WS_B);
+  assert.equal(panelB.hidden, true);
+
+  // Streaming keeps folding into the projection but must not reach the DOM.
+  await flushReact(async () => {
+    app.handle({ type: 'user_message', workspaceId: WS_B, text: 'hidden-question' });
+    app.handle({ type: 'assistant_delta', workspaceId: WS_B, text: 'hidden-answer' });
+    app.handle({ type: 'run_finished', workspaceId: WS_B });
+    flushAgentAnimationFrames();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+  assert.equal(
+    panelB.querySelector('[data-role="conversation-host"]').textContent.includes('hidden-answer'),
+    false,
+    'a hidden workspace must defer its React render'
+  );
+
+  // Re-activating B projects the accumulated snapshot in one render.
+  await settle(
+    () => app.handle({ type: 'workspace_activated', workspaceId: WS_B, kind: 'agent' }),
+    () =>
+      panelB
+        .querySelector('[data-role="thread"]')
+        ?.textContent.includes('hidden-answer') ?? false
+  );
+  assert.match(panelB.querySelector('[data-role="thread"]').textContent, /hidden-question/);
+});

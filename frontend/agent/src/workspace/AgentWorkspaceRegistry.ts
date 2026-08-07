@@ -194,6 +194,12 @@ export class AgentWorkspaceRegistry {
       case 'lifecycle':
         if (event.type === 'workspace_activated') {
           this.host.activate(event.workspaceId, event.kind === 'agent' ? 'agent' : 'terminal');
+          // Render throttling follows panel visibility: the shown Agent
+          // workspace renders live; every other workspace (including all of
+          // them while a Terminal is active) defers React work until shown.
+          for (const [id, controller] of this.controllers) {
+            controller.setVisible(event.kind === 'agent' && id === event.workspaceId);
+          }
           if (event.kind === 'agent') {
             this.historyBroker.activateWorkspace(event.workspaceId);
             this.usageBroker.activateWorkspace(event.workspaceId);

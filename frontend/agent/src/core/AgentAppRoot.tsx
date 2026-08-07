@@ -10,10 +10,11 @@
 // keep-alive contract: an entry lives until its controller disposes it —
 // hiding a workspace panel hides the host element but never unmounts the
 // portal, so component state survives tab switches; store updates keep
-// flowing to hidden workspaces because rendering never depends on
-// visibility. Every region keeps its own error boundary (IslandFrame), so a
-// crash inside History/Timeline/Composer/Workspace regions stays contained
-// to that region.
+// flowing to hidden workspaces, while the timeline's React render is
+// visibility-throttled by TimelineController (deferred until shown). Every
+// region keeps its own error boundary (IslandFrame), so a crash inside
+// History/Timeline/Composer/Workspace regions stays contained to that
+// region.
 
 import {
   Component,
