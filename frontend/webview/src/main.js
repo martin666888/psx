@@ -26,7 +26,6 @@ import { TerminalManager } from './TerminalManager.js';
     // Phase 0 holds exactly one pane; Phase 1 drives slots from the C#
     // WorkspaceLayoutService snapshots.
     const paneLayout = new PaneLayoutController(document.getElementById('workspace-panes'));
-    void paneLayout;
     const terminalManager = new TerminalManager(document.getElementById('terminal-container'));
 
     let agentApp = null;
@@ -216,6 +215,11 @@ import { TerminalManager } from './TerminalManager.js';
                     workspaceId: message.workspaceId || '',
                     kind: message.mode === 'agent' ? 'agent' : 'terminal'
                 });
+                return;
+            case BridgeEventType.WorkspaceLayout:
+                // Requested-layout snapshots are pane-neutral: handled in the
+                // always-loaded layer, never staged for the Agent chunk.
+                paneLayout.applySnapshot(message);
                 return;
             default:
                 // Every other event is Agent-owned (lifecycle, providers,

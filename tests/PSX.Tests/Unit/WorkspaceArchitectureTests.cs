@@ -447,7 +447,7 @@ public sealed class WorkspaceManagerTests
         var terminals = new RecordingTabManagementService();
         using var agents = new StubAgentWorkspaceCoordinator();
         var bridge = new RecordingAgentBridgeService();
-        using var manager = new WorkspaceManager(terminals, agents, bridge);
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService());
         var first = (await manager.CreateTerminalAsync())!.Value;
 
         Assert.AreEqual("terminal", manager.Workspaces.Single().IconKey);
@@ -470,7 +470,7 @@ public sealed class WorkspaceManagerTests
         var terminals = new RecordingTabManagementService();
         using var agents = new StubAgentWorkspaceCoordinator();
         var bridge = new RecordingAgentBridgeService();
-        using var manager = new WorkspaceManager(terminals, agents, bridge);
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService());
 
         _ = await manager.CreateTerminalAsync();
 

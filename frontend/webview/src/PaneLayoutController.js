@@ -14,6 +14,11 @@ export class PaneLayoutController {
     constructor(root) {
         if (!root) throw new Error('PaneLayoutController requires the #workspace-panes root');
         this.root = root;
+        // Monotonic guard for workspace_layout snapshots (requested layout
+        // from the C# WorkspaceLayoutService). Late or replayed snapshots are
+        // dropped. Phase 0 applies no visual change beyond the single pane.
+        this.lastRevision = -1;
+        this.snapshot = null;
     }
 
     get paneCount() {
@@ -29,5 +34,18 @@ export class PaneLayoutController {
             if (pane.dataset.paneId === paneId) return pane;
         }
         return null;
+    }
+
+    /** Apply a C# workspace_layout snapshot. Returns true when accepted. */
+    applySnapshot(message) {
+        const revision = Number(message?.revision);
+        if (!Number.isFinite(revision) || revision <= this.lastRevision) return false;
+        this.lastRevision = revision;
+        this.snapshot = {
+            revision,
+            focusedPaneId: String(message.focusedPaneId || ''),
+            panes: Array.isArray(message.panes) ? message.panes : []
+        };
+        return true;
     }
 }

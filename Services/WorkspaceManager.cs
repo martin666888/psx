@@ -35,6 +35,7 @@ public sealed class WorkspaceManager : IWorkspaceManager
     private readonly ITabManagementService _terminalTabs;
     private readonly IAgentWorkspaceCoordinator _agents;
     private readonly IAgentBridgeService _bridge;
+    private readonly WorkspaceLayoutService _layout;
     private readonly List<WorkspaceDescriptor> _workspaces = new();
     private readonly object _sync = new();
     private Guid? _activeWorkspaceId;
@@ -45,11 +46,14 @@ public sealed class WorkspaceManager : IWorkspaceManager
     public WorkspaceManager(
         ITabManagementService terminalTabs,
         IAgentWorkspaceCoordinator agents,
-        IAgentBridgeService bridge)
+        IAgentBridgeService bridge,
+        WorkspaceLayoutService layout)
     {
         _terminalTabs = terminalTabs;
         _agents = agents;
         _bridge = bridge;
+        _layout = layout;
+        _layout.LayoutChanged += OnLayoutChanged;
 
         _terminalTabs.TabCreated += OnTerminalCreated;
         _terminalTabs.TabClosed += OnTerminalClosed;
@@ -104,6 +108,10 @@ public sealed class WorkspaceManager : IWorkspaceManager
 
         lock (_sync)
             _activeWorkspaceId = workspaceId;
+
+        // The requested-layout truth source: activation assigns the workspace
+        // to the (Phase 0: single) pane and hands it the focus.
+        _layout.AssignActiveWorkspace(workspaceId, workspace.Kind);
 
         if (workspace.Kind == WorkspaceKind.Terminal)
         {
@@ -197,6 +205,7 @@ public sealed class WorkspaceManager : IWorkspaceManager
     {
         lock (_sync)
             _activeWorkspaceId = workspaceId;
+        _layout.AssignActiveWorkspace(workspaceId, WorkspaceKind.Agent);
         WorkspaceActivationRequested?.Invoke(this, workspaceId);
     }
 
@@ -232,12 +241,33 @@ public sealed class WorkspaceManager : IWorkspaceManager
             }
         }
         if (removed)
+        {
+            _layout.RemoveWorkspace(workspaceId);
             WorkspaceClosed?.Invoke(this, new WorkspaceClosedEventArgs { WorkspaceId = workspaceId });
+        }
         if (nextWorkspaceId.HasValue)
             _ = ActivateAsync(nextWorkspaceId.Value);
         else if (createReplacementTerminal)
             _ = CreateTerminalAsync();
     }
+
+    private void OnLayoutChanged(object? sender, WorkspaceLayoutSnapshot snapshot) =>
+        _ = SendLayoutSnapshotAsync(snapshot);
+
+    private Task SendLayoutSnapshotAsync(WorkspaceLayoutSnapshot snapshot) =>
+        _bridge.SendEventAsync(new
+        {
+            type = "workspace_layout",
+            revision = snapshot.LayoutRevision,
+            focusedPaneId = snapshot.FocusedPaneId,
+            panes = snapshot.Panes.Select(p => new
+            {
+                paneId = p.PaneId,
+                workspaceId = p.WorkspaceId,
+                kind = p.Kind?.ToString().ToLowerInvariant(),
+                ratio = p.Ratio
+            }).ToArray()
+        });
 
     public void Dispose()
     {
@@ -246,6 +276,7 @@ public sealed class WorkspaceManager : IWorkspaceManager
         _disposed = true;
         _shuttingDown = true;
 
+        _layout.LayoutChanged -= OnLayoutChanged;
         _terminalTabs.TabCreated -= OnTerminalCreated;
         _terminalTabs.TabClosed -= OnTerminalClosed;
         _terminalTabs.TabTitleChanged -= OnTerminalTitleChanged;

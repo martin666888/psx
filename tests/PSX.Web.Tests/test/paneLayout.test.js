@@ -35,3 +35,21 @@ test('PaneLayoutController enumerates panes without the Agent chunk', async () =
   assert.equal(layout.paneById('missing'), null);
   assert.throws(() => new PaneLayoutController(null), /requires/);
 });
+
+test('PaneLayoutController drops late or replayed layout snapshots', async () => {
+  installAgentRuntime();
+  const { PaneLayoutController } = await import(
+    pathToFileURL(path.join(webviewRoot, 'src', 'PaneLayoutController.js')).href
+  );
+  document.body.innerHTML =
+    '<div id="workspace-panes"><div class="workspace-pane" data-pane-id="pane-1"></div></div>';
+  const layout = new PaneLayoutController(document.getElementById('workspace-panes'));
+
+  assert.equal(layout.applySnapshot({ revision: 2, focusedPaneId: 'pane-1', panes: [] }), true);
+  assert.equal(layout.applySnapshot({ revision: 1, focusedPaneId: 'pane-1', panes: [] }), false, 'late snapshot');
+  assert.equal(layout.applySnapshot({ revision: 2, focusedPaneId: 'pane-1', panes: [] }), false, 'replayed snapshot');
+  assert.equal(layout.applySnapshot({ revision: 3, focusedPaneId: 'pane-1', panes: [{ paneId: 'pane-1' }] }), true);
+  assert.equal(layout.applySnapshot({}), false, 'malformed snapshot');
+  assert.equal(layout.lastRevision, 3);
+  assert.equal(layout.snapshot.panes.length, 1);
+});
