@@ -106,6 +106,7 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
         continue;
       }
       this.applyPanelRect(entry.panel, assignment.rect);
+      entry.panel.dataset.paneId = assignment.paneId;
       if (entry.panel.hidden) this.setPanelVisible(entry.panel, true);
       entry.panel.dataset.paneFocused = assignment.paneId === snapshot.focusedPaneId ? 'true' : 'false';
     }
@@ -176,6 +177,12 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
     this.container.appendChild(fragment);
 
     const bridge = Bridge.createAgentScope(id);
+    // Click-to-focus: any interaction with a visible panel focuses its pane
+    // (split panes). The layout engine stamps the current paneId on the panel.
+    panel.addEventListener('mousedown', () => {
+      const paneId = panel.dataset.paneId;
+      if (paneId) Bridge.sendPaneFocus(paneId);
+    });
 
     if (this.settings) this.applyGlobalAppearance(this.settings);
     this.workspaces.set(id, {

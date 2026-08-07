@@ -15,6 +15,11 @@ public interface ITabManagementService
     event EventHandler<TabCreatedEventArgs>? TabCreated;
     event EventHandler<TabClosedEventArgs>? TabClosed;
     event EventHandler<TabTitleChangedEventArgs>? TabTitleChanged;
+    /// <summary>Click-to-focus intent for a pane (split panes), forwarded
+    /// from the neutral bridge.</summary>
+    event EventHandler<string>? PaneFocusRequested;
+    /// <summary>Divider drag end: paneId + requested ratio.</summary>
+    event EventHandler<PaneRatioEventArgs>? PaneRatioRequested;
 }
 
 public class TabCreatedEventArgs : EventArgs

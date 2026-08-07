@@ -188,7 +188,13 @@ export class TerminalManager {
 
         // Open terminal in the wrapper div
         terminal.open(wrapper);
-        wrapper.addEventListener('mousedown', () => terminal.focus());
+        wrapper.addEventListener('mousedown', () => {
+            terminal.focus();
+            // Click-to-focus (split panes): the layout engine stamps the
+            // current paneId on the wrapper via applyLayout.
+            const entry = this.terminals.get(sessionId);
+            if (entry?.paneId) Bridge.sendPaneFocus(entry.paneId);
+        });
 
         // Load optional addons (must be after open())
         this._loadAddons(terminal);
@@ -258,7 +264,8 @@ export class TerminalManager {
             element: wrapper,
             pendingFitFrame: null,
             fitGeneration: 0,
-            needsFit: true
+            needsFit: true,
+            paneId: null
         };
         this.terminals.set(sessionId, entry);
 
@@ -305,12 +312,13 @@ export class TerminalManager {
         for (const pane of snapshot.panes) {
             if (pane.kind !== 'terminal' || !pane.workspaceId) continue;
             const rect = rects?.get(pane.paneId);
-            if (rect) assigned.set(String(pane.workspaceId), rect);
+            if (rect) assigned.set(String(pane.workspaceId), { rect, paneId: pane.paneId });
         }
 
         for (const [id, entry] of this.terminals) {
-            const rect = assigned.get(id);
-            if (!rect) {
+            const assignment = assigned.get(id);
+            if (!assignment) {
+                entry.paneId = null;
                 if (entry.element.style.display !== 'none') {
                     entry.element.style.display = 'none';
                     entry.needsFit = true;
@@ -319,7 +327,8 @@ export class TerminalManager {
             }
             const wasHidden = entry.element.style.display === 'none';
             entry.element.style.display = 'block';
-            this._applyPaneRect(entry, rect);
+            entry.paneId = assignment.paneId;
+            this._applyPaneRect(entry, assignment.rect);
             if (wasHidden) entry.needsFit = true;
             this._scheduleFit(entry, { reason: 'pane-layout' });
         }

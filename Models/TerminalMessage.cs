@@ -31,6 +31,12 @@ public sealed class TerminalMessage
     [JsonPropertyName("title")]
     public string? Title { get; set; }
 
+    [JsonPropertyName("paneId")]
+    public string? PaneId { get; set; }
+
+    [JsonPropertyName("ratio")]
+    public double? Ratio { get; set; }
+
     [JsonPropertyName("settings")]
     public TerminalOptions? Settings { get; set; }
 }

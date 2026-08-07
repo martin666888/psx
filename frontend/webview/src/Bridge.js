@@ -88,6 +88,21 @@ export const Bridge = {
         this.sendToHost({ type: BridgeSendType.Ready });
     },
 
+    /** Click-to-focus intent for a pane (split panes).
+     * @param {string} paneId
+     */
+    sendPaneFocus(paneId) {
+        this.sendToHost({ type: BridgeSendType.PaneFocus, paneId: paneId });
+    },
+
+    /** Divider drag end: one ratio intent per pointerup (never per move).
+     * @param {string} paneId
+     * @param {number} ratio
+     */
+    sendPaneRatio(paneId, ratio) {
+        this.sendToHost({ type: BridgeSendType.PaneRatio, paneId: paneId, ratio: ratio });
+    },
+
     /**
      * @param {string} workspaceId
      * @param {string} text

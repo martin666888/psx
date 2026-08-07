@@ -17,6 +17,11 @@ public partial class TabItemViewModel : ObservableObject
     [ObservableProperty]
     private bool _isActive;
 
+    /// <summary>Visible in a pane but unfocused (split panes); mutually
+    /// exclusive with IsActive, hidden workspaces have neither.</summary>
+    [ObservableProperty]
+    private bool _isPaneVisible;
+
     [ObservableProperty]
     private string _toolTip = "";
 

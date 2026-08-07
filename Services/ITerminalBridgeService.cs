@@ -18,6 +18,16 @@ public interface ITerminalBridgeService
     event EventHandler<TerminalTitleEventArgs>? TitleChanged;
     event EventHandler<string>? ViewModeChanged;
     event EventHandler? FrontendReady;
+    /// <summary>Click-to-focus intent for a pane (split panes).</summary>
+    event EventHandler<string>? PaneFocusRequested;
+    /// <summary>Divider drag end: paneId + requested ratio.</summary>
+    event EventHandler<PaneRatioEventArgs>? PaneRatioRequested;
+}
+
+public sealed class PaneRatioEventArgs : EventArgs
+{
+    public required string PaneId { get; init; }
+    public double Ratio { get; init; }
 }
 
 public class TerminalInputEventArgs : EventArgs

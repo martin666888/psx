@@ -53,6 +53,17 @@ interface TerminalReadyPayload {
     type: 'ready';
 }
 
+interface PaneFocusPayload {
+    type: 'pane_focus';
+    paneId: string;
+}
+
+interface PaneRatioPayload {
+    type: 'pane_ratio';
+    paneId: string;
+    ratio: number;
+}
+
 interface AgentSubmitPayload {
     type: 'agent_submit';
     workspaceId: string;
@@ -110,6 +121,8 @@ type BridgeOutboundMessage =
     | TerminalTitlePayload
     | TerminalPasteRequestPayload
     | TerminalReadyPayload
+    | PaneFocusPayload
+    | PaneRatioPayload
     | AgentSubmitPayload
     | AgentUploadAttachmentPayload
     | AgentCommandPayload

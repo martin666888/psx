@@ -19,6 +19,8 @@ export const BridgeSendType = Object.freeze({
     Title: 'title',
     PasteRequest: 'paste_request',
     Ready: 'ready',
+    PaneFocus: 'pane_focus',
+    PaneRatio: 'pane_ratio',
     AgentSubmit: 'agent_submit',
     AgentUploadAttachment: 'agent_upload_attachment',
     AgentCommand: 'agent_command',

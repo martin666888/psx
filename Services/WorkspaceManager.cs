@@ -35,6 +35,8 @@ public interface IWorkspaceManager : IDisposable
     void RecordPendingPlacement(string paneId);
     /// <summary>Current requested-layout snapshot (panes, focus, ratios).</summary>
     WorkspaceLayoutSnapshot LayoutSnapshot { get; }
+    /// <summary>Requested layout changed (pane assignment, focus, ratios).</summary>
+    event EventHandler<WorkspaceLayoutSnapshot>? LayoutChanged;
     void BeginShutdown();
 
     event EventHandler<WorkspaceEventArgs>? WorkspaceCreated;
@@ -71,6 +73,8 @@ public sealed class WorkspaceManager : IWorkspaceManager
         _terminalTabs.TabCreated += OnTerminalCreated;
         _terminalTabs.TabClosed += OnTerminalClosed;
         _terminalTabs.TabTitleChanged += OnTerminalTitleChanged;
+        _terminalTabs.PaneFocusRequested += (_, paneId) => _layout.FocusPane(paneId);
+        _terminalTabs.PaneRatioRequested += (_, args) => _layout.SetPaneRatio(args.PaneId, args.Ratio);
         _agents.WorkspaceCreated += OnAgentCreated;
         _agents.WorkspaceChanged += OnAgentChanged;
         _agents.WorkspaceClosed += OnAgentClosed;
@@ -92,6 +96,7 @@ public sealed class WorkspaceManager : IWorkspaceManager
     public event EventHandler<WorkspaceEventArgs>? WorkspaceChanged;
     public event EventHandler<WorkspaceClosedEventArgs>? WorkspaceClosed;
     public event EventHandler<Guid>? WorkspaceActivationRequested;
+    public event EventHandler<WorkspaceLayoutSnapshot>? LayoutChanged;
 
     public async Task<Guid?> CreateTerminalAsync(ShellProfile? profile = null)
     {
@@ -265,6 +270,7 @@ public sealed class WorkspaceManager : IWorkspaceManager
     private void OnLayoutChanged(object? sender, WorkspaceLayoutSnapshot snapshot)
     {
         _ = SendLayoutSnapshotAsync(snapshot);
+        LayoutChanged?.Invoke(this, snapshot);
         // UI-initiated intents (focus a pane, close, collapse) change the
         // focused workspace without going through ActivateAsync — sync the
         // single active workspace from the focused pane.

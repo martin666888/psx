@@ -24,6 +24,8 @@ public sealed class TabManagementService : ITabManagementService, IDisposable
     public event EventHandler<TabCreatedEventArgs>? TabCreated;
     public event EventHandler<TabClosedEventArgs>? TabClosed;
     public event EventHandler<TabTitleChangedEventArgs>? TabTitleChanged;
+    public event EventHandler<string>? PaneFocusRequested;
+    public event EventHandler<PaneRatioEventArgs>? PaneRatioRequested;
 
     public TabManagementService(
         ConPtyService conPtyService,
@@ -41,6 +43,8 @@ public sealed class TabManagementService : ITabManagementService, IDisposable
         _bridgeService.ResizeRequested += OnBridgeResize;
         _bridgeService.TitleChanged += OnBridgeTitleChanged;
         _bridgeService.FrontendReady += OnFrontendReady;
+        _bridgeService.PaneFocusRequested += (_, paneId) => PaneFocusRequested?.Invoke(this, paneId);
+        _bridgeService.PaneRatioRequested += (_, args) => PaneRatioRequested?.Invoke(this, args);
     }
 
     public Task<Guid> CreateTabAsync(ShellProfile? profile = null)

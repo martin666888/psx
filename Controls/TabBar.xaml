@@ -87,6 +87,10 @@
                                 <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
                                 <Setter TargetName="ActiveIndicator" Property="Background" Value="{DynamicResource AccentBrush}"/>
                             </DataTrigger>
+                            <!-- Visible in another pane but unfocused: muted underline. -->
+                            <DataTrigger Binding="{Binding IsPaneVisible}" Value="True">
+                                <Setter TargetName="ActiveIndicator" Property="Background" Value="{DynamicResource BorderStrongBrush}"/>
+                            </DataTrigger>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}"/>
                                 <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>

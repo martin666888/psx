@@ -37,6 +37,8 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
     public event EventHandler<TerminalTitleEventArgs>? TitleChanged;
     public event EventHandler<string>? ViewModeChanged;
     public event EventHandler? FrontendReady;
+    public event EventHandler<string>? PaneFocusRequested;
+    public event EventHandler<PaneRatioEventArgs>? PaneRatioRequested;
 
     public TerminalBridgeService(ISettingsService settingsService, RuntimeLocator runtimeLocator)
     {
@@ -249,6 +251,16 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
                 break;
             case TerminalBridgeMessageKind.Ready:
                 _ = HandleFrontendReadyAsync();
+                break;
+            case TerminalBridgeMessageKind.PaneFocus:
+                PaneFocusRequested?.Invoke(this, message.PaneId!);
+                break;
+            case TerminalBridgeMessageKind.PaneRatio:
+                PaneRatioRequested?.Invoke(this, new PaneRatioEventArgs
+                {
+                    PaneId = message.PaneId!,
+                    Ratio = message.Ratio!.Value
+                });
                 break;
         }
     }

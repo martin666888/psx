@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Windows.Input;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using PSX.Models;
 using PSX.Services;
 
 namespace PSX.ViewModels;
@@ -122,6 +123,36 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _workspaceManager.WorkspaceClosed += OnWorkspaceClosed;
         _workspaceManager.WorkspaceChanged += OnWorkspaceChanged;
         _workspaceManager.WorkspaceActivationRequested += OnWorkspaceActivationRequested;
+        _workspaceManager.LayoutChanged += OnLayoutChanged;
+    }
+
+    private void OnLayoutChanged(object? sender, WorkspaceLayoutSnapshot snapshot)
+    {
+        if (_disposed) return;
+        System.Windows.Application.Current.Dispatcher.BeginInvoke(() =>
+        {
+            if (_disposed) return;
+            // Tab three-state: focused pane's workspace = active, other visible
+            // panes = muted underline, everything else unmarked.
+            var visible = new Dictionary<Guid, bool>();
+            foreach (var pane in snapshot.Panes)
+            {
+                if (!pane.WorkspaceId.HasValue) continue;
+                visible[pane.WorkspaceId.Value] = pane.PaneId == snapshot.FocusedPaneId;
+            }
+            foreach (var tab in Tabs)
+            {
+                if (!visible.TryGetValue(tab.SessionId, out var focused))
+                {
+                    tab.IsActive = false;
+                    tab.IsPaneVisible = false;
+                    continue;
+                }
+                tab.IsActive = focused;
+                tab.IsPaneVisible = !focused;
+                if (focused) ActiveTab = tab;
+            }
+        });
     }
 
     private void OnWorkspaceCreated(object? sender, WorkspaceEventArgs e)
@@ -193,6 +224,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _workspaceManager.WorkspaceClosed -= OnWorkspaceClosed;
         _workspaceManager.WorkspaceChanged -= OnWorkspaceChanged;
         _workspaceManager.WorkspaceActivationRequested -= OnWorkspaceActivationRequested;
+        _workspaceManager.LayoutChanged -= OnLayoutChanged;
     }
 }
 
