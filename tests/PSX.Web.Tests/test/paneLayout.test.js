@@ -110,3 +110,57 @@ test('PaneLayoutController projects pane rects and ring slots from a snapshot', 
   assert.equal(layout.paneById('pane-2'), null);
   layout.dispose();
 });
+
+test('divider drag previews locally and sends one ratio intent on pointerup', async () => {
+  const runtime = installAgentRuntime();
+  const { PaneLayoutController } = await import(
+    pathToFileURL(path.join(webviewRoot, 'src', 'PaneLayoutController.js')).href
+  );
+  document.body.innerHTML =
+    '<div id="workspace-stack"><div id="workspace-panes"></div></div>';
+  const stack = document.getElementById('workspace-stack');
+  Object.defineProperty(stack, 'clientWidth', { configurable: true, value: 1600 });
+  Object.defineProperty(stack, 'clientHeight', { configurable: true, value: 900 });
+  const layout = new PaneLayoutController(document.getElementById('workspace-panes'));
+  const applied = [];
+  layout.onLayoutApplied((snapshot, rects) => applied.push(rects));
+  layout.applySnapshot({
+    revision: 1,
+    focusedPaneId: 'pane-1',
+    panes: [
+      { paneId: 'pane-1', workspaceId: 'a', kind: 'agent', ratio: 0.5 },
+      { paneId: 'pane-2', workspaceId: 'b', kind: 'terminal', ratio: 0.5 }
+    ]
+  });
+
+  const fire = (type, props) => {
+    const event = new window.Event(type, { bubbles: true, cancelable: true });
+    Object.assign(event, props);
+    layout.root.querySelector('.workspace-pane-divider').dispatchEvent(event);
+  };
+  const ratioMessages = () =>
+    runtime.postedMessages.filter((entry) => entry.type === 'pane_ratio');
+
+  fire('pointerdown', { button: 0, pointerId: 7 });
+  fire('pointermove', { pointerId: 7, clientX: 480 });
+  assert.equal(applied.at(-1).get('pane-1').width, 480, 'preview recomputes rects locally');
+  assert.equal(ratioMessages().length, 0, 'no bridge traffic mid-drag');
+
+  fire('pointerup', { pointerId: 7, clientX: 480 });
+  const sent = ratioMessages();
+  assert.equal(sent.length, 1, 'one intent per drag end');
+  assert.equal(sent[0].paneId, 'pane-1');
+  assert.ok(Math.abs(sent[0].ratio - 0.3) < 0.001);
+
+  // The authoritative snapshot clears any preview.
+  layout.applySnapshot({
+    revision: 2,
+    focusedPaneId: 'pane-1',
+    panes: [
+      { paneId: 'pane-1', workspaceId: 'a', kind: 'agent', ratio: 0.3 },
+      { paneId: 'pane-2', workspaceId: 'b', kind: 'terminal', ratio: 0.7 }
+    ]
+  });
+  assert.equal(layout.previewRatios, null);
+  layout.dispose();
+});

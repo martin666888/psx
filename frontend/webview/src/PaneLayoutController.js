@@ -14,6 +14,8 @@
 // always-loaded webview layer (not the lazily imported Agent chunk): a
 // Terminal-only split must work without ever loading React.
 
+import { Bridge } from './Bridge.js';
+
 const WORKBENCH_GUTTER = 12; // mirrors --agent-workbench-gutter in shell.css
 
 export class PaneLayoutController {
@@ -29,6 +31,12 @@ export class PaneLayoutController {
         this.rects = new Map();
         this.listeners = new Set();
         this.resizeObserver = null;
+        // Divider drag: ratios preview locally and never touch the snapshot;
+        // one pane_ratio intent goes out on pointerup.
+        this.previewRatios = null;
+        this.dragging = null;
+        this.areaLeft = 0;
+        this.areaWidth = 0;
 
         if (typeof ResizeObserver === 'function') {
             this.resizeObserver = new ResizeObserver(() => this.recompute());
@@ -76,6 +84,7 @@ export class PaneLayoutController {
         const revision = Number(message?.revision);
         if (!Number.isFinite(revision) || revision <= this.lastRevision) return false;
         this.lastRevision = revision;
+        this.previewRatios = null; // an authoritative snapshot ends any preview
         this.snapshot = {
             revision,
             focusedPaneId: String(message.focusedPaneId || ''),
@@ -106,15 +115,19 @@ export class PaneLayoutController {
 
         const areaLeft = Math.min(this.dockInset, Math.max(0, width));
         const areaWidth = Math.max(0, width - areaLeft);
+        this.areaLeft = areaLeft;
+        this.areaWidth = areaWidth;
         // The slot row indents as one block; slots then flow inside it.
         this.root.style.left = `${areaLeft}px`;
+
+        const ratioOf = (pane) => this.previewRatios?.get(pane.paneId) ?? pane.ratio;
 
         const rects = new Map();
         let x = areaLeft;
         panes.forEach((pane, index) => {
             const paneWidth = index === panes.length - 1
                 ? areaLeft + areaWidth - x // last pane absorbs rounding
-                : Math.round(areaWidth * pane.ratio);
+                : Math.round(areaWidth * ratioOf(pane));
             rects.set(pane.paneId, { left: x, top: 0, width: Math.max(0, paneWidth), height });
             x += paneWidth;
         });
@@ -129,10 +142,12 @@ export class PaneLayoutController {
     }
 
     /** Keep one transparent slot per pane; flex-grow mirrors the ratio so the
-     * ring always tracks the projected rect. Slots never take pointer events. */
+     * ring always tracks the projected rect. Slots never take pointer events;
+     * a divider hit strip sits between adjacent panes. */
     syncPaneSlots(panes, focusedPaneId) {
+        const ratioOf = (pane) => this.previewRatios?.get(pane.paneId) ?? pane.ratio;
         const seen = new Set();
-        panes.forEach((pane, index) => {
+        panes.forEach((pane) => {
             seen.add(pane.paneId);
             let slot = this.paneById(pane.paneId);
             if (!slot) {
@@ -141,14 +156,68 @@ export class PaneLayoutController {
                 slot.dataset.paneId = pane.paneId;
                 this.root.appendChild(slot);
             }
-            slot.style.flexGrow = String(pane.ratio);
+            slot.style.flexGrow = String(ratioOf(pane));
             slot.dataset.focused = pane.paneId === focusedPaneId ? 'true' : 'false';
-            // Keep DOM order aligned with pane order for predictable flex layout.
-            if (this.root.children[index] !== slot) this.root.insertBefore(slot, this.root.children[index] ?? null);
         });
-        for (const slot of [...this.root.children]) {
+        for (const slot of [...this.root.querySelectorAll('.workspace-pane')]) {
             if (!seen.has(slot.dataset.paneId)) slot.remove();
         }
+
+        // Rebuild dividers between adjacent panes (none for a single pane).
+        for (const divider of [...this.root.querySelectorAll('.workspace-pane-divider')]) divider.remove();
+        const slots = panes.map((pane) => this.paneById(pane.paneId)).filter(Boolean);
+        slots.forEach((slot, index) => {
+            this.root.appendChild(slot);
+            if (index < slots.length - 1) {
+                this.root.appendChild(this.createDivider(panes[index].paneId));
+            }
+        });
+    }
+
+    createDivider(leftPaneId) {
+        const divider = document.createElement('div');
+        divider.className = 'workspace-pane-divider';
+        divider.setAttribute('role', 'separator');
+        divider.setAttribute('aria-orientation', 'vertical');
+        divider.title = '拖动调整宽度，双击均分';
+
+        divider.addEventListener('pointerdown', (event) => {
+            if (event.button !== 0) return;
+            divider.setPointerCapture(event.pointerId);
+            divider.dataset.dragging = 'true';
+            this.dragging = { leftPaneId, pointerId: event.pointerId };
+            event.preventDefault();
+        });
+        divider.addEventListener('pointermove', (event) => {
+            if (!this.dragging || this.dragging.pointerId !== event.pointerId) return;
+            if (this.areaWidth <= 0) return;
+            const ratio = Math.min(0.8, Math.max(0.2,
+                (event.clientX - this.areaLeft) / this.areaWidth));
+            this.previewRatios = new Map([[this.dragging.leftPaneId, ratio]]);
+            this.recompute();
+        });
+        const endDrag = (event) => {
+            if (!this.dragging || this.dragging.pointerId !== event.pointerId) return;
+            const ratio = this.previewRatios?.get(this.dragging.leftPaneId);
+            const target = this.dragging.leftPaneId;
+            this.dragging = null;
+            divider.dataset.dragging = 'false';
+            // One intent per drag end; the C# snapshot is authoritative.
+            if (typeof ratio === 'number') Bridge.sendPaneRatio(target, ratio);
+        };
+        divider.addEventListener('pointerup', endDrag);
+        divider.addEventListener('pointercancel', (event) => {
+            if (!this.dragging || this.dragging.pointerId !== event.pointerId) return;
+            this.dragging = null;
+            this.previewRatios = null;
+            divider.dataset.dragging = 'false';
+            this.recompute();
+        });
+        divider.addEventListener('dblclick', () => {
+            this.previewRatios = null;
+            Bridge.sendPaneRatio(leftPaneId, 0.5);
+        });
+        return divider;
     }
 
     /** Workbench gutter exported so render systems inset their content rect
