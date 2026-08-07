@@ -64,14 +64,6 @@ public static partial class AgentConfigSanitizer
         if (!Uri.TryCreate(raw.Trim(), UriKind.Absolute, out var uri))
             return string.Empty;
 
-        if (!string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
-            && !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
-            && !string.Equals(uri.Scheme, "ws", StringComparison.OrdinalIgnoreCase)
-            && !string.Equals(uri.Scheme, "wss", StringComparison.OrdinalIgnoreCase))
-        {
-            // Still allow other absolute schemes but strip userinfo/query/fragment.
-        }
-
         var builder = new UriBuilder(uri)
         {
             UserName = string.Empty,
@@ -110,15 +102,6 @@ public static partial class AgentConfigSanitizer
 
         return string.Join(' ', parts);
     }
-
-    /// <summary>
-    /// Accept either a string command or a JSON-array-style command list and
-    /// produce a sanitized stdio target string.
-    /// </summary>
-    public static string SanitizeStdioCommandValue(
-        string? command,
-        IEnumerable<string>? args)
-        => SanitizeStdioTarget(command, args);
 
     /// <summary>
     /// Extract object property names only — never values. Used for env /

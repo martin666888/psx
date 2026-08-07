@@ -24,6 +24,13 @@ const STATE_LABEL: Record<ConfigProviderState, string> = {
   unavailable: '不可用'
 };
 
+/** Local HH:MM for the cached-report timestamp; '' when unparsable. */
+function formatUpdatedAt(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+}
+
 function StateBadge({ state }: { state: ConfigProviderState }): JSX.Element {
   return (
     <span className="agent-config-state" data-state={state} data-role="config-state">
@@ -189,17 +196,24 @@ export function ConfigPanel(props: ConfigPanelProps): JSX.Element {
     <div className="agent-config-panel" data-role="config-panel">
       <div className="agent-usage-toolbar">
         <div className="agent-config-toolbar-label">用户级配置（只读）</div>
-        <Button
-          variant="outline"
-          size="sm"
-          data-role="config-refresh"
-          aria-label="刷新配置"
-          disabled={state.configStatus === 'loading'}
-          onClick={props.onRefresh}
-        >
-          <RefreshCwIcon className="size-3.5" aria-hidden="true" />
-          刷新
-        </Button>
+        <div className="agent-config-toolbar-side">
+          {state.configGeneratedAt ? (
+            <span className="agent-config-toolbar-updated" data-role="config-updated-at">
+              更新于 {formatUpdatedAt(state.configGeneratedAt)}
+            </span>
+          ) : null}
+          <Button
+            variant="outline"
+            size="sm"
+            data-role="config-refresh"
+            aria-label="刷新配置"
+            disabled={state.configStatus === 'loading'}
+            onClick={props.onRefresh}
+          >
+            <RefreshCwIcon className="size-3.5" aria-hidden="true" />
+            刷新
+          </Button>
+        </div>
       </div>
 
       {state.configStatus === 'error' ? (
