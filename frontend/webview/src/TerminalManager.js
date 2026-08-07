@@ -304,7 +304,7 @@ export class TerminalManager {
      * hides (its ConPTY session stays alive). Called by PaneLayoutController
      * with the latest snapshot and measured pane rects.
      */
-    applyLayout(snapshot, rects) {
+    applyLayout(snapshot, rects, { interactiveResize = false } = {}) {
         if (!snapshot || !Array.isArray(snapshot.panes)) return;
         this._layoutDriven = true;
 
@@ -328,9 +328,17 @@ export class TerminalManager {
             const wasHidden = entry.element.style.display === 'none';
             entry.element.style.display = 'block';
             entry.paneId = assignment.paneId;
-            this._applyPaneRect(entry, assignment.rect);
+            const rectChanged = this._applyPaneRect(entry, assignment.rect);
             if (wasHidden) entry.needsFit = true;
-            this._scheduleFit(entry, { reason: 'pane-layout' });
+            if (rectChanged) entry.needsFit = true;
+
+            // A divider preview may run every animation frame. Move and clip
+            // the terminal wrapper with that frame, but wait until pointerup
+            // before asking xterm to recalculate rows/columns (and therefore
+            // before it emits a ConPTY resize). This keeps the drag direct.
+            if (!interactiveResize && (wasHidden || rectChanged || entry.needsFit)) {
+                this._scheduleFit(entry, { reason: 'pane-layout' });
+            }
         }
 
         // The terminal layer only covers the window while no terminal is
@@ -342,13 +350,21 @@ export class TerminalManager {
     _applyPaneRect(entry, rect) {
         const key = `${rect.left}:${rect.top}:${rect.width}:${rect.height}`;
         const el = entry.element;
-        if (el.dataset.paneRect === key) return;
+        if (el.dataset.paneRect === key) return false;
         el.dataset.paneRect = key;
         el.style.left = `${rect.left}px`;
         el.style.top = `${rect.top}px`;
         el.style.width = `${rect.width}px`;
         el.style.height = `${rect.height}px`;
         entry.needsFit = true;
+        return true;
+    }
+
+    minimumPaneWidth(sessionId) {
+        const entry = this.terminals.get(String(sessionId || ''));
+        const measure = entry?.element.querySelector('.xterm-char-measure-element');
+        const charWidth = measure?.getBoundingClientRect?.().width ?? 0;
+        return charWidth > 0 ? Math.max(400, Math.ceil(60 * charWidth + 16)) : 480;
     }
 
     setViewVisible(visible) {

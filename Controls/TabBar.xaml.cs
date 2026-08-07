@@ -22,6 +22,24 @@ public partial class TabBar : UserControl
         NewWorkspacePopup.IsOpen = false;
     }
 
+    private void OnTabContextMenuOpening(object sender, ContextMenuEventArgs e)
+    {
+        if (sender is not FrameworkElement tab)
+            return;
+
+        // Keep the selected tab as the popup's data source while its Tag
+        // carries the TabBar/MainViewModel commands.  This mirrors the
+        // custom + popup rather than invoking WPF's native ContextMenu.
+        TabContextPopup.PlacementTarget = tab;
+        TabContextPopup.IsOpen = true;
+        e.Handled = true;
+    }
+
+    private void OnTabContextMenuActionClick(object sender, RoutedEventArgs e)
+    {
+        TabContextPopup.IsOpen = false;
+    }
+
     private void OnTabSwitchPreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
         if (e.ChangedButton == MouseButton.Left)

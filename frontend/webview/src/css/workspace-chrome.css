@@ -1,0 +1,370 @@
+:root {
+    --workspace-chrome-height: 40px;
+    --workspace-rail-width: 40px;
+}
+
+#workspace-chrome {
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: var(--workspace-chrome-height);
+    z-index: 30;
+    color: var(--agent-text);
+    background: var(--agent-bg);
+    border-bottom: 1px solid var(--agent-border);
+    font-family: var(--agent-font-ui);
+    font-size: 12px;
+}
+
+.workspace-nameplates {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.workspace-nameplate {
+    position: absolute;
+    top: 0;
+    height: var(--workspace-chrome-height);
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    gap: 7px;
+    padding: 0 8px 0 12px;
+    color: var(--agent-text-muted);
+    border-right: 1px solid var(--agent-border);
+    pointer-events: auto;
+    cursor: default;
+}
+
+.workspace-nameplate::after {
+    content: "";
+    position: absolute;
+    inset: auto 10px 0;
+    height: 2px;
+    border-radius: 1px;
+    background: transparent;
+}
+
+.workspace-nameplate[data-focused="true"] {
+    color: var(--agent-text);
+    background: var(--agent-surface);
+}
+
+.workspace-nameplate[data-focused="true"]::after {
+    background: var(--agent-accent);
+}
+
+.workspace-nameplate-icon {
+    flex: 0 0 18px;
+    width: 18px;
+    color: var(--agent-accent);
+    font: 600 10px/1 var(--agent-font-mono);
+    text-align: center;
+}
+
+.workspace-nameplate-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.workspace-nameplate-attention {
+    flex: 0 0 auto;
+    color: var(--agent-warning);
+    white-space: nowrap;
+}
+
+.workspace-nameplate-attention[data-kind="error"] {
+    color: var(--agent-error);
+}
+
+.workspace-nameplate-attention:empty {
+    display: none;
+}
+
+.workspace-chrome-button,
+.workspace-chrome-icon-button {
+    border: 0;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    cursor: pointer;
+}
+
+.workspace-chrome-button:hover,
+.workspace-chrome-button[aria-expanded="true"],
+.workspace-chrome-icon-button:hover {
+    color: var(--agent-text);
+    background: var(--agent-hover);
+}
+
+.workspace-chrome-button:disabled,
+.workspace-chrome-icon-button:disabled {
+    color: var(--agent-text-dim);
+    cursor: default;
+    background: transparent;
+}
+
+.workspace-chrome-button:focus-visible,
+.workspace-chrome-icon-button:focus-visible,
+.workspace-popover button:focus-visible,
+.workspace-pane-divider:focus-visible {
+    outline: 2px solid var(--agent-focus-ring);
+    outline-offset: -3px;
+}
+
+#activity-rail {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: var(--workspace-rail-width);
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    background: var(--agent-surface);
+    border-right: 1px solid var(--agent-border);
+    color: var(--agent-text-muted);
+    font-family: var(--agent-font-ui);
+    font-size: 14px;
+}
+
+#activity-rail .workspace-chrome-button {
+    position: relative;
+    width: 40px;
+    height: 40px;
+    flex: 0 0 40px;
+    display: grid;
+    place-items: center;
+}
+
+/* Expanded (open menu / open dock) mirrors the nameplate focus language: a
+ * short accent bar on the rail edge plus the boosted foreground. Hover and
+ * expanded background come from the shared .workspace-chrome-button rules. */
+#activity-rail .workspace-chrome-button[aria-expanded="true"]::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    bottom: 8px;
+    left: 0;
+    width: 3px;
+    border-radius: 0 2px 2px 0;
+    background: var(--agent-accent);
+}
+
+#activity-rail .workspace-chrome-button:disabled {
+    opacity: 0.45;
+}
+
+.workspace-nameplate-more,
+.workspace-nameplate-close {
+    flex: 0 0 24px;
+    width: 24px;
+    height: 24px;
+    border-radius: var(--agent-radius-control);
+    font-size: 16px;
+    line-height: 1;
+}
+
+#workspace-popover-root {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    pointer-events: none;
+    color: var(--agent-text);
+    font-family: var(--agent-font-ui);
+    font-size: 12px;
+}
+
+.workspace-popover {
+    position: absolute;
+    /* Default anchor: just below the 40px chrome row, hugging the activity
+     * rail with a 4px gap — used by the pane menu (its trigger sits on the
+     * nameplate in that row). The global menus (workspaces/create/theme)
+     * override top + maxHeight inline from the trigger button's rect in
+     * WorkspaceChromeController.renderOpenMenu. */
+    top: 44px;
+    left: calc(var(--workspace-rail-width) + 4px);
+    width: 320px;
+    max-height: min(560px, calc(100vh - 52px));
+    box-sizing: border-box;
+    overflow: auto;
+    padding: 8px;
+    border: 1px solid var(--agent-border-strong);
+    border-radius: var(--agent-radius-card);
+    background: var(--agent-surface-raised);
+    box-shadow: 0 12px 28px color-mix(in srgb, var(--agent-shadow) 26%, transparent);
+    pointer-events: auto;
+    animation: workspace-popover-in var(--agent-duration-fast) var(--agent-ease-standard);
+}
+
+.workspace-popover-pane {
+    width: 260px;
+}
+
+.workspace-popover-heading,
+.workspace-popover-subheading {
+    margin: 0;
+    padding: 6px 8px;
+}
+
+.workspace-popover-heading {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--agent-text);
+    font-size: 13px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.workspace-popover-subheading {
+    padding-top: 12px;
+    color: var(--agent-text-dim);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: .04em;
+}
+
+.workspace-popover-heading-row,
+.workspace-popover-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.workspace-popover-heading-row > span {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--agent-text-muted);
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.workspace-menu-row,
+.workspace-popover-action,
+.workspace-theme-confirm,
+.workspace-segments button {
+    border: 0;
+    border-radius: var(--agent-radius-control);
+    color: var(--agent-text);
+    background: transparent;
+    font: inherit;
+    cursor: pointer;
+}
+
+.workspace-menu-row {
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    text-align: left;
+}
+
+.workspace-menu-row:hover,
+.workspace-popover-action:hover,
+.workspace-theme-confirm:hover,
+.workspace-segments button:hover,
+.workspace-segments button[data-selected="true"] {
+    background: var(--agent-hover);
+}
+
+.workspace-menu-row:disabled,
+.workspace-segments button:disabled {
+    color: var(--agent-text-dim);
+    cursor: default;
+}
+
+.workspace-menu-primary {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.workspace-menu-secondary {
+    color: var(--agent-text-muted);
+    font-size: 10px;
+    white-space: nowrap;
+}
+
+.workspace-segments {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px;
+    margin: 2px 4px 8px;
+    padding: 2px;
+    border: 1px solid var(--agent-border);
+    border-radius: var(--agent-radius-control);
+    background: var(--agent-surface);
+}
+
+.workspace-segments button,
+.workspace-popover-action,
+.workspace-theme-confirm {
+    padding: 6px 8px;
+}
+
+.workspace-theme-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 4px;
+}
+
+.workspace-popover-message {
+    margin: 8px 4px;
+    padding: 8px;
+    border-radius: var(--agent-radius-control);
+    color: var(--agent-text-muted);
+    background: var(--agent-surface-muted);
+}
+
+.workspace-popover-message[data-error="true"] {
+    color: var(--agent-error);
+}
+
+.workspace-popover-footer {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--agent-border);
+}
+
+#workspace-notices {
+    position: fixed;
+    top: 52px;
+    left: 50%;
+    z-index: 90;
+    display: grid;
+    gap: 6px;
+    width: min(460px, calc(100vw - 32px));
+    transform: translateX(-50%);
+    pointer-events: none;
+}
+
+.workspace-notice {
+    padding: 9px 12px;
+    border: 1px solid var(--agent-border-strong);
+    border-radius: var(--agent-radius-control);
+    color: var(--agent-text);
+    background: var(--agent-surface-raised);
+    box-shadow: 0 8px 20px color-mix(in srgb, var(--agent-shadow) 22%, transparent);
+    font: 12px/1.4 var(--agent-font-ui);
+}
+
+@keyframes workspace-popover-in {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .workspace-popover { animation: none; }
+}

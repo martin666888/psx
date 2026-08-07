@@ -98,6 +98,22 @@ const REACT_SMOKE_BOOTSTRAP = String.raw`
       }
     });
     emit({ type: 'agent_workspace_created', workspaceId });
+    // Pane layouts are now the source of visibility. Mirror the host's
+    // creation ordering: announce the workspace, assign it to pane-1, then
+    // send the legacy activation event consumed by the Agent island.
+    emit({
+      type: 'workspace_layout',
+      revision: 1,
+      focusedPaneId: 'pane-1',
+      panes: [{
+        paneId: 'pane-1',
+        workspaceId,
+        kind: 'agent',
+        ratio: 1,
+        attention: false,
+        sharedWorktree: false
+      }]
+    });
     emit({ type: 'workspace_activated', workspaceId, kind: 'agent' });
     emit({
       type: 'runtime_status',
@@ -155,8 +171,8 @@ const REACT_SMOKE_BOOTSTRAP = String.raw`
     const mounted = await waitFor(() => {
       const panel = document.querySelector('[data-workspace-id="' + workspaceId + '"]');
       return panel
-        && panel.querySelector('[data-role="thread"]')?.dataset.islandState === 'mounted'
-        && panel.querySelector('[data-role="session-meta-host"]')?.dataset.islandState === 'mounted'
+        && panel.querySelector('[data-role="conversation-host"]')?.dataset.islandState === 'mounted'
+        && panel.querySelector('[data-role="toolbar-host"]')?.dataset.islandState === 'mounted'
         && panel.querySelector('[data-role="context-usage-host"]')?.dataset.islandState === 'mounted'
         && panel.querySelector('[data-role="runtime-host"]')?.dataset.islandState === 'mounted'
         && panel.querySelector('[data-role="plan-card"]')?.dataset.islandState === 'mounted';

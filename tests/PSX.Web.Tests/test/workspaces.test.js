@@ -70,6 +70,53 @@ test('only lets the absolute Agent layer receive pointer events for an active Ag
   assert.equal(terminal.visible, true);
 });
 
+test('layout-driven app keeps agent panels hidden until the first projection', async () => {
+  const dockInsets = [];
+  const { app, panelFor, terminal } = await mountAgentApp({
+    paneLayout: {
+      setDockInset(px) {
+        dockInsets.push(px);
+      }
+    }
+  });
+  const container = document.getElementById('agents');
+  assert.ok(container.classList.contains('agent-layout-driven'),
+    'markLayoutDriven stamps the container class at app creation');
+  assert.ok(dockInsets.at(-1) > 40,
+    'the paneLayout seam is wired (default-open dock reports the wider inset)');
+
+  createAgentWorkspace(app, FIRST, { ready: false });
+  const panel = panelFor(FIRST);
+  assert.equal(panel.hidden, true, 'a fresh panel starts hidden');
+
+  // With a paneLayout the host is layout-driven from creation: activation
+  // must NOT fall back to the legacy fullscreen single-panel path.
+  app.handle({ type: 'workspace_activated', workspaceId: FIRST, kind: 'agent' });
+  assert.equal(panel.hidden, true, 'activation never directly shows the panel');
+  assert.equal(terminal.visible, true, 'the terminal view stays untouched');
+
+  // The first pane projection (main.js paneLayout.recompute()) reveals it.
+  app.setPaneLayout(
+    { focusedPaneId: 'pane-1', panes: [{ paneId: 'pane-1', workspaceId: FIRST, kind: 'agent' }] },
+    new Map([['pane-1', { left: 40, top: 40, width: 800, height: 860 }]])
+  );
+  assert.equal(panel.hidden, false, 'the projection shows the panel');
+  assert.equal(panel.dataset.paneId, 'pane-1');
+});
+
+test('legacy harness without paneLayout keeps the activation fallback', async () => {
+  const { app, panelFor, terminal } = await mountAgentApp();
+  const container = document.getElementById('agents');
+  assert.equal(container.classList.contains('agent-layout-driven'), false,
+    'no paneLayout means no layout-driven stamp');
+
+  createAgentWorkspace(app, FIRST, { ready: false });
+  const panel = panelFor(FIRST);
+  app.handle({ type: 'workspace_activated', workspaceId: FIRST, kind: 'agent' });
+  assert.equal(panel.hidden, false, 'legacy activation still shows the activated panel');
+  assert.equal(terminal.visible, false);
+});
+
 test('removes a closed workspace and ignores its later events', async () => {
   const { app, panelFor } = await mountAgentApp();
   const workspaceId = '33333333-3333-4333-8333-333333333333';

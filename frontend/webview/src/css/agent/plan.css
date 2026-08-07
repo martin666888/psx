@@ -61,20 +61,9 @@
     }
 }
 
-/* Toolbar toggle: base styling comes from the shared .agent-icon-toggle rule
- * in shell.css; only the unread-dot anchor lives here. */
+/* Toolbar toggle: base styling comes from the shared .agent-icon-toggle rule. */
 .agent-plan-toggle {
     position: relative;
-}
-
-.agent-plan-toggle-unread {
-    position: absolute;
-    top: -3px;
-    right: -3px;
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--agent-accent);
 }
 
 /* The card header ("Plan" title) renders inside the React island now; its
@@ -124,4 +113,16 @@
     font-size: clamp(11px, calc(var(--agent-font-size) * 0.85), 18px);
     line-height: 1.5;
     overflow-wrap: anywhere;
+}
+
+@container agent-shell (max-width: 519px) {
+    .agent-context-cards {
+        right: var(--agent-space-3);
+        left: var(--agent-space-3);
+        width: auto;
+    }
+
+    .agent-plan-card {
+        max-height: calc(100cqh - var(--agent-toolbar-height) - 2 * var(--agent-space-4));
+    }
 }

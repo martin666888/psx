@@ -108,11 +108,11 @@ test('a hidden update raises unread without forcing the card open', async () => 
     () => !!role(panel, 'plan-card').querySelector('.agent-plan-list'),
     () => app.handle(event([{ content: 'Hidden update', status: 'pending' }]))
   );
-  await settle(app, () => role(panel, 'plan-toggle-unread')?.hidden === false, () => {});
+  await settle(app, () => /updated/.test(role(panel, 'plan-toggle')?.getAttribute('aria-label') || ''), () => {});
   assert.equal(role(panel, 'plan-card').hidden, true);
   await act(async () => role(panel, 'plan-toggle').click());
   assert.equal(role(panel, 'plan-card').hidden, false);
-  await settle(app, () => role(panel, 'plan-toggle-unread')?.hidden === true, () => {});
+  await settle(app, () => !/updated/.test(role(panel, 'plan-toggle')?.getAttribute('aria-label') || ''), () => {});
 });
 
 test('closing the workspace unmounts plan content', async () => {

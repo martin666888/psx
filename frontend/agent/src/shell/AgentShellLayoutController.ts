@@ -31,16 +31,9 @@ export interface AgentShellLayoutHost {
   measurePaneWidth?(): number;
 }
 
-// Narrow breakpoint in pane pixels, mirrored by the shell.css narrow rules.
-const SHELL_NARROW_MAX_WIDTH = 999;
-const READING_MAX_WIDTH = 920;
-// Soft-workbench geometry mirrored from shell.css: the left workbench gutter
-// before the dock, the gap between the two panels, and the right pane padding
-// the reading column keeps (measured from the pane edge, so it already covers
-// the right gutter).
-const WORKBENCH_GUTTER = 12;
-const PANEL_GAP = 12;
-const VIEWPORT_PADDING = 24;
+// Below 520px Plan becomes an on-demand overlay. Pane collection itself is
+// owned by the neutral layout controller; History remains a global dock.
+const SHELL_NARROW_MAX_WIDTH = 519;
 
 export class AgentShellLayoutController {
   private readonly container: HTMLElement;
@@ -85,7 +78,7 @@ export class AgentShellLayoutController {
 
   private applyMode(): void {
     const narrow = this.containerWidth() <= SHELL_NARROW_MAX_WIDTH;
-    const historyReadingConstrained = !narrow && this.historyWouldSqueezeReading();
+    const historyReadingConstrained = false;
     if (this.narrow === narrow && this.historyReadingConstrained === historyReadingConstrained) return;
 
     this.narrow = narrow;
@@ -95,21 +88,6 @@ export class AgentShellLayoutController {
     this.container.classList.toggle('agent-shell-narrow', narrow);
     this.container.classList.toggle('agent-shell-history-collapsed-for-reading', historyReadingConstrained);
     this.host.setResponsiveLayout(narrow, historyReadingConstrained);
-  }
-
-  private historyWouldSqueezeReading(): boolean {
-    // Keep the 920px reading column intact whenever it can sit to the right of
-    // the dock with the workbench gutter, the inter-panel gap, one inner
-    // reading inset and the normal right pane padding. CSS centres that
-    // column in the remaining panel with equal insets on both sides.
-    const requiredWidth =
-      WORKBENCH_GUTTER +
-      this.host.historyWidth() +
-      PANEL_GAP +
-      PANEL_GAP +
-      READING_MAX_WIDTH +
-      VIEWPORT_PADDING;
-    return this.containerWidth() < requiredWidth;
   }
 
   /** Pane width when measurable; the viewport otherwise (fallback only). */
@@ -122,25 +100,16 @@ export class AgentShellLayoutController {
   }
 
   private onHistoryOpenChanged(open: boolean): void {
-    if (!open) return;
-    if (this.narrow && this.host.isActivePlanVisible()) this.host.closeActivePlan();
-    // User-initiated History opening inside the reading-constrained range is
-    // allowed. CSS then gives it the available width without changing the
-    // persisted preference; we do not immediately re-collapse it here.
+    void open;
   }
 
   private onPlanVisibilityChanged(visible: boolean): void {
-    if (visible && this.narrow && this.host.isHistoryOpen()) {
-      this.host.closeHistory();
-    }
+    void visible;
   }
 
   private onKeydown(event: KeyboardEvent): void {
     if (event.key !== 'Escape' || !this.narrow || event.defaultPrevented) return;
-    if (this.host.isHistoryOpen()) {
-      this.host.closeHistory();
-      this.host.focusHistoryToggle();
-    } else if (this.host.isActivePlanVisible()) {
+    if (this.host.isActivePlanVisible()) {
       this.host.closeActivePlan();
       this.host.focusActivePlanToggle();
     }

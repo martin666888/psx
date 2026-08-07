@@ -62,6 +62,7 @@ public partial class ThemePickerViewModel : ObservableObject
     private string _currentLabel = "Current: Custom";
 
     public bool HasUserThemes => UserThemes.Count > 0;
+    public IEnumerable<ThemeItemViewModel> AllThemes => BuiltInThemes.Concat(UserThemes);
 
     public ThemePickerViewModel(
         IThemeService themeService,
@@ -229,5 +230,35 @@ public partial class ThemePickerViewModel : ObservableObject
     {
         Message = text;
         IsMessageError = isError;
+    }
+
+    public async Task HandleWebActionAsync(string action, string? themeKey)
+    {
+        if (action != "cancel" && !IsOpen)
+            IsOpen = true;
+
+        var item = string.IsNullOrWhiteSpace(themeKey)
+            ? null
+            : AllThemes.FirstOrDefault(candidate =>
+                string.Equals(candidate.Descriptor.Key, themeKey, StringComparison.OrdinalIgnoreCase));
+
+        switch (action)
+        {
+            case "preview":
+                await PreviewThemeAsync(item);
+                break;
+            case "confirm":
+                await ConfirmThemeAsync(item);
+                break;
+            case "cancel":
+                IsOpen = false;
+                break;
+            case "refresh":
+                await RefreshThemesAsync();
+                break;
+            case "open_folder":
+                OpenThemeFolder();
+                break;
+        }
     }
 }

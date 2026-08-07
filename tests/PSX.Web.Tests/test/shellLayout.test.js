@@ -49,7 +49,7 @@ test('shell: the context-cards overlay sits outside the single-column workspace 
 
   // Agent chrome buttons share the soft border-input token; the raw `border`
   // color reads darker than inputs/selects and must not come back.
-  for (const name of ['history-toggle', 'plan-toggle', 'update']) {
+  for (const name of ['plan-toggle', 'update']) {
     assert.ok(
       role(panel, name).classList.contains('border-input'),
       name + ' must use the soft border-input token'
@@ -211,7 +211,8 @@ test('shell: dock open toggles the canvas dock-open state class', async () => {
   const { app, panelFor } = await mountAgentApp();
   createAgentWorkspace(app, WS);
   const container = document.getElementById('agents');
-  assert.equal(container.classList.contains('agent-history-dock-open'), false);
+  document.querySelector('[data-role="global-history-toggle"]').click();
+  assert.equal(container.classList.contains('agent-history-dock-open'), false, 'global trigger closes the default-open dock');
 
   const panel = panelFor(WS);
   await composerReady(panel);
@@ -224,7 +225,7 @@ test('shell: dock open toggles the canvas dock-open state class', async () => {
   assert.equal(container.classList.contains('agent-history-dock-open'), true);
 
   await toolbarReady(panel);
-  role(panel, 'history-toggle').click();
+  document.querySelector('[data-role="global-history-toggle"]').click();
   assert.equal(container.classList.contains('agent-history-dock-open'), false);
 });
 
@@ -383,7 +384,7 @@ test('shell: composer and conversation share the same reading-column rules', () 
   );
   assert.match(
     composer,
-    /@container agent-shell \(max-width: 760px\)\s*\{\s*\.agent-composer\s*\{[\s\S]*?padding-bottom: var\(--agent-space-3\)/,
+    /@container agent-shell \(max-width: 719px\)\s*\{\s*\.agent-composer\s*\{[\s\S]*?padding-bottom: var\(--agent-space-3\)/,
     'narrow panes reduce but keep the bottom breathing room'
   );
   // The lift stays restrained: no heavy dark halo on the composer card.
@@ -395,9 +396,10 @@ test('shell: composer and conversation share the same reading-column rules', () 
   );
   // The old three-column composer grid is gone. Footer geometry moved with
   // the React-owned Composer subtree and no longer has a parallel CSS owner.
-  assert.ok(!composer.includes('grid-template-columns'), 'composer grid retired');
+  assert.ok(!composer.includes('grid-template-columns: auto 1fr'), 'old footer grid retired');
   assert.ok(!composer.includes('agent-plan-column'), 'plan-column separator retired');
-  assert.ok(!composer.includes('.agent-composer-footer'));
+  assert.match(composer, /\.agent-composer-footer[\s\S]*?min-width: 0/);
+  assert.ok(!view.includes('max-[760px]'), 'viewport-responsive Tailwind variants are retired');
   assert.match(view, /rounded-b-\[var\(--agent-radius-composer\)\]/);
 });
 
@@ -434,7 +436,7 @@ test('shell: the History dock is a free-standing rounded workbench panel', () =>
   // Gutter on top/bottom/left, full border and the shared workspace radius.
   assert.match(
     history,
-    /\.agent-history-dock\s*\{[\s\S]*?top: var\(--agent-workbench-gutter\);\s*bottom: var\(--agent-workbench-gutter\);\s*left: var\(--agent-workbench-gutter\)/
+    /\.agent-history-dock\s*\{[\s\S]*?top: calc\(40px \+ var\(--agent-workbench-gutter\)\);\s*bottom: var\(--agent-workbench-gutter\);\s*left: calc\(40px \+ var\(--agent-workbench-gutter\)\)/
   );
   assert.match(
     history,

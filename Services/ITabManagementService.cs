@@ -18,10 +18,12 @@ public interface ITabManagementService
     /// <summary>Click-to-focus intent for a pane (split panes), forwarded
     /// from the neutral bridge.</summary>
     event EventHandler<string>? PaneFocusRequested;
-    /// <summary>Divider drag end: paneId + requested ratio.</summary>
-    event EventHandler<PaneRatioEventArgs>? PaneRatioRequested;
+    /// <summary>Divider drag end: one atomic ratio vector for the layout revision.</summary>
+    event EventHandler<PaneRatiosEventArgs>? PaneRatiosRequested;
     /// <summary>Drag a workspace onto a pane (swap/replace).</summary>
     event EventHandler<PaneMoveEventArgs>? PaneMoveRequested;
+    event EventHandler<WorkspaceLayoutIntentEventArgs>? WorkspaceLayoutIntentRequested;
+    event EventHandler<WorkspaceCreateEventArgs>? WorkspaceCreateRequested;
 }
 
 public class TabCreatedEventArgs : EventArgs

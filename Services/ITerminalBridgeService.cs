@@ -20,22 +20,45 @@ public interface ITerminalBridgeService
     event EventHandler? FrontendReady;
     /// <summary>Click-to-focus intent for a pane (split panes).</summary>
     event EventHandler<string>? PaneFocusRequested;
-    /// <summary>Divider drag end: paneId + requested ratio.</summary>
-    event EventHandler<PaneRatioEventArgs>? PaneRatioRequested;
+    /// <summary>Divider drag end: one atomic ratio vector for the layout revision.</summary>
+    event EventHandler<PaneRatiosEventArgs>? PaneRatiosRequested;
     /// <summary>Drag a workspace onto a pane (swap/replace).</summary>
     event EventHandler<PaneMoveEventArgs>? PaneMoveRequested;
+    event EventHandler<WorkspaceLayoutIntentEventArgs>? WorkspaceLayoutIntentRequested;
+    event EventHandler<WorkspaceCreateEventArgs>? WorkspaceCreateRequested;
+    event EventHandler<ThemeActionEventArgs>? ThemeActionRequested;
 }
 
-public sealed class PaneRatioEventArgs : EventArgs
+public sealed class PaneRatiosEventArgs : EventArgs
 {
-    public required string PaneId { get; init; }
-    public double Ratio { get; init; }
+    public long BaseRevision { get; init; }
+    public required IReadOnlyDictionary<string, double> Ratios { get; init; }
 }
 
 public sealed class PaneMoveEventArgs : EventArgs
 {
     public Guid WorkspaceId { get; init; }
     public required string PaneId { get; init; }
+}
+
+public sealed class WorkspaceLayoutIntentEventArgs : EventArgs
+{
+    public required string Action { get; init; }
+    public Guid? WorkspaceId { get; init; }
+    public string? PaneId { get; init; }
+}
+
+public sealed class WorkspaceCreateEventArgs : EventArgs
+{
+    public required string Kind { get; init; }
+    public string? ProviderKey { get; init; }
+    public required string Placement { get; init; }
+}
+
+public sealed class ThemeActionEventArgs : EventArgs
+{
+    public required string Action { get; init; }
+    public string? ThemeKey { get; init; }
 }
 
 public class TerminalInputEventArgs : EventArgs

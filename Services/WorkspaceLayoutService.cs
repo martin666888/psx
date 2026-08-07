@@ -80,6 +80,12 @@ public sealed class WorkspaceLayoutService
             _pendingPlacements.Enqueue(paneId);
     }
 
+    public void CancelPendingPlacement()
+    {
+        lock (_sync)
+            _pendingPlacements.Clear();
+    }
+
     /// <summary>Tab click / activation: an already-visible workspace focuses
     /// its pane (never duplicated); anything else replaces the focused pane's
     /// content. Consumes a pending placement when one was recorded.</summary>
@@ -117,48 +123,65 @@ public sealed class WorkspaceLayoutService
 
     /// <summary>Move a workspace into a fresh right-hand pane and focus it.
     /// Falls back to a plain assignment at the column cap.</summary>
-    public void SplitWorkspaceToNewPane(Guid workspaceId, WorkspaceKind kind)
+    public bool SplitWorkspaceToNewPane(Guid workspaceId, WorkspaceKind kind)
     {
         WorkspaceLayoutSnapshot? changed = null;
         lock (_sync)
         {
             if (_panes.Count >= MaxPanes)
+                return false;
+
+            var source = _panes.FirstOrDefault(p => p.WorkspaceId == workspaceId);
+            var insertAfter = source ?? FocusedPaneLocked();
+            if (source != null)
             {
-                var visiblePane = _panes.FirstOrDefault(p => p.WorkspaceId == workspaceId);
-                if (visiblePane != null)
-                {
-                    // At the cap, splitting an already-visible workspace
-                    // degrades to the visible-tab rule: just focus its pane.
-                    if (_focusedPaneId != visiblePane.PaneId)
-                    {
-                        _focusedPaneId = visiblePane.PaneId;
-                        changed = BumpRevisionLocked();
-                    }
-                }
-                else
-                {
-                    // At the cap a split request for a background workspace
-                    // degrades to assigning into the focused pane.
-                    TouchMruLocked(workspaceId, kind);
-                    var pane = FocusedPaneLocked();
-                    pane.WorkspaceId = workspaceId;
-                    pane.Kind = kind;
-                    changed = BumpRevisionLocked();
-                }
+                var visibleIds = _panes
+                    .Where(pane => pane.WorkspaceId.HasValue)
+                    .Select(pane => pane.WorkspaceId!.Value)
+                    .ToHashSet();
+                var replacement = _mru.FirstOrDefault(entry => !visibleIds.Contains(entry.Id));
+                if (replacement.Id == Guid.Empty)
+                    return false;
+
+                source.WorkspaceId = replacement.Id;
+                source.Kind = replacement.Kind;
             }
-            else
+
+            TouchMruLocked(workspaceId, kind);
+            var pane = new PaneState
             {
-                TouchMruLocked(workspaceId, kind);
-                VacateWorkspaceLocked(workspaceId);
-                var pane = new PaneState { PaneId = $"pane-{_nextPaneNumber++}", WorkspaceId = workspaceId, Kind = kind };
-                _panes.Add(pane);
-                NormalizeRatiosLocked();
-                _focusedPaneId = pane.PaneId;
-                changed = BumpRevisionLocked();
-            }
+                PaneId = $"pane-{_nextPaneNumber++}",
+                WorkspaceId = workspaceId,
+                Kind = kind
+            };
+            var insertIndex = _panes.IndexOf(insertAfter) + 1;
+            _panes.Insert(insertIndex, pane);
+            NormalizeRatiosLocked();
+            _focusedPaneId = pane.PaneId;
+            changed = BumpRevisionLocked();
         }
         if (changed != null)
             LayoutChanged?.Invoke(this, changed);
+        return changed != null;
+    }
+
+    public string? GetSplitBlockedReason(Guid workspaceId)
+    {
+        lock (_sync)
+        {
+            if (_panes.Count >= MaxPanes)
+                return "最多支持 4 列";
+            if (_panes.All(pane => pane.WorkspaceId != workspaceId))
+                return null;
+
+            var visibleIds = _panes
+                .Where(pane => pane.WorkspaceId.HasValue)
+                .Select(pane => pane.WorkspaceId!.Value)
+                .ToHashSet();
+            return _mru.Any(entry => !visibleIds.Contains(entry.Id))
+                ? null
+                : "没有后台工作区可填补当前列";
+        }
     }
 
     /// <summary>Focus a pane without changing any assignment (click inside a
@@ -274,24 +297,32 @@ public sealed class WorkspaceLayoutService
         LayoutChanged?.Invoke(this, changed);
     }
 
-    /// <summary>Divider drag end: set one pane's share; ratios renormalize.</summary>
-    public void SetPaneRatio(string paneId, double ratio)
+    /// <summary>Atomically commit the complete pane ratio vector produced by
+    /// one divider drag. Pixel minimums belong to the WebView presentation;
+    /// this logical truth source validates identity, revision and normalization.</summary>
+    public bool SetPaneRatios(long baseRevision, IReadOnlyDictionary<string, double> ratios)
     {
         WorkspaceLayoutSnapshot? changed = null;
         lock (_sync)
         {
-            var pane = _panes.FirstOrDefault(p => p.PaneId == paneId);
-            if (pane == null || _panes.Count < 2)
-                return;
-            var clamped = Math.Clamp(ratio, 0.2, 0.8);
-            if (Math.Abs(pane.Ratio - clamped) < 0.0001)
-                return;
-            pane.Ratio = clamped;
-            NormalizeRatiosLocked(except: pane);
+            if (baseRevision != _revision || _panes.Count < 2 || ratios.Count != _panes.Count)
+                return false;
+            if (_panes.Any(p => !ratios.TryGetValue(p.PaneId, out var ratio)
+                                || !double.IsFinite(ratio)
+                                || ratio <= 0))
+                return false;
+            var sum = ratios.Values.Sum();
+            if (!double.IsFinite(sum) || Math.Abs(sum - 1.0) > 0.0001)
+                return false;
+            if (_panes.All(p => Math.Abs(p.Ratio - ratios[p.PaneId]) < 0.0001))
+                return true;
+            foreach (var pane in _panes)
+                pane.Ratio = ratios[pane.PaneId] / sum;
             changed = BumpRevisionLocked();
         }
         if (changed != null)
             LayoutChanged?.Invoke(this, changed);
+        return true;
     }
 
     /// <summary>Close: the pane holding the workspace collapses (remaining
@@ -380,7 +411,7 @@ public sealed class WorkspaceLayoutService
             return;
         _panes.Remove(source);
         NormalizeRatiosLocked();
-        if (_focusedPaneId == source.PaneId)
+        if (_focusedPaneId == source.PaneId && _panes.Count > 0)
             _focusedPaneId = _panes[0].PaneId;
     }
 

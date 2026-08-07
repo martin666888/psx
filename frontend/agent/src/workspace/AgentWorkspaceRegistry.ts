@@ -310,8 +310,8 @@ export class AgentWorkspaceRegistry {
     const narrowChanged = this.narrow !== narrow;
     const historyChanged = this.historyReadingConstrained !== collapseHistoryForReading;
     if (!narrowChanged && !historyChanged) return;
-    const wasCollapsed = this.narrow || this.historyReadingConstrained;
-    const willCollapse = narrow || collapseHistoryForReading;
+    const wasCollapsed = this.historyReadingConstrained;
+    const willCollapse = collapseHistoryForReading;
     this.narrow = narrow;
     this.historyReadingConstrained = collapseHistoryForReading;
     // A user's temporary open survives repeated resizes inside the same mode,

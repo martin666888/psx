@@ -33,7 +33,7 @@ public interface IWorkspaceManager : IDisposable
     /// <summary>Collapse back to a single pane; other workspaces go background.</summary>
     void CollapseToSinglePane();
     /// <summary>Divider drag end: set one pane's width share.</summary>
-    void SetPaneRatio(string paneId, double ratio);
+    bool SetPaneRatios(long baseRevision, IReadOnlyDictionary<string, double> ratios);
     /// <summary>Toggle presentation-only zoom on the focused pane.</summary>
     void TogglePaneZoom();
     /// <summary>Creation transaction: the next created workspace lands here
@@ -51,6 +51,7 @@ public interface IWorkspaceManager : IDisposable
     event EventHandler<WorkspaceEventArgs>? WorkspaceChanged;
     event EventHandler<WorkspaceClosedEventArgs>? WorkspaceClosed;
     event EventHandler<Guid>? WorkspaceActivationRequested;
+    event EventHandler<Guid>? AttentionNotificationRequested;
 }
 
 public sealed class WorkspaceManager : IWorkspaceManager
@@ -61,8 +62,10 @@ public sealed class WorkspaceManager : IWorkspaceManager
     private readonly WorkspaceLayoutService _layout;
     private readonly List<WorkspaceDescriptor> _workspaces = new();
     private readonly object _sync = new();
-    private readonly HashSet<Guid> _attention = new();
+    private readonly Dictionary<Guid, string> _attention = new();
     private readonly Dictionary<Guid, AgentWorkspaceState?> _lastStates = new();
+    private readonly HashSet<string> _sharedWorktreeConflicts = new(StringComparer.OrdinalIgnoreCase);
+    private long _catalogRevision;
     private Guid? _activeWorkspaceId;
     private bool _creatingReplacementTerminal;
     private bool _shuttingDown;
@@ -84,8 +87,10 @@ public sealed class WorkspaceManager : IWorkspaceManager
         _terminalTabs.TabClosed += OnTerminalClosed;
         _terminalTabs.TabTitleChanged += OnTerminalTitleChanged;
         _terminalTabs.PaneFocusRequested += (_, paneId) => _layout.FocusPane(paneId);
-        _terminalTabs.PaneRatioRequested += (_, args) => _layout.SetPaneRatio(args.PaneId, args.Ratio);
+        _terminalTabs.PaneRatiosRequested += OnPaneRatiosRequested;
         _terminalTabs.PaneMoveRequested += OnPaneMoveRequested;
+        _terminalTabs.WorkspaceLayoutIntentRequested += OnWorkspaceLayoutIntentRequested;
+        _terminalTabs.WorkspaceCreateRequested += OnWorkspaceCreateRequested;
         _agents.WorkspaceCreated += OnAgentCreated;
         _agents.WorkspaceChanged += OnAgentChanged;
         _agents.WorkspaceClosed += OnAgentClosed;
@@ -107,6 +112,7 @@ public sealed class WorkspaceManager : IWorkspaceManager
     public event EventHandler<WorkspaceEventArgs>? WorkspaceChanged;
     public event EventHandler<WorkspaceClosedEventArgs>? WorkspaceClosed;
     public event EventHandler<Guid>? WorkspaceActivationRequested;
+    public event EventHandler<Guid>? AttentionNotificationRequested;
     public event EventHandler<WorkspaceLayoutSnapshot>? LayoutChanged;
 
     public async Task<Guid?> CreateTerminalAsync(ShellProfile? profile = null)
@@ -175,7 +181,8 @@ public sealed class WorkspaceManager : IWorkspaceManager
             workspace = _workspaces.FirstOrDefault(item => item.WorkspaceId == workspaceId);
         if (workspace == null)
             return;
-        _layout.SplitWorkspaceToNewPane(workspaceId, workspace.Kind);
+        if (!_layout.SplitWorkspaceToNewPane(workspaceId, workspace.Kind))
+            BroadcastCatalog();
     }
 
     public void FocusPane(string paneId) => _layout.FocusPane(paneId);
@@ -186,7 +193,8 @@ public sealed class WorkspaceManager : IWorkspaceManager
 
     public void CollapseToSinglePane() => _layout.CollapseToSinglePane();
 
-    public void SetPaneRatio(string paneId, double ratio) => _layout.SetPaneRatio(paneId, ratio);
+    public bool SetPaneRatios(long baseRevision, IReadOnlyDictionary<string, double> ratios) =>
+        _layout.SetPaneRatios(baseRevision, ratios);
 
     public void RecordPendingPlacement(string paneId) => _layout.RecordPendingPlacement(paneId);
 
@@ -210,6 +218,7 @@ public sealed class WorkspaceManager : IWorkspaceManager
             _creatingReplacementTerminal = false;
         }
         WorkspaceCreated?.Invoke(this, new WorkspaceEventArgs { Workspace = workspace });
+        BroadcastCatalog();
         _ = ActivateAsync(workspace.WorkspaceId);
     }
 
@@ -226,7 +235,10 @@ public sealed class WorkspaceManager : IWorkspaceManager
                 workspace.Title = args.Title;
         }
         if (workspace != null)
+        {
             WorkspaceChanged?.Invoke(this, new WorkspaceEventArgs { Workspace = workspace });
+            BroadcastCatalog();
+        }
     }
 
     private void OnAgentCreated(object? sender, AgentWorkspaceEventArgs args)
@@ -237,12 +249,27 @@ public sealed class WorkspaceManager : IWorkspaceManager
             _creatingReplacementTerminal = false;
         }
         WorkspaceCreated?.Invoke(this, new WorkspaceEventArgs { Workspace = args.Workspace });
+        BroadcastCatalog();
     }
 
     private void OnAgentChanged(object? sender, AgentWorkspaceEventArgs args)
     {
-        UpdateAttention(args.Workspace);
-        WorkspaceChanged?.Invoke(this, new WorkspaceEventArgs { Workspace = args.Workspace });
+        WorkspaceDescriptor workspace = args.Workspace;
+        lock (_sync)
+        {
+            var existing = _workspaces.FirstOrDefault(item => item.WorkspaceId == args.Workspace.WorkspaceId);
+            if (existing != null)
+            {
+                existing.Title = args.Workspace.Title;
+                existing.AgentState = args.Workspace.AgentState;
+                existing.ProviderName = args.Workspace.ProviderName;
+                existing.WorkingDirectory = args.Workspace.WorkingDirectory;
+                workspace = existing;
+            }
+        }
+        UpdateAttention(workspace);
+        WorkspaceChanged?.Invoke(this, new WorkspaceEventArgs { Workspace = workspace });
+        BroadcastCatalog();
     }
 
     /// <summary>Attention tracking: a workspace needs the user when it waits
@@ -255,6 +282,7 @@ public sealed class WorkspaceManager : IWorkspaceManager
             return;
 
         bool changed;
+        string? notificationKind;
         lock (_sync)
         {
             var previous = _lastStates.TryGetValue(workspace.WorkspaceId, out var prev) ? prev : null;
@@ -262,23 +290,30 @@ public sealed class WorkspaceManager : IWorkspaceManager
             _lastStates[workspace.WorkspaceId] = current;
 
             var focused = _layout.FocusedWorkspaceId == workspace.WorkspaceId;
-            var needsAttention = !focused && current is
-                AgentWorkspaceState.WaitingForInput or
-                AgentWorkspaceState.WaitingForPermission or
-                AgentWorkspaceState.Error;
-            var finished = !focused
-                && previous == AgentWorkspaceState.Running
-                && current is AgentWorkspaceState.Idle or AgentWorkspaceState.WaitingForInput;
+            string? attentionKind = current switch
+            {
+                AgentWorkspaceState.WaitingForPermission when !focused => "permission",
+                AgentWorkspaceState.WaitingForInput when !focused => "question",
+                AgentWorkspaceState.Error when !focused => "error",
+                AgentWorkspaceState.Idle when !focused && previous == AgentWorkspaceState.Running => "completed",
+                _ => null
+            };
+            notificationKind = attentionKind;
 
-            changed = needsAttention || finished
-                ? _attention.Add(workspace.WorkspaceId)
-                : _attention.Remove(workspace.WorkspaceId);
-            if (focused)
-                changed = _attention.Remove(workspace.WorkspaceId) || changed;
+            if (attentionKind == null || focused || current == AgentWorkspaceState.Running)
+                changed = _attention.Remove(workspace.WorkspaceId);
+            else
+            {
+                changed = !_attention.TryGetValue(workspace.WorkspaceId, out var existing)
+                    || !string.Equals(existing, attentionKind, StringComparison.Ordinal);
+                _attention[workspace.WorkspaceId] = attentionKind;
+            }
         }
 
         if (changed)
-            BroadcastLayout();
+            BroadcastCatalog();
+        if (changed && notificationKind is "permission" or "question" or "error")
+            AttentionNotificationRequested?.Invoke(this, workspace.WorkspaceId);
     }
 
     /// <summary>Attention lives in the layout payload, so a state-only change
@@ -288,13 +323,14 @@ public sealed class WorkspaceManager : IWorkspaceManager
         var snapshot = _layout.Snapshot;
         _ = SendLayoutSnapshotAsync(snapshot);
         LayoutChanged?.Invoke(this, snapshot);
+        BroadcastCatalog();
     }
 
     /// <summary>Tab badge source: needs attention and not focused-visible.</summary>
     public bool IsAttentionNeeded(Guid workspaceId)
     {
         lock (_sync)
-            return _attention.Contains(workspaceId);
+            return _attention.ContainsKey(workspaceId);
     }
 
     private void OnAgentClosed(object? sender, AgentWorkspaceClosedEventArgs args) =>
@@ -341,6 +377,7 @@ public sealed class WorkspaceManager : IWorkspaceManager
         // workspace in atomically; its changed event activates the new focus.
         _layout.RemoveWorkspace(workspaceId);
         WorkspaceClosed?.Invoke(this, new WorkspaceClosedEventArgs { WorkspaceId = workspaceId });
+        BroadcastCatalog();
         if (createReplacementTerminal)
             _ = CreateTerminalAsync();
     }
@@ -355,10 +392,80 @@ public sealed class WorkspaceManager : IWorkspaceManager
         _layout.MoveWorkspaceToPane(args.WorkspaceId, workspace.Kind, args.PaneId);
     }
 
+    private void OnPaneRatiosRequested(object? sender, PaneRatiosEventArgs args)
+    {
+        if (!_layout.SetPaneRatios(args.BaseRevision, args.Ratios))
+            BroadcastLayout();
+    }
+
+    private void OnWorkspaceLayoutIntentRequested(object? sender, WorkspaceLayoutIntentEventArgs args)
+    {
+        switch (args.Action)
+        {
+            case "activate" when args.WorkspaceId.HasValue:
+                _ = ActivateAsync(args.WorkspaceId.Value);
+                break;
+            case "close" when args.WorkspaceId.HasValue:
+                _ = CloseAsync(args.WorkspaceId.Value);
+                break;
+            case "split_right" when args.WorkspaceId.HasValue:
+                SplitWorkspaceToNewPane(args.WorkspaceId.Value);
+                break;
+            case "move_to_pane" when args.WorkspaceId.HasValue && !string.IsNullOrWhiteSpace(args.PaneId):
+                OnPaneMoveRequested(this, new PaneMoveEventArgs
+                {
+                    WorkspaceId = args.WorkspaceId.Value,
+                    PaneId = args.PaneId
+                });
+                break;
+            case "swap":
+                SwapPanes();
+                break;
+            case "collapse_single":
+                CollapseToSinglePane();
+                break;
+        }
+    }
+
+    private void OnWorkspaceCreateRequested(object? sender, WorkspaceCreateEventArgs args)
+    {
+        _ = CreateWorkspaceFromIntentAsync(args);
+    }
+
+    private async Task CreateWorkspaceFromIntentAsync(WorkspaceCreateEventArgs args)
+    {
+        if (args.Kind == "agent"
+            && (string.IsNullOrWhiteSpace(args.ProviderKey)
+                || !AgentProviders.Any(provider => string.Equals(provider.Key, args.ProviderKey, StringComparison.Ordinal))))
+            return;
+        if (args.Kind == "agent" && Workspaces.Count(workspace => workspace.Kind == WorkspaceKind.Agent) >= AgentWorkspaceCoordinator.MaxAgentWorkspaces)
+        {
+            await SendNoticeAsync($"最多支持 {AgentWorkspaceCoordinator.MaxAgentWorkspaces} 个 Agent 工作区").ConfigureAwait(false);
+            return;
+        }
+
+        if (args.Placement == "new_right")
+        {
+            if (_layout.Snapshot.Panes.Count >= WorkspaceLayoutService.MaxPanes)
+            {
+                await SendNoticeAsync("最多支持 4 列").ConfigureAwait(false);
+                return;
+            }
+            _layout.RecordPendingPlacement(WorkspaceLayoutService.NewPanePlacement);
+        }
+
+        var created = args.Kind == "terminal"
+            ? await CreateTerminalAsync().ConfigureAwait(false)
+            : await CreateAgentAsync(args.ProviderKey!).ConfigureAwait(false);
+        if (!created.HasValue && args.Placement == "new_right")
+            _layout.CancelPendingPlacement();
+    }
+
     private void OnLayoutChanged(object? sender, WorkspaceLayoutSnapshot snapshot)
     {
         _ = SendLayoutSnapshotAsync(snapshot);
         LayoutChanged?.Invoke(this, snapshot);
+        BroadcastCatalog();
         // UI-initiated intents (focus a pane, close, collapse) change the
         // focused workspace without going through ActivateAsync — sync the
         // single active workspace from the focused pane.
@@ -412,11 +519,9 @@ public sealed class WorkspaceManager : IWorkspaceManager
 
     private Task SendLayoutSnapshotAsync(WorkspaceLayoutSnapshot snapshot)
     {
-        HashSet<Guid> attention;
         Dictionary<Guid, string?> directories;
         lock (_sync)
         {
-            attention = new HashSet<Guid>(_attention);
             directories = _workspaces.ToDictionary(w => w.WorkspaceId, w => w.WorkingDirectory);
         }
 
@@ -436,10 +541,18 @@ public sealed class WorkspaceManager : IWorkspaceManager
         var sharedRoots = agentRoots
             .GroupBy(entry => entry.Value, StringComparer.OrdinalIgnoreCase)
             .Where(group => group.Count() > 1)
-            .SelectMany(group => group.Select(entry => entry.Key))
-            .ToHashSet();
+            .Select(group => group.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        return _bridge.SendEventAsync(new
+        string[] newConflicts;
+        lock (_sync)
+        {
+            newConflicts = sharedRoots.Except(_sharedWorktreeConflicts, StringComparer.OrdinalIgnoreCase).ToArray();
+            _sharedWorktreeConflicts.IntersectWith(sharedRoots);
+            _sharedWorktreeConflicts.UnionWith(sharedRoots);
+        }
+
+        return SendLayoutAndNoticesAsync(new
         {
             type = "workspace_layout",
             revision = snapshot.LayoutRevision,
@@ -449,9 +562,75 @@ public sealed class WorkspaceManager : IWorkspaceManager
                 paneId = p.PaneId,
                 workspaceId = p.WorkspaceId,
                 kind = p.Kind?.ToString().ToLowerInvariant(),
-                ratio = p.Ratio,
-                attention = p.WorkspaceId.HasValue && attention.Contains(p.WorkspaceId.Value),
-                sharedWorktree = p.WorkspaceId.HasValue && sharedRoots.Contains(p.WorkspaceId.Value)
+                ratio = p.Ratio
+            }).ToArray()
+        }, newConflicts);
+    }
+
+    private async Task SendLayoutAndNoticesAsync(object layoutMessage, IReadOnlyList<string> newConflicts)
+    {
+        await _bridge.SendEventAsync(layoutMessage).ConfigureAwait(false);
+        foreach (var _ in newConflicts)
+            await SendNoticeAsync("多个可见 Agent 正在使用同一 worktree，请留意并发修改冲突。").ConfigureAwait(false);
+    }
+
+    private Task SendNoticeAsync(string message) =>
+        _bridge.SendEventAsync(new { type = "workspace_notice", message });
+
+    private void BroadcastCatalog()
+    {
+        WorkspaceDescriptor[] workspaces;
+        Dictionary<Guid, string> attention;
+        long revision;
+        lock (_sync)
+        {
+            workspaces = _workspaces.ToArray();
+            attention = new Dictionary<Guid, string>(_attention);
+            revision = ++_catalogRevision;
+        }
+
+        var layout = _layout.Snapshot;
+        var paneByWorkspace = layout.Panes
+            .Where(pane => pane.WorkspaceId.HasValue)
+            .ToDictionary(pane => pane.WorkspaceId!.Value, pane => pane.PaneId);
+        var paneIds = layout.Panes.Select(pane => pane.PaneId).ToArray();
+        _ = _bridge.SendEventAsync(new
+        {
+            type = "workspace_catalog",
+            revision,
+            maxWorkspaces = 5,
+            maxPanes = WorkspaceLayoutService.MaxPanes,
+            providers = AgentProviders.Select(provider => new
+            {
+                key = provider.Key,
+                displayName = provider.DisplayName,
+                iconKey = provider.IconKey,
+                isDefault = provider.IsDefault
+            }).ToArray(),
+            workspaces = workspaces.Select(workspace =>
+            {
+                paneByWorkspace.TryGetValue(workspace.WorkspaceId, out var paneId);
+                attention.TryGetValue(workspace.WorkspaceId, out var attentionKind);
+                var blockedReason = _layout.GetSplitBlockedReason(workspace.WorkspaceId);
+                return new
+                {
+                    workspaceId = workspace.WorkspaceId,
+                    kind = workspace.Kind.ToString().ToLowerInvariant(),
+                    title = workspace.Title,
+                    iconKey = workspace.IconKey,
+                    providerKey = workspace.ProviderKey,
+                    providerName = workspace.ProviderName,
+                    paneId,
+                    attentionKind,
+                    canSplitRight = blockedReason == null,
+                    splitBlockedReason = blockedReason,
+                    availableTargetPanes = paneIds
+                        .Select((id, index) => new { paneId = id, column = index + 1 })
+                        .Where(entry => !string.Equals(entry.paneId, paneId, StringComparison.Ordinal))
+                        .ToArray(),
+                    canCollapse = layout.Panes.Count > 1,
+                    canSwap = layout.Panes.Count == 2
+                };
             }).ToArray()
         });
     }
@@ -467,6 +646,10 @@ public sealed class WorkspaceManager : IWorkspaceManager
         _terminalTabs.TabCreated -= OnTerminalCreated;
         _terminalTabs.TabClosed -= OnTerminalClosed;
         _terminalTabs.TabTitleChanged -= OnTerminalTitleChanged;
+        _terminalTabs.PaneRatiosRequested -= OnPaneRatiosRequested;
+        _terminalTabs.PaneMoveRequested -= OnPaneMoveRequested;
+        _terminalTabs.WorkspaceLayoutIntentRequested -= OnWorkspaceLayoutIntentRequested;
+        _terminalTabs.WorkspaceCreateRequested -= OnWorkspaceCreateRequested;
         _agents.WorkspaceCreated -= OnAgentCreated;
         _agents.WorkspaceChanged -= OnAgentChanged;
         _agents.WorkspaceClosed -= OnAgentClosed;

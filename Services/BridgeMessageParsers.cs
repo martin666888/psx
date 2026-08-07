@@ -131,8 +131,11 @@ internal enum TerminalBridgeMessageKind
     PasteRequest,
     Ready,
     PaneFocus,
-    PaneRatio,
-    PaneMove
+    PaneRatiosCommit,
+    PaneMove,
+    WorkspaceLayoutIntent,
+    WorkspaceCreate,
+    ThemeAction
 }
 
 internal sealed record TerminalBridgeMessage(
@@ -142,8 +145,11 @@ internal sealed record TerminalBridgeMessage(
     TerminalTitleEventArgs? Title = null,
     TerminalPasteRequest? PasteRequest = null,
     string? PaneId = null,
-    double? Ratio = null,
-    Guid? WorkspaceId = null);
+    PaneRatiosEventArgs? PaneRatios = null,
+    Guid? WorkspaceId = null,
+    WorkspaceLayoutIntentEventArgs? WorkspaceIntent = null,
+    WorkspaceCreateEventArgs? WorkspaceCreate = null,
+    ThemeActionEventArgs? ThemeAction = null);
 
 internal sealed record TerminalPasteRequest(Guid SessionId, Guid RequestId);
 
@@ -226,11 +232,25 @@ internal static class TerminalBridgeMessageParser
                     PaneId: source.PaneId);
                 return true;
 
-            case "pane_ratio" when !string.IsNullOrWhiteSpace(source.PaneId) && source.Ratio.HasValue:
+            case "pane_ratios_commit" when source.BaseRevision.HasValue && source.Panes is { Count: > 1 }:
+                var ratios = new Dictionary<string, double>(StringComparer.Ordinal);
+                foreach (var pane in source.Panes)
+                {
+                    if (string.IsNullOrWhiteSpace(pane.PaneId)
+                        || !double.IsFinite(pane.Ratio)
+                        || pane.Ratio <= 0
+                        || !ratios.TryAdd(pane.PaneId, pane.Ratio))
+                    {
+                        return false;
+                    }
+                }
                 message = new TerminalBridgeMessage(
-                    TerminalBridgeMessageKind.PaneRatio,
-                    PaneId: source.PaneId,
-                    Ratio: source.Ratio.Value);
+                    TerminalBridgeMessageKind.PaneRatiosCommit,
+                    PaneRatios: new PaneRatiosEventArgs
+                    {
+                        BaseRevision = source.BaseRevision.Value,
+                        Ratios = ratios
+                    });
                 return true;
 
             case "pane_move" when !string.IsNullOrWhiteSpace(source.PaneId)
@@ -239,6 +259,52 @@ internal static class TerminalBridgeMessageParser
                     TerminalBridgeMessageKind.PaneMove,
                     PaneId: source.PaneId,
                     WorkspaceId: moveId);
+                return true;
+
+            case "workspace_layout_intent" when source.Action is
+                "activate" or "close" or "split_right" or "move_to_pane" or "swap" or "collapse_single":
+                Guid? intentWorkspaceId = Guid.TryParse(source.WorkspaceId, out var parsedIntentId)
+                    ? parsedIntentId
+                    : null;
+                if (source.Action is "activate" or "close" or "split_right" or "move_to_pane"
+                    && !intentWorkspaceId.HasValue)
+                    return false;
+                if (source.Action == "move_to_pane" && string.IsNullOrWhiteSpace(source.PaneId))
+                    return false;
+                message = new TerminalBridgeMessage(
+                    TerminalBridgeMessageKind.WorkspaceLayoutIntent,
+                    WorkspaceIntent: new WorkspaceLayoutIntentEventArgs
+                    {
+                        Action = source.Action,
+                        WorkspaceId = intentWorkspaceId,
+                        PaneId = source.PaneId
+                    });
+                return true;
+
+            case "workspace_create" when source.Kind is "terminal" or "agent"
+                                         && source.Placement is "focused" or "new_right":
+                if (source.Kind == "agent" && string.IsNullOrWhiteSpace(source.ProviderKey))
+                    return false;
+                message = new TerminalBridgeMessage(
+                    TerminalBridgeMessageKind.WorkspaceCreate,
+                    WorkspaceCreate: new WorkspaceCreateEventArgs
+                    {
+                        Kind = source.Kind,
+                        ProviderKey = source.ProviderKey,
+                        Placement = source.Placement
+                    });
+                return true;
+
+            case "theme_action" when source.Action is "preview" or "confirm" or "cancel" or "refresh" or "open_folder":
+                if (source.Action is "preview" or "confirm" && string.IsNullOrWhiteSpace(source.ThemeKey))
+                    return false;
+                message = new TerminalBridgeMessage(
+                    TerminalBridgeMessageKind.ThemeAction,
+                    ThemeAction: new ThemeActionEventArgs
+                    {
+                        Action = source.Action,
+                        ThemeKey = source.ThemeKey
+                    });
                 return true;
         }
 

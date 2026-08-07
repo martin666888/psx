@@ -11,9 +11,9 @@
     position: absolute;
     /* A free-standing rounded panel: workbench gutter on top/bottom/left,
      * with the main panel a --agent-panel-gap away on the right. */
-    top: var(--agent-workbench-gutter);
+    top: calc(40px + var(--agent-workbench-gutter));
     bottom: var(--agent-workbench-gutter);
-    left: var(--agent-workbench-gutter);
+    left: calc(40px + var(--agent-workbench-gutter));
     z-index: var(--agent-layer-dock);
     display: flex;
     flex-direction: column;
@@ -24,6 +24,7 @@
     background: var(--agent-canvas-surface);
     color: var(--agent-text);
     font-family: var(--agent-font-ui);
+    pointer-events: auto;
 }
 
 .agent-history-dock[hidden] {

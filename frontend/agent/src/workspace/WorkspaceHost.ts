@@ -75,7 +75,7 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
     this.container.classList.add('agent-ui');
     // Radix portals must mount inside the boundary to see the themed
     // variables (a body-mounted tooltip/popup renders unstyled).
-    setPortalContainer(this.container);
+    setPortalContainer(document.getElementById('global-portal-root') ?? this.container);
   }
 
   /**
@@ -111,12 +111,20 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
       entry.panel.dataset.paneFocused = assignment.paneId === snapshot.focusedPaneId ? 'true' : 'false';
     }
 
+    // Diagnostic (permanent, [pane-layout]): every projection reports the
+    // visible agent panel count and the projected pane ids.
+    const visiblePanels = [...this.workspaces.values()].filter((entry) => !entry.panel.hidden).length;
+    console.debug(
+      '[pane-layout] applyLayout: visible panels =', visiblePanels,
+      '| panes =', snapshot.panes.map((pane) => pane.paneId).join(',')
+    );
+
     const anyAgentVisible = assignments.size > 0;
     this.container.classList.toggle('agent-split-active', snapshot.panes.length > 1);
     // The Agent layer needs pointer events whenever any agent panel shows —
     // including an unfocused pane beside a terminal (click-to-focus).
     this.container.classList.toggle('agent-workspace-active', anyAgentVisible);
-    this.historyDockView?.setAgentViewActive(anyAgentVisible);
+    this.historyDockView?.setAgentViewActive(this.workspaces.size > 0);
   }
 
   /** Width of the focused pane's agent panel, for pane-relative responsive
@@ -140,6 +148,15 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
   /** True once workspace_layout snapshots own panel visibility/rects. */
   isLayoutDriven(): boolean {
     return this.layoutDriven;
+  }
+
+  /** Production wiring locks layout-driven mode before the first activation:
+   * entry.ts calls this while creating the app (a paneLayout always exists
+   * there), so workspace_activated can never reach the legacy fullscreen
+   * fallback. Mirrors the container state applyLayout() would produce. */
+  markLayoutDriven(): void {
+    this.layoutDriven = true;
+    this.container.classList.add('agent-layout-driven');
   }
 
   private applyPanelRect(
@@ -224,6 +241,11 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
       // effects (focus, brokers) there.
       return;
     }
+
+    // Timing lock: production marks layoutDriven inside createAgentApp before
+    // any workspace_activated drains (entry.ts, paneLayout always present), so
+    // this legacy fallback is dead there — it serves only test harnesses that
+    // mount without a paneLayout.
 
     // The Agent root is an absolute layer above the terminal. It must only
     // receive pointer events while an Agent workspace is actually visible;
@@ -365,6 +387,8 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
     const root = document.documentElement;
     // shadcn variable layer, scoped to the Agent UI container (CP2).
     applyShadcnTheme(this.container, settings);
+    const globalPortal = document.getElementById('global-portal-root');
+    if (globalPortal) applyShadcnTheme(globalPortal, settings);
 
     const fontSize = settings.agentFontSize;
     if (typeof fontSize === 'number' && Number.isInteger(fontSize) && fontSize >= 6 && fontSize <= 72) {

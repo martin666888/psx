@@ -37,9 +37,39 @@ public sealed class TerminalMessage
     [JsonPropertyName("workspaceId")]
     public string? WorkspaceId { get; set; }
 
+    [JsonPropertyName("action")]
+    public string? Action { get; set; }
+
+    [JsonPropertyName("kind")]
+    public string? Kind { get; set; }
+
+    [JsonPropertyName("providerKey")]
+    public string? ProviderKey { get; set; }
+
+    [JsonPropertyName("placement")]
+    public string? Placement { get; set; }
+
+    [JsonPropertyName("themeKey")]
+    public string? ThemeKey { get; set; }
+
     [JsonPropertyName("ratio")]
     public double? Ratio { get; set; }
 
+    [JsonPropertyName("baseRevision")]
+    public long? BaseRevision { get; set; }
+
+    [JsonPropertyName("panes")]
+    public List<PaneRatioMessage>? Panes { get; set; }
+
     [JsonPropertyName("settings")]
     public TerminalOptions? Settings { get; set; }
+}
+
+public sealed class PaneRatioMessage
+{
+    [JsonPropertyName("paneId")]
+    public string PaneId { get; set; } = "";
+
+    [JsonPropertyName("ratio")]
+    public double Ratio { get; set; }
 }

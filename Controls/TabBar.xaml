@@ -71,14 +71,6 @@
                                                Foreground="{TemplateBinding Foreground}"
                                                TextTrimming="CharacterEllipsis"
                                                MaxWidth="150"/>
-                                    <!-- Attention dot: the workspace waits for
-                                         input, erred, or finished while its
-                                         pane was unfocused. -->
-                                    <Ellipse Width="6" Height="6"
-                                             Margin="6,0,0,0"
-                                             VerticalAlignment="Center"
-                                             Fill="{DynamicResource AccentBrush}"
-                                             Visibility="{Binding NeedsAttention, Converter={StaticResource BoolToVisibilityConverter}}"/>
                                 </StackPanel>
                             </Border>
                             <Border x:Name="ActiveIndicator"
@@ -207,9 +199,72 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <!-- The new-workspace placement toggle lives inside the same custom
+             popover as the menu rows.  A control template keeps it from
+             falling back to the Windows-native CheckBox chrome. -->
+        <Style x:Key="NewWorkspacePlacementCheckBoxStyle" TargetType="CheckBox">
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="16"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Border x:Name="ToggleBox"
+                                    Width="14"
+                                    Height="14"
+                                    VerticalAlignment="Center"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="{StaticResource ControlCornerRadius}">
+                                <Path x:Name="CheckMark"
+                                      Data="M3,7 L6,10 L11,4"
+                                      Stroke="{DynamicResource WindowBackgroundBrush}"
+                                      StrokeThickness="1.7"
+                                      StrokeStartLineCap="Round"
+                                      StrokeEndLineCap="Round"
+                                      StrokeLineJoin="Round"
+                                      Visibility="Collapsed"/>
+                            </Border>
+                            <ContentPresenter Grid.Column="1"
+                                              Margin="6,0,0,0"
+                                              VerticalAlignment="Center"
+                                              Content="{TemplateBinding Content}"
+                                              ContentTemplate="{TemplateBinding ContentTemplate}"
+                                              RecognizesAccessKey="True"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="ToggleBox" Property="Background" Value="{DynamicResource AccentBrush}"/>
+                                <Setter TargetName="ToggleBox" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                <Setter TargetName="CheckMark" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ToggleBox" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="ToggleBox" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.56"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
 
-    <Grid Background="{DynamicResource WindowBackgroundBrush}">
+    <Grid x:Name="TabBarRoot" Background="{DynamicResource WindowBackgroundBrush}">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*"/>
             <ColumnDefinition Width="Auto"/>
@@ -228,21 +283,8 @@
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
                         <Border Style="{StaticResource TabItemContainerStyle}"
+                                ContextMenuOpening="OnTabContextMenuOpening"
                                 Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=UserControl}}">
-                            <Border.ContextMenu>
-                                <ContextMenu>
-                                    <MenuItem Header="移到新列"
-                                              Visibility="{Binding CanSplitFurther, Converter={StaticResource BoolToVisibilityConverter}}"
-                                              Command="{Binding PlacementTarget.Tag.MoveTabToNewPaneCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
-                                              CommandParameter="{Binding SessionId}"/>
-                                    <MenuItem Header="交换两列"
-                                              Visibility="{Binding IsSplit, Converter={StaticResource BoolToVisibilityConverter}}"
-                                              Command="{Binding PlacementTarget.Tag.SwapPanesCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
-                                    <MenuItem Header="收回单列"
-                                              Visibility="{Binding IsSplit, Converter={StaticResource BoolToVisibilityConverter}}"
-                                              Command="{Binding PlacementTarget.Tag.CollapseToSinglePaneCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
-                                </ContextMenu>
-                            </Border.ContextMenu>
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
@@ -337,9 +379,8 @@
                         CornerRadius="{StaticResource CardCornerRadius}">
                     <StackPanel>
                         <CheckBox IsChecked="{Binding NewWorkspaceToNewPane, Mode=TwoWay}"
+                                  Style="{StaticResource NewWorkspacePlacementCheckBoxStyle}"
                                   Margin="6,2,6,4"
-                                  Foreground="{DynamicResource TextSecondaryBrush}"
-                                  FontSize="11"
                                   Content="新建到右侧列"/>
 
                         <Button Style="{StaticResource NewWorkspaceMenuRowStyle}"
@@ -401,5 +442,51 @@
                 </Border>
             </Popup>
         </Grid>
+
+        <!-- Tab actions use the same themed Popup treatment as the + menu.
+             ContextMenu deliberately is not used here: it always picks up
+             Windows menu chrome instead of PSX's active theme resources. -->
+        <Popup x:Name="TabContextPopup"
+               Placement="Bottom"
+               VerticalOffset="4"
+               AllowsTransparency="True"
+               PopupAnimation="None"
+               StaysOpen="False">
+            <Border Width="176"
+                    Padding="8"
+                    DataContext="{Binding PlacementTarget.DataContext, ElementName=TabContextPopup}"
+                    Background="{DynamicResource SurfaceRaisedBrush}"
+                    BorderBrush="{DynamicResource BorderStrongBrush}"
+                    BorderThickness="1"
+                    CornerRadius="{StaticResource CardCornerRadius}">
+                <StackPanel>
+                    <Button Style="{StaticResource NewWorkspaceMenuRowStyle}"
+                            Visibility="{Binding CanSplitFurther, Converter={StaticResource BoolToVisibilityConverter}}"
+                            Command="{Binding PlacementTarget.Tag.MoveTabToNewPaneCommand, ElementName=TabContextPopup}"
+                            CommandParameter="{Binding SessionId}"
+                            Click="OnTabContextMenuActionClick">
+                        <TextBlock Text="移到新列"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                   FontSize="12"/>
+                    </Button>
+                    <Button Style="{StaticResource NewWorkspaceMenuRowStyle}"
+                            Visibility="{Binding IsSplit, Converter={StaticResource BoolToVisibilityConverter}}"
+                            Command="{Binding PlacementTarget.Tag.SwapPanesCommand, ElementName=TabContextPopup}"
+                            Click="OnTabContextMenuActionClick">
+                        <TextBlock Text="交换两列"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                   FontSize="12"/>
+                    </Button>
+                    <Button Style="{StaticResource NewWorkspaceMenuRowStyle}"
+                            Visibility="{Binding IsSplit, Converter={StaticResource BoolToVisibilityConverter}}"
+                            Command="{Binding PlacementTarget.Tag.CollapseToSinglePaneCommand, ElementName=TabContextPopup}"
+                            Click="OnTabContextMenuActionClick">
+                        <TextBlock Text="收回单列"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                   FontSize="12"/>
+                    </Button>
+                </StackPanel>
+            </Border>
+        </Popup>
     </Grid>
 </UserControl>

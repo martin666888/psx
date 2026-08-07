@@ -95,12 +95,12 @@ export const Bridge = {
         this.sendToHost({ type: BridgeSendType.PaneFocus, paneId: paneId });
     },
 
-    /** Divider drag end: one ratio intent per pointerup (never per move).
-     * @param {string} paneId
-     * @param {number} ratio
+    /** Divider drag end: one atomic vector for the requested layout revision.
+     * @param {number} baseRevision
+     * @param {{paneId: string, ratio: number}[]} panes
      */
-    sendPaneRatio(paneId, ratio) {
-        this.sendToHost({ type: BridgeSendType.PaneRatio, paneId: paneId, ratio: ratio });
+    sendPaneRatios(baseRevision, panes) {
+        this.sendToHost({ type: BridgeSendType.PaneRatiosCommit, baseRevision, panes });
     },
 
     /** Drag a workspace onto a pane (swap when occupied, replace otherwise).
@@ -109,6 +109,43 @@ export const Bridge = {
      */
     sendPaneMove(workspaceId, paneId) {
         this.sendToHost({ type: BridgeSendType.PaneMove, workspaceId: workspaceId, paneId: paneId });
+    },
+
+    /** @param {'activate'|'close'|'split_right'|'move_to_pane'|'swap'|'collapse_single'} action
+     * @param {string} [workspaceId]
+     * @param {string} [paneId]
+     */
+    sendWorkspaceLayoutIntent(action, workspaceId, paneId) {
+        this.sendToHost({
+            type: BridgeSendType.WorkspaceLayoutIntent,
+            action,
+            ...(workspaceId ? { workspaceId } : {}),
+            ...(paneId ? { paneId } : {})
+        });
+    },
+
+    /** @param {'terminal'|'agent'} kind
+     * @param {string} [providerKey]
+     * @param {'focused'|'new_right'} [placement]
+     */
+    sendWorkspaceCreate(kind, providerKey, placement = 'focused') {
+        this.sendToHost({
+            type: BridgeSendType.WorkspaceCreate,
+            kind,
+            placement,
+            ...(providerKey ? { providerKey } : {})
+        });
+    },
+
+    /** @param {'preview'|'confirm'|'cancel'|'refresh'|'open_folder'} action
+     * @param {string} [themeKey]
+     */
+    sendThemeAction(action, themeKey) {
+        this.sendToHost({
+            type: BridgeSendType.ThemeAction,
+            action,
+            ...(themeKey ? { themeKey } : {})
+        });
     },
 
     /**

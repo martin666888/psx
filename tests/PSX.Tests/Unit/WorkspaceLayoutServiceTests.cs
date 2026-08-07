@@ -108,7 +108,42 @@ public sealed class WorkspaceLayoutServiceSplitTests
     }
 
     [TestMethod]
-    public void Split_VisibleWorkspaceBelowCap_MovesItToAFreshRightPane()
+    public void Split_OnlyVisibleWorkspaceWithoutBackground_IsNoOp_AndKeepsTheSolePane()
+    {
+        var (layout, broadcasts) = Create();
+        var workspaceId = Guid.NewGuid();
+        layout.AssignActiveWorkspace(workspaceId, WorkspaceKind.Agent);
+        broadcasts.Clear();
+
+        layout.SplitWorkspaceToNewPane(workspaceId, WorkspaceKind.Agent);
+
+        var snapshot = layout.Snapshot;
+        Assert.HasCount(1, snapshot.Panes);
+        Assert.AreEqual(workspaceId, snapshot.Panes[0].WorkspaceId);
+        Assert.AreEqual(snapshot.Panes[0].PaneId, snapshot.FocusedPaneId);
+        Assert.IsEmpty(broadcasts, "a sole visible workspace without a replacement cannot create a second pane");
+    }
+
+    [TestMethod]
+    public void Split_OnlyVisibleWorkspaceWithBackground_PullsBackgroundIntoSourcePane()
+    {
+        var (layout, _) = Create();
+        var terminal = Guid.NewGuid();
+        var agent = Guid.NewGuid();
+        layout.AssignActiveWorkspace(terminal, WorkspaceKind.Terminal);
+        layout.AssignActiveWorkspace(agent, WorkspaceKind.Agent);
+
+        layout.SplitWorkspaceToNewPane(agent, WorkspaceKind.Agent);
+
+        var snapshot = layout.Snapshot;
+        Assert.HasCount(2, snapshot.Panes);
+        Assert.AreEqual(terminal, snapshot.Panes[0].WorkspaceId);
+        Assert.AreEqual(agent, snapshot.Panes[1].WorkspaceId);
+        Assert.AreEqual(snapshot.Panes[1].PaneId, snapshot.FocusedPaneId);
+    }
+
+    [TestMethod]
+    public void Split_VisibleWorkspaceWithoutBackgroundReplacement_IsNoOp()
     {
         var (layout, _) = Create();
         var a = Guid.NewGuid();
@@ -116,15 +151,35 @@ public sealed class WorkspaceLayoutServiceSplitTests
         layout.AssignActiveWorkspace(a, WorkspaceKind.Agent);
         layout.SplitWorkspaceToNewPane(b, WorkspaceKind.Agent);
 
-        layout.SplitWorkspaceToNewPane(a, WorkspaceKind.Agent);
+        var before = layout.Snapshot;
+        var accepted = layout.SplitWorkspaceToNewPane(a, WorkspaceKind.Agent);
 
-        // Below the cap, splitting an already-visible workspace moves it to a
-        // fresh right-hand pane; the vacated pane collapses.
         var snapshot = layout.Snapshot;
         Assert.HasCount(2, snapshot.Panes);
-        Assert.AreEqual(b, snapshot.Panes[0].WorkspaceId);
-        Assert.AreEqual(a, snapshot.Panes[1].WorkspaceId);
-        Assert.AreEqual(a, layout.FocusedWorkspaceId);
+        Assert.IsFalse(accepted);
+        Assert.AreEqual(before.LayoutRevision, snapshot.LayoutRevision);
+        CollectionAssert.AreEqual(before.Panes.Select(pane => pane.WorkspaceId).ToArray(), snapshot.Panes.Select(pane => pane.WorkspaceId).ToArray());
+    }
+
+    [TestMethod]
+    public void Split_VisibleWorkspaceWithBackground_AddsRightPaneAndFillsSourceAtomically()
+    {
+        var (layout, _) = Create();
+        var a = Guid.NewGuid();
+        var background = Guid.NewGuid();
+        var b = Guid.NewGuid();
+        layout.AssignActiveWorkspace(a, WorkspaceKind.Agent);
+        layout.AssignActiveWorkspace(background, WorkspaceKind.Terminal);
+        layout.SplitWorkspaceToNewPane(b, WorkspaceKind.Agent);
+
+        var accepted = layout.SplitWorkspaceToNewPane(background, WorkspaceKind.Terminal);
+
+        var snapshot = layout.Snapshot;
+        Assert.IsTrue(accepted);
+        Assert.HasCount(3, snapshot.Panes);
+        Assert.AreEqual(a, snapshot.Panes[0].WorkspaceId, "MRU background fills the source pane");
+        Assert.AreEqual(background, snapshot.Panes[1].WorkspaceId, "target is inserted immediately to the right");
+        Assert.AreEqual(b, snapshot.Panes[2].WorkspaceId);
     }
 
     [TestMethod]
@@ -202,20 +257,49 @@ public sealed class WorkspaceLayoutServiceSplitTests
     }
 
     [TestMethod]
-    public void SetPaneRatio_ClampsAndRenormalizes()
+    public void SetPaneRatios_ReplacesTheWholeVectorAtomically()
     {
         var (layout, _) = Create();
         var a = Guid.NewGuid();
         var b = Guid.NewGuid();
         layout.AssignActiveWorkspace(a, WorkspaceKind.Agent);
         layout.SplitWorkspaceToNewPane(b, WorkspaceKind.Terminal);
-        var first = layout.Snapshot.Panes[0].PaneId;
+        var before = layout.Snapshot;
+        var first = before.Panes[0].PaneId;
+        var second = before.Panes[1].PaneId;
 
-        layout.SetPaneRatio(first, 0.95);
+        var accepted = layout.SetPaneRatios(before.LayoutRevision, new Dictionary<string, double>
+        {
+            [first] = 0.72,
+            [second] = 0.28
+        });
 
         var snapshot = layout.Snapshot;
-        Assert.AreEqual(0.8, snapshot.Panes[0].Ratio, "clamped to the 0.8 ceiling");
-        Assert.AreEqual(0.2, snapshot.Panes[1].Ratio);
+        Assert.IsTrue(accepted);
+        Assert.AreEqual(before.LayoutRevision + 1, snapshot.LayoutRevision);
+        Assert.AreEqual(0.72, snapshot.Panes[0].Ratio);
+        Assert.AreEqual(0.28, snapshot.Panes[1].Ratio);
+    }
+
+    [TestMethod]
+    public void SetPaneRatios_RejectsStaleOrMalformedVectorsWithoutChangingLayout()
+    {
+        var (layout, _) = Create();
+        var ids = Enumerable.Range(0, 4).Select(_ => Guid.NewGuid()).ToArray();
+        layout.AssignActiveWorkspace(ids[0], WorkspaceKind.Agent);
+        for (var i = 1; i < ids.Length; i++)
+            layout.SplitWorkspaceToNewPane(ids[i], WorkspaceKind.Agent);
+        var before = layout.Snapshot;
+        var valid = before.Panes.ToDictionary(pane => pane.PaneId, pane => pane.Ratio);
+
+        Assert.IsFalse(layout.SetPaneRatios(before.LayoutRevision - 1, valid), "stale revision");
+        Assert.IsFalse(layout.SetPaneRatios(before.LayoutRevision, valid.Take(3).ToDictionary()), "missing pane");
+        Assert.IsFalse(layout.SetPaneRatios(before.LayoutRevision, valid.ToDictionary(pair => pair.Key, _ => 0.1)), "sum mismatch");
+        Assert.IsFalse(layout.SetPaneRatios(before.LayoutRevision, valid.ToDictionary(pair => pair.Key, pair => pair.Key == before.Panes[0].PaneId ? double.NaN : pair.Value)), "non-finite ratio");
+
+        var snapshot = layout.Snapshot;
+        Assert.AreEqual(before.LayoutRevision, snapshot.LayoutRevision);
+        CollectionAssert.AreEqual(before.Panes.Select(pane => pane.Ratio).ToArray(), snapshot.Panes.Select(pane => pane.Ratio).ToArray());
     }
 
     [TestMethod]
@@ -288,7 +372,7 @@ public sealed class WorkspaceLayoutServiceMultiColumnTests
     }
 
     [TestMethod]
-    public void Split_AtFourColumnCap_BackgroundWorkspaceReplacesFocusedPane()
+    public void Split_AtFourColumnCap_IsRejectedWithoutChangingAssignments()
     {
         var (layout, _) = Create();
         var ids = Enumerable.Range(0, 4).Select(_ => Guid.NewGuid()).ToArray();
@@ -297,12 +381,14 @@ public sealed class WorkspaceLayoutServiceMultiColumnTests
             layout.SplitWorkspaceToNewPane(ids[i], WorkspaceKind.Agent);
         var fifth = Guid.NewGuid();
 
-        layout.SplitWorkspaceToNewPane(fifth, WorkspaceKind.Terminal);
+        var before = layout.Snapshot;
+        var accepted = layout.SplitWorkspaceToNewPane(fifth, WorkspaceKind.Terminal);
 
         var snapshot = layout.Snapshot;
+        Assert.IsFalse(accepted);
         Assert.HasCount(4, snapshot.Panes);
-        Assert.AreEqual(fifth, snapshot.Panes[3].WorkspaceId, "the cap degrades to replacing the focused pane");
-        Assert.AreEqual(fifth, layout.FocusedWorkspaceId);
+        Assert.AreEqual(before.LayoutRevision, snapshot.LayoutRevision);
+        CollectionAssert.AreEqual(before.Panes.Select(pane => pane.WorkspaceId).ToArray(), snapshot.Panes.Select(pane => pane.WorkspaceId).ToArray());
     }
 
     [TestMethod]

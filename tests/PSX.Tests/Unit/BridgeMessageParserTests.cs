@@ -190,6 +190,51 @@ public sealed class TerminalBridgeMessageParserTests
     }
 
     [TestMethod]
+    public void TryParse_PaneRatiosCommit_RequiresACompleteFiniteVectorShape()
+    {
+        Assert.IsTrue(TerminalBridgeMessageParser.TryParse(
+            """{"type":"pane_ratios_commit","baseRevision":12,"panes":[{"paneId":"pane-1","ratio":0.42},{"paneId":"pane-2","ratio":0.58}]}""",
+            out var message));
+        Assert.AreEqual(TerminalBridgeMessageKind.PaneRatiosCommit, message!.Kind);
+        Assert.AreEqual(12, message.PaneRatios!.BaseRevision);
+        Assert.AreEqual(0.42, message.PaneRatios.Ratios["pane-1"]);
+
+        Assert.IsFalse(TerminalBridgeMessageParser.TryParse(
+            """{"type":"pane_ratios_commit","baseRevision":12,"panes":[{"paneId":"pane-1","ratio":0.5},{"paneId":"pane-1","ratio":0.5}]}""",
+            out _));
+        Assert.IsFalse(TerminalBridgeMessageParser.TryParse(
+            """{"type":"pane_ratios_commit","baseRevision":12,"panes":[{"paneId":"pane-1","ratio":-1},{"paneId":"pane-2","ratio":2}]}""",
+            out _));
+    }
+
+    [TestMethod]
+    public void TryParse_WorkspaceAndThemeIntents_ValidateRequiredFields()
+    {
+        Assert.IsTrue(TerminalBridgeMessageParser.TryParse(
+            $$"""{"type":"workspace_layout_intent","action":"activate","workspaceId":"{{SessionId}}"}""",
+            out var activate));
+        Assert.AreEqual(TerminalBridgeMessageKind.WorkspaceLayoutIntent, activate!.Kind);
+        Assert.AreEqual(SessionId, activate.WorkspaceIntent!.WorkspaceId);
+
+        Assert.IsTrue(TerminalBridgeMessageParser.TryParse(
+            """{"type":"workspace_create","kind":"agent","providerKey":"acp-kimi","placement":"new_right"}""",
+            out var create));
+        Assert.AreEqual("acp-kimi", create!.WorkspaceCreate!.ProviderKey);
+
+        Assert.IsTrue(TerminalBridgeMessageParser.TryParse(
+            """{"type":"theme_action","action":"preview","themeKey":"builtin:dark"}""",
+            out var theme));
+        Assert.AreEqual("preview", theme!.ThemeAction!.Action);
+
+        Assert.IsFalse(TerminalBridgeMessageParser.TryParse(
+            """{"type":"workspace_create","kind":"agent","placement":"focused"}""",
+            out _));
+        Assert.IsFalse(TerminalBridgeMessageParser.TryParse(
+            """{"type":"theme_action","action":"confirm"}""",
+            out _));
+    }
+
+    [TestMethod]
     [DataRow("")]
     [DataRow("not-json")]
     [DataRow("{\"type\":\"unknown\"}")]

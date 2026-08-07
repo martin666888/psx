@@ -58,16 +58,36 @@ interface PaneFocusPayload {
     paneId: string;
 }
 
-interface PaneRatioPayload {
-    type: 'pane_ratio';
-    paneId: string;
-    ratio: number;
+interface PaneRatiosCommitPayload {
+    type: 'pane_ratios_commit';
+    baseRevision: number;
+    panes: Array<{ paneId: string; ratio: number }>;
 }
 
 interface PaneMovePayload {
     type: 'pane_move';
     workspaceId: string;
     paneId: string;
+}
+
+interface WorkspaceLayoutIntentPayload {
+    type: 'workspace_layout_intent';
+    action: 'activate' | 'close' | 'split_right' | 'move_to_pane' | 'swap' | 'collapse_single';
+    workspaceId?: string;
+    paneId?: string;
+}
+
+interface WorkspaceCreatePayload {
+    type: 'workspace_create';
+    kind: 'terminal' | 'agent';
+    providerKey?: string;
+    placement: 'focused' | 'new_right';
+}
+
+interface ThemeActionPayload {
+    type: 'theme_action';
+    action: 'preview' | 'confirm' | 'cancel' | 'refresh' | 'open_folder';
+    themeKey?: string;
 }
 
 interface AgentSubmitPayload {
@@ -128,8 +148,11 @@ type BridgeOutboundMessage =
     | TerminalPasteRequestPayload
     | TerminalReadyPayload
     | PaneFocusPayload
-    | PaneRatioPayload
+    | PaneRatiosCommitPayload
     | PaneMovePayload
+    | WorkspaceLayoutIntentPayload
+    | WorkspaceCreatePayload
+    | ThemeActionPayload
     | AgentSubmitPayload
     | AgentUploadAttachmentPayload
     | AgentCommandPayload

@@ -25,8 +25,10 @@ public sealed class TabManagementService : ITabManagementService, IDisposable
     public event EventHandler<TabClosedEventArgs>? TabClosed;
     public event EventHandler<TabTitleChangedEventArgs>? TabTitleChanged;
     public event EventHandler<string>? PaneFocusRequested;
-    public event EventHandler<PaneRatioEventArgs>? PaneRatioRequested;
+    public event EventHandler<PaneRatiosEventArgs>? PaneRatiosRequested;
     public event EventHandler<PaneMoveEventArgs>? PaneMoveRequested;
+    public event EventHandler<WorkspaceLayoutIntentEventArgs>? WorkspaceLayoutIntentRequested;
+    public event EventHandler<WorkspaceCreateEventArgs>? WorkspaceCreateRequested;
 
     public TabManagementService(
         ConPtyService conPtyService,
@@ -45,8 +47,10 @@ public sealed class TabManagementService : ITabManagementService, IDisposable
         _bridgeService.TitleChanged += OnBridgeTitleChanged;
         _bridgeService.FrontendReady += OnFrontendReady;
         _bridgeService.PaneFocusRequested += (_, paneId) => PaneFocusRequested?.Invoke(this, paneId);
-        _bridgeService.PaneRatioRequested += (_, args) => PaneRatioRequested?.Invoke(this, args);
+        _bridgeService.PaneRatiosRequested += (_, args) => PaneRatiosRequested?.Invoke(this, args);
         _bridgeService.PaneMoveRequested += (_, args) => PaneMoveRequested?.Invoke(this, args);
+        _bridgeService.WorkspaceLayoutIntentRequested += (_, args) => WorkspaceLayoutIntentRequested?.Invoke(this, args);
+        _bridgeService.WorkspaceCreateRequested += (_, args) => WorkspaceCreateRequested?.Invoke(this, args);
     }
 
     public Task<Guid> CreateTabAsync(ShellProfile? profile = null)

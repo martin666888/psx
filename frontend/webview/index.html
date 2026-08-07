@@ -7,10 +7,22 @@
     <title>PSX Terminal</title>
 </head>
 <body>
-    <div id="workspace-stack">
+    <div id="workspace-stack" class="agent-ui">
+        <nav id="activity-rail" aria-label="全局操作">
+            <button type="button" class="workspace-chrome-button" data-role="history-toggle" aria-label="历史记录" title="历史记录">☰</button>
+            <button type="button" class="workspace-chrome-button" data-role="workspace-menu-toggle" aria-label="工作区" title="工作区" aria-haspopup="dialog" aria-expanded="false">▦</button>
+            <button type="button" class="workspace-chrome-button" data-role="workspace-create-toggle" aria-label="新建工作区" aria-haspopup="dialog" aria-expanded="false">＋</button>
+            <button type="button" class="workspace-chrome-button" data-role="theme-toggle" aria-label="主题" title="Theme" aria-haspopup="dialog" aria-expanded="false">◐</button>
+        </nav>
+        <header id="workspace-chrome" aria-label="工作区导航">
+            <div class="workspace-nameplates" data-role="pane-nameplates"></div>
+        </header>
         <div id="terminal-container"></div>
         <div id="agent-workspace-container"></div>
         <div id="workspace-panes"></div>
+        <div id="workspace-popover-root"></div>
+        <div id="global-portal-root" class="agent-ui"></div>
+        <div id="workspace-notices" role="status" aria-live="polite"></div>
     </div>
     <template id="agent-workspace-template">
     <section class="agent-panel" hidden>

@@ -38,8 +38,11 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
     public event EventHandler<string>? ViewModeChanged;
     public event EventHandler? FrontendReady;
     public event EventHandler<string>? PaneFocusRequested;
-    public event EventHandler<PaneRatioEventArgs>? PaneRatioRequested;
+    public event EventHandler<PaneRatiosEventArgs>? PaneRatiosRequested;
     public event EventHandler<PaneMoveEventArgs>? PaneMoveRequested;
+    public event EventHandler<WorkspaceLayoutIntentEventArgs>? WorkspaceLayoutIntentRequested;
+    public event EventHandler<WorkspaceCreateEventArgs>? WorkspaceCreateRequested;
+    public event EventHandler<ThemeActionEventArgs>? ThemeActionRequested;
 
     public TerminalBridgeService(ISettingsService settingsService, RuntimeLocator runtimeLocator)
     {
@@ -256,12 +259,8 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
             case TerminalBridgeMessageKind.PaneFocus:
                 PaneFocusRequested?.Invoke(this, message.PaneId!);
                 break;
-            case TerminalBridgeMessageKind.PaneRatio:
-                PaneRatioRequested?.Invoke(this, new PaneRatioEventArgs
-                {
-                    PaneId = message.PaneId!,
-                    Ratio = message.Ratio!.Value
-                });
+            case TerminalBridgeMessageKind.PaneRatiosCommit:
+                PaneRatiosRequested?.Invoke(this, message.PaneRatios!);
                 break;
             case TerminalBridgeMessageKind.PaneMove:
                 PaneMoveRequested?.Invoke(this, new PaneMoveEventArgs
@@ -269,6 +268,15 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
                     WorkspaceId = message.WorkspaceId!.Value,
                     PaneId = message.PaneId!
                 });
+                break;
+            case TerminalBridgeMessageKind.WorkspaceLayoutIntent:
+                WorkspaceLayoutIntentRequested?.Invoke(this, message.WorkspaceIntent!);
+                break;
+            case TerminalBridgeMessageKind.WorkspaceCreate:
+                WorkspaceCreateRequested?.Invoke(this, message.WorkspaceCreate!);
+                break;
+            case TerminalBridgeMessageKind.ThemeAction:
+                ThemeActionRequested?.Invoke(this, message.ThemeAction!);
                 break;
         }
     }
@@ -415,6 +423,9 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
         TitleChanged = null;
         ViewModeChanged = null;
         FrontendReady = null;
+        WorkspaceLayoutIntentRequested = null;
+        WorkspaceCreateRequested = null;
+        ThemeActionRequested = null;
         _terminalSessionIds.Clear();
 
         _coreWebView = null;

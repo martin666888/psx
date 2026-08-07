@@ -162,7 +162,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _workspaceManager.WorkspaceChanged += OnWorkspaceChanged;
         _workspaceManager.WorkspaceActivationRequested += OnWorkspaceActivationRequested;
         _workspaceManager.LayoutChanged += OnLayoutChanged;
+        _workspaceManager.AttentionNotificationRequested += OnAttentionNotificationRequested;
     }
+
+    private void OnAttentionNotificationRequested(object? sender, Guid workspaceId) =>
+        AttentionAppeared?.Invoke(this, EventArgs.Empty);
 
     private void OnLayoutChanged(object? sender, WorkspaceLayoutSnapshot snapshot)
     {
@@ -180,6 +184,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 if (!pane.WorkspaceId.HasValue) continue;
                 visible[pane.WorkspaceId.Value] = pane.PaneId == snapshot.FocusedPaneId;
             }
+            var hasBackgroundWorkspace = Tabs.Any(tab => !visible.ContainsKey(tab.SessionId));
             foreach (var tab in Tabs)
             {
                 var hadAttention = tab.NeedsAttention;
@@ -197,7 +202,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 tab.IsActive = focused;
                 tab.IsPaneVisible = !focused;
                 tab.IsSplit = IsSplit;
-                tab.CanSplitFurther = canSplitFurther;
+                // With a background workspace, moving the lone visible Tab
+                // can populate its source pane atomically. In an existing
+                // split, a visible Tab can also be moved to the right.
+                tab.CanSplitFurther = canSplitFurther && (IsSplit || hasBackgroundWorkspace);
                 tab.NeedsAttention = !focused && _workspaceManager.IsAttentionNeeded(tab.SessionId);
                 if (tab.NeedsAttention && !hadAttention)
                     AttentionAppeared?.Invoke(this, EventArgs.Empty);
@@ -280,6 +288,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _workspaceManager.WorkspaceChanged -= OnWorkspaceChanged;
         _workspaceManager.WorkspaceActivationRequested -= OnWorkspaceActivationRequested;
         _workspaceManager.LayoutChanged -= OnLayoutChanged;
+        _workspaceManager.AttentionNotificationRequested -= OnAttentionNotificationRequested;
     }
 }
 

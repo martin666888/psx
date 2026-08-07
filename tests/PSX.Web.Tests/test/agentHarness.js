@@ -231,10 +231,10 @@ export function installAgentRuntime() {
 // createAgentApp() so both the 1000px narrow breakpoint and ordinary resize
 // events exercise the same lifecycle as WebView.
 export function installBreakpoint(wide = false) {
-  let viewportWidth = wide ? 1440 : 900;
-  let matches = viewportWidth >= 1000;
+  let viewportWidth = wide ? 1440 : 480;
+  let matches = viewportWidth >= 520;
   const listeners = new Set();
-  const media = '(min-width: 1000px)';
+  const media = '(min-width: 520px)';
   const mql = {
     get matches() {
       return matches;
@@ -253,7 +253,7 @@ export function installBreakpoint(wide = false) {
     if (viewportWidth === nextWidth) return;
     viewportWidth = nextWidth;
     const previousMatches = matches;
-    matches = viewportWidth >= 1000;
+    matches = viewportWidth >= 520;
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: viewportWidth });
     window.dispatchEvent(new Event('resize'));
     if (previousMatches !== matches) {
@@ -263,7 +263,7 @@ export function installBreakpoint(wide = false) {
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: viewportWidth });
   return {
     setWide(value) {
-      setViewportWidth(value ? 1440 : 900);
+      setViewportWidth(value ? 1440 : 480);
     },
     setViewportWidth
   };
@@ -289,10 +289,10 @@ export function agentTemplateMarkup() {
 // stub terminal. Returns the runtime capture handles, the app sink, the stub
 // terminal, and a panelFor(workspaceId) helper reading the live panel shell.
 // (Group B — the shipped default on this branch).
-export async function mountAgentApp({ terminal, wide = false } = {}) {
+export async function mountAgentApp({ terminal, wide = false, paneLayout = null } = {}) {
   const runtime = installAgentRuntime();
   const breakpoint = installBreakpoint(wide);
-  document.body.innerHTML = `<div id="agents"></div>${agentTemplateMarkup()}`;
+  document.body.innerHTML = `<button type="button" data-role="global-history-toggle">History</button><div id="agents"></div><div id="global-portal-root" class="agent-ui"></div>${agentTemplateMarkup()}`;
   const { createAgentApp } = await appModule('entry.js');
   const terminalStub = terminal || {
     visible: true,
@@ -303,7 +303,11 @@ export async function mountAgentApp({ terminal, wide = false } = {}) {
   const app = createAgentApp({
     terminalManager: terminalStub,
     container: document.getElementById('agents'),
-    template: document.getElementById('agent-workspace-template')
+    template: document.getElementById('agent-workspace-template'),
+    ...(paneLayout ? { paneLayout } : {})
+  });
+  document.querySelector('[data-role="global-history-toggle"]')?.addEventListener('click', () => {
+    document.dispatchEvent(new CustomEvent('psx-history-toggle'));
   });
   // The global afterEach (vitest.setup.js) disposes the app before closing the
   // jsdom window, so broker timers and islands never leak into the next test.

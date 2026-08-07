@@ -267,8 +267,10 @@ internal sealed class NullTabManagementService : ITabManagementService
     public event EventHandler<TabClosedEventArgs>? TabClosed { add { } remove { } }
     public event EventHandler<TabTitleChangedEventArgs>? TabTitleChanged { add { } remove { } }
     public event EventHandler<string>? PaneFocusRequested { add { } remove { } }
-    public event EventHandler<PaneRatioEventArgs>? PaneRatioRequested { add { } remove { } }
+    public event EventHandler<PaneRatiosEventArgs>? PaneRatiosRequested { add { } remove { } }
     public event EventHandler<PaneMoveEventArgs>? PaneMoveRequested { add { } remove { } }
+    public event EventHandler<WorkspaceLayoutIntentEventArgs>? WorkspaceLayoutIntentRequested { add { } remove { } }
+    public event EventHandler<WorkspaceCreateEventArgs>? WorkspaceCreateRequested { add { } remove { } }
 
     public Task<Guid> CreateTabAsync(ShellProfile? profile = null) => Task.FromResult(Guid.NewGuid());
     public Task CloseTabAsync(Guid sessionId) => Task.CompletedTask;
@@ -286,8 +288,11 @@ internal sealed class NullTerminalBridgeService : ITerminalBridgeService
     public event EventHandler<string>? ViewModeChanged { add { } remove { } }
     public event EventHandler? FrontendReady { add { } remove { } }
     public event EventHandler<string>? PaneFocusRequested { add { } remove { } }
-    public event EventHandler<PaneRatioEventArgs>? PaneRatioRequested { add { } remove { } }
+    public event EventHandler<PaneRatiosEventArgs>? PaneRatiosRequested { add { } remove { } }
     public event EventHandler<PaneMoveEventArgs>? PaneMoveRequested { add { } remove { } }
+    public event EventHandler<WorkspaceLayoutIntentEventArgs>? WorkspaceLayoutIntentRequested { add { } remove { } }
+    public event EventHandler<WorkspaceCreateEventArgs>? WorkspaceCreateRequested { add { } remove { } }
+    public event EventHandler<ThemeActionEventArgs>? ThemeActionRequested { add { } remove { } }
 
     public Task InitializeAsync(WebView2 webView) => Task.CompletedTask;
     public Task CreateTerminalAsync(Guid sessionId) => Task.CompletedTask;

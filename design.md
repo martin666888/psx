@@ -10,12 +10,14 @@ The shape language is **Soft Workbench**: continuous, generous corner radii on a
 
 ## Layout
 
-- Shell: tab strip and a compact Terminal / Agent mode switch.
-- Agent toolbar: one 44px status row with working directory and thread actions.
-- Layered shell: History is a single global left dock (default 280px, draggable 220–420px, 220px effective while narrow); the conversation canvas sits above it; the Plan card is a content-height overlay below the toolbar at the top-right (fixed 320px, no resizer).
-- Conversation: one collision-aware centered reading column, max 920px. With History open it moves right only enough to clear the dock; it never reserves a mirrored dock-width strip.
+- Shell: the WebView owns a permanent 40px full-height activity rail at the left holding the global History, workspace list, create, and Theme buttons, plus a 40px workspace chrome row above the pane contents carrying only the nameplates aligned to each visible pane. There is no second WPF tab or theme row.
+- Pane nameplates: the focused pane uses an accent underline and stronger text. Provider/Terminal icon, truncated title, explicit attention text, close, and More occupy the pane's exact top rect, never colliding with the activity rail.
+- Agent toolbar: a pane-local status row with working directory and thread actions. At 720px it is complete, at 520–719px metadata truncates, and at 400–519px only the cwd basename and More remain.
+- Layered shell: History is one global left dock (default 280px, draggable 220–420px) opened from the permanent rail and pushes every pane. Plan is a workspace-local card; below 520px it opens as a pane-local overlay from a summary entry.
+- Conversation: one centered reading column per pane, max 920px. Its containing block is the pane rect after the History inset, never the application viewport.
 - Composer: shares the reading column. The composer card is the one large-radius signature surface (24px); the circular send button's center lands on the card's corner arc center (footer right/bottom padding = card radius − send radius = 7px).
-- Supported minimum window: 900x560. At narrow widths, metadata wraps before primary controls shrink.
+- Pane minimums: Agent 400px; Terminal `max(400px, 60 measured columns + horizontal padding)`, with a 480px fallback before measurement. When the sum does not fit, retain the focused pane and temporarily collect the farthest non-focused panes (right wins ties), restoring original order and ratios on widen.
+- Composer response: at 720px all configuration stays on one row; at 520–719px controls may wrap and model text truncates; at 400–519px Mode/Model/Thinking/Context move into the configuration overlay while attachment, input, configuration, and send remain. Every width-bearing flex ancestor permits shrinkage and no pane paints into its neighbor.
 
 ## Typography
 
@@ -76,14 +78,15 @@ Every interactive element provides default, hover, active, and disabled states. 
 
 - Hover changes surface or border only on hover-capable devices.
 - Active controls move by at most 1px or use a stronger surface.
-- Focus uses one uniform outline ring: `2px solid var(--agent-focus-ring)` with `outline-offset: 2px`. It shows only on keyboard focus (`:focus-visible`; the Composer card rings via `:has([data-role="input"]:focus-visible)` so inner buttons keep their own ring), never on pointer click, and appears instantly (never animated). The ring color is theme-tuned for ≥3:1 contrast against its surface (WCAG 1.4.11; satisfies 2.4.7 Focus Visible). Documented exceptions: menu items keep their `focus:bg-accent` surface state without a ring, and edge-anchored controls (History dock footer/resizer) use an inset ring (`outline-offset: -2px`) to avoid clipping. In split panes the focused pane carries a persistent 2px ring in the same token (pane focus is layout state, not keyboard focus); unfocused panes never dim, pane assignment and divider drags are never animated, and attention/warning signals are small static dots (accent for attention, amber for same-worktree).
+- Focus uses one uniform outline ring: `2px solid var(--agent-focus-ring)` with `outline-offset: 2px`. It shows only on keyboard focus (`:focus-visible`; the Composer card rings via `:has([data-role="input"]:focus-visible)` so inner buttons keep their own ring), never on pointer click, and appears instantly. Menu items may keep their focused surface state without a ring, and edge-anchored controls use an inset ring to avoid clipping. Pane focus is represented only by the nameplate accent underline and foreground strength; never draw a persistent pane border or dim an unfocused pane.
+- Attention is never color-only and never a dot. Pane nameplates and the global workspace list use the short labels `需确认`, `待回复`, `出错`, and `已完成`. Same-worktree risk is a themed non-blocking notification emitted only when a conflict forms.
 - Disabled controls remain legible, use `textDim` only for nonessential copy, and expose an explanation through their title or adjacent status.
-- Motion is limited to the running spinner, disclosure chevrons, and overlay entrances (fade/slide/zoom on dialogs, popovers, menus and tooltips). Animations use transform/opacity only, run within the `--agent-duration-fast`/`--agent-duration-state` budgets, and are never used for focus indication. `prefers-reduced-motion` disables all of them globally at the `.agent-ui` root.
+- Motion is limited to the running spinner, disclosure chevrons, and 120–150ms overlay/History entrances using opacity and a short translate. Pane widths, chrome slots, dividers, reading columns, and Terminal geometry never animate. Divider previews update at most once per animation frame; xterm fit and ConPTY resize happen after release. `prefers-reduced-motion` disables every nonessential effect at the `.agent-ui` root.
 
 ## Component rules
 
 - **Buttons have one component contract.** Agent React surfaces use the shadcn `Button` primitive and its named variants; component files may add layout geometry but must not recreate hover/active/disabled skins. Remaining non-React shell controls use their local semantic selectors until their owning surface migrates.
-- WPF chrome buttons use `SoftWorkbenchButtonStyle`, `SoftWorkbenchToggleButtonStyle`, or `SoftWorkbenchIconButtonStyle` from `Themes/Dark.xaml`; icons are XAML `Path` geometry, never font glyphs.
+- The visible workspace, create, and Theme menus are WebView surfaces and use the active CSS theme tokens. The hidden WPF chrome remains compatibility-only and must not reappear as a parallel navigation surface.
 - Assistant responses are not cards. User prompts use one low-contrast bounded surface and never form left/right chat bubbles.
 - Tool activity is one disclosure region containing a flat divided list. Each row includes an explicit state label; no colored side rail.
 - Thinking is a single disclosure row. Completed thinking closes by default.

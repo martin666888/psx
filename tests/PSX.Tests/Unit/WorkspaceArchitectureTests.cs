@@ -579,8 +579,10 @@ internal sealed class RecordingTabManagementService : ITabManagementService
     public event EventHandler<TabClosedEventArgs>? TabClosed;
     public event EventHandler<TabTitleChangedEventArgs>? TabTitleChanged { add { } remove { } }
     public event EventHandler<string>? PaneFocusRequested { add { } remove { } }
-    public event EventHandler<PaneRatioEventArgs>? PaneRatioRequested { add { } remove { } }
+    public event EventHandler<PaneRatiosEventArgs>? PaneRatiosRequested { add { } remove { } }
     public event EventHandler<PaneMoveEventArgs>? PaneMoveRequested { add { } remove { } }
+    public event EventHandler<WorkspaceLayoutIntentEventArgs>? WorkspaceLayoutIntentRequested { add { } remove { } }
+    public event EventHandler<WorkspaceCreateEventArgs>? WorkspaceCreateRequested { add { } remove { } }
 
     public Task<Guid> CreateTabAsync(ShellProfile? profile = null)
     {

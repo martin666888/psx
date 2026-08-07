@@ -69,14 +69,29 @@ export function createAgentApp(options: AgentAppOptions): AgentApp {
   // The global History dock indents every pane: report its width (plus the
   // workbench gutter and panel gap) to the neutral geometry engine.
   if (options.paneLayout) {
+    // Ordering lock: markLayoutDriven must run before main.js drains the
+    // staged events (createAgentApp returns only after this), so the
+    // workspace_activated below early-returns in activate() without painting
+    // the legacy fullscreen fallback; the compensating paneLayout.recompute()
+    // at the tail of main.js' loadAgentApp must not be removed.
+    host.markLayoutDriven();
     const paneLayout = options.paneLayout;
     const reportDockInset = (): void => {
-      paneLayout.setDockInset(shellLayoutHost.isHistoryOpen() ? shellLayoutHost.historyWidth() + 24 : 0);
+      paneLayout.setDockInset(shellLayoutHost.isHistoryOpen() ? 40 + shellLayoutHost.historyWidth() + 24 : 40);
     };
     shellLayoutHost.onHistoryOpenChanged(reportDockInset);
+    shellLayoutHost.onHistoryOpenChanged((open) => {
+      document.dispatchEvent(new CustomEvent('psx-history-state', { detail: { open } }));
+    });
     shellLayoutHost.onHistoryWidthChanged(reportDockInset);
     reportDockInset();
+    document.dispatchEvent(new CustomEvent('psx-history-state', {
+      detail: { open: shellLayoutHost.isHistoryOpen() }
+    }));
   }
+
+  const onGlobalHistoryToggle = (): void => historyDock.toggleFromToolbar();
+  document.addEventListener('psx-history-toggle', onGlobalHistoryToggle);
 
   let disposed = false;
 
@@ -96,6 +111,7 @@ export function createAgentApp(options: AgentAppOptions): AgentApp {
       // tear workspaces + global brokers down (registry still reports open
       // state to the live dock), and finally unmount the global React islands.
       shellLayout.dispose();
+      document.removeEventListener('psx-history-toggle', onGlobalHistoryToggle);
       registry.dispose();
       usagePanel.dispose();
       historyDock.dispose();

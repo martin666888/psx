@@ -23,6 +23,10 @@
     position: absolute;
     inset: 0;
     display: flex;
+    /* Agent cards, Plan and History have their own local z-index values.
+       Keep pane frames above every workspace layer so the divider remains a
+       reliable hit target instead of being swallowed by Agent content. */
+    z-index: 10;
     pointer-events: none;
     /* Divider handles re-enable hit-testing on themselves (Phase 1). */
 }
@@ -32,43 +36,6 @@
     flex: 1 1 0;
     min-width: 0;
     min-height: 0;
-}
-
-/* Focused-pane ring: the only visual the slots paint. 2px outline ring reuses
- * the shared focus token; unfocused panes never dim. */
-.workspace-pane[data-focused="true"]::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border: 2px solid var(--agent-focus-ring);
-    border-radius: var(--agent-workspace-radius, 12px);
-    pointer-events: none;
-}
-
-/* Attention badge: an unfocused pane whose workspace waits for input, erred,
- * or finished a run shows a small accent dot in its top corner. */
-.workspace-pane[data-attention="true"]::before {
-    content: "";
-    position: absolute;
-    top: 6px;
-    right: 6px;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--agent-focus-ring);
-    pointer-events: none;
-    z-index: 2;
-}
-
-/* Same-worktree warning: two visible agents point at one git top-level. An
- * amber dot painted as a background layer beside the attention slot (avoids
- * colliding with the focus ring's ::after); the slot title carries the reason. */
-.workspace-pane[data-shared-worktree="true"] {
-    background-image: radial-gradient(
-        circle 4px at calc(100% - 22px) 10px,
-        var(--agent-warning, #d3ae68) 98%,
-        transparent 100%);
-    background-repeat: no-repeat;
 }
 
 /* The terminal layer must not paint its own background over inactive panes:
@@ -85,6 +52,8 @@
     flex: 0 0 8px;
     margin: 0 -4px;
     cursor: col-resize;
+    touch-action: none;
+    user-select: none;
     pointer-events: auto;
     z-index: 1;
 }

@@ -201,7 +201,7 @@ function ComposerConfigControls({ controls }: { controls: ComposerControlsProps 
       <ComposerSelectControl control={controls.mode} />
       <div
         data-role="config-options"
-        className="agent-config-options flex min-w-0 flex-[0_1_auto] flex-nowrap items-center justify-start gap-[var(--agent-space-2)] max-[760px]:flex-wrap"
+        className="agent-config-options flex min-w-0 flex-[0_1_auto] flex-nowrap items-center justify-start gap-[var(--agent-space-2)]"
       >
         {controls.configs.map((control) =>
           control.kind === 'select' ? (
@@ -417,6 +417,7 @@ function ComposerImagePreview({ preview }: { preview: ComposerPreviewProps }): J
 export function ComposerView(props: ComposerViewProps): JSX.Element {
   const [draft, setDraft] = useState(props.draft.initialDraft);
   const [isComposing, setIsComposing] = useState(false);
+  const [compactConfigOpen, setCompactConfigOpen] = useState(false);
   const appliedDraftTokenRef = useRef(props.draft.draftToken);
   const pendingDraftProjectionRef = useRef<{ token: number; text: string } | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -527,7 +528,7 @@ export function ComposerView(props: ComposerViewProps): JSX.Element {
             >
               <CommandHint {...props.hint} />
             </div>
-            <div className="agent-composer-footer box-border flex min-h-[51px] min-w-0 items-center gap-[var(--agent-space-2)] rounded-b-[var(--agent-radius-composer)] pt-1.5 pr-[7px] pb-[7px] pl-[14px] max-[760px]:flex-wrap">
+            <div className="agent-composer-footer box-border flex min-h-[51px] min-w-0 items-center gap-[var(--agent-space-2)] rounded-b-[var(--agent-radius-composer)] pt-1.5 pr-[7px] pb-[7px] pl-[14px]">
               <div className="agent-composer-actions flex shrink-0 items-center">
                 <ComposerActions {...props.actions} />
               </div>
@@ -535,8 +536,19 @@ export function ComposerView(props: ComposerViewProps): JSX.Element {
                 data-role="context-usage-host"
                 className="agent-hints flex shrink-0 gap-[var(--agent-space-2)] whitespace-nowrap text-[11px] text-muted-foreground"
               />
-              <div className="agent-composer-controls flex min-w-0 flex-[1_1_auto] items-center justify-end gap-[var(--agent-space-2)] max-[760px]:order-5 max-[760px]:flex-[1_0_100%] max-[760px]:justify-start">
-                <ComposerConfigControls controls={props.controls} />
+              <div className="agent-composer-controls flex min-w-0 flex-[1_1_auto] items-center justify-end gap-[var(--agent-space-2)]">
+                <button
+                  type="button"
+                  className="agent-config-toggle"
+                  aria-label="Agent 配置"
+                  aria-expanded={compactConfigOpen}
+                  onClick={() => setCompactConfigOpen((open) => !open)}
+                >
+                  配置
+                </button>
+                <div className="agent-config-popover" data-open={compactConfigOpen ? 'true' : 'false'}>
+                  <ComposerConfigControls controls={props.controls} />
+                </div>
               </div>
               <PromptInputSubmit
                 data-role="send"

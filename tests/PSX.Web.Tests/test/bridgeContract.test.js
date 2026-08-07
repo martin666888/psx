@@ -106,10 +106,10 @@ const emitterFiles = fs
   .filter((name) => name.endsWith('.cs') && name !== 'BridgeMessageParsers.cs');
 
 const csharpEmittedRaw = unique(
-  emitterFiles.flatMap((name) => {
-    const source = fs.readFileSync(path.join(servicesDir, name), 'utf8');
+  [...emitterFiles.map((name) => path.join(servicesDir, name)), path.join(repoRoot, 'MainWindow.xaml.cs')].flatMap((file) => {
+    const source = fs.readFileSync(file, 'utf8');
     return [
-      ...matchAll(source, /(?:SendEventAsync|SendMessageToJs)\(new\s*\{\s*type = "([a-z0-9_]+)"/g),
+      ...matchAll(source, /(?:SendEventAsync|SendMessageToJs|SendLayoutAndNoticesAsync)\(new\s*\{\s*type = "([a-z0-9_]+)"/g),
       ...matchAll(source, /return new\s*\{\s*type = "([a-z0-9_]+)"/g),
       ...matchAll(source, /\bType = "([a-z0-9_]+)"/g)
     ];

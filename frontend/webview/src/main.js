@@ -14,11 +14,13 @@
 import './css/tailwind.css';
 import './css/terminal.css';
 import './css/panes.css';
+import './css/workspace-chrome.css';
 import './css/agent/index.css';
 import { Bridge } from './Bridge.js';
 import { BridgeEventType } from './BridgeMessages.js';
 import { PaneLayoutController } from './PaneLayoutController.js';
 import { TerminalManager } from './TerminalManager.js';
+import { WorkspaceChromeController } from './WorkspaceChromeController.js';
 
 (function () {
     // Neutral pane layout root (split-pane Phase 0 seam, always loaded — a
@@ -27,6 +29,22 @@ import { TerminalManager } from './TerminalManager.js';
     // WorkspaceLayoutService snapshots.
     const paneLayout = new PaneLayoutController(document.getElementById('workspace-panes'));
     const terminalManager = new TerminalManager(document.getElementById('terminal-container'));
+    paneLayout.setTerminalMinimumWidthResolver((workspaceId) => terminalManager.minimumPaneWidth(workspaceId));
+    const workspaceChrome = new WorkspaceChromeController(
+        document.getElementById('workspace-chrome'),
+        document.getElementById('workspace-popover-root')
+    );
+    // Pixel-capacity gate (prevention): the chrome disables "new column"
+    // entries when the requested layout plus one more pane of that kind
+    // would overflow the current width. The C# 4-column count remains the
+    // second defensive line; both layers stay in force.
+    workspaceChrome.setCapacityChecker(() => {
+        const available = paneLayout.availableWidth();
+        return {
+            fitsAgent: paneLayout.requestedMinimumWidthSum() + paneLayout.minimumWidthForNewPane('agent') <= available,
+            fitsTerminal: paneLayout.requestedMinimumWidthSum() + paneLayout.minimumWidthForNewPane('terminal') <= available
+        };
+    });
 
     let agentApp = null;
     let agentDisabled = false;
@@ -34,10 +52,43 @@ import { TerminalManager } from './TerminalManager.js';
 
     // The geometry engine projects pane rects onto both render systems; the
     // Agent app joins lazily once its chunk loads.
-    paneLayout.onLayoutApplied((snapshot, rects) => {
-        terminalManager.applyLayout(snapshot, rects);
+    paneLayout.onLayoutApplied((snapshot, rects, options) => {
+        terminalManager.applyLayout(snapshot, rects, options);
+        workspaceChrome.applyLayout(snapshot, rects);
         if (agentApp) agentApp.setPaneLayout(snapshot, rects);
     });
+
+    // Responsive-collection notice (edge-triggered): only newly collected
+    // panes reach the user once; a stable set or a restore stays silent.
+    paneLayout.onPanesCollected(() => {
+        workspaceChrome.showNotice('窗口宽度不足,已临时收编非焦点列,可在「工作区」列表找回');
+    });
+
+    function applyChromeAppearance(settings) {
+        if (!settings || typeof settings !== 'object') return;
+        const root = document.documentElement;
+        const set = (name, value) => {
+            if (typeof value === 'string' && value.trim()) root.style.setProperty(name, value.trim());
+        };
+        const theme = settings.themeColors;
+        if (theme && typeof theme === 'object') {
+            for (const [key, variable] of Object.entries({
+                background: '--agent-bg', surface: '--agent-surface', surfaceRaised: '--agent-surface-raised',
+                surfaceMuted: '--agent-surface-muted', hover: '--agent-hover', border: '--agent-border',
+                borderStrong: '--agent-border-strong', text: '--agent-text', textMuted: '--agent-text-muted',
+                textDim: '--agent-text-dim', accent: '--agent-accent', accentHover: '--agent-accent-hover',
+                error: '--agent-error', warning: '--agent-warning', scrollbar: '--agent-scrollbar',
+                scrollbarHover: '--agent-scrollbar-hover'
+            })) set(variable, theme[key]);
+        }
+        const agent = settings.agentThemeColors;
+        if (agent && typeof agent === 'object') {
+            set('--agent-focus-ring', agent.focusRing);
+            set('--agent-shadow', agent.shadow);
+        }
+        if (typeof settings.agentFontFamily === 'string') set('--agent-font-ui', settings.agentFontFamily);
+        if (typeof settings.agentMonoFontFamily === 'string') set('--agent-font-mono', settings.agentMonoFontFamily);
+    }
 
     // Pre-load staging (CP3b). Config/state events only need their most
     // recent value, so they collapse instead of queueing; History
@@ -176,6 +227,11 @@ import { TerminalManager } from './TerminalManager.js';
                     paneLayout
                 });
                 agentApp = app;
+                // Ordering contract: createAgentApp has already called
+                // markLayoutDriven (paneLayout exists in production), so the
+                // staged workspace_activated below early-returns without the
+                // fullscreen fallback; the recompute() that follows is the
+                // first real projection and must never be removed.
                 drainStagedEvents((staged) => app.handle(staged));
                 // The app may have missed earlier rect projections while its
                 // chunk loaded; replay the current layout once.
@@ -197,6 +253,7 @@ import { TerminalManager } from './TerminalManager.js';
             case BridgeEventType.Settings:
             case BridgeEventType.AppearanceSettings:
                 terminalManager.setSettings(message.settings);
+                applyChromeAppearance(message.settings);
                 forwardToAgent(message);
                 return;
             case BridgeEventType.Create:
@@ -231,6 +288,15 @@ import { TerminalManager } from './TerminalManager.js';
                 // Requested-layout snapshots are pane-neutral: handled in the
                 // always-loaded layer, never staged for the Agent chunk.
                 paneLayout.applySnapshot(message);
+                return;
+            case BridgeEventType.WorkspaceCatalog:
+                workspaceChrome.applyCatalog(message);
+                return;
+            case BridgeEventType.ThemeCatalog:
+                workspaceChrome.applyThemeCatalog(message);
+                return;
+            case BridgeEventType.WorkspaceNotice:
+                workspaceChrome.showNotice(message.message);
                 return;
             case BridgeEventType.PaneZoomToggle:
                 paneLayout.toggleZoom();

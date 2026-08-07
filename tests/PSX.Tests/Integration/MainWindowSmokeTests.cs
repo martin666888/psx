@@ -28,8 +28,6 @@ public sealed class MainWindowSmokeTests
 
         Assert.IsNotNull(window.FindName("TerminalHostControl"));
         Assert.IsNotNull(window.FindName("WorkspaceTabBar"));
-        Assert.IsNotNull(window.FindName("ThemeButton"));
-        Assert.IsNotNull(window.FindName("ThemePopup"));
         var tabBar = Assert.IsInstanceOfType<System.Windows.FrameworkElement>(
             window.FindName("WorkspaceTabBar"));
         Assert.IsNotNull(tabBar.FindName("NewWorkspaceButton"));

@@ -1,7 +1,7 @@
 // WorkspaceToolbarView.tsx — the single React view for the workspace toolbar.
 //
-// One island (host: [data-role="toolbar-host"]) renders the history toggle,
-// the session meta line, the plan toggle (with unread dot) and the runtime
+// One island (host: [data-role="toolbar-host"]) renders the session meta
+// line, the plan toggle and the runtime
 // Update button. The WorkspaceToolbarController is the only setElement
 // writer; the Session/History/Plan controllers push their slices through it,
 // so each state kind keeps exactly one authoritative owner.
@@ -98,20 +98,6 @@ function updateButtonTitle(update: WorkspaceToolbarProps['update']): string {
   return lines.join('\n');
 }
 
-function HistoryIcon(): JSX.Element {
-  return (
-    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
-      <path
-        d="M2.5 3h11v10h-11z M6 3v10"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.2"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
 function PlanIcon(): JSX.Element {
   return (
     <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
@@ -133,29 +119,26 @@ export function WorkspaceToolbar(props: WorkspaceToolbarProps): JSX.Element {
   const planLabel = props.plan.unread ? 'Toggle Plan card, plan updated' : 'Toggle Plan card';
   return (
     <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            ref={props.history.toggleRef}
-            data-role="history-toggle"
-            type="button"
-            variant="ghost"
-            size="icon"
-            className={
-              'agent-icon-toggle agent-history-toggle size-7 border border-input' +
-              (props.history.open ? '' : ' text-muted-foreground')
-            }
-            aria-label="Toggle Agent history"
-            aria-expanded={props.history.open}
-            onClick={props.history.onToggle}
-          >
-            <HistoryIcon />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>Agent history</TooltipContent>
-      </Tooltip>
       <div className="agent-meta">{props.session ? <SessionMeta {...props.session} /> : null}</div>
-      <div className="agent-toolbar-actions">
+      <details className="agent-toolbar-more">
+        <summary aria-label="更多 Agent 操作">更多</summary>
+        <div className="agent-toolbar-more-content">
+          {props.session ? (
+            <div className="agent-toolbar-more-session">
+              <span>{props.session.cwd}</span>
+              <Button
+                variant="link"
+                size="sm"
+                disabled={props.session.changeCwdDisabled}
+                title={props.session.changeCwdTitle}
+                onClick={props.session.onPickCwd}
+              >
+                Change
+              </Button>
+              <small>{props.session.sessionLabel}</small>
+            </div>
+          ) : null}
+          <div className="agent-toolbar-actions">
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -173,12 +156,6 @@ export function WorkspaceToolbar(props: WorkspaceToolbarProps): JSX.Element {
               onClick={props.plan.onToggle}
             >
               <PlanIcon />
-              <span
-                data-role="plan-toggle-unread"
-                className="agent-plan-toggle-unread"
-                aria-label="Plan updated"
-                hidden={!props.plan.unread}
-              ></span>
             </Button>
           </TooltipTrigger>
           <TooltipContent>{planLabel}</TooltipContent>
@@ -208,7 +185,9 @@ export function WorkspaceToolbar(props: WorkspaceToolbarProps): JSX.Element {
           ) : null}
           {updateButtonLabel(props.update.state)}
         </Button>
-      </div>
+          </div>
+        </div>
+      </details>
     </TooltipProvider>
   );
 }

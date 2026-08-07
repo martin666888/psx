@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     private readonly ISettingsService? _settingsService;
     private bool _isShuttingDown;
     private bool _shutdownCompleted;
+    private long _themeCatalogRevision;
 
     public MainWindow()
     {
@@ -54,6 +55,8 @@ public partial class MainWindow : Window
         _settingsService = settingsService;
 
         DataContext = _viewModel;
+        _bridgeService.FrontendReady += OnFrontendReady;
+        _bridgeService.ThemeActionRequested += OnThemeActionRequested;
 
         // Flash the taskbar button when a workspace newly needs attention
         // while this window is inactive (split-pane attention signal).
@@ -66,6 +69,45 @@ public partial class MainWindow : Window
         Loaded += OnLoaded;
         Closing += OnClosing;
         Closed += OnClosed;
+    }
+
+    private void OnFrontendReady(object? sender, EventArgs e) =>
+        _ = Dispatcher.BeginInvoke(PublishThemeCatalogAsync);
+
+    private void OnThemeActionRequested(object? sender, ThemeActionEventArgs e) =>
+        _ = Dispatcher.BeginInvoke(async () =>
+        {
+            if (_viewModel == null)
+                return;
+            await _viewModel.ThemePicker.HandleWebActionAsync(e.Action, e.ThemeKey);
+            await PublishThemeCatalogAsync();
+        });
+
+    private Task PublishThemeCatalogAsync()
+    {
+        if (_viewModel == null || _agentBridgeService == null)
+            return Task.CompletedTask;
+
+        var picker = _viewModel.ThemePicker;
+        return _agentBridgeService.SendEventAsync(new
+        {
+            type = "theme_catalog",
+            revision = ++_themeCatalogRevision,
+            currentLabel = picker.CurrentLabel,
+            message = picker.Message,
+            isMessageError = picker.IsMessageError,
+            themes = picker.AllThemes.Select(item => new
+            {
+                key = item.Descriptor.Key,
+                name = item.Name,
+                source = item.Descriptor.Source.ToString().ToLowerInvariant(),
+                isAvailable = item.IsAvailable,
+                isCurrent = item.IsCurrent,
+                isUpdated = item.IsUpdated,
+                isPreview = item.IsPreview,
+                diagnostic = item.DiagnosticSummary
+            }).ToArray()
+        });
     }
 
     // 此方法在窗口句柄创建后、显示前触发，是调用 DWM API 的最佳时机
@@ -197,6 +239,11 @@ public partial class MainWindow : Window
         }
         finally
         {
+            if (_bridgeService != null)
+            {
+                _bridgeService.FrontendReady -= OnFrontendReady;
+                _bridgeService.ThemeActionRequested -= OnThemeActionRequested;
+            }
             (_agentWorkspaceCoordinator as IDisposable)?.Dispose();
             (_workspaceManager as IDisposable)?.Dispose();
             (_tabService as IDisposable)?.Dispose();

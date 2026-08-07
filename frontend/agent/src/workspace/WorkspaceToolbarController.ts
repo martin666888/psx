@@ -104,7 +104,7 @@ export class WorkspaceToolbarController implements FeatureController {
   // --- focus commands (Shell Esc return path) --------------------------------
 
   focusHistoryToggle(): void {
-    this.historyToggleRef.current?.focus();
+    document.querySelector<HTMLElement>('#activity-rail [data-role="history-toggle"]')?.focus();
   }
 
   focusPlanToggle(): void {
