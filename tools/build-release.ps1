@@ -46,6 +46,15 @@
     nested Microsoft.WebView2.FixedVersionRuntime.* folder. When provided, the
     runtime is copied into runtime/webview2-fixed/ in the release package.
 
+.PARAMETER SkipOpenCodeSmoke
+    If set, the OpenCode native smokes (opencode.exe --version and the ACP
+    initialize probe) are not executed. Use only on build machines where
+    security software (Defender/EDR/360) blocks the unsigned Bun-compiled
+    binary from running. The script then verifies the bundled binary
+    statically: the platform package's package.json version must match the
+    seed manifest pin. The produced package MUST be smoke-tested on a machine
+    where opencode.exe is allowed to run.
+
 .EXAMPLE
     pwsh tools/build-release.ps1
     pwsh tools/build-release.ps1 -Configuration Debug -OutputDirectory .\out\
@@ -56,7 +65,8 @@ param(
     [string]$Configuration = "Release",
     [string]$OutputDirectory = "",
     [switch]$SkipNodeDownload,
-    [string]$WebView2FixedRuntimePath = ""
+    [string]$WebView2FixedRuntimePath = "",
+    [switch]$SkipOpenCodeSmoke
 )
 
 $ErrorActionPreference = "Stop"
@@ -306,15 +316,43 @@ $opencodeExe = Join-Path $opencodeTargetDir "node_modules\opencode-windows-x64\b
 if (-not (Test-Path -LiteralPath $opencodeExe -PathType Leaf)) {
     throw "Bundled OpenCode executable is missing: $opencodeExe"
 }
-$opencodeVersionOutput = (& $opencodeExe --version 2>&1 | Out-String).Trim()
-if ($LASTEXITCODE -ne 0) { throw "Bundled OpenCode --version smoke failed (exit $LASTEXITCODE): $opencodeVersionOutput" }
-if ([string]::IsNullOrWhiteSpace($opencodeVersionOutput)) { throw "Bundled OpenCode --version smoke produced no output" }
-Write-Host "    OpenCode --version smoke passed: $opencodeVersionOutput"
 
-# Release/CI ACP smoke must NOT call session/new or prompt (no login / network).
-& $nodeExe $acpProbe -- $opencodeExe acp | Out-Host
-if ($LASTEXITCODE -ne 0) { throw "Bundled OpenCode ACP initialize smoke failed (exit $LASTEXITCODE)" }
-Write-Host "    OpenCode ACP initialize smoke passed"
+if ($SkipOpenCodeSmoke) {
+    # Static fallback for build machines where security software blocks the
+    # unsigned Bun binary from running: identity comes from the installed
+    # package, which must match the seed lockfile pin exactly.
+    $opencodePackageJsonPath = Join-Path $opencodeTargetDir "node_modules\opencode-windows-x64\package.json"
+    if (-not (Test-Path -LiteralPath $opencodePackageJsonPath -PathType Leaf)) {
+        throw "Bundled OpenCode package.json is missing: $opencodePackageJsonPath"
+    }
+    $opencodeBundledVersion = (Get-Content -Raw -LiteralPath $opencodePackageJsonPath | ConvertFrom-Json).version
+    # Pin comes from the seed manifest, not the lockfile: PS 5.1 ConvertFrom-Json
+    # chokes on duplicate keys that npm lockfiles legitimately contain.
+    $opencodeSeedManifestPath = Join-Path $opencodeSeedDir "package.json"
+    $opencodeLockedVersion = (Get-Content -Raw -LiteralPath $opencodeSeedManifestPath | ConvertFrom-Json).dependencies.'opencode-windows-x64'
+    if ([string]::IsNullOrWhiteSpace($opencodeBundledVersion)) { throw "Bundled OpenCode package.json carries no version" }
+    if ([string]::IsNullOrWhiteSpace($opencodeLockedVersion)) { throw "OpenCode seed manifest pins no opencode-windows-x64 version" }
+    if ($opencodeBundledVersion -ne $opencodeLockedVersion) {
+        throw "Bundled OpenCode version $opencodeBundledVersion does not match the seed manifest pin $opencodeLockedVersion"
+    }
+    Write-Host "    OpenCode native smokes SKIPPED (-SkipOpenCodeSmoke); static version check passed: $opencodeBundledVersion" -ForegroundColor Yellow
+    Write-Warning "OpenCode --version and ACP initialize smokes were skipped. Smoke-test the produced package on a machine where opencode.exe is allowed to run."
+} else {
+    try {
+        $opencodeVersionOutput = (& $opencodeExe --version 2>&1 | Out-String).Trim()
+        $opencodeVersionExit = $LASTEXITCODE
+    } catch {
+        throw "Bundled OpenCode --version smoke could not start opencode.exe: $($_.Exception.Message) If security software (Defender/EDR/360) blocks the unsigned Bun binary on this build machine, whitelist it or rerun with -SkipOpenCodeSmoke to fall back to static checks."
+    }
+    if ($opencodeVersionExit -ne 0) { throw "Bundled OpenCode --version smoke failed (exit $opencodeVersionExit): $opencodeVersionOutput" }
+    if ([string]::IsNullOrWhiteSpace($opencodeVersionOutput)) { throw "Bundled OpenCode --version smoke produced no output" }
+    Write-Host "    OpenCode --version smoke passed: $opencodeVersionOutput"
+
+    # Release/CI ACP smoke must NOT call session/new or prompt (no login / network).
+    & $nodeExe $acpProbe -- $opencodeExe acp | Out-Host
+    if ($LASTEXITCODE -ne 0) { throw "Bundled OpenCode ACP initialize smoke failed (exit $LASTEXITCODE)" }
+    Write-Host "    OpenCode ACP initialize smoke passed"
+}
 Write-Host "    Installed OpenCode into staging/tools/opencode/"
 Write-Host ""
 
