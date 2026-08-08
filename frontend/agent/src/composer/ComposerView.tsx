@@ -13,6 +13,7 @@
 // projection that arrived while the island chunk was loading.
 
 import { useEffect, useLayoutEffect, useRef, useState, type JSX, type RefObject } from 'react';
+import { SlidersHorizontalIcon } from 'lucide-react';
 import { AnnounceContext } from '../ui/announce.js';
 import {
   AttachmentStrip,
@@ -544,7 +545,7 @@ export function ComposerView(props: ComposerViewProps): JSX.Element {
                   aria-expanded={compactConfigOpen}
                   onClick={() => setCompactConfigOpen((open) => !open)}
                 >
-                  配置
+                  <SlidersHorizontalIcon className="size-4" />
                 </button>
                 <div className="agent-config-popover" data-open={compactConfigOpen ? 'true' : 'false'}>
                   <ComposerConfigControls controls={props.controls} />

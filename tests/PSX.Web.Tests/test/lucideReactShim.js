@@ -62,6 +62,7 @@ export const PaperclipIcon = createTestIcon('paperclip');
 export const PlusIcon = createTestIcon('plus');
 export const RefreshCwIcon = createTestIcon('refresh-cw');
 export const SearchIcon = createTestIcon('search');
+export const SlidersHorizontalIcon = createTestIcon('sliders-horizontal');
 export const SquareIcon = createTestIcon('square');
 export const TriangleAlertIcon = createTestIcon('triangle-alert');
 export const WrenchIcon = createTestIcon('wrench');

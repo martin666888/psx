@@ -1,13 +1,14 @@
 // WorkspaceChromeController.js — the always-loaded WebView shell chrome:
 // per-column tab strips in the 40px workspace row, the global popover menus
-// (workspace list, create, theme, column) anchored to the activity rail, and
-// the notice region. C# owns the requested layout truth; this controller
+// (create, theme, column) anchored to the activity rail, and the notice
+// region. C# owns the requested layout truth; this controller
 // renders it. A column with a single tab keeps the legacy nameplate look; a
 // multi-tab column renders an overflowable tab bar (wheel -> horizontal
 // scroll). Clicking a tab activates it (workspace_layout_intent activate);
 // the close button closes it; right-click opens the column menu.
 
 import { Bridge } from './Bridge.js';
+import { createProviderIconSvg } from './ProviderIcons.js';
 
 const ATTENTION_LABELS = Object.freeze({
     permission: '需确认',
@@ -21,13 +22,12 @@ export class WorkspaceChromeController {
         if (!root || !portalRoot) throw new Error('WorkspaceChromeController requires chrome and portal roots');
         this.root = root;
         this.portalRoot = portalRoot;
-        // The four global buttons live in the left activity rail
+        // The three global buttons live in the left activity rail
         // (index.html), not inside the chrome row; query them document-wide
         // by data-role so the constructor signature stays (root, portalRoot).
         this.rail = document.getElementById('activity-rail');
         this.nameplates = root.querySelector('[data-role="pane-nameplates"]');
         this.historyButton = document.querySelector('[data-role="history-toggle"]');
-        this.workspaceButton = document.querySelector('[data-role="workspace-menu-toggle"]');
         this.createButton = document.querySelector('[data-role="workspace-create-toggle"]');
         this.themeButton = document.querySelector('[data-role="theme-toggle"]');
         this.catalogRevision = -1;
@@ -47,7 +47,6 @@ export class WorkspaceChromeController {
         this.historyButton.addEventListener('click', () => {
             document.dispatchEvent(new window.CustomEvent('psx-history-toggle'));
         });
-        this.workspaceButton.addEventListener('click', () => this.toggleMenu('workspaces', this.workspaceButton));
         this.createButton.addEventListener('click', () => this.toggleMenu('create', this.createButton));
         this.themeButton.addEventListener('click', () => this.toggleMenu('theme', this.themeButton));
         this.onDocumentPointerDown = (event) => {
@@ -95,7 +94,7 @@ export class WorkspaceChromeController {
             else this.closeMenu(false, false);
         }
         this.renderTabStrips();
-        if (this.openMenu === 'workspaces' || this.openMenu === 'create' || this.openMenu === 'pane') {
+        if (this.openMenu === 'create' || this.openMenu === 'pane') {
             this.renderOpenMenu();
         }
         return true;
@@ -114,7 +113,7 @@ export class WorkspaceChromeController {
         this.layout = snapshot;
         this.rects = rects;
         this.renderTabStrips();
-        if (this.openMenu === 'workspaces' || this.openMenu === 'pane') this.renderOpenMenu();
+        if (this.openMenu === 'pane') this.renderOpenMenu();
     }
 
     showNotice(message) {
@@ -201,7 +200,14 @@ export class WorkspaceChromeController {
         const icon = document.createElement('span');
         icon.className = 'workspace-tab-icon';
         icon.setAttribute('aria-hidden', 'true');
-        icon.textContent = this.iconText(workspace?.iconKey, workspace?.kind ?? tab.kind);
+        // Terminal tabs keep the classic text glyph; agent tabs carry the
+        // provider brand mark (createProviderIconSvg falls back to the generic
+        // sparkle for unknown catalog keys).
+        if ((workspace?.kind ?? tab.kind) === 'terminal') {
+            icon.textContent = '>_';
+        } else {
+            icon.appendChild(createProviderIconSvg(workspace?.iconKey));
+        }
 
         const title = document.createElement('span');
         title.className = 'workspace-tab-title';
@@ -240,12 +246,6 @@ export class WorkspaceChromeController {
 
         tabEl.append(icon, title, attention, close);
         return tabEl;
-    }
-
-    iconText(iconKey, kind) {
-        if (kind === 'terminal') return '>_';
-        const labels = { claude: 'C', kimi: 'K', qwen: 'Q', qoder: 'Q', opencode: 'O' };
-        return labels[iconKey] || '✦';
     }
 
     toggleMenu(kind, trigger) {
@@ -313,7 +313,6 @@ export class WorkspaceChromeController {
             menu.style.top = `${triggerTop}px`;
             menu.style.maxHeight = `calc(100vh - ${triggerTop}px - 8px)`;
         }
-        if (this.openMenu === 'workspaces') this.renderWorkspaceList(menu);
         if (this.openMenu === 'create') this.renderCreateMenu(menu);
         if (this.openMenu === 'theme') this.renderThemeMenu(menu);
         if (this.openMenu === 'pane') this.renderPaneMenu(menu, this.paneMenuWorkspace);
@@ -329,39 +328,7 @@ export class WorkspaceChromeController {
     }
 
     menuLabel() {
-        return { workspaces: '工作区', create: '新建工作区', theme: '主题', pane: '工作区操作' }[this.openMenu] || '菜单';
-    }
-
-    // The workspace list is the overview of every OPEN tab: each entry is
-    // labelled with its column ("第 N 列", plus "(激活)" for the focused
-    // column's active tab). Clicking activates it in place — a pure jump that
-    // never moves or duplicates the tab. There is no background set anymore.
-    renderWorkspaceList(menu) {
-        menu.appendChild(this.heading('工作区'));
-        // Menus must reflect the full requested open set even while zoomed
-        // (the effective layout under-reports), so resolve the column order
-        // from the requested snapshot carried alongside.
-        const requested = this.layout?.requested ?? this.layout;
-        const columnOrder = new Map((requested?.columns ?? []).map((column, index) => [column.columnId, index + 1]));
-        for (const workspace of this.catalog.workspaces) {
-            const column = (requested?.columns ?? []).find((c) => c.columnId === workspace.columnId);
-            const active = Boolean(column
-                && requested?.focusedColumnId === workspace.columnId
-                && column.activeTabId === workspace.workspaceId);
-            const columnNumber = columnOrder.get(workspace.columnId);
-            const location = columnNumber
-                ? `第 ${columnNumber} 列${active ? '(激活)' : ''}`
-                : '第 ? 列';
-            const label = [location, ATTENTION_LABELS[workspace.attentionKind]].filter(Boolean).join(' · ');
-            menu.appendChild(this.menuRow(
-                `${workspace.providerName ? workspace.providerName + ' · ' : ''}${workspace.title}`,
-                label,
-                () => {
-                    Bridge.sendWorkspaceLayoutIntent('activate', workspace.workspaceId);
-                    this.closeMenu(false);
-                }
-            ));
-        }
+        return { create: '新建工作区', theme: '主题', pane: '工作区操作' }[this.openMenu] || '菜单';
     }
 
     renderCreateMenu(menu) {

@@ -149,6 +149,12 @@
         justify-content: flex-start;
     }
 
+    /* In the 520–719px band the controls wrap onto their own line, so the
+       send button must push itself to the end of its own line. */
+    .agent-composer-footer [data-role="send"] {
+        margin-left: auto;
+    }
+
     .agent-config-options {
         flex-wrap: wrap;
     }
@@ -172,10 +178,11 @@
 
     .agent-config-toggle {
         display: inline-flex;
+        width: 30px;
         height: 30px;
         align-items: center;
-        padding: 0 var(--agent-space-2);
-        border: 1px solid var(--agent-border);
+        justify-content: center;
+        border: 0;
         border-radius: var(--agent-radius-control);
         color: var(--agent-text-muted);
         background: transparent;

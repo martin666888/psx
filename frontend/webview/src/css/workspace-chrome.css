@@ -109,6 +109,18 @@
     text-align: center;
 }
 
+/* The provider brand SVG fills the fixed icon slot; 14px keeps it on the
+   same visual scale as the old letter glyph. The mark follows currentColor
+   (accent) like the text it replaces. */
+.workspace-tab-icon svg {
+    flex: 0 0 auto;
+    width: 14px;
+    height: 14px;
+    display: block;
+    margin: 0 auto;
+    fill: currentColor;
+}
+
 .workspace-tab-title {
     min-width: 0;
     overflow: hidden;
@@ -186,6 +198,14 @@
     flex: 0 0 40px;
     display: grid;
     place-items: center;
+}
+
+/* The rail icons are lucide stroke glyphs inlined in index.html; 18px keeps
+   them on the same scale as the old Unicode marks and they follow
+   currentColor (stroke + any fill accents). */
+#activity-rail .workspace-chrome-button svg {
+    width: 18px;
+    height: 18px;
 }
 
 /* Expanded (open menu / open dock) mirrors the nameplate focus language: a

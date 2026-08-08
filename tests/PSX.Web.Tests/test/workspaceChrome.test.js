@@ -1,8 +1,8 @@
 // workspaceChrome.test.js — the WebView shell chrome: per-column tab strips
-// in the 40px workspace row, the open-tab workspace list, the create menu's
-// column-cap gates and the column menu. Wire shape: workspace_layout carries
-// focusedColumnId + columns[] (tabs/activeTabId/ratio); the catalog carries
-// per-workspace columnId/isActiveTab and maxColumns.
+// in the 40px workspace row, the create menu's column-cap gates and the
+// column menu. Wire shape: workspace_layout carries focusedColumnId +
+// columns[] (tabs/activeTabId/ratio); the catalog carries per-workspace
+// columnId/isActiveTab and maxColumns.
 
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
@@ -18,10 +18,24 @@ const controllerUrl = pathToFileURL(
 function mountChrome() {
   document.body.innerHTML = `
     <nav id="activity-rail">
-      <button data-role="history-toggle"></button>
-      <button data-role="workspace-menu-toggle"></button>
-      <button data-role="workspace-create-toggle"></button>
-      <button data-role="theme-toggle"></button>
+      <button data-role="history-toggle">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+          <path d="M3 3v5h5"></path>
+          <path d="M12 7v5l4 2"></path>
+        </svg>
+      </button>
+      <button data-role="workspace-create-toggle">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M5 12h14"></path>
+          <path d="M12 5v14"></path>
+        </svg>
+      </button>
+      <button data-role="theme-toggle">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"></path>
+        </svg>
+      </button>
     </nav>
     <header id="workspace-chrome">
       <div data-role="pane-nameplates"></div>
@@ -61,41 +75,7 @@ test('chrome merges layout and catalog in either arrival order without replacing
   chrome.dispose();
 });
 
-test('workspace menu is the open-tab overview: column labels and a pure-jump activate', async () => {
-  const runtime = installAgentRuntime();
-  mountChrome();
-  const { WorkspaceChromeController } = await import(controllerUrl);
-  const chrome = new WorkspaceChromeController(
-    document.getElementById('workspace-chrome'),
-    document.getElementById('workspace-popover-root')
-  );
-  const docsId = '0f75ac98-09e7-4d43-bac0-255512fcb777';
-  chrome.applyLayout(columnSnapshot([
-    { columnId: 'column-1', tabs: [{ workspaceId: 'w1', kind: 'agent' }], activeTabId: 'w1', ratio: 0.5 },
-    { columnId: 'column-2', tabs: [{ workspaceId: docsId, kind: 'agent' }], activeTabId: docsId, ratio: 0.5 }
-  ], 'column-2'), new Map());
-  chrome.applyCatalog({
-    revision: 1,
-    providers: [],
-    maxColumns: 3,
-    workspaces: [{
-      workspaceId: docsId, kind: 'agent', title: 'docs',
-      providerName: 'Claude', attentionKind: 'question', columnId: 'column-2', isActiveTab: true
-    }]
-  });
-  document.querySelector('[data-role="workspace-menu-toggle"]').click();
-  const row = document.querySelector('.workspace-menu-row');
-  assert.match(row.textContent, /第 2 列\(激活\) · 待回复/);
-  row.click();
-  assert.deepEqual(runtime.postedMessages.at(-1), {
-    type: 'workspace_layout_intent',
-    action: 'activate',
-    workspaceId: docsId
-  });
-  chrome.dispose();
-});
-
-test('workspace list marks an inactive tab of a visible column without an (激活) label', async () => {
+test('tab icons render provider brand SVGs; terminal keeps its text glyph', async () => {
   installAgentRuntime();
   mountChrome();
   const { WorkspaceChromeController } = await import(controllerUrl);
@@ -103,27 +83,37 @@ test('workspace list marks an inactive tab of a visible column without an (激�
     document.getElementById('workspace-chrome'),
     document.getElementById('workspace-popover-root')
   );
-  const docsId = '0f75ac98-09e7-4d43-bac0-255512fcb777';
   chrome.applyLayout(columnSnapshot([
-    { columnId: 'column-1', tabs: [
-      { workspaceId: 'w1', kind: 'agent' },
-      { workspaceId: docsId, kind: 'agent' }
-    ], activeTabId: 'w1', ratio: 1 }
-  ], 'column-1'), new Map());
+    {
+      columnId: 'column-1',
+      tabs: [
+        { workspaceId: 'term', kind: 'terminal' },
+        { workspaceId: 'qwen', kind: 'agent' },
+        { workspaceId: 'qoder', kind: 'agent' },
+        { workspaceId: 'weird', kind: 'agent' }
+      ],
+      activeTabId: 'qwen',
+      ratio: 1
+    }
+  ]), new Map([['column-1', { left: 40, top: 40, width: 960, height: 700 }]]));
   chrome.applyCatalog({
     revision: 1,
     providers: [],
     maxColumns: 3,
-    workspaces: [{
-      workspaceId: docsId, kind: 'agent', title: 'docs',
-      providerName: 'Claude', columnId: 'column-1', isActiveTab: false
-    }]
+    workspaces: [
+      { workspaceId: 'term', kind: 'terminal', title: 'Term', iconKey: 'terminal', columnId: 'column-1', isActiveTab: false },
+      { workspaceId: 'qwen', kind: 'agent', title: 'Qwen', iconKey: 'qwen', columnId: 'column-1', isActiveTab: true },
+      { workspaceId: 'qoder', kind: 'agent', title: 'Qoder', iconKey: 'qoder', columnId: 'column-1', isActiveTab: false },
+      { workspaceId: 'weird', kind: 'agent', title: 'Weird', iconKey: 'not-a-brand', columnId: 'column-1', isActiveTab: false }
+    ]
   });
-  document.querySelector('[data-role="workspace-menu-toggle"]').click();
-  const row = document.querySelector('.workspace-menu-row');
-  assert.match(row.textContent, /第 1 列/);
-  assert.doesNotMatch(row.textContent, /激活/);
-  assert.doesNotMatch(row.textContent, /后台|临时收编/);
+  const tabIcon = (id) => document.querySelector(`.workspace-tab[data-workspace-id="${id}"] .workspace-tab-icon`);
+  assert.equal(tabIcon('term').textContent, '>_', 'terminal tab keeps the text glyph');
+  assert.equal(tabIcon('term').querySelector('svg'), null, 'terminal tab carries no svg');
+  assert.ok(tabIcon('qwen').querySelector('svg[data-icon="qwen"]'), 'qwen tab renders the qwen brand mark');
+  assert.ok(tabIcon('qoder').querySelector('svg[data-icon="qoder"]'), 'qoder tab renders the qoder brand mark, not a shared letter');
+  assert.ok(tabIcon('weird').querySelector('svg[data-icon="agent"]'), 'unknown iconKey falls back to the generic sparkle');
+  assert.equal(tabIcon('qwen').querySelector('svg').getAttribute('aria-hidden'), 'true');
   chrome.dispose();
 });
 
@@ -330,7 +320,7 @@ test('column menu merge entry sends collapse_single', async () => {
   chrome.dispose();
 });
 
-test('activity rail owns the four global buttons and the chrome row keeps only tab strips', async () => {
+test('activity rail owns the three global buttons and the chrome row keeps only tab strips', async () => {
   installAgentRuntime();
   mountChrome();
   const { WorkspaceChromeController } = await import(controllerUrl);
@@ -341,14 +331,36 @@ test('activity rail owns the four global buttons and the chrome row keeps only t
   const roles = [...document.querySelectorAll('#activity-rail button')].map((button) => button.dataset.role);
   assert.deepEqual(roles, [
     'history-toggle',
-    'workspace-menu-toggle',
     'workspace-create-toggle',
     'theme-toggle'
-  ], 'the four global buttons live in the activity rail in order');
+  ], 'the three global buttons live in the activity rail in order');
   const header = document.getElementById('workspace-chrome');
   assert.equal(header.querySelectorAll('button').length, 0, 'chrome row owns no global buttons');
   assert.ok(header.querySelector('[data-role="pane-nameplates"]'), 'chrome row keeps the tab-strip host');
   assert.equal(chrome.historyButton, document.querySelector('[data-role="history-toggle"]'));
+  chrome.dispose();
+});
+
+test('rail buttons render inline SVG icons and expose no workspace-list entry', async () => {
+  installAgentRuntime();
+  mountChrome();
+  const { WorkspaceChromeController } = await import(controllerUrl);
+  const chrome = new WorkspaceChromeController(
+    document.getElementById('workspace-chrome'),
+    document.getElementById('workspace-popover-root')
+  );
+  const buttons = [...document.querySelectorAll('#activity-rail button')];
+  assert.equal(buttons.length, 3);
+  for (const button of buttons) {
+    const svg = button.querySelector('svg');
+    assert.ok(svg, 'each rail button renders an inline SVG icon');
+    assert.equal(svg.getAttribute('aria-hidden'), 'true', 'rail icons are decorative');
+  }
+  assert.equal(
+    document.querySelector('[data-role="workspace-menu-toggle"]'),
+    null,
+    'the workspace-list entry is gone from the rail'
+  );
   chrome.dispose();
 });
 
@@ -362,11 +374,11 @@ test('global menus anchor to the trigger button top beside the activity rail', a
   );
   chrome.applyLayout(columnSnapshot([]), new Map());
   chrome.applyCatalog({ revision: 1, providers: [], workspaces: [], maxColumns: 3 });
-  const trigger = document.querySelector('[data-role="workspace-menu-toggle"]');
+  const trigger = document.querySelector('[data-role="workspace-create-toggle"]');
   trigger.getBoundingClientRect = () => ({ top: 123, left: 0, width: 40, height: 40 });
   trigger.click();
   const menu = document.querySelector('.workspace-popover');
-  assert.ok(menu, 'workspace menu renders');
+  assert.ok(menu, 'create menu renders');
   assert.equal(menu.style.top, '123px', 'top follows the trigger button rect');
   assert.ok(
     menu.style.maxHeight.includes('100vh') && menu.style.maxHeight.includes('123px'),

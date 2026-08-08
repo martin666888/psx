@@ -151,3 +151,15 @@ test('textarea submit and stop preserve exact bridge payloads', async () => {
     requestId: ''
   });
 });
+
+test('config toggle is an icon button with no text', async () => {
+  const { app, panel } = await fixture();
+  await settle(
+    () => app.handle({ type: 'agent_state', workspaceId: WS, status: 'ready' }),
+    () => !!panel.querySelector('.agent-config-toggle')
+  );
+  const toggle = panel.querySelector('.agent-config-toggle');
+  assert.equal(toggle.getAttribute('aria-label'), 'Agent 配置');
+  assert.ok(toggle.querySelector('svg'), 'config toggle renders an icon');
+  assert.equal(toggle.textContent.trim(), '', 'config toggle carries no text');
+});
