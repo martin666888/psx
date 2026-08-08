@@ -499,6 +499,33 @@ public sealed class WorkspaceLayoutServiceSplitTests
     }
 
     [TestMethod]
+    public void TouchRevision_BumpsRevisionWithoutChangingState()
+    {
+        var (layout, broadcasts) = Create();
+        var a = Guid.NewGuid();
+        var b = Guid.NewGuid();
+        layout.AssignActiveWorkspace(a, WorkspaceKind.Agent);
+        layout.AssignActiveWorkspace(b, WorkspaceKind.Terminal);
+        layout.SplitWorkspaceToNewPane(b);
+        var before = layout.Snapshot;
+        broadcasts.Clear();
+
+        var touched = layout.TouchRevision();
+
+        Assert.AreEqual(before.LayoutRevision + 1, touched.LayoutRevision);
+        Assert.IsEmpty(broadcasts, "TouchRevision itself never raises LayoutChanged");
+        var after = layout.Snapshot;
+        Assert.HasCount(before.Columns.Count, after.Columns);
+        Assert.AreEqual(before.FocusedColumnId, after.FocusedColumnId);
+        CollectionAssert.AreEqual(
+            before.Columns.Select(column => column.ColumnId).ToArray(),
+            after.Columns.Select(column => column.ColumnId).ToArray());
+        CollectionAssert.AreEqual(
+            before.Columns.Select(column => column.Ratio).ToArray(),
+            after.Columns.Select(column => column.Ratio).ToArray());
+    }
+
+    [TestMethod]
     public void PendingPlacement_NewRight_CreatedAtomicallyAtAssignment()
     {
         var (layout, broadcasts) = Create();

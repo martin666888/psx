@@ -8,8 +8,9 @@ namespace PSX.Services;
 /// <b>requested</b> layout: columns with a tab stack each, the active tab per
 /// column, the focused column and normalized ratios, with a monotonically
 /// increasing revision on every snapshot. The WebView renders the
-/// <b>effective</b> presentation (pixel floors, focus expansion) which never
-/// writes back here.
+/// <b>effective</b> presentation (a single pure-ratio allocation; pixel
+/// floors constrain only the drag clamp and sash states) which never writes
+/// back here.
 ///
 /// Invariants: every open workspace is exactly one tab in exactly one column
 /// (there is no "background" set); a column whose last tab leaves is
@@ -343,6 +344,17 @@ public sealed class WorkspaceLayoutService
         if (changed != null)
             LayoutChanged?.Invoke(this, changed);
         return true;
+    }
+
+    /// <summary>Bump the revision without touching any layout state and return
+    /// the fresh snapshot. Acknowledges a rejected pane-ratio commit so the
+    /// WebView's revision guard accepts the follow-up broadcast. This method
+    /// itself never raises <see cref="LayoutChanged"/> — broadcasting the
+    /// returned snapshot is the caller's responsibility.</summary>
+    public WorkspaceLayoutSnapshot TouchRevision()
+    {
+        lock (_sync)
+            return BumpRevisionLocked();
     }
 
     /// <summary>Close a tab: the column keeps its other tabs and its active

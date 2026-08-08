@@ -1,8 +1,8 @@
 // paneLayout.test.js — column-model layout engine guards (VS Code
 // editor-group model: an ordered list of columns, each with a tab stack, an
 // active tab, a focus and normalized ratios). Columns are never collected or
-// hidden: pixel floors, on-demand focus expansion and sash states govern the
-// effective presentation.
+// hidden: a single pure-ratio allocation (pixel floors constrain only the
+// drag clamp and sash states) governs the effective presentation.
 
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
@@ -182,7 +182,86 @@ test('divider drag previews locally and sends one ratio intent on pointerup', as
   layout.dispose();
 });
 
-test('columns below their floors stay visible and the focused column expands on demand', async () => {
+test('divider drag stays on the pure-ratio geometry when a column sits below its floor', async () => {
+  const runtime = installAgentRuntime();
+  const { PaneLayoutController } = await import(
+    pathToFileURL(path.join(webviewRoot, 'src', 'PaneLayoutController.js')).href
+  );
+  document.body.innerHTML =
+    '<div id="workspace-stack"><div id="workspace-panes"></div></div>';
+  const stack = document.getElementById('workspace-stack');
+  Object.defineProperty(stack, 'clientWidth', { configurable: true, value: 1040 });
+  Object.defineProperty(stack, 'clientHeight', { configurable: true, value: 900 });
+  const layout = new PaneLayoutController(document.getElementById('workspace-panes'));
+  const applied = [];
+  layout.onLayoutApplied((snapshot, rects, options) => applied.push({ rects, options }));
+  layout.applySnapshot({
+    revision: 1,
+    focusedColumnId: 'column-1',
+    columns: [
+      { columnId: 'column-1', tabs: [{ workspaceId: 't', kind: 'terminal' }], activeTabId: 't', ratio: 0.4 },
+      { columnId: 'column-2', tabs: [{ workspaceId: 'a', kind: 'agent' }], activeTabId: 'a', ratio: 0.6 }
+    ]
+  });
+
+  // 1000px area: the focused terminal's 400px share sits below its 480px
+  // floor, yet the allocation stays purely proportional (no expansion). The
+  // divider is a net-zero flex item (8px box, -4px margins each side), so
+  // its centre lands exactly on the boundary between the ratio slots — the
+  // same boundary the content rects use.
+  const initial = applied.at(-1).rects;
+  assert.equal(initial.get('column-1').width, 400);
+  assert.equal(initial.get('column-2').width, 600);
+  const dividerCentre = (leftShare) => layout.areaLeft + layout.areaWidth * leftShare;
+  const boundary = (rects) => rects.get('column-1').left + rects.get('column-1').width;
+  assert.ok(Math.abs(boundary(initial) - dividerCentre(0.4)) <= 1, 'divider boundary == content rect boundary');
+
+  const fire = (type, props) => {
+    const event = new window.PointerEvent(type, { bubbles: true, cancelable: true, ...props });
+    layout.root.querySelector('.workspace-pane-divider').dispatchEvent(event);
+  };
+  const ratioMessages = () =>
+    runtime.postedMessages.filter((entry) => entry.type === 'pane_ratios_commit');
+
+  // Real pointer sequence: grab the divider at the boundary, drag right.
+  fire('pointerdown', { button: 0, pointerId: 7, clientX: 440 });
+  fire('pointermove', { pointerId: 7, clientX: 500 });
+  flushAgentAnimationFrames();
+  // The floor clamp holds the terminal at its 480px floor; the preview stays
+  // ratio-consistent with the drag and sends no bridge traffic mid-drag.
+  assert.equal(applied.at(-1).rects.get('column-1').width, 480);
+  assert.equal(applied.at(-1).options.interactiveResize, true);
+  assert.equal(ratioMessages().length, 0, 'no bridge traffic mid-drag');
+
+  fire('pointerup', { pointerId: 7, clientX: 500 });
+  const sent = ratioMessages();
+  assert.equal(sent.length, 1, 'one intent per drag end');
+  assert.equal(sent[0].baseRevision, 1);
+  assert.ok(Math.abs(sent[0].panes[0].ratio - 0.48) < 0.001);
+  assert.ok(Math.abs(sent[0].panes[1].ratio - 0.52) < 0.001);
+  const released = applied.at(-1).rects;
+  assert.equal(released.get('column-1').width, 480);
+  assert.equal(released.get('column-2').width, 520);
+
+  // C# accepts the vector with a HIGHER revision — a same- or lower-revision
+  // echo would be dropped by the guard and the preview would stick forever.
+  layout.applySnapshot({
+    revision: 2,
+    focusedColumnId: 'column-2',
+    columns: [
+      { columnId: 'column-1', tabs: [{ workspaceId: 't', kind: 'terminal' }], activeTabId: 't', ratio: 0.48 },
+      { columnId: 'column-2', tabs: [{ workspaceId: 'a', kind: 'agent' }], activeTabId: 'a', ratio: 0.52 }
+    ]
+  });
+  assert.equal(layout.previewRatios, null, 'the echo clears the preview');
+  const echoed = applied.at(-1).rects;
+  assert.equal(echoed.get('column-1').width, 480, 'release and echo widths match — no jump');
+  assert.equal(echoed.get('column-2').width, 520);
+  assert.ok(Math.abs(boundary(echoed) - dividerCentre(0.48)) <= 1, 'divider boundary == content rect boundary');
+  layout.dispose();
+});
+
+test('columns below their floors stay visible under pure ratio allocation (no focus expansion)', async () => {
   installAgentRuntime();
   const { PaneLayoutController } = await import(
     pathToFileURL(path.join(webviewRoot, 'src', 'PaneLayoutController.js')).href
@@ -208,13 +287,29 @@ test('columns below their floors stay visible and the focused column expands on 
   });
 
   // 1000px area, Agent floors 320 each (960 total): the focused column's
-  // ratio share (200px) falls below its floor, so the other columns compress
-  // to their floors and the focused column takes the remainder.
-  const expanded = applied.at(-1).rects;
-  assert.equal(expanded.get('column-1').width, 320, 'left column pinned to its floor');
-  assert.equal(expanded.get('column-2').width, 320, 'middle column pinned to its floor');
-  assert.equal(expanded.get('column-3').width, 360, 'focused column takes the remaining width');
+  // ratio share (200px) falls below its floor, yet the allocation stays
+  // purely proportional — focus never expands a column.
+  const allocated = applied.at(-1).rects;
+  assert.equal(allocated.get('column-1').width, 400);
+  assert.equal(allocated.get('column-2').width, 400);
+  assert.equal(allocated.get('column-3').width, 200);
   assert.equal(layout.columnCount, 3, 'no column is ever hidden');
+
+  // Switching the focus leaves every column width pixel-identical: geometry
+  // is one pure-ratio rule; focus only marks the active column.
+  layout.applySnapshot({
+    revision: 2,
+    focusedColumnId: 'column-1',
+    columns: [
+      { columnId: 'column-1', tabs: [{ workspaceId: 'a', kind: 'agent' }], activeTabId: 'a', ratio: 0.4 },
+      { columnId: 'column-2', tabs: [{ workspaceId: 'b', kind: 'agent' }], activeTabId: 'b', ratio: 0.4 },
+      { columnId: 'column-3', tabs: [{ workspaceId: 'c', kind: 'agent' }], activeTabId: 'c', ratio: 0.2 }
+    ]
+  });
+  const refocused = applied.at(-1).rects;
+  assert.equal(refocused.get('column-1').width, 400);
+  assert.equal(refocused.get('column-2').width, 400);
+  assert.equal(refocused.get('column-3').width, 200);
 
   // Below the total floor the ratio allocation squeezes every column under
   // its floor proportionally — all remain visible (decision K).
@@ -223,7 +318,7 @@ test('columns below their floors stay visible and the focused column expands on 
   const squeezed = applied.at(-1).rects;
   assert.equal(squeezed.get('column-1').width, 320);
   assert.equal(squeezed.get('column-2').width, 320);
-  assert.equal(squeezed.get('column-3').width, 160, 'focused column squeezes below its floor too');
+  assert.equal(squeezed.get('column-3').width, 160, 'the narrowest column squeezes below its floor too');
   assert.equal(layout.columnCount, 3, 'never collected, never hidden');
   layout.dispose();
 });
@@ -393,10 +488,18 @@ test('divider at floor reports at-minimum sash state and disables at both floors
   assert.equal(divider.dataset.sashState, 'at-minimum');
   assert.equal(divider.getAttribute('aria-disabled'), 'false');
 
-  // 800px area == floor sum: focus expansion pins BOTH sides to their floors
-  // -> the divider disables entirely.
+  // 800px area: pure ratios 0.4/0.6 place the agent on its 320px floor and
+  // the terminal on its 480px floor — both sides pinned to their floors, so
+  // the divider disables entirely (pure ratio allocation, no focus expansion).
   setWidth(840);
-  layout.recompute();
+  layout.applySnapshot({
+    revision: 2,
+    focusedColumnId: 'column-2',
+    columns: [
+      { columnId: 'column-1', tabs: [{ workspaceId: 'a', kind: 'agent' }], activeTabId: 'a', ratio: 0.4 },
+      { columnId: 'column-2', tabs: [{ workspaceId: 'b', kind: 'terminal' }], activeTabId: 'b', ratio: 0.6 }
+    ]
+  });
   assert.equal(divider.dataset.sashState, 'at-minimum');
   assert.equal(divider.getAttribute('aria-disabled'), 'true', 'both sides at their floors disable the divider');
 

@@ -2,11 +2,11 @@
 // C# owns the requested layout: an ordered list of columns (VS Code
 // editor-group model), each with a tab stack, an active tab, a focus and
 // normalized ratios. This controller owns the effective pixel presentation:
-// pixel floors, on-demand focus expansion, live divider drag, sash states and
-// zoom. Columns are never collected or hidden — at extreme narrow widths the
-// ratio allocation squeezes every column below its floor rather than dropping
-// one (decision K), and the focused column expands only when its own ratio
-// share falls below its floor (decision D).
+// a single pure-ratio allocation — columns always display strictly by their
+// requested ratio, pixel floors constrain only the drag clamp and sash
+// states — plus live divider drag and zoom. Columns are never collected or
+// hidden: at extreme narrow widths the ratio allocation squeezes every
+// column below its floor rather than dropping one (decision K).
 
 import { Bridge } from './Bridge.js';
 
@@ -203,7 +203,7 @@ export class PaneLayoutController {
         this.effectiveColumns = columns;
 
         const displayRatios = this.normalizedDisplayRatios(columns);
-        const widths = this.allocateWidths(columns, focusedColumnId, areaWidth, displayRatios);
+        const widths = this.allocateWidths(columns, areaWidth, displayRatios);
         this.syncPaneSlots(columns, focusedColumnId, displayRatios);
         this.root.style.left = `${areaLeft}px`;
         this.root.style.top = `${CHROME_HEIGHT}px`;
@@ -244,30 +244,20 @@ export class PaneLayoutController {
         return tab?.kind ?? null;
     }
 
-    // Pixel-floor allocation (decisions C/D/K). Every requested column is
-    // always shown. Columns allocate by ratio; when the total width cannot
-    // satisfy the sum of floors, the ratio widths squeeze proportionally
-    // below their floors (never hidden). Otherwise, when the FOCUSED column's
-    // ratio share falls below ITS floor, the other columns compress to their
-    // own floors and the focused column takes the remainder; a focused column
-    // already above its floor leaves every width untouched. Drag previews
-    // (previewRatios set) allocate purely by ratio so the user's drag is not
-    // fought by expansion.
-    allocateWidths(columns, focusedColumnId, areaWidth, displayRatios) {
-        const floors = columns.map((column) => this.displayFloorForColumn(column));
+    // Single pure-ratio allocation (decisions C/K). Every requested column is
+    // always shown; columns allocate strictly by their requested ratio,
+    // whether or not that lands below a pixel floor. When the total width
+    // cannot satisfy the sum of floors, the ratio widths squeeze
+    // proportionally below their floors (never hidden). Floors constrain only
+    // the drag clamp and the sash at-minimum state — never the allocation, so
+    // switching focus never changes any column width. Divider slots, the sash
+    // and the content rects share this same geometry.
+    allocateWidths(columns, areaWidth, displayRatios) {
         const ratioSum = columns.reduce((sum, column) => sum + (displayRatios.get(column.columnId) ?? column.ratio), 0) || 1;
-        const ratioWidths = columns.map((column) => areaWidth * (displayRatios.get(column.columnId) ?? column.ratio) / ratioSum);
-        const totalFloor = floors.reduce((sum, floor) => sum + floor, 0);
-
-        let widths = ratioWidths;
-        if (areaWidth >= totalFloor && this.previewRatios === null) {
-            const focusedIndex = columns.findIndex((column) => column.columnId === focusedColumnId);
-            if (focusedIndex >= 0 && ratioWidths[focusedIndex] < floors[focusedIndex]) {
-                widths = columns.map((column, index) => (index === focusedIndex ? 0 : floors[index]));
-                widths[focusedIndex] = areaWidth - (totalFloor - floors[focusedIndex]);
-            }
-        }
-        return new Map(columns.map((column, index) => [column.columnId, widths[index]]));
+        return new Map(columns.map((column) => [
+            column.columnId,
+            areaWidth * (displayRatios.get(column.columnId) ?? column.ratio) / ratioSum
+        ]));
     }
 
     // Display floor for an existing column (decision C): Agent columns 320px,
@@ -482,6 +472,10 @@ export class PaneLayoutController {
         else preview();
     }
 
+    // Turn a pixel delta into a ratio delta. Display widths are always
+    // pure-ratio allocations of the area (no focus expansion), so a pixel
+    // move converts linearly over areaWidth; startLeftWidth comes from the
+    // same allocation, keeping pixels and ratios on one coordinate system.
     updatePreviewRatios(delta, drag) {
         if (!this.snapshot || this.areaWidth <= 0 || drag.pairWidth <= 0) return;
         const leftColumn = this.snapshot.columns.find((column) => column.columnId === drag.leftColumnId);

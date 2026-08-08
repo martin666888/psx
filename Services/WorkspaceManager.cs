@@ -392,8 +392,13 @@ public sealed class WorkspaceManager : IWorkspaceManager
 
     private void OnPaneRatiosRequested(object? sender, PaneRatiosEventArgs args)
     {
-        if (!_layout.SetPaneRatios(args.BaseRevision, args.Ratios))
-            BroadcastLayout();
+        if (_layout.SetPaneRatios(args.BaseRevision, args.Ratios))
+            return;
+        // A rejected vector still raises the revision: the follow-up
+        // broadcast is otherwise dropped by the WebView's revision guard and
+        // the drag preview would stick forever.
+        _layout.TouchRevision();
+        BroadcastLayout();
     }
 
     private void OnWorkspaceLayoutIntentRequested(object? sender, WorkspaceLayoutIntentEventArgs args)
