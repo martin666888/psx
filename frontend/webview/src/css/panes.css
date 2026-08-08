@@ -73,6 +73,19 @@
     background: var(--agent-border);
 }
 
+/* Sash state (columns at their pixel floors): the cursor is the only hint.
+   Both sides pinned to their floors disable the divider entirely (default
+   cursor, no line); a single side at its floor stays draggable away from
+   the floor, so no visual change applies. */
+.workspace-pane-divider[data-sash-disabled="true"],
+.workspace-pane-divider[aria-disabled="true"] {
+    cursor: default;
+}
+
+.workspace-pane-divider[aria-disabled="true"]::after {
+    background: transparent;
+}
+
 /* Tab drag-in target: the pane under the pointer shows a dashed inset ring
  * until the drop lands or the pointer leaves. */
 .workspace-pane[data-drop-target="true"] {

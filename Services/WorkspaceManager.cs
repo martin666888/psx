@@ -22,28 +22,27 @@ public interface IWorkspaceManager : IDisposable
     Task ActivateAsync(Guid workspaceId);
     Task CloseAsync(Guid workspaceId, WorkspaceCloseReason reason = WorkspaceCloseReason.User);
     Guid? FindOpenThread(string threadId);
-    /// <summary>Move a workspace into a fresh right-hand pane (split).</summary>
+    /// <summary>Move a workspace's tab into a fresh right-hand column (split).</summary>
     void SplitWorkspaceToNewPane(Guid workspaceId);
-    /// <summary>Focus a pane without changing assignments (click inside it).</summary>
-    void FocusPane(string paneId);
-    /// <summary>Move the focus by one pane (keyboard shortcut path).</summary>
+    /// <summary>Focus a column without changing assignments (click inside it).
+    /// The id is a column id; the <c>pane_focus</c> wire name is preserved.</summary>
+    void FocusPane(string columnId);
+    /// <summary>Move the focus by one column (keyboard shortcut path).</summary>
     void FocusAdjacentPane(int delta);
-    /// <summary>Exchange the two panes' workspace assignments.</summary>
-    void SwapPanes();
-    /// <summary>Collapse back to a single pane; other workspaces go background.</summary>
+    /// <summary>Merge every column's tabs into the focused column (single column).</summary>
     void CollapseToSinglePane();
-    /// <summary>Divider drag end: set one pane's width share.</summary>
+    /// <summary>Divider drag end: set one column's width share.</summary>
     bool SetPaneRatios(long baseRevision, IReadOnlyDictionary<string, double> ratios);
-    /// <summary>Toggle presentation-only zoom on the focused pane.</summary>
+    /// <summary>Toggle presentation-only zoom on the focused column.</summary>
     void TogglePaneZoom();
     /// <summary>Creation transaction: the next created workspace lands here
-    /// (<see cref="WorkspaceLayoutService.NewPanePlacement"/> for a fresh pane).</summary>
-    void RecordPendingPlacement(string paneId);
+    /// (<see cref="WorkspaceLayoutService.NewPanePlacement"/> for a fresh column).</summary>
+    void RecordPendingPlacement(string columnId);
     /// <summary>Tab badge source: needs attention and not focused-visible.</summary>
     bool IsAttentionNeeded(Guid workspaceId);
-    /// <summary>Current requested-layout snapshot (panes, focus, ratios).</summary>
+    /// <summary>Current requested-layout snapshot (columns, focus, ratios).</summary>
     WorkspaceLayoutSnapshot LayoutSnapshot { get; }
-    /// <summary>Requested layout changed (pane assignment, focus, ratios).</summary>
+    /// <summary>Requested layout changed (column assignment, focus, ratios).</summary>
     event EventHandler<WorkspaceLayoutSnapshot>? LayoutChanged;
     void BeginShutdown();
 
@@ -86,7 +85,7 @@ public sealed class WorkspaceManager : IWorkspaceManager
         _terminalTabs.TabCreated += OnTerminalCreated;
         _terminalTabs.TabClosed += OnTerminalClosed;
         _terminalTabs.TabTitleChanged += OnTerminalTitleChanged;
-        _terminalTabs.PaneFocusRequested += (_, paneId) => _layout.FocusPane(paneId);
+        _terminalTabs.PaneFocusRequested += (_, columnId) => _layout.FocusPane(columnId);
         _terminalTabs.PaneRatiosRequested += OnPaneRatiosRequested;
         _terminalTabs.PaneMoveRequested += OnPaneMoveRequested;
         _terminalTabs.WorkspaceLayoutIntentRequested += OnWorkspaceLayoutIntentRequested;
@@ -147,7 +146,8 @@ public sealed class WorkspaceManager : IWorkspaceManager
             _activeWorkspaceId = workspaceId;
 
         // The requested-layout truth source: activation assigns the workspace
-        // into the focused pane (or focuses the pane already showing it).
+        // as a tab (focused column by default) or, when already open, focuses
+        // its column and activates the tab in place.
         _layout.AssignActiveWorkspace(workspaceId, workspace.Kind);
 
         await ApplyActiveWorkspaceAsync(workspace).ConfigureAwait(false);
@@ -181,22 +181,20 @@ public sealed class WorkspaceManager : IWorkspaceManager
             workspace = _workspaces.FirstOrDefault(item => item.WorkspaceId == workspaceId);
         if (workspace == null)
             return;
-        if (!_layout.SplitWorkspaceToNewPane(workspaceId, workspace.Kind))
+        if (!_layout.SplitWorkspaceToNewPane(workspaceId))
             BroadcastCatalog();
     }
 
-    public void FocusPane(string paneId) => _layout.FocusPane(paneId);
+    public void FocusPane(string columnId) => _layout.FocusPane(columnId);
 
     public void FocusAdjacentPane(int delta) => _layout.FocusAdjacentPane(delta);
-
-    public void SwapPanes() => _layout.SwapPanes();
 
     public void CollapseToSinglePane() => _layout.CollapseToSinglePane();
 
     public bool SetPaneRatios(long baseRevision, IReadOnlyDictionary<string, double> ratios) =>
         _layout.SetPaneRatios(baseRevision, ratios);
 
-    public void RecordPendingPlacement(string paneId) => _layout.RecordPendingPlacement(paneId);
+    public void RecordPendingPlacement(string columnId) => _layout.RecordPendingPlacement(columnId);
 
     public void TogglePaneZoom() =>
         _ = _bridge.SendEventAsync(new { type = "pane_zoom_toggle" });
@@ -274,7 +272,7 @@ public sealed class WorkspaceManager : IWorkspaceManager
 
     /// <summary>Attention tracking: a workspace needs the user when it waits
     /// for permission/input, errors, or finishes a run - but only while its
-    /// pane is unfocused. Focusing the pane acknowledges; returning to
+    /// column is unfocused. Focusing the column acknowledges; returning to
     /// Running clears (the request was answered).</summary>
     private void UpdateAttention(WorkspaceDescriptor workspace)
     {
@@ -373,8 +371,8 @@ public sealed class WorkspaceManager : IWorkspaceManager
             _attention.Remove(workspaceId);
             _lastStates.Remove(workspaceId);
         }
-        // The layout collapses the vacated pane or pulls the MRU background
-        // workspace in atomically; its changed event activates the new focus.
+        // The layout removes the tab; closing the unique tab of the only
+        // column leaves a fresh empty column for the replacement terminal.
         _layout.RemoveWorkspace(workspaceId);
         WorkspaceClosed?.Invoke(this, new WorkspaceClosedEventArgs { WorkspaceId = workspaceId });
         BroadcastCatalog();
@@ -389,7 +387,7 @@ public sealed class WorkspaceManager : IWorkspaceManager
             workspace = _workspaces.FirstOrDefault(item => item.WorkspaceId == args.WorkspaceId);
         if (workspace == null)
             return;
-        _layout.MoveWorkspaceToPane(args.WorkspaceId, workspace.Kind, args.PaneId);
+        _layout.MoveWorkspaceToColumn(args.WorkspaceId, args.PaneId);
     }
 
     private void OnPaneRatiosRequested(object? sender, PaneRatiosEventArgs args)
@@ -410,16 +408,6 @@ public sealed class WorkspaceManager : IWorkspaceManager
                 break;
             case "split_right" when args.WorkspaceId.HasValue:
                 SplitWorkspaceToNewPane(args.WorkspaceId.Value);
-                break;
-            case "move_to_pane" when args.WorkspaceId.HasValue && !string.IsNullOrWhiteSpace(args.PaneId):
-                OnPaneMoveRequested(this, new PaneMoveEventArgs
-                {
-                    WorkspaceId = args.WorkspaceId.Value,
-                    PaneId = args.PaneId
-                });
-                break;
-            case "swap":
-                SwapPanes();
                 break;
             case "collapse_single":
                 CollapseToSinglePane();
@@ -444,15 +432,11 @@ public sealed class WorkspaceManager : IWorkspaceManager
             return;
         }
 
-        if (args.Placement == "new_right")
-        {
-            if (_layout.Snapshot.Panes.Count >= WorkspaceLayoutService.MaxPanes)
-            {
-                await SendNoticeAsync("最多支持 4 列").ConfigureAwait(false);
-                return;
-            }
+        // new_right at the column cap degrades into a tab in the focused
+        // column (no notice): the record is simply skipped, so the default
+        // placement applies.
+        if (args.Placement == "new_right" && _layout.Snapshot.Columns.Count < WorkspaceLayoutService.MaxColumns)
             _layout.RecordPendingPlacement(WorkspaceLayoutService.NewPanePlacement);
-        }
 
         var created = args.Kind == "terminal"
             ? await CreateTerminalAsync().ConfigureAwait(false)
@@ -466,9 +450,9 @@ public sealed class WorkspaceManager : IWorkspaceManager
         _ = SendLayoutSnapshotAsync(snapshot);
         LayoutChanged?.Invoke(this, snapshot);
         BroadcastCatalog();
-        // UI-initiated intents (focus a pane, close, collapse) change the
+        // UI-initiated intents (focus a column, close, collapse) change the
         // focused workspace without going through ActivateAsync — sync the
-        // single active workspace from the focused pane.
+        // single active workspace from the focused column.
         var focused = _layout.FocusedWorkspaceId;
         Guid? current;
         lock (_sync)
@@ -526,17 +510,24 @@ public sealed class WorkspaceManager : IWorkspaceManager
         }
 
         // Two visible agents sharing one git top-level get a non-blocking
-        // warning flag: split panes are not safe parallel development.
+        // warning flag: only each column's active tab counts. An inactive tab
+        // in the same column sharing a worktree is intentional — switching to
+        // it may edge-trigger the notice.
         var agentRoots = new Dictionary<Guid, string>();
-        foreach (var pane in snapshot.Panes)
+        foreach (var column in snapshot.Columns)
         {
-            if (pane.Kind != WorkspaceKind.Agent || !pane.WorkspaceId.HasValue)
+            if (!column.ActiveTabId.HasValue)
                 continue;
-            if (!directories.TryGetValue(pane.WorkspaceId.Value, out var cwd))
+            var active = column.Tabs.FirstOrDefault(tab => tab.WorkspaceId == column.ActiveTabId.Value);
+            if (active is not { } activeTab)
+                continue;
+            if (activeTab.Kind != WorkspaceKind.Agent)
+                continue;
+            if (!directories.TryGetValue(activeTab.WorkspaceId, out var cwd))
                 continue;
             var root = GitRootResolver.Resolve(cwd);
             if (!string.IsNullOrEmpty(root))
-                agentRoots[pane.WorkspaceId.Value] = root;
+                agentRoots[activeTab.WorkspaceId] = root;
         }
         var sharedRoots = agentRoots
             .GroupBy(entry => entry.Value, StringComparer.OrdinalIgnoreCase)
@@ -556,13 +547,17 @@ public sealed class WorkspaceManager : IWorkspaceManager
         {
             type = "workspace_layout",
             revision = snapshot.LayoutRevision,
-            focusedPaneId = snapshot.FocusedPaneId,
-            panes = snapshot.Panes.Select(p => new
+            focusedColumnId = snapshot.FocusedColumnId,
+            columns = snapshot.Columns.Select(column => new
             {
-                paneId = p.PaneId,
-                workspaceId = p.WorkspaceId,
-                kind = p.Kind?.ToString().ToLowerInvariant(),
-                ratio = p.Ratio
+                columnId = column.ColumnId,
+                tabs = column.Tabs.Select(tab => new
+                {
+                    workspaceId = tab.WorkspaceId,
+                    kind = tab.Kind.ToString().ToLowerInvariant()
+                }).ToArray(),
+                activeTabId = column.ActiveTabId,
+                ratio = column.Ratio
             }).ToArray()
         }, newConflicts);
     }
@@ -590,16 +585,18 @@ public sealed class WorkspaceManager : IWorkspaceManager
         }
 
         var layout = _layout.Snapshot;
-        var paneByWorkspace = layout.Panes
-            .Where(pane => pane.WorkspaceId.HasValue)
-            .ToDictionary(pane => pane.WorkspaceId!.Value, pane => pane.PaneId);
-        var paneIds = layout.Panes.Select(pane => pane.PaneId).ToArray();
+        var placementByWorkspace = new Dictionary<Guid, (string ColumnId, bool IsActiveTab)>();
+        foreach (var column in layout.Columns)
+        {
+            foreach (var tab in column.Tabs)
+                placementByWorkspace[tab.WorkspaceId] = (column.ColumnId, tab.WorkspaceId == column.ActiveTabId);
+        }
         _ = _bridge.SendEventAsync(new
         {
             type = "workspace_catalog",
             revision,
             maxWorkspaces = 5,
-            maxPanes = WorkspaceLayoutService.MaxPanes,
+            maxColumns = WorkspaceLayoutService.MaxColumns,
             providers = AgentProviders.Select(provider => new
             {
                 key = provider.Key,
@@ -609,7 +606,7 @@ public sealed class WorkspaceManager : IWorkspaceManager
             }).ToArray(),
             workspaces = workspaces.Select(workspace =>
             {
-                paneByWorkspace.TryGetValue(workspace.WorkspaceId, out var paneId);
+                placementByWorkspace.TryGetValue(workspace.WorkspaceId, out var placement);
                 attention.TryGetValue(workspace.WorkspaceId, out var attentionKind);
                 var blockedReason = _layout.GetSplitBlockedReason(workspace.WorkspaceId);
                 return new
@@ -620,16 +617,12 @@ public sealed class WorkspaceManager : IWorkspaceManager
                     iconKey = workspace.IconKey,
                     providerKey = workspace.ProviderKey,
                     providerName = workspace.ProviderName,
-                    paneId,
+                    columnId = placement.ColumnId,
+                    isActiveTab = placement.IsActiveTab,
                     attentionKind,
                     canSplitRight = blockedReason == null,
                     splitBlockedReason = blockedReason,
-                    availableTargetPanes = paneIds
-                        .Select((id, index) => new { paneId = id, column = index + 1 })
-                        .Where(entry => !string.Equals(entry.paneId, paneId, StringComparison.Ordinal))
-                        .ToArray(),
-                    canCollapse = layout.Panes.Count > 1,
-                    canSwap = layout.Panes.Count == 2
+                    canCollapse = layout.Columns.Count > 1
                 };
             }).ToArray()
         });

@@ -235,6 +235,29 @@ public sealed class TerminalBridgeMessageParserTests
     }
 
     [TestMethod]
+    public void TryParse_LayoutIntent_CollapseSingleWithoutWorkspaceId_IsAccepted()
+    {
+        Assert.IsTrue(TerminalBridgeMessageParser.TryParse(
+            """{"type":"workspace_layout_intent","action":"collapse_single"}""",
+            out var message));
+
+        Assert.AreEqual(TerminalBridgeMessageKind.WorkspaceLayoutIntent, message!.Kind);
+        Assert.AreEqual("collapse_single", message.WorkspaceIntent!.Action);
+        Assert.IsNull(message.WorkspaceIntent.WorkspaceId);
+    }
+
+    [TestMethod]
+    [DataRow("""{"type":"workspace_layout_intent","action":"move_to_pane","workspaceId":"7a5e9fba-61a6-442a-94e5-34e3f72a26f1","paneId":"column-2"}""")]
+    [DataRow("""{"type":"workspace_layout_intent","action":"swap"}""")]
+    [DataRow("""{"type":"workspace_layout_intent","action":"move_to_pane"}""")]
+    public void TryParse_LayoutIntent_RejectsRemovedActions(string json)
+    {
+        // move_to_pane and swap intents are gone: cross-column moves ride the
+        // pane_move message (drag), collapse is the only id-less intent.
+        Assert.IsFalse(TerminalBridgeMessageParser.TryParse(json, out _));
+    }
+
+    [TestMethod]
     [DataRow("")]
     [DataRow("not-json")]
     [DataRow("{\"type\":\"unknown\"}")]

@@ -27,11 +27,18 @@ export interface AgentAppOptions {
 export interface AgentApp {
   handle(message: RawHostMessage): void;
   /** Pane snapshot + measured rects from the PaneLayoutController: projects
-   * visibility/rects onto panels and drives render throttling. */
+   * visibility/rects onto panels and drives render throttling. The columns
+   * array is the EFFECTIVE presentation (only the focused column while
+   * zoomed); active-tab workspaces own their column's rect. */
   setPaneLayout(
     snapshot: {
-      focusedPaneId: string;
-      panes: Array<{ paneId: string; workspaceId?: string | null; kind?: string | null }>;
+      focusedColumnId: string;
+      columns: Array<{
+        columnId: string;
+        tabs?: Array<{ workspaceId?: string | null; kind?: string | null }>;
+        activeTabId?: string | null;
+        ratio?: number;
+      }>;
     },
     rects: Map<string, { left: number; top: number; width: number; height: number }>
   ): void;

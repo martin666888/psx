@@ -269,18 +269,27 @@ export class AgentWorkspaceRegistry {
     return this.controllers.has(workspaceId);
   }
 
-  /** Pane-snapshot driven render throttling and live-region gating: a
-   * workspace renders while any pane shows it, but only the focused pane's
-   * workspace may announce. */
+  /** Column-snapshot driven render throttling and live-region gating: a
+   * workspace renders while it is the active tab of any column, but only the
+   * focused column's workspace may announce. Inactive tabs of visible columns
+   * stay hidden keep-alive (same mechanism as the retired background set). */
   applyLayoutVisibility(snapshot: {
-    focusedPaneId: string;
-    panes: Array<{ paneId: string; workspaceId?: string | null; kind?: string | null }>;
+    focusedColumnId: string;
+    columns: Array<{
+      columnId: string;
+      tabs?: Array<{ workspaceId?: string | null; kind?: string | null }>;
+      activeTabId?: string | null;
+      ratio?: number;
+    }>;
   }): void {
-    const focusedWorkspaceId =
-      snapshot.panes.find(p => p.paneId === snapshot.focusedPaneId)?.workspaceId ?? null;
+    const focusedColumn = snapshot.columns.find((column) => column.columnId === snapshot.focusedColumnId);
+    const focusedWorkspaceId = focusedColumn?.activeTabId ?? null;
     for (const [id, controller] of this.controllers) {
       controller.setVisible(
-        snapshot.panes.some(p => p.kind === 'agent' && p.workspaceId === id)
+        snapshot.columns.some((column) =>
+          column.activeTabId === id
+          && (column.tabs?.some((tab) => tab.workspaceId === id && tab.kind === 'agent') ?? false)
+        )
       );
       controller.setPaneFocused(id === focusedWorkspaceId);
     }

@@ -3,46 +3,47 @@ using PSX.Models;
 namespace PSX.Services;
 
 /// <summary>
-/// Window-level, in-memory truth source for the pane layout (split panes).
-/// Owns the canonical <b>requested</b> layout: ordered pane slots, workspace
-/// assignment, the focused pane and normalized ratios, with a monotonically
+/// Window-level, in-memory truth source for the workspace layout (ordered
+/// columns of tabs — the VS Code editor-group model). Owns the canonical
+/// <b>requested</b> layout: columns with a tab stack each, the active tab per
+/// column, the focused column and normalized ratios, with a monotonically
 /// increasing revision on every snapshot. The WebView renders the
-/// <b>effective</b> presentation (temporary narrow-width collapses, terminal
-/// fit) which never writes back here.
+/// <b>effective</b> presentation (pixel floors, focus expansion) which never
+/// writes back here.
 ///
-/// Invariants: panes are never empty (a vacated pane collapses unless it is
-/// the last one); a workspace occupies at most one pane; the focused pane
-/// always exists while any pane does. Activation is three states — visible
-/// (assigned to a pane), focused (its pane receives the keyboard) and
-/// selected (a Tab click, which assigns into the focused pane or, when the
-/// workspace is already visible elsewhere, focuses that pane instead).
+/// Invariants: every open workspace is exactly one tab in exactly one column
+/// (there is no "background" set); a column whose last tab leaves is
+/// destroyed and the remaining columns absorb its ratio; the focused column
+/// always exists. Closing the unique tab of the only column leaves one fresh
+/// empty column — the caller creates a replacement terminal tab (never a MRU
+/// resurrection). One empty column is the initial startup state too.
 /// </summary>
 public sealed class WorkspaceLayoutService
 {
-    /// <summary>Column cap: two columns are the primary form, 3/4 columns are
-    /// the degraded monitoring form (narrow-pane rules apply per pane).</summary>
-    public const int MaxPanes = 4;
-    public const string FirstPaneId = "pane-1";
+    /// <summary>Column cap: one column is the primary form, 2/3 columns are
+    /// explicit splits; a new-column placement at the cap degrades into a tab
+    /// in the focused column instead.</summary>
+    public const int MaxColumns = 3;
+    public const string FirstColumnId = "column-1";
 
-    private sealed class PaneState
+    private sealed class ColumnState
     {
-        public required string PaneId { get; init; }
-        public Guid? WorkspaceId { get; set; }
-        public WorkspaceKind? Kind { get; set; }
+        public required string ColumnId { get; init; }
+        public List<(Guid Id, WorkspaceKind Kind)> Tabs { get; } = new();
+        public Guid ActiveTabId { get; set; }
         public double Ratio { get; set; } = 1.0;
     }
 
     private readonly object _sync = new();
-    private readonly List<PaneState> _panes = new();
-    private readonly List<(Guid Id, WorkspaceKind Kind)> _mru = new();
+    private readonly List<ColumnState> _columns = new();
     private readonly Queue<string> _pendingPlacements = new();
-    private string _focusedPaneId = FirstPaneId;
+    private string _focusedColumnId = FirstColumnId;
     private long _revision;
-    private int _nextPaneNumber = 2;
+    private int _nextColumnNumber = 2;
 
     public WorkspaceLayoutService()
     {
-        _panes.Add(new PaneState { PaneId = FirstPaneId });
+        _columns.Add(new ColumnState { ColumnId = FirstColumnId });
     }
 
     public event EventHandler<WorkspaceLayoutSnapshot>? LayoutChanged;
@@ -56,24 +57,29 @@ public sealed class WorkspaceLayoutService
         }
     }
 
-    /// <summary>The focused pane's workspace — the single "active workspace"
-    /// every legacy consumer (TabBar IsActive, brokers) derives from.</summary>
+    /// <summary>The focused column's active tab — the single "active
+    /// workspace" every legacy consumer (TabBar IsActive, brokers) derives
+    /// from. Null while the sole column is empty (startup, or the moment
+    /// before the caller fills the replacement terminal).</summary>
     public Guid? FocusedWorkspaceId
     {
         get
         {
             lock (_sync)
-                return _panes.FirstOrDefault(p => p.PaneId == _focusedPaneId)?.WorkspaceId;
+            {
+                var focused = FocusedColumnLocked();
+                return focused.ActiveTabId == Guid.Empty ? null : focused.ActiveTabId;
+            }
         }
     }
 
-    /// <summary>Placement token for「+ 新建到新列」: the pane is created
+    /// <summary>Placement token for「右侧新列」: the column is created
     /// atomically at assignment time so it never renders empty.</summary>
     public const string NewPanePlacement = "pane-new";
 
-    /// <summary>Remember the user's target pane for the workspace being
+    /// <summary>Remember the user's target column for the workspace being
     /// created; the next assignment consumes it (creation transaction). Pass
-    /// <see cref="NewPanePlacement"/> to create a fresh right-hand pane.</summary>
+    /// <see cref="NewPanePlacement"/> to create a fresh right-hand column.</summary>
     public void RecordPendingPlacement(string paneId)
     {
         lock (_sync)
@@ -86,78 +92,90 @@ public sealed class WorkspaceLayoutService
             _pendingPlacements.Clear();
     }
 
-    /// <summary>Tab click / activation: an already-visible workspace focuses
-    /// its pane (never duplicated); anything else replaces the focused pane's
-    /// content. Consumes a pending placement when one was recorded.</summary>
+    /// <summary>Activation (workspace-list click, History click, tab click).
+    /// An already-open workspace — by the invariant a tab in some column —
+    /// activates that tab and focuses its column (pure jump, never duplicated,
+    /// never moved). Anything else opens as a new tab: the default placement
+    /// appends to the focused column; a pending <see cref="NewPanePlacement"/>
+    /// creates a fresh right-hand column unless the column cap is already
+    /// reached, in which case it degrades into a tab in the focused column.</summary>
     public void AssignActiveWorkspace(Guid workspaceId, WorkspaceKind kind)
     {
         WorkspaceLayoutSnapshot? changed = null;
         lock (_sync)
         {
-            TouchMruLocked(workspaceId, kind);
-
-            var existingPane = _panes.FirstOrDefault(p => p.WorkspaceId == workspaceId);
-            if (existingPane != null)
+            var existing = FindTabLocked(workspaceId);
+            if (existing != null)
             {
+                // Pure jump: the tab stays in its column, the column focuses.
                 _pendingPlacements.Clear();
-                if (_focusedPaneId == existingPane.PaneId)
+                if (_focusedColumnId == existing.Value.Column.ColumnId
+                    && existing.Value.Column.ActiveTabId == workspaceId)
                     return;
-                _focusedPaneId = existingPane.PaneId;
+                existing.Value.Column.ActiveTabId = workspaceId;
+                _focusedColumnId = existing.Value.Column.ColumnId;
                 changed = BumpRevisionLocked();
             }
             else
             {
-                var target = ConsumePlacementLocked();
-                var pane = _panes.FirstOrDefault(p => p.PaneId == target) ?? FocusedPaneLocked();
-                var mutated = pane.WorkspaceId != workspaceId || pane.Kind != kind || _focusedPaneId != pane.PaneId;
-                if (!mutated)
-                    return;
-                pane.WorkspaceId = workspaceId;
-                pane.Kind = kind;
-                _focusedPaneId = pane.PaneId;
+                var column = ConsumePlacementLocked();
+                column.Tabs.Add((workspaceId, kind));
+                column.ActiveTabId = workspaceId;
+                _focusedColumnId = column.ColumnId;
                 changed = BumpRevisionLocked();
             }
         }
-        LayoutChanged?.Invoke(this, changed);
+        if (changed != null)
+            LayoutChanged?.Invoke(this, changed);
     }
 
-    /// <summary>Move a workspace into a fresh right-hand pane and focus it.
-    /// Falls back to a plain assignment at the column cap.</summary>
-    public bool SplitWorkspaceToNewPane(Guid workspaceId, WorkspaceKind kind)
+    /// <summary>Move a workspace's tab into a fresh right-hand column and
+    /// focus it. The source column keeps its remaining tabs (its active tab
+    /// falls to the left neighbor when the moved tab was active); an emptied
+    /// source column collapses and the new column takes its place. Returns
+    /// false — without changing anything — at the column cap.</summary>
+    public bool SplitWorkspaceToNewPane(Guid workspaceId)
     {
         WorkspaceLayoutSnapshot? changed = null;
         lock (_sync)
         {
-            if (_panes.Count >= MaxPanes)
+            if (_columns.Count >= MaxColumns)
                 return false;
 
-            var source = _panes.FirstOrDefault(p => p.WorkspaceId == workspaceId);
-            var insertAfter = source ?? FocusedPaneLocked();
-            if (source != null)
+            var found = FindTabLocked(workspaceId);
+            var insertAt = found.HasValue
+                ? _columns.IndexOf(found.Value.Column)
+                : _columns.IndexOf(FocusedColumnLocked());
+            WorkspaceKind kind;
+            if (found.HasValue)
             {
-                var visibleIds = _panes
-                    .Where(pane => pane.WorkspaceId.HasValue)
-                    .Select(pane => pane.WorkspaceId!.Value)
-                    .ToHashSet();
-                var replacement = _mru.FirstOrDefault(entry => !visibleIds.Contains(entry.Id));
-                if (replacement.Id == Guid.Empty)
-                    return false;
-
-                source.WorkspaceId = replacement.Id;
-                source.Kind = replacement.Kind;
+                kind = found.Value.Column.Tabs[found.Value.Index].Kind;
+                RemoveTabFromColumnLocked(found.Value.Column, found.Value.Index);
+                if (found.Value.Column.Tabs.Count == 0)
+                {
+                    // The collapsed column's slot is reused by the new column.
+                    _columns.Remove(found.Value.Column);
+                    insertAt = Math.Min(insertAt, _columns.Count);
+                }
+                else
+                {
+                    insertAt++;
+                }
+            }
+            else
+            {
+                // Unreachable under the invariant; defensively treat as a
+                // fresh tab in a new column right of the focused one.
+                kind = WorkspaceKind.Terminal;
+                insertAt++;
             }
 
-            TouchMruLocked(workspaceId, kind);
-            var pane = new PaneState
-            {
-                PaneId = $"pane-{_nextPaneNumber++}",
-                WorkspaceId = workspaceId,
-                Kind = kind
-            };
-            var insertIndex = _panes.IndexOf(insertAfter) + 1;
-            _panes.Insert(insertIndex, pane);
+            var column = new ColumnState { ColumnId = $"column-{_nextColumnNumber++}" };
+            column.Tabs.Add((workspaceId, kind));
+            column.ActiveTabId = workspaceId;
+            _columns.Insert(Math.Min(insertAt, _columns.Count), column);
             NormalizeRatiosLocked();
-            _focusedPaneId = pane.PaneId;
+            _focusedColumnId = column.ColumnId;
             changed = BumpRevisionLocked();
         }
         if (changed != null)
@@ -168,136 +186,119 @@ public sealed class WorkspaceLayoutService
     public string? GetSplitBlockedReason(Guid workspaceId)
     {
         lock (_sync)
-        {
-            if (_panes.Count >= MaxPanes)
-                return "最多支持 4 列";
-            if (_panes.All(pane => pane.WorkspaceId != workspaceId))
-                return null;
-
-            var visibleIds = _panes
-                .Where(pane => pane.WorkspaceId.HasValue)
-                .Select(pane => pane.WorkspaceId!.Value)
-                .ToHashSet();
-            return _mru.Any(entry => !visibleIds.Contains(entry.Id))
-                ? null
-                : "没有后台工作区可填补当前列";
-        }
+            return _columns.Count >= MaxColumns ? "最多支持 3 列" : null;
     }
 
-    /// <summary>Focus a pane without changing any assignment (click inside a
-    /// pane, or clicking a Tab whose workspace is already visible there).</summary>
-    public void FocusPane(string paneId)
+    /// <summary>Focus a column without changing any assignment (click inside
+    /// a pane, or clicking a Tab whose workspace is already its active tab).
+    /// The id space is the column id — the <c>pane_focus</c> wire name is
+    /// preserved by contract.</summary>
+    public void FocusPane(string columnId)
     {
         WorkspaceLayoutSnapshot? changed = null;
         lock (_sync)
         {
-            if (_focusedPaneId == paneId || _panes.All(p => p.PaneId != paneId))
+            if (_focusedColumnId == columnId || _columns.All(c => c.ColumnId != columnId))
                 return;
-            _focusedPaneId = paneId;
-            var workspace = _panes.First(p => p.PaneId == paneId);
-            if (workspace.WorkspaceId.HasValue && workspace.Kind.HasValue)
-                TouchMruLocked(workspace.WorkspaceId.Value, workspace.Kind.Value);
+            _focusedColumnId = columnId;
             changed = BumpRevisionLocked();
         }
         if (changed != null)
             LayoutChanged?.Invoke(this, changed);
     }
 
-    /// <summary>Move the focus by one pane (wraps). Keyboard shortcut path.</summary>
+    /// <summary>Move the focus by one column (wraps). Keyboard shortcut path.</summary>
     public void FocusAdjacentPane(int delta)
     {
         WorkspaceLayoutSnapshot? changed = null;
         lock (_sync)
         {
-            if (_panes.Count < 2)
+            if (_columns.Count < 2)
                 return;
-            var index = _panes.FindIndex(p => p.PaneId == _focusedPaneId);
-            var next = _panes[((index + delta) % _panes.Count + _panes.Count) % _panes.Count];
-            _focusedPaneId = next.PaneId;
-            if (next.WorkspaceId.HasValue && next.Kind.HasValue)
-                TouchMruLocked(next.WorkspaceId.Value, next.Kind.Value);
+            var index = _columns.FindIndex(c => c.ColumnId == _focusedColumnId);
+            var next = _columns[((index + delta) % _columns.Count + _columns.Count) % _columns.Count];
+            _focusedColumnId = next.ColumnId;
             changed = BumpRevisionLocked();
         }
         if (changed != null)
             LayoutChanged?.Invoke(this, changed);
     }
 
-    /// <summary>Exchange the workspace assignments of the two panes (the
-    /// focus stays on the same pane slot).</summary>
-    public void SwapPanes()
+    /// <summary>Drag a tab onto a column: the tab moves into the target
+    /// column (becoming its active tab) and the column takes the focus. No
+    /// swap semantics — the target column never loses a tab. Dropping a tab
+    /// back onto its own column just activates it.</summary>
+    public void MoveWorkspaceToColumn(Guid workspaceId, string columnId)
     {
         WorkspaceLayoutSnapshot? changed = null;
         lock (_sync)
         {
-            if (_panes.Count != 2)
-                return;
-            (_panes[0].WorkspaceId, _panes[1].WorkspaceId) = (_panes[1].WorkspaceId, _panes[0].WorkspaceId);
-            (_panes[0].Kind, _panes[1].Kind) = (_panes[1].Kind, _panes[0].Kind);
-            changed = BumpRevisionLocked();
-        }
-        LayoutChanged?.Invoke(this, changed);
-    }
-
-    /// <summary>Drag a workspace onto a pane: onto an occupied pane swaps the
-    /// two assignments; a background workspace replaces the target's content.
-    /// The target pane takes the focus.</summary>
-    public void MoveWorkspaceToPane(Guid workspaceId, WorkspaceKind kind, string paneId)
-    {
-        WorkspaceLayoutSnapshot? changed = null;
-        lock (_sync)
-        {
-            var target = _panes.FirstOrDefault(p => p.PaneId == paneId);
+            var target = _columns.FirstOrDefault(c => c.ColumnId == columnId);
             if (target == null)
                 return;
-            TouchMruLocked(workspaceId, kind);
-            var source = _panes.FirstOrDefault(p => p.WorkspaceId == workspaceId);
-            if (source == target)
+            var found = FindTabLocked(workspaceId);
+            if (found == null)
             {
-                if (_focusedPaneId != target.PaneId)
+                // Unreachable under the invariant (drag sources are always
+                // open tabs); focus the target column defensively.
+                if (_focusedColumnId != target.ColumnId)
                 {
-                    _focusedPaneId = target.PaneId;
+                    _focusedColumnId = target.ColumnId;
                     changed = BumpRevisionLocked();
                 }
+                return;
             }
-            else
+            if (found.Value.Column == target)
             {
-                var displacedId = target.WorkspaceId;
-                var displacedKind = target.Kind;
-                target.WorkspaceId = workspaceId;
-                target.Kind = kind;
-                if (source != null)
+                if (_focusedColumnId != target.ColumnId || target.ActiveTabId != workspaceId)
                 {
-                    // Swap: the displaced workspace moves into the source pane.
-                    source.WorkspaceId = displacedId;
-                    source.Kind = displacedKind;
+                    target.ActiveTabId = workspaceId;
+                    _focusedColumnId = target.ColumnId;
+                    changed = BumpRevisionLocked();
                 }
-                _focusedPaneId = target.PaneId;
-                changed = BumpRevisionLocked();
+                return;
             }
+
+            var kind = found.Value.Column.Tabs[found.Value.Index].Kind;
+            RemoveTabFromColumnLocked(found.Value.Column, found.Value.Index);
+            if (found.Value.Column.Tabs.Count == 0)
+                AbsorbRatioLocked(found.Value.Column);
+            target.Tabs.Add((workspaceId, kind));
+            target.ActiveTabId = workspaceId;
+            _focusedColumnId = target.ColumnId;
+            changed = BumpRevisionLocked();
         }
         if (changed != null)
             LayoutChanged?.Invoke(this, changed);
     }
 
-    /// <summary>Collapse back to one pane; the focused pane survives and its
-    /// content stays, every other workspace goes background.</summary>
+    /// <summary>Merge the layout into a single column: every other column's
+    /// tabs join the focused column's tab stack tail, in original column
+    /// order; the focused column keeps its own active tab. No workspace leaves
+    /// the open set.</summary>
     public void CollapseToSinglePane()
     {
         WorkspaceLayoutSnapshot? changed = null;
         lock (_sync)
         {
-            if (_panes.Count <= 1)
+            if (_columns.Count <= 1)
                 return;
-            var survivor = _panes.FirstOrDefault(p => p.PaneId == _focusedPaneId) ?? _panes[0];
-            _panes.RemoveAll(p => p != survivor);
-            survivor.Ratio = 1.0;
-            _focusedPaneId = survivor.PaneId;
+            var focused = FocusedColumnLocked();
+            foreach (var column in _columns.ToArray())
+            {
+                if (column == focused)
+                    continue;
+                focused.Tabs.AddRange(column.Tabs);
+                _columns.Remove(column);
+            }
+            focused.Ratio = 1.0;
+            _focusedColumnId = focused.ColumnId;
             changed = BumpRevisionLocked();
         }
         LayoutChanged?.Invoke(this, changed);
     }
 
-    /// <summary>Atomically commit the complete pane ratio vector produced by
+    /// <summary>Atomically commit the complete column ratio vector produced by
     /// one divider drag. Pixel minimums belong to the WebView presentation;
     /// this logical truth source validates identity, revision and normalization.</summary>
     public bool SetPaneRatios(long baseRevision, IReadOnlyDictionary<string, double> ratios)
@@ -305,19 +306,19 @@ public sealed class WorkspaceLayoutService
         WorkspaceLayoutSnapshot? changed = null;
         lock (_sync)
         {
-            if (baseRevision != _revision || _panes.Count < 2 || ratios.Count != _panes.Count)
+            if (baseRevision != _revision || _columns.Count < 2 || ratios.Count != _columns.Count)
                 return false;
-            if (_panes.Any(p => !ratios.TryGetValue(p.PaneId, out var ratio)
-                                || !double.IsFinite(ratio)
-                                || ratio <= 0))
+            if (_columns.Any(c => !ratios.TryGetValue(c.ColumnId, out var ratio)
+                                  || !double.IsFinite(ratio)
+                                  || ratio <= 0))
                 return false;
             var sum = ratios.Values.Sum();
             if (!double.IsFinite(sum) || Math.Abs(sum - 1.0) > 0.0001)
                 return false;
-            if (_panes.All(p => Math.Abs(p.Ratio - ratios[p.PaneId]) < 0.0001))
+            if (_columns.All(c => Math.Abs(c.Ratio - ratios[c.ColumnId]) < 0.0001))
                 return true;
-            foreach (var pane in _panes)
-                pane.Ratio = ratios[pane.PaneId] / sum;
+            foreach (var column in _columns)
+                column.Ratio = ratios[column.ColumnId] / sum;
             changed = BumpRevisionLocked();
         }
         if (changed != null)
@@ -325,49 +326,43 @@ public sealed class WorkspaceLayoutService
         return true;
     }
 
-    /// <summary>Close: the pane holding the workspace collapses (remaining
-    /// panes renormalize); a lone pane pulls the most-recent background
-    /// workspace into the same snapshot; the focus falls to the left
-    /// neighbor, else to whatever remains.</summary>
+    /// <summary>Close a tab: the column keeps its other tabs and its active
+    /// tab falls to the left neighbor (else the right) when the closed tab
+    /// was active. An emptied column is destroyed and the remaining columns
+    /// absorb its ratio proportional to their own (user-dragged proportions
+    /// survive), the focus falling to the left neighbor column (else whatever
+    /// remains). Closing the unique tab of the only column leaves a fresh
+    /// empty column — the caller creates a replacement terminal tab.</summary>
     public void RemoveWorkspace(Guid workspaceId)
     {
         WorkspaceLayoutSnapshot? changed = null;
         lock (_sync)
         {
-            var mruIndex = _mru.FindIndex(entry => entry.Id == workspaceId);
-            if (mruIndex >= 0)
-                _mru.RemoveAt(mruIndex);
-
-            var pane = _panes.FirstOrDefault(p => p.WorkspaceId == workspaceId);
-            if (pane == null)
-            {
-                // A background workspace leaving does not change the visible
-                // layout — no snapshot.
+            var found = FindTabLocked(workspaceId);
+            if (found == null)
                 return;
-            }
 
-            pane.WorkspaceId = null;
-            pane.Kind = null;
-            if (_panes.Count > 1)
+            var destroyedIndex = _columns.IndexOf(found.Value.Column);
+            RemoveTabFromColumnLocked(found.Value.Column, found.Value.Index);
+            if (found.Value.Column.Tabs.Count == 0)
             {
-                var index = _panes.IndexOf(pane);
-                _panes.RemoveAt(index);
-                NormalizeRatiosLocked();
-                if (_focusedPaneId == pane.PaneId)
+                if (_columns.Count == 1)
                 {
-                    var fallback = _panes[Math.Max(0, index - 1)];
-                    _focusedPaneId = fallback.PaneId;
+                    // Unique column unique tab: reset to the startup shape.
+                    // The caller creates a fresh terminal tab; nothing is
+                    // resurrected from a MRU.
+                    _columns.Clear();
+                    _columns.Add(new ColumnState { ColumnId = FirstColumnId });
+                    _focusedColumnId = FirstColumnId;
                 }
-            }
-            else
-            {
-                // Last pane: pull the most recent background workspace in
-                // atomically so the pane never renders empty.
-                var replacement = _mru.FirstOrDefault();
-                if (replacement.Id != Guid.Empty)
+                else
                 {
-                    pane.WorkspaceId = replacement.Id;
-                    pane.Kind = replacement.Kind;
+                    AbsorbRatioLocked(found.Value.Column);
+                    if (_focusedColumnId == found.Value.Column.ColumnId)
+                    {
+                        var fallback = _columns[Math.Max(0, destroyedIndex - 1)];
+                        _focusedColumnId = fallback.ColumnId;
+                    }
                 }
             }
             changed = BumpRevisionLocked();
@@ -378,59 +373,91 @@ public sealed class WorkspaceLayoutService
 
     // --- internals (all under _sync) -----------------------------------------
 
-    private PaneState FocusedPaneLocked() =>
-        _panes.FirstOrDefault(p => p.PaneId == _focusedPaneId) ?? _panes[0];
+    private ColumnState FocusedColumnLocked() =>
+        _columns.FirstOrDefault(c => c.ColumnId == _focusedColumnId) ?? _columns[0];
 
-    private string ConsumePlacementLocked()
+    private (ColumnState Column, int Index)? FindTabLocked(Guid workspaceId)
+    {
+        foreach (var column in _columns)
+        {
+            var index = column.Tabs.FindIndex(tab => tab.Id == workspaceId);
+            if (index >= 0)
+                return (column, index);
+        }
+        return null;
+    }
+
+    private void RemoveTabFromColumnLocked(ColumnState column, int index)
+    {
+        var removed = column.Tabs[index].Id;
+        column.Tabs.RemoveAt(index);
+        if (column.ActiveTabId != removed)
+            return;
+        // Active tab prefers the left neighbor, else the right.
+        column.ActiveTabId = index > 0
+            ? column.Tabs[index - 1].Id
+            : column.Tabs.Count > 0 ? column.Tabs[0].Id : Guid.Empty;
+    }
+
+    private ColumnState ConsumePlacementLocked()
     {
         if (_pendingPlacements.Count == 0)
-            return _focusedPaneId;
+            return FocusedColumnLocked();
         var target = _pendingPlacements.Dequeue();
         if (target == NewPanePlacement)
         {
-            if (_panes.Count >= MaxPanes)
-                return _focusedPaneId;
-            var created = new PaneState { PaneId = $"pane-{_nextPaneNumber++}" };
-            _panes.Add(created);
+            if (_columns.Count >= MaxColumns)
+                return FocusedColumnLocked();
+            var created = new ColumnState { ColumnId = $"column-{_nextColumnNumber++}" };
+            _columns.Add(created);
             NormalizeRatiosLocked();
-            return created.PaneId;
+            return created;
         }
-        return _panes.Any(p => p.PaneId == target) ? target : _focusedPaneId;
+        return _columns.FirstOrDefault(c => c.ColumnId == target) ?? FocusedColumnLocked();
     }
 
-    private void TouchMruLocked(Guid workspaceId, WorkspaceKind kind)
+    private void NormalizeRatiosLocked(ColumnState? except = null)
     {
-        _mru.RemoveAll(entry => entry.Id == workspaceId);
-        _mru.Insert(0, (workspaceId, kind));
-    }
-
-    private void VacateWorkspaceLocked(Guid workspaceId)
-    {
-        var source = _panes.FirstOrDefault(p => p.WorkspaceId == workspaceId);
-        if (source == null)
-            return;
-        _panes.Remove(source);
-        NormalizeRatiosLocked();
-        if (_focusedPaneId == source.PaneId && _panes.Count > 0)
-            _focusedPaneId = _panes[0].PaneId;
-    }
-
-    private void NormalizeRatiosLocked(PaneState? except = null)
-    {
-        if (_panes.Count == 0)
+        if (_columns.Count == 0)
             return;
         if (except == null)
         {
-            var share = 1.0 / _panes.Count;
-            foreach (var pane in _panes)
-                pane.Ratio = share;
+            var share = 1.0 / _columns.Count;
+            foreach (var column in _columns)
+                column.Ratio = share;
             return;
         }
-        var rest = _panes.Where(p => p != except).ToArray();
+        var rest = _columns.Where(c => c != except).ToArray();
         var remaining = Math.Max(0.0, 1.0 - except.Ratio);
         var restShare = rest.Length > 0 ? remaining / rest.Length : 0.0;
-        foreach (var pane in rest)
-            pane.Ratio = restShare;
+        foreach (var column in rest)
+            column.Ratio = restShare;
+    }
+
+    /// <summary>Destroy a column and absorb its width share: the destroyed
+    /// column's ratio is spread over the remaining columns proportional to
+    /// their current ratios (remaining × 1/remainingSum), keeping the total
+    /// at one, so user-dragged proportions survive a column close. Falls back
+    /// to equal shares when a remaining ratio is zero, non-finite or the
+    /// remainder sums to nothing.</summary>
+    private void AbsorbRatioLocked(ColumnState destroyed)
+    {
+        _columns.Remove(destroyed);
+        if (_columns.Count == 0)
+            return;
+        if (_columns.Any(column => !double.IsFinite(column.Ratio) || column.Ratio <= 0))
+        {
+            NormalizeRatiosLocked();
+            return;
+        }
+        var remainder = _columns.Sum(column => column.Ratio);
+        if (!double.IsFinite(remainder) || remainder <= 0.0)
+        {
+            NormalizeRatiosLocked();
+            return;
+        }
+        foreach (var column in _columns)
+            column.Ratio = column.Ratio / remainder;
     }
 
     private WorkspaceLayoutSnapshot BumpRevisionLocked()
@@ -439,11 +466,48 @@ public sealed class WorkspaceLayoutService
         return CreateSnapshotLocked();
     }
 
-    private WorkspaceLayoutSnapshot CreateSnapshotLocked() =>
-        new(
+    private WorkspaceLayoutSnapshot CreateSnapshotLocked()
+    {
+        AssertInvariantLocked();
+        return new WorkspaceLayoutSnapshot(
             _revision,
-            _panes
-                .Select(p => new WorkspacePaneSnapshot(p.PaneId, p.WorkspaceId, p.Kind, Math.Round(p.Ratio, 4)))
+            _columns
+                .Select(c => new WorkspaceColumnSnapshot(
+                    c.ColumnId,
+                    c.Tabs.Select(tab => new WorkspaceTabSnapshot(tab.Id, tab.Kind)).ToArray(),
+                    c.ActiveTabId == Guid.Empty ? null : c.ActiveTabId,
+                    Math.Round(c.Ratio, 4)))
                 .ToArray(),
-            _focusedPaneId);
+            _focusedColumnId);
+    }
+
+    /// <summary>Debug-only structural guard for the no-background invariant.
+    /// The workspace-set half of the invariant (tabs ∪ = open workspaces) is
+    /// enforced by construction in <c>WorkspaceManager</c> — every create
+    /// assigns, every close removes through this service.</summary>
+    private void AssertInvariantLocked()
+    {
+        System.Diagnostics.Debug.Assert(_columns.Count >= 1, "layout must always keep at least one column");
+        System.Diagnostics.Debug.Assert(
+            _columns.Count(c => c.Tabs.Count == 0) == 0 || _columns.Count == 1,
+            "only the sole column may be empty");
+        var allTabs = _columns.SelectMany(c => c.Tabs).ToList();
+        System.Diagnostics.Debug.Assert(
+            allTabs.Select(tab => tab.Id).Distinct().Count() == allTabs.Count,
+            "a workspace may only exist as one tab in the layout");
+        foreach (var column in _columns)
+        {
+            System.Diagnostics.Debug.Assert(
+                column.ActiveTabId == Guid.Empty || column.Tabs.Any(tab => tab.Id == column.ActiveTabId),
+                "ActiveTabId must be a tab of its column");
+            System.Diagnostics.Debug.Assert(
+                column.Tabs.Count > 0 || column.ActiveTabId == Guid.Empty,
+                "an empty column must not hold an active tab");
+        }
+        System.Diagnostics.Debug.Assert(
+            _columns.Any(c => c.ColumnId == _focusedColumnId),
+            "the focused column must exist");
+        var sum = _columns.Sum(c => c.Ratio);
+        System.Diagnostics.Debug.Assert(Math.Abs(sum - 1.0) < 0.001, "column ratios must sum to one");
+    }
 }

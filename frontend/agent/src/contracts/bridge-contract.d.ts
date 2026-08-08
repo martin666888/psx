@@ -72,7 +72,7 @@ interface PaneMovePayload {
 
 interface WorkspaceLayoutIntentPayload {
     type: 'workspace_layout_intent';
-    action: 'activate' | 'close' | 'split_right' | 'move_to_pane' | 'swap' | 'collapse_single';
+    action: 'activate' | 'close' | 'split_right' | 'collapse_single';
     workspaceId?: string;
     paneId?: string;
 }

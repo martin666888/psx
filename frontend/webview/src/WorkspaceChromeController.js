@@ -1,3 +1,12 @@
+// WorkspaceChromeController.js — the always-loaded WebView shell chrome:
+// per-column tab strips in the 40px workspace row, the global popover menus
+// (workspace list, create, theme, column) anchored to the activity rail, and
+// the notice region. C# owns the requested layout truth; this controller
+// renders it. A column with a single tab keeps the legacy nameplate look; a
+// multi-tab column renders an overflowable tab bar (wheel -> horizontal
+// scroll). Clicking a tab activates it (workspace_layout_intent activate);
+// the close button closes it; right-click opens the column menu.
+
 import { Bridge } from './Bridge.js';
 
 const ATTENTION_LABELS = Object.freeze({
@@ -23,12 +32,13 @@ export class WorkspaceChromeController {
         this.themeButton = document.querySelector('[data-role="theme-toggle"]');
         this.catalogRevision = -1;
         this.themeRevision = -1;
-        this.catalog = { workspaces: [], providers: [], maxPanes: 4 };
+        this.catalog = { workspaces: [], providers: [], maxColumns: 3 };
         this.themeCatalog = { themes: [] };
         this.layout = null;
         this.rects = new Map();
         this.openMenu = null;
         this.openTrigger = null;
+        this.paneMenuWorkspace = null;
         this.createPlacement = 'focused';
         this.capacityChecker = null;
         this.historyButton.disabled = true;
@@ -70,13 +80,13 @@ export class WorkspaceChromeController {
         this.catalog = {
             workspaces: Array.isArray(message.workspaces) ? message.workspaces : [],
             providers: Array.isArray(message.providers) ? message.providers : [],
-            maxPanes: Number(message.maxPanes) || 4
+            maxColumns: Number(message.maxColumns) || 3
         };
         this.historyButton.disabled = !this.catalog.workspaces.some((workspace) => workspace.kind === 'agent');
-        // The open pane menu holds a workspace object from the previous
+        // The open column menu holds a workspace object from the previous
         // catalog: rebind it to the fresh entry so capabilities (canSplitRight,
-        // availableTargetPanes…) never render stale; the menu closes when its
-        // workspace is gone.
+        // canCollapse…) never render stale; the menu closes when its workspace
+        // is gone.
         if (this.openMenu === 'pane' && this.paneMenuWorkspace) {
             const refreshed = this.catalog.workspaces.find(
                 (item) => item.workspaceId === this.paneMenuWorkspace.workspaceId
@@ -84,7 +94,7 @@ export class WorkspaceChromeController {
             if (refreshed) this.paneMenuWorkspace = refreshed;
             else this.closeMenu(false, false);
         }
-        this.renderNameplates();
+        this.renderTabStrips();
         if (this.openMenu === 'workspaces' || this.openMenu === 'create' || this.openMenu === 'pane') {
             this.renderOpenMenu();
         }
@@ -103,7 +113,7 @@ export class WorkspaceChromeController {
     applyLayout(snapshot, rects) {
         this.layout = snapshot;
         this.rects = rects;
-        this.renderNameplates();
+        this.renderTabStrips();
         if (this.openMenu === 'workspaces' || this.openMenu === 'pane') this.renderOpenMenu();
     }
 
@@ -118,58 +128,93 @@ export class WorkspaceChromeController {
         window.setTimeout(() => notice.remove(), 5000);
     }
 
-    // Injected by main.js: returns { fitsAgent, fitsTerminal } describing
-    // whether the requested layout plus one more pane of each kind fits the
-    // current width. Frontend pixel gating is the first defensive line; the
-    // C# 4-column count in the catalog remains the second.
+    // Injected by main.js: returns { fitsAgent, fitsTerminal,
+    // requestedColumnCount } describing whether the requested layout plus one
+    // more column of each kind fits the current width. Frontend pixel gating
+    // is the first defensive line; the C# 3-column count in the catalog
+    // remains the second.
     setCapacityChecker(checker) {
         this.capacityChecker = typeof checker === 'function' ? checker : null;
     }
 
-    renderNameplates() {
+    // Per-column tab strips: each strip sits exactly on its column rect
+    // (left/width from the geometry engine) and renders that column's tabs.
+    // The effective layout drives this — while zoomed only the focused column
+    // is present, so only its strip renders (decision F).
+    renderTabStrips() {
         if (!this.layout || !this.nameplates) return;
         const desired = new Set();
-        this.layout.panes.forEach((pane, index) => {
-            desired.add(pane.paneId);
-            let plate = [...this.nameplates.children].find((item) => item.dataset.paneId === pane.paneId);
-            if (!plate) {
-                plate = document.createElement('div');
-                plate.className = 'workspace-nameplate';
-                plate.dataset.paneId = pane.paneId;
-                plate.addEventListener('click', () => Bridge.sendPaneFocus(plate.dataset.paneId));
-                this.nameplates.appendChild(plate);
+        this.layout.columns.forEach((column, index) => {
+            desired.add(column.columnId);
+            let strip = [...this.nameplates.children].find((item) => item.dataset.columnId === column.columnId);
+            if (!strip) {
+                strip = document.createElement('div');
+                strip.className = 'workspace-tab-strip';
+                strip.dataset.columnId = column.columnId;
+                strip.setAttribute('role', 'tablist');
+                // Wheel over an overflowed strip scrolls horizontally; a strip
+                // that fits its column leaves the wheel untouched.
+                strip.addEventListener('wheel', (event) => {
+                    if (event.deltaY === 0) return;
+                    const maxScroll = strip.scrollWidth - strip.clientWidth;
+                    if (maxScroll <= 0) return;
+                    strip.scrollLeft = Math.min(maxScroll, Math.max(0, strip.scrollLeft + event.deltaY));
+                    event.preventDefault();
+                });
+                this.nameplates.appendChild(strip);
             }
-            const rect = this.rects.get(pane.paneId);
+            const rect = this.rects.get(column.columnId);
             if (rect) {
-                plate.style.left = `${rect.left}px`;
-                plate.style.width = `${rect.width}px`;
+                strip.style.left = `${rect.left}px`;
+                strip.style.width = `${rect.width}px`;
             }
-            plate.dataset.focused = pane.paneId === this.layout.focusedPaneId ? 'true' : 'false';
-            plate.dataset.last = index === this.layout.panes.length - 1 ? 'true' : 'false';
-            this.fillNameplate(plate, pane);
+            strip.dataset.focused = column.columnId === this.layout.focusedColumnId ? 'true' : 'false';
+            strip.dataset.last = index === this.layout.columns.length - 1 ? 'true' : 'false';
+            this.fillTabStrip(strip, column);
         });
-        for (const plate of [...this.nameplates.children]) {
-            if (!desired.has(plate.dataset.paneId)) plate.remove();
+        for (const strip of [...this.nameplates.children]) {
+            if (!desired.has(strip.dataset.columnId)) strip.remove();
         }
     }
 
-    fillNameplate(plate, pane) {
-        const workspace = this.catalog.workspaces.find((item) => item.workspaceId === pane.workspaceId);
-        plate.replaceChildren();
+    fillTabStrip(strip, column) {
+        strip.replaceChildren();
+        for (const tab of column.tabs || []) {
+            const workspace = this.catalog.workspaces.find((item) => item.workspaceId === tab.workspaceId);
+            strip.appendChild(this.buildTab(tab, workspace, column));
+        }
+    }
+
+    // tab = icon + title + attention badge + close. Clicking the tab activates
+    // the workspace (its column focuses and the tab becomes active); the close
+    // button closes it; right-click opens the column menu.
+    buildTab(tab, workspace, column) {
+        const tabEl = document.createElement('div');
+        tabEl.className = 'workspace-tab';
+        tabEl.dataset.workspaceId = tab.workspaceId || '';
+        tabEl.dataset.active = tab.workspaceId === column.activeTabId ? 'true' : 'false';
+        tabEl.setAttribute('role', 'tab');
+        tabEl.setAttribute('aria-selected', tab.workspaceId === column.activeTabId ? 'true' : 'false');
+        tabEl.tabIndex = 0;
+        tabEl.title = workspace?.title || 'Workspace';
+
         const icon = document.createElement('span');
-        icon.className = 'workspace-nameplate-icon';
+        icon.className = 'workspace-tab-icon';
         icon.setAttribute('aria-hidden', 'true');
-        icon.textContent = this.iconText(workspace?.iconKey, workspace?.kind ?? pane.kind);
+        icon.textContent = this.iconText(workspace?.iconKey, workspace?.kind ?? tab.kind);
+
         const title = document.createElement('span');
-        title.className = 'workspace-nameplate-title';
+        title.className = 'workspace-tab-title';
         title.textContent = workspace?.title || 'Workspace';
+
         const attention = document.createElement('span');
-        attention.className = 'workspace-nameplate-attention';
+        attention.className = 'workspace-tab-attention';
         attention.dataset.kind = workspace?.attentionKind || '';
         attention.textContent = ATTENTION_LABELS[workspace?.attentionKind] || '';
+
         const close = document.createElement('button');
         close.type = 'button';
-        close.className = 'workspace-chrome-icon-button workspace-nameplate-close';
+        close.className = 'workspace-chrome-icon-button workspace-tab-close';
         close.setAttribute('aria-label', `关闭 ${workspace?.title || '工作区'}`);
         close.textContent = '×';
         close.disabled = !workspace;
@@ -177,21 +222,24 @@ export class WorkspaceChromeController {
             event.stopPropagation();
             if (workspace) Bridge.sendWorkspaceLayoutIntent('close', workspace.workspaceId);
         });
-        const more = document.createElement('button');
-        more.type = 'button';
-        more.className = 'workspace-chrome-icon-button workspace-nameplate-more';
-        more.setAttribute('aria-label', `${workspace?.title || '工作区'} 操作`);
-        more.textContent = '⋯';
-        more.disabled = !workspace;
-        more.addEventListener('click', (event) => {
-            event.stopPropagation();
-            if (workspace) this.openPaneMenu(workspace, more);
-        });
-        plate.oncontextmenu = (event) => {
-            event.preventDefault();
-            if (workspace) this.openPaneMenu(workspace, more);
+
+        const activate = () => {
+            if (workspace) Bridge.sendWorkspaceLayoutIntent('activate', workspace.workspaceId);
         };
-        plate.append(icon, title, attention, more, close);
+        tabEl.addEventListener('click', activate);
+        tabEl.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                activate();
+            }
+        });
+        tabEl.addEventListener('contextmenu', (event) => {
+            event.preventDefault();
+            if (workspace) this.openPaneMenu(workspace, tabEl);
+        });
+
+        tabEl.append(icon, title, attention, close);
+        return tabEl;
     }
 
     iconText(iconKey, kind) {
@@ -236,13 +284,19 @@ export class WorkspaceChromeController {
 
     renderOpenMenu() {
         if (!this.openMenu) return;
+        // In-place refresh (segment toggle, catalog/layout refresh while the
+        // menu stays open) vs. a fresh open: the popover node is swapped
+        // either way, so only a fresh open may replay the entry animation and
+        // steal focus — a refresh would otherwise flash and yank focus off
+        // the control the user just clicked.
+        const isRefresh = this.portalRoot.firstElementChild?.dataset?.menu === this.openMenu;
         const menu = document.createElement('section');
         menu.className = `workspace-popover workspace-popover-${this.openMenu}`;
         menu.dataset.menu = this.openMenu;
         menu.setAttribute('role', 'dialog');
         menu.setAttribute('aria-label', this.menuLabel());
         if (this.openMenu === 'pane' && this.openTrigger) {
-            // The pane menu's trigger lives on a nameplate anywhere across the
+            // The column menu's trigger lives on a tab anywhere across the
             // chrome row: anchor directly under it. The exact left is set after
             // mount (measured width), right-aligned to the trigger so it never
             // overflows the window's right edge — a transform would fight the
@@ -263,6 +317,7 @@ export class WorkspaceChromeController {
         if (this.openMenu === 'create') this.renderCreateMenu(menu);
         if (this.openMenu === 'theme') this.renderThemeMenu(menu);
         if (this.openMenu === 'pane') this.renderPaneMenu(menu, this.paneMenuWorkspace);
+        if (isRefresh) menu.style.animation = 'none';
         this.portalRoot.replaceChildren(menu);
         if (menu.dataset.anchorRight) {
             const right = Number(menu.dataset.anchorRight);
@@ -270,22 +325,33 @@ export class WorkspaceChromeController {
             menu.style.left = `${left}px`;
             delete menu.dataset.anchorRight;
         }
-        window.queueMicrotask(() => menu.querySelector('button:not(:disabled)')?.focus());
+        if (!isRefresh) window.queueMicrotask(() => menu.querySelector('button:not(:disabled)')?.focus());
     }
 
     menuLabel() {
         return { workspaces: '工作区', create: '新建工作区', theme: '主题', pane: '工作区操作' }[this.openMenu] || '菜单';
     }
 
+    // The workspace list is the overview of every OPEN tab: each entry is
+    // labelled with its column ("第 N 列", plus "(激活)" for the focused
+    // column's active tab). Clicking activates it in place — a pure jump that
+    // never moves or duplicates the tab. There is no background set anymore.
     renderWorkspaceList(menu) {
         menu.appendChild(this.heading('工作区'));
-        const effectiveIds = new Set((this.layout?.panes ?? []).map((pane) => pane.workspaceId));
-        const requestedPaneIds = new Set(this.catalog.workspaces.filter((item) => item.paneId).map((item) => item.paneId));
-        const paneOrder = new Map((this.layout?.panes ?? []).map((pane, index) => [pane.paneId, index + 1]));
+        // Menus must reflect the full requested open set even while zoomed
+        // (the effective layout under-reports), so resolve the column order
+        // from the requested snapshot carried alongside.
+        const requested = this.layout?.requested ?? this.layout;
+        const columnOrder = new Map((requested?.columns ?? []).map((column, index) => [column.columnId, index + 1]));
         for (const workspace of this.catalog.workspaces) {
-            let location = '后台';
-            if (effectiveIds.has(workspace.workspaceId)) location = `第 ${paneOrder.get(workspace.paneId) ?? '?'} 列`;
-            else if (workspace.paneId && requestedPaneIds.has(workspace.paneId)) location = '临时收编';
+            const column = (requested?.columns ?? []).find((c) => c.columnId === workspace.columnId);
+            const active = Boolean(column
+                && requested?.focusedColumnId === workspace.columnId
+                && column.activeTabId === workspace.workspaceId);
+            const columnNumber = columnOrder.get(workspace.columnId);
+            const location = columnNumber
+                ? `第 ${columnNumber} 列${active ? '(激活)' : ''}`
+                : '第 ? 列';
             const label = [location, ATTENTION_LABELS[workspace.attentionKind]].filter(Boolean).join(' · ');
             menu.appendChild(this.menuRow(
                 `${workspace.providerName ? workspace.providerName + ' · ' : ''}${workspace.title}`,
@@ -301,6 +367,10 @@ export class WorkspaceChromeController {
     renderCreateMenu(menu) {
         menu.appendChild(this.heading('新建工作区'));
         const capacity = this.capacityChecker?.() ?? null;
+        // The column-cap gate uses the REQUESTED column count (zoomed
+        // effective layouts under-count) and the catalog's maxColumns.
+        const columnCount = capacity?.requestedColumnCount ?? this.layout?.requested?.columns?.length ?? this.layout?.columns?.length ?? 1;
+        const atColumnCap = columnCount >= this.catalog.maxColumns;
         const segments = document.createElement('div');
         segments.className = 'workspace-segments';
         for (const [value, label] of [['focused', '当前列'], ['new_right', '右侧新列']]) {
@@ -308,14 +378,15 @@ export class WorkspaceChromeController {
             button.type = 'button';
             button.textContent = label;
             button.dataset.selected = this.createPlacement === value ? 'true' : 'false';
-            // Layered gating: the C# 4-column count (maxPanes) and the
-            // frontend pixel capacity both disable new-right; only capacity
-            // carries the explanatory title. The frontend gate is the first
-            // defensive line, the C# count the second.
-            const maxPanesBlocked = value === 'new_right' && (this.layout?.panes.length ?? 1) >= this.catalog.maxPanes;
+            // Layered gating: the C# 3-column count (maxColumns) and the
+            // frontend pixel capacity both disable new-right; each carries its
+            // own explanatory title. The frontend gate is the first defensive
+            // line, the C# count the second.
+            const capBlocked = value === 'new_right' && atColumnCap;
             const capacityBlocked = value === 'new_right' && capacity !== null && !capacity.fitsAgent;
-            button.disabled = maxPanesBlocked || capacityBlocked;
-            if (capacityBlocked) button.title = '窗口宽度不足以容纳新列';
+            button.disabled = capBlocked || capacityBlocked;
+            if (capBlocked) button.title = '最多支持 3 列';
+            else if (capacityBlocked) button.title = '窗口宽度不足以容纳新列';
             button.addEventListener('click', () => {
                 this.createPlacement = value;
                 this.renderOpenMenu();
@@ -396,6 +467,10 @@ export class WorkspaceChromeController {
         menu.appendChild(footer);
     }
 
+    // Column menu (opened from a tab's context menu): move the tab to a fresh
+    // right-hand column (double-gated by the C# canSplitRight decision and the
+    // frontend pixel capacity) or merge every column into one ("合并为单列",
+    // decision G). Cross-column tab drags are a later phase.
     renderPaneMenu(menu, workspace) {
         if (!workspace) return;
         menu.appendChild(this.heading(workspace.title));
@@ -418,17 +493,7 @@ export class WorkspaceChromeController {
             },
             splitBlocked || capacityBlocked
         ));
-        for (const entry of workspace.availableTargetPanes || []) {
-            menu.appendChild(this.menuRow(`移到第 ${entry.column} 列`, '', () => {
-                Bridge.sendWorkspaceLayoutIntent('move_to_pane', workspace.workspaceId, entry.paneId);
-                this.closeMenu(false);
-            }));
-        }
-        if (workspace.canSwap) menu.appendChild(this.menuRow('交换两列', '', () => {
-            Bridge.sendWorkspaceLayoutIntent('swap');
-            this.closeMenu(false);
-        }));
-        if (workspace.canCollapse) menu.appendChild(this.menuRow('收回单列', '', () => {
+        if (workspace.canCollapse) menu.appendChild(this.menuRow('合并为单列', '', () => {
             Bridge.sendWorkspaceLayoutIntent('collapse_single');
             this.closeMenu(false);
         }));

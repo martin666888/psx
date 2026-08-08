@@ -471,17 +471,9 @@
                     </Button>
                     <Button Style="{StaticResource NewWorkspaceMenuRowStyle}"
                             Visibility="{Binding IsSplit, Converter={StaticResource BoolToVisibilityConverter}}"
-                            Command="{Binding PlacementTarget.Tag.SwapPanesCommand, ElementName=TabContextPopup}"
-                            Click="OnTabContextMenuActionClick">
-                        <TextBlock Text="交换两列"
-                                   Foreground="{DynamicResource TextPrimaryBrush}"
-                                   FontSize="12"/>
-                    </Button>
-                    <Button Style="{StaticResource NewWorkspaceMenuRowStyle}"
-                            Visibility="{Binding IsSplit, Converter={StaticResource BoolToVisibilityConverter}}"
                             Command="{Binding PlacementTarget.Tag.CollapseToSinglePaneCommand, ElementName=TabContextPopup}"
                             Click="OnTabContextMenuActionClick">
-                        <TextBlock Text="收回单列"
+                        <TextBlock Text="合并为单列"
                                    Foreground="{DynamicResource TextPrimaryBrush}"
                                    FontSize="12"/>
                     </Button>

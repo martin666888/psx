@@ -88,39 +88,39 @@ export const Bridge = {
         this.sendToHost({ type: BridgeSendType.Ready });
     },
 
-    /** Click-to-focus intent for a pane (split panes).
-     * @param {string} paneId
+    /** Click-to-focus intent for a column: focuses it without changing its
+     * active tab. The pane_focus wire name and paneId payload key are
+     * preserved by contract; the id space is the column id.
+     * @param {string} columnId
      */
-    sendPaneFocus(paneId) {
-        this.sendToHost({ type: BridgeSendType.PaneFocus, paneId: paneId });
+    sendPaneFocus(columnId) {
+        this.sendToHost({ type: BridgeSendType.PaneFocus, paneId: columnId });
     },
 
     /** Divider drag end: one atomic vector for the requested layout revision.
      * @param {number} baseRevision
-     * @param {{paneId: string, ratio: number}[]} panes
+     * @param {{paneId: string, ratio: number}[]} columns
      */
-    sendPaneRatios(baseRevision, panes) {
-        this.sendToHost({ type: BridgeSendType.PaneRatiosCommit, baseRevision, panes });
+    sendPaneRatios(baseRevision, columns) {
+        this.sendToHost({ type: BridgeSendType.PaneRatiosCommit, baseRevision, panes: columns });
     },
 
-    /** Drag a workspace onto a pane (swap when occupied, replace otherwise).
+    /** Drag a workspace onto a column: it becomes a tab of that column.
      * @param {string} workspaceId
-     * @param {string} paneId
+     * @param {string} columnId
      */
-    sendPaneMove(workspaceId, paneId) {
-        this.sendToHost({ type: BridgeSendType.PaneMove, workspaceId: workspaceId, paneId: paneId });
+    sendPaneMove(workspaceId, columnId) {
+        this.sendToHost({ type: BridgeSendType.PaneMove, workspaceId: workspaceId, paneId: columnId });
     },
 
-    /** @param {'activate'|'close'|'split_right'|'move_to_pane'|'swap'|'collapse_single'} action
+    /** @param {'activate'|'close'|'split_right'|'collapse_single'} action
      * @param {string} [workspaceId]
-     * @param {string} [paneId]
      */
-    sendWorkspaceLayoutIntent(action, workspaceId, paneId) {
+    sendWorkspaceLayoutIntent(action, workspaceId) {
         this.sendToHost({
             type: BridgeSendType.WorkspaceLayoutIntent,
             action,
-            ...(workspaceId ? { workspaceId } : {}),
-            ...(paneId ? { paneId } : {})
+            ...(workspaceId ? { workspaceId } : {})
         });
     },
 

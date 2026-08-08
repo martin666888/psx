@@ -79,24 +79,32 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
   }
 
   /**
-   * Project the pane layout onto agent panels: each workspace assigned to a
-   * pane shows at that pane's rect (with its reading-column geometry scoped
-   * to the pane width); every other panel hides keep-alive. Called by the
-   * PaneLayoutController with the latest snapshot and measured pane rects.
+   * Project the column layout onto agent panels: each workspace that is the
+   * active tab of a column shows at that column's rect (with its
+   * reading-column geometry scoped to the column width); every other panel —
+   * including inactive tabs of visible columns — hides keep-alive. Called by
+   * the PaneLayoutController with the latest snapshot and measured rects.
    */
   applyLayout(snapshot: {
-    focusedPaneId: string;
-    panes: Array<{ paneId: string; workspaceId?: string | null; kind?: string | null }>;
+    focusedColumnId: string;
+    columns: Array<{
+      columnId: string;
+      tabs?: Array<{ workspaceId?: string | null; kind?: string | null }>;
+      activeTabId?: string | null;
+      ratio?: number;
+    }>;
   }, rects: Map<string, { left: number; top: number; width: number; height: number }>): void {
-    if (!snapshot || !Array.isArray(snapshot.panes)) return;
+    if (!snapshot || !Array.isArray(snapshot.columns)) return;
     this.layoutDriven = true;
     this.container.classList.add('agent-layout-driven');
 
-    const assignments = new Map<string, { paneId: string; rect: { left: number; top: number; width: number; height: number } }>();
-    for (const pane of snapshot.panes) {
-      if (pane.kind !== 'agent' || !pane.workspaceId) continue;
-      const rect = rects?.get(pane.paneId);
-      if (rect) assignments.set(String(pane.workspaceId), { paneId: pane.paneId, rect });
+    const assignments = new Map<string, { columnId: string; rect: { left: number; top: number; width: number; height: number } }>();
+    for (const column of snapshot.columns) {
+      if (!column.activeTabId) continue;
+      const tab = column.tabs?.find((item) => item.workspaceId === column.activeTabId);
+      if (!tab || tab.kind !== 'agent') continue;
+      const rect = rects?.get(column.columnId);
+      if (rect) assignments.set(String(tab.workspaceId), { columnId: column.columnId, rect });
     }
 
     for (const [id, entry] of this.workspaces) {
@@ -106,23 +114,23 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
         continue;
       }
       this.applyPanelRect(entry.panel, assignment.rect);
-      entry.panel.dataset.paneId = assignment.paneId;
+      entry.panel.dataset.columnId = assignment.columnId;
       if (entry.panel.hidden) this.setPanelVisible(entry.panel, true);
-      entry.panel.dataset.paneFocused = assignment.paneId === snapshot.focusedPaneId ? 'true' : 'false';
+      entry.panel.dataset.paneFocused = assignment.columnId === snapshot.focusedColumnId ? 'true' : 'false';
     }
 
     // Diagnostic (permanent, [pane-layout]): every projection reports the
-    // visible agent panel count and the projected pane ids.
+    // visible agent panel count and the projected column ids.
     const visiblePanels = [...this.workspaces.values()].filter((entry) => !entry.panel.hidden).length;
     console.debug(
       '[pane-layout] applyLayout: visible panels =', visiblePanels,
-      '| panes =', snapshot.panes.map((pane) => pane.paneId).join(',')
+      '| columns =', snapshot.columns.map((column) => column.columnId).join(',')
     );
 
     const anyAgentVisible = assignments.size > 0;
-    this.container.classList.toggle('agent-split-active', snapshot.panes.length > 1);
+    this.container.classList.toggle('agent-split-active', snapshot.columns.length > 1);
     // The Agent layer needs pointer events whenever any agent panel shows —
-    // including an unfocused pane beside a terminal (click-to-focus).
+    // including an unfocused column beside a terminal (click-to-focus).
     this.container.classList.toggle('agent-workspace-active', anyAgentVisible);
     this.historyDockView?.setAgentViewActive(this.workspaces.size > 0);
   }
@@ -194,11 +202,11 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
     this.container.appendChild(fragment);
 
     const bridge = Bridge.createAgentScope(id);
-    // Click-to-focus: any interaction with a visible panel focuses its pane
-    // (split panes). The layout engine stamps the current paneId on the panel.
+    // Click-to-focus: any interaction with a visible panel focuses its column
+    // (split panes). The layout engine stamps the current columnId on the panel.
     panel.addEventListener('mousedown', () => {
-      const paneId = panel.dataset.paneId;
-      if (paneId) Bridge.sendPaneFocus(paneId);
+      const columnId = panel.dataset.columnId;
+      if (columnId) Bridge.sendPaneFocus(columnId);
     });
 
     if (this.settings) this.applyGlobalAppearance(this.settings);

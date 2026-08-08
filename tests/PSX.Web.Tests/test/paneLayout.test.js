@@ -1,8 +1,8 @@
-// paneLayout.test.js — split-pane Phase 0 seam guards.
-//
-// Phase 0 introduces the neutral pane root without changing behavior: one
-// .workspace-pane wraps both workspace layers, and PaneLayoutController
-// (always-loaded webview layer, no Agent chunk required) enumerates it.
+// paneLayout.test.js — column-model layout engine guards (VS Code
+// editor-group model: an ordered list of columns, each with a tab stack, an
+// active tab, a focus and normalized ratios). Columns are never collected or
+// hidden: pixel floors, on-demand focus expansion and sash states govern the
+// effective presentation.
 
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
@@ -27,19 +27,19 @@ test('index.html stacks both workspace layers under the neutral pane row', () =>
   );
 });
 
-test('PaneLayoutController enumerates panes without the Agent chunk', async () => {
+test('PaneLayoutController enumerates column slots without the Agent chunk', async () => {
   installAgentRuntime();
   const { PaneLayoutController } = await import(
     pathToFileURL(path.join(webviewRoot, 'src', 'PaneLayoutController.js')).href
   );
   document.body.innerHTML =
-    '<div id="workspace-panes"><div class="workspace-pane" data-pane-id="pane-1"></div></div>';
+    '<div id="workspace-panes"><div class="workspace-pane" data-column-id="column-1"></div></div>';
   const layout = new PaneLayoutController(document.getElementById('workspace-panes'));
-  assert.equal(layout.paneCount, 1);
-  assert.equal(layout.root.dataset.splitActive, 'false', 'single panes must not paint the split focus ring');
-  assert.equal(layout.paneAt(0).dataset.paneId, 'pane-1');
-  assert.equal(layout.paneById('pane-1'), layout.paneAt(0));
-  assert.equal(layout.paneById('missing'), null);
+  assert.equal(layout.columnCount, 1);
+  assert.equal(layout.root.dataset.splitActive, 'false', 'single columns must not paint the split focus ring');
+  assert.equal(layout.columnAt(0).dataset.columnId, 'column-1');
+  assert.equal(layout.columnById('column-1'), layout.columnAt(0));
+  assert.equal(layout.columnById('missing'), null);
   assert.throws(() => new PaneLayoutController(null), /requires/);
 });
 
@@ -49,19 +49,23 @@ test('PaneLayoutController drops late or replayed layout snapshots', async () =>
     pathToFileURL(path.join(webviewRoot, 'src', 'PaneLayoutController.js')).href
   );
   document.body.innerHTML =
-    '<div id="workspace-panes"><div class="workspace-pane" data-pane-id="pane-1"></div></div>';
+    '<div id="workspace-panes"><div class="workspace-pane" data-column-id="column-1"></div></div>';
   const layout = new PaneLayoutController(document.getElementById('workspace-panes'));
 
-  assert.equal(layout.applySnapshot({ revision: 2, focusedPaneId: 'pane-1', panes: [] }), true);
-  assert.equal(layout.applySnapshot({ revision: 1, focusedPaneId: 'pane-1', panes: [] }), false, 'late snapshot');
-  assert.equal(layout.applySnapshot({ revision: 2, focusedPaneId: 'pane-1', panes: [] }), false, 'replayed snapshot');
-  assert.equal(layout.applySnapshot({ revision: 3, focusedPaneId: 'pane-1', panes: [{ paneId: 'pane-1' }] }), true);
+  assert.equal(layout.applySnapshot({ revision: 2, focusedColumnId: 'column-1', columns: [] }), true);
+  assert.equal(layout.applySnapshot({ revision: 1, focusedColumnId: 'column-1', columns: [] }), false, 'late snapshot');
+  assert.equal(layout.applySnapshot({ revision: 2, focusedColumnId: 'column-1', columns: [] }), false, 'replayed snapshot');
+  assert.equal(layout.applySnapshot({
+    revision: 3,
+    focusedColumnId: 'column-1',
+    columns: [{ columnId: 'column-1', tabs: [], activeTabId: null, ratio: 1 }]
+  }), true);
   assert.equal(layout.applySnapshot({}), false, 'malformed snapshot');
   assert.equal(layout.lastRevision, 3);
-  assert.equal(layout.snapshot.panes.length, 1);
+  assert.equal(layout.snapshot.columns.length, 1);
 });
 
-test('PaneLayoutController projects pane rects and ring slots from a snapshot', async () => {
+test('PaneLayoutController projects column rects and ring slots from a snapshot', async () => {
   installAgentRuntime();
   const { PaneLayoutController } = await import(
     pathToFileURL(path.join(webviewRoot, 'src', 'PaneLayoutController.js')).href
@@ -77,39 +81,39 @@ test('PaneLayoutController projects pane rects and ring slots from a snapshot', 
   layout.onLayoutApplied((snapshot, rects) => applied.push({ snapshot, rects }));
   layout.applySnapshot({
     revision: 1,
-    focusedPaneId: 'pane-2',
-    panes: [
-      { paneId: 'pane-1', workspaceId: 'term-1', kind: 'terminal', ratio: 0.6 },
-      { paneId: 'pane-2', workspaceId: 'agent-1', kind: 'agent', ratio: 0.4 }
+    focusedColumnId: 'column-2',
+    columns: [
+      { columnId: 'column-1', tabs: [{ workspaceId: 'term-1', kind: 'terminal' }], activeTabId: 'term-1', ratio: 0.6 },
+      { columnId: 'column-2', tabs: [{ workspaceId: 'agent-1', kind: 'agent' }], activeTabId: 'agent-1', ratio: 0.4 }
     ]
   });
 
   const { rects } = applied.at(-1);
-  assert.deepEqual(rects.get('pane-1'), { left: 40, top: 40, width: 936, height: 860 });
-  assert.deepEqual(rects.get('pane-2'), { left: 976, top: 40, width: 624, height: 860 });
+  assert.deepEqual(rects.get('column-1'), { left: 40, top: 40, width: 936, height: 860 });
+  assert.deepEqual(rects.get('column-2'), { left: 976, top: 40, width: 624, height: 860 });
 
-  const slot1 = layout.paneById('pane-1');
-  const slot2 = layout.paneById('pane-2');
+  const slot1 = layout.columnById('column-1');
+  const slot2 = layout.columnById('column-2');
   assert.equal(slot1.dataset.focused, 'false');
   assert.equal(slot2.dataset.focused, 'true');
   assert.equal(slot1.style.flexGrow, '0.6');
   assert.equal(layout.root.dataset.splitActive, 'true');
 
-  // The History dock inset shifts every pane and the slot row as one block.
+  // The History dock inset shifts every column and the slot row as one block.
   layout.setDockInset(292);
   const shifted = applied.at(-1).rects;
-  assert.equal(shifted.get('pane-1').left, 292);
-  assert.equal(shifted.get('pane-1').width, Math.round((1600 - 292) * 0.6));
+  assert.equal(shifted.get('column-1').left, 292);
+  assert.equal(shifted.get('column-1').width, Math.round((1600 - 292) * 0.6));
   assert.equal(layout.root.style.left, '292px');
 
-  // Closing back to one pane removes the extra slot.
+  // Closing back to one column removes the extra slot.
   layout.applySnapshot({
     revision: 2,
-    focusedPaneId: 'pane-1',
-    panes: [{ paneId: 'pane-1', workspaceId: 'term-1', kind: 'terminal', ratio: 1 }]
+    focusedColumnId: 'column-1',
+    columns: [{ columnId: 'column-1', tabs: [{ workspaceId: 'term-1', kind: 'terminal' }], activeTabId: 'term-1', ratio: 1 }]
   });
-  assert.equal(layout.paneCount, 1);
-  assert.equal(layout.paneById('pane-2'), null);
+  assert.equal(layout.columnCount, 1);
+  assert.equal(layout.columnById('column-2'), null);
   assert.equal(layout.root.dataset.splitActive, 'false');
   layout.dispose();
 });
@@ -129,10 +133,10 @@ test('divider drag previews locally and sends one ratio intent on pointerup', as
   layout.onLayoutApplied((snapshot, rects, options) => applied.push({ rects, options }));
   layout.applySnapshot({
     revision: 1,
-    focusedPaneId: 'pane-1',
-    panes: [
-      { paneId: 'pane-1', workspaceId: 'a', kind: 'agent', ratio: 0.5 },
-      { paneId: 'pane-2', workspaceId: 'b', kind: 'terminal', ratio: 0.5 }
+    focusedColumnId: 'column-1',
+    columns: [
+      { columnId: 'column-1', tabs: [{ workspaceId: 'a', kind: 'agent' }], activeTabId: 'a', ratio: 0.5 },
+      { columnId: 'column-2', tabs: [{ workspaceId: 'b', kind: 'terminal' }], activeTabId: 'b', ratio: 0.5 }
     ]
   });
 
@@ -151,7 +155,7 @@ test('divider drag previews locally and sends one ratio intent on pointerup', as
   fire('pointermove', { pointerId: 7, clientX: 500 });
   assert.equal(applied.at(-1).options.interactiveResize, false, 'pointer moves wait for the next frame');
   flushAgentAnimationFrames();
-  assert.equal(applied.at(-1).rects.get('pane-1').width, 480, 'preview recomputes rects locally');
+  assert.equal(applied.at(-1).rects.get('column-1').width, 480, 'preview recomputes rects locally');
   assert.equal(applied.at(-1).options.interactiveResize, true, 'preview flags terminal fit as deferred');
   assert.equal(ratioMessages().length, 0, 'no bridge traffic mid-drag');
 
@@ -160,7 +164,7 @@ test('divider drag previews locally and sends one ratio intent on pointerup', as
   const sent = ratioMessages();
   assert.equal(sent.length, 1, 'one intent per drag end');
   assert.equal(sent[0].baseRevision, 1);
-  assert.deepEqual(sent[0].panes.map((pane) => pane.paneId), ['pane-1', 'pane-2']);
+  assert.deepEqual(sent[0].panes.map((pane) => pane.paneId), ['column-1', 'column-2']);
   assert.ok(Math.abs(sent[0].panes[0].ratio - (480 / 1560)) < 0.001);
   assert.ok(Math.abs(sent[0].panes[1].ratio - (1080 / 1560)) < 0.001);
   assert.equal(layout.root.querySelector('.workspace-pane-divider'), divider, 'divider survives every preview frame');
@@ -168,17 +172,17 @@ test('divider drag previews locally and sends one ratio intent on pointerup', as
   // The authoritative snapshot clears any preview.
   layout.applySnapshot({
     revision: 2,
-    focusedPaneId: 'pane-1',
-    panes: [
-      { paneId: 'pane-1', workspaceId: 'a', kind: 'agent', ratio: 0.3 },
-      { paneId: 'pane-2', workspaceId: 'b', kind: 'terminal', ratio: 0.7 }
+    focusedColumnId: 'column-1',
+    columns: [
+      { columnId: 'column-1', tabs: [{ workspaceId: 'a', kind: 'agent' }], activeTabId: 'a', ratio: 0.3 },
+      { columnId: 'column-2', tabs: [{ workspaceId: 'b', kind: 'terminal' }], activeTabId: 'b', ratio: 0.7 }
     ]
   });
   assert.equal(layout.previewRatios, null);
   layout.dispose();
 });
 
-test('narrow stacks collapse right-hand panes effectively and restore on widen', async () => {
+test('columns below their floors stay visible and the focused column expands on demand', async () => {
   installAgentRuntime();
   const { PaneLayoutController } = await import(
     pathToFileURL(path.join(webviewRoot, 'src', 'PaneLayoutController.js')).href
@@ -188,44 +192,43 @@ test('narrow stacks collapse right-hand panes effectively and restore on widen',
   const stack = document.getElementById('workspace-stack');
   const setWidth = (value) =>
     Object.defineProperty(stack, 'clientWidth', { configurable: true, value });
-  setWidth(1600);
+  setWidth(1040);
   Object.defineProperty(stack, 'clientHeight', { configurable: true, value: 900 });
   const layout = new PaneLayoutController(document.getElementById('workspace-panes'));
   const applied = [];
-  layout.onLayoutApplied((snapshot) => applied.push(snapshot));
+  layout.onLayoutApplied((snapshot, rects) => applied.push({ snapshot, rects }));
   layout.applySnapshot({
     revision: 1,
-    focusedPaneId: 'pane-3',
-    panes: [
-      { paneId: 'pane-1', workspaceId: 'a', kind: 'agent', ratio: 1 / 3 },
-      { paneId: 'pane-2', workspaceId: 'b', kind: 'terminal', ratio: 1 / 3 },
-      { paneId: 'pane-3', workspaceId: 'c', kind: 'agent', ratio: 1 / 3 }
+    focusedColumnId: 'column-3',
+    columns: [
+      { columnId: 'column-1', tabs: [{ workspaceId: 'a', kind: 'agent' }], activeTabId: 'a', ratio: 0.4 },
+      { columnId: 'column-2', tabs: [{ workspaceId: 'b', kind: 'agent' }], activeTabId: 'b', ratio: 0.4 },
+      { columnId: 'column-3', tabs: [{ workspaceId: 'c', kind: 'agent' }], activeTabId: 'c', ratio: 0.2 }
     ]
   });
-  assert.equal(applied.at(-1).panes.length, 3, 'all panes fit at 1600px');
 
-  // After the 40px rail, 860px cannot hold the focused Agent plus a 480px
-  // Terminal, so only the focused pane remains.
-  setWidth(900);
-  layout.recompute();
-  const collapsed = applied.at(-1);
-  assert.equal(collapsed.panes.length, 1);
-  assert.equal(collapsed.focusedPaneId, 'pane-3', 'the focused pane is never collected');
-  assert.equal(layout.paneById('pane-1'), null, 'the farthest non-focused slot is removed');
-  // The requested snapshot itself is untouched.
-  assert.equal(layout.snapshot.panes.length, 3);
+  // 1000px area, Agent floors 320 each (960 total): the focused column's
+  // ratio share (200px) falls below its floor, so the other columns compress
+  // to their floors and the focused column takes the remainder.
+  const expanded = applied.at(-1).rects;
+  assert.equal(expanded.get('column-1').width, 320, 'left column pinned to its floor');
+  assert.equal(expanded.get('column-2').width, 320, 'middle column pinned to its floor');
+  assert.equal(expanded.get('column-3').width, 360, 'focused column takes the remaining width');
+  assert.equal(layout.columnCount, 3, 'no column is ever hidden');
 
-  // Widening restores the collapsed pane with its original assignment.
-  setWidth(1600);
+  // Below the total floor the ratio allocation squeezes every column under
+  // its floor proportionally — all remain visible (decision K).
+  setWidth(840);
   layout.recompute();
-  const restored = applied.at(-1);
-  assert.equal(restored.panes.length, 3);
-  assert.equal(restored.focusedPaneId, 'pane-3');
-  assert.ok(layout.paneById('pane-3'));
+  const squeezed = applied.at(-1).rects;
+  assert.equal(squeezed.get('column-1').width, 320);
+  assert.equal(squeezed.get('column-2').width, 320);
+  assert.equal(squeezed.get('column-3').width, 160, 'focused column squeezes below its floor too');
+  assert.equal(layout.columnCount, 3, 'never collected, never hidden');
   layout.dispose();
 });
 
-test('tab drag-in highlights the target pane and sends pane_move on drop', async () => {
+test('tab drag-in highlights the target column and sends pane_move on drop', async () => {
   const runtime = installAgentRuntime();
   const { PaneLayoutController } = await import(
     pathToFileURL(path.join(webviewRoot, 'src', 'PaneLayoutController.js')).href
@@ -238,14 +241,14 @@ test('tab drag-in highlights the target pane and sends pane_move on drop', async
   const layout = new PaneLayoutController(document.getElementById('workspace-panes'));
   layout.applySnapshot({
     revision: 1,
-    focusedPaneId: 'pane-1',
-    panes: [
-      { paneId: 'pane-1', workspaceId: 'a', kind: 'agent', ratio: 0.5 },
-      { paneId: 'pane-2', workspaceId: 'b', kind: 'terminal', ratio: 0.5 }
+    focusedColumnId: 'column-1',
+    columns: [
+      { columnId: 'column-1', tabs: [{ workspaceId: 'a', kind: 'agent' }], activeTabId: 'a', ratio: 0.5 },
+      { columnId: 'column-2', tabs: [{ workspaceId: 'b', kind: 'terminal' }], activeTabId: 'b', ratio: 0.5 }
     ]
   });
-  const slot1 = layout.paneById('pane-1');
-  const slot2 = layout.paneById('pane-2');
+  const slot1 = layout.columnById('column-1');
+  const slot2 = layout.columnById('column-2');
   slot1.getBoundingClientRect = () => ({ left: 0, right: 800, top: 0, bottom: 900 });
   slot2.getBoundingClientRect = () => ({ left: 800, right: 1600, top: 0, bottom: 900 });
 
@@ -267,7 +270,7 @@ test('tab drag-in highlights the target pane and sends pane_move on drop', async
   const moves = runtime.postedMessages.filter(m => m.type === 'pane_move');
   assert.equal(moves.length, 1);
   assert.equal(moves[0].workspaceId, workspaceId);
-  assert.equal(moves[0].paneId, 'pane-2');
+  assert.equal(moves[0].paneId, 'column-2');
   assert.equal(slot2.dataset.dropTarget, 'false');
 
   // Non-workspace payloads never move anything.
@@ -276,7 +279,7 @@ test('tab drag-in highlights the target pane and sends pane_move on drop', async
   layout.dispose();
 });
 
-test('zoom shows only the focused pane, follows focus, and toggles back', async () => {
+test('zoom shows only the focused column, follows focus, and toggles back', async () => {
   installAgentRuntime();
   const { PaneLayoutController } = await import(
     pathToFileURL(path.join(webviewRoot, 'src', 'PaneLayoutController.js')).href
@@ -291,37 +294,37 @@ test('zoom shows only the focused pane, follows focus, and toggles back', async 
   layout.onLayoutApplied((snapshot) => applied.push(snapshot));
   layout.applySnapshot({
     revision: 1,
-    focusedPaneId: 'pane-2',
-    panes: [
-      { paneId: 'pane-1', workspaceId: 'a', kind: 'agent', ratio: 0.5 },
-      { paneId: 'pane-2', workspaceId: 'b', kind: 'terminal', ratio: 0.5 }
+    focusedColumnId: 'column-2',
+    columns: [
+      { columnId: 'column-1', tabs: [{ workspaceId: 'a', kind: 'agent' }], activeTabId: 'a', ratio: 0.5 },
+      { columnId: 'column-2', tabs: [{ workspaceId: 'b', kind: 'terminal' }], activeTabId: 'b', ratio: 0.5 }
     ]
   });
 
   assert.equal(layout.toggleZoom(), true);
   const zoomed = applied.at(-1);
-  assert.equal(zoomed.panes.length, 1, 'only the focused pane survives zoom');
-  assert.equal(zoomed.panes[0].paneId, 'pane-2');
-  assert.equal(layout.paneCount, 1);
-  assert.equal(layout.snapshot.panes.length, 2, 'requested layout untouched');
+  assert.equal(zoomed.columns.length, 1, 'only the focused column survives zoom');
+  assert.equal(zoomed.columns[0].columnId, 'column-2');
+  assert.equal(layout.columnCount, 1);
+  assert.equal(layout.snapshot.columns.length, 2, 'requested layout untouched');
 
-  // Focus moving while zoomed switches the zoomed pane.
+  // Focus moving while zoomed switches the zoomed column.
   layout.applySnapshot({
     revision: 2,
-    focusedPaneId: 'pane-1',
-    panes: [
-      { paneId: 'pane-1', workspaceId: 'a', kind: 'agent', ratio: 0.5 },
-      { paneId: 'pane-2', workspaceId: 'b', kind: 'terminal', ratio: 0.5 }
+    focusedColumnId: 'column-1',
+    columns: [
+      { columnId: 'column-1', tabs: [{ workspaceId: 'a', kind: 'agent' }], activeTabId: 'a', ratio: 0.5 },
+      { columnId: 'column-2', tabs: [{ workspaceId: 'b', kind: 'terminal' }], activeTabId: 'b', ratio: 0.5 }
     ]
   });
-  assert.equal(applied.at(-1).panes[0].paneId, 'pane-1');
+  assert.equal(applied.at(-1).columns[0].columnId, 'column-1');
 
   assert.equal(layout.toggleZoom(), false);
-  assert.equal(applied.at(-1).panes.length, 2, 'toggle back restores every pane');
+  assert.equal(applied.at(-1).columns.length, 2, 'toggle back restores every column');
   layout.dispose();
 });
 
-test('capacity helpers measure the requested layout, never the effective panes', async () => {
+test('capacity helpers measure the requested layout, never the effective columns', async () => {
   installAgentRuntime();
   const { PaneLayoutController } = await import(
     pathToFileURL(path.join(webviewRoot, 'src', 'PaneLayoutController.js')).href
@@ -335,17 +338,18 @@ test('capacity helpers measure the requested layout, never the effective panes',
   layout.setTerminalMinimumWidthResolver(() => 640);
   layout.applySnapshot({
     revision: 1,
-    focusedPaneId: 'pane-3',
-    panes: [
-      { paneId: 'pane-1', workspaceId: 'a', kind: 'agent', ratio: 1 / 3 },
-      { paneId: 'pane-2', workspaceId: 'b', kind: 'terminal', ratio: 1 / 3 },
-      { paneId: 'pane-3', workspaceId: 'c', kind: 'agent', ratio: 1 / 3 }
+    focusedColumnId: 'column-3',
+    columns: [
+      { columnId: 'column-1', tabs: [{ workspaceId: 'a', kind: 'agent' }], activeTabId: 'a', ratio: 1 / 3 },
+      { columnId: 'column-2', tabs: [{ workspaceId: 'b', kind: 'terminal' }], activeTabId: 'b', ratio: 1 / 3 },
+      { columnId: 'column-3', tabs: [{ workspaceId: 'c', kind: 'agent' }], activeTabId: 'c', ratio: 1 / 3 }
     ]
   });
-  // 900px after the 40px rail cannot hold all three columns, but the helpers
-  // must keep measuring the full C# request so a collected pane never
+  // 860px after the rail cannot hold the 1280px floor sum: the columns
+  // squeeze below their floors and stay visible (no collection), while the
+  // helpers keep measuring the full C# request so a squeezed layout never
   // unlocks "create".
-  assert.equal(layout.effectivePanes.length, 1, 'narrow stack collects panes');
+  assert.equal(layout.effectiveColumns.length, 3, 'narrow layouts never collect columns');
   assert.equal(layout.availableWidth(), 860);
   assert.equal(layout.requestedMinimumWidthSum(), 400 + 640 + 400);
   assert.equal(layout.minimumWidthForNewPane('agent'), 400);
@@ -354,14 +358,14 @@ test('capacity helpers measure the requested layout, never the effective panes',
   // Without any open terminal the new-terminal minimum falls back to 480.
   layout.applySnapshot({
     revision: 2,
-    focusedPaneId: 'pane-1',
-    panes: [{ paneId: 'pane-1', workspaceId: 'a', kind: 'agent', ratio: 1 }]
+    focusedColumnId: 'column-1',
+    columns: [{ columnId: 'column-1', tabs: [{ workspaceId: 'a', kind: 'agent' }], activeTabId: 'a', ratio: 1 }]
   });
   assert.equal(layout.minimumWidthForNewPane('terminal'), 480);
   layout.dispose();
 });
 
-test('responsive collection notifies once per newly collected pane, never on restore', async () => {
+test('divider at floor reports at-minimum sash state and disables at both floors', async () => {
   installAgentRuntime();
   const { PaneLayoutController } = await import(
     pathToFileURL(path.join(webviewRoot, 'src', 'PaneLayoutController.js')).href
@@ -371,63 +375,66 @@ test('responsive collection notifies once per newly collected pane, never on res
   const stack = document.getElementById('workspace-stack');
   const setWidth = (value) =>
     Object.defineProperty(stack, 'clientWidth', { configurable: true, value });
-  setWidth(1600);
+  setWidth(1000);
   Object.defineProperty(stack, 'clientHeight', { configurable: true, value: 900 });
   const layout = new PaneLayoutController(document.getElementById('workspace-panes'));
-  const collected = [];
-  layout.onPanesCollected((paneIds) => collected.push(paneIds));
   layout.applySnapshot({
     revision: 1,
-    focusedPaneId: 'pane-3',
-    panes: [
-      { paneId: 'pane-1', workspaceId: 'a', kind: 'agent', ratio: 1 / 3 },
-      { paneId: 'pane-2', workspaceId: 'b', kind: 'agent', ratio: 1 / 3 },
-      { paneId: 'pane-3', workspaceId: 'c', kind: 'agent', ratio: 1 / 3 }
+    focusedColumnId: 'column-2',
+    columns: [
+      { columnId: 'column-1', tabs: [{ workspaceId: 'a', kind: 'agent' }], activeTabId: 'a', ratio: 0.5 },
+      { columnId: 'column-2', tabs: [{ workspaceId: 'b', kind: 'terminal' }], activeTabId: 'b', ratio: 0.5 }
     ]
   });
-  assert.deepEqual(collected, [], 'all fit at 1600px: baseline empty, nothing fires');
+  const divider = layout.root.querySelector('.workspace-pane-divider');
 
-  // Narrowing collects only the farthest non-focused pane, exactly once.
-  setWidth(900);
-  layout.recompute();
-  assert.equal(collected.length, 1);
-  assert.deepEqual(collected[0], ['pane-1']);
+  // 960px area, floors 320/480: 480/480 allocation puts the terminal exactly
+  // on its floor -> at-minimum, still draggable.
+  assert.equal(divider.dataset.sashState, 'at-minimum');
+  assert.equal(divider.getAttribute('aria-disabled'), 'false');
 
-  // Recomputing with the same collected set never re-notifies.
+  // 800px area == floor sum: focus expansion pins BOTH sides to their floors
+  // -> the divider disables entirely.
+  setWidth(840);
   layout.recompute();
-  layout.recompute();
-  assert.equal(collected.length, 1, 'a stable collected set repeats nothing');
+  assert.equal(divider.dataset.sashState, 'at-minimum');
+  assert.equal(divider.getAttribute('aria-disabled'), 'true', 'both sides at their floors disable the divider');
 
-  // Widening restores the pane: a shrinking set never notifies.
+  // A wider window releases both states.
   setWidth(1600);
   layout.recompute();
-  assert.equal(collected.length, 1, 'restoring collected panes stays silent');
+  assert.equal(divider.dataset.sashState, '');
+  assert.equal(divider.getAttribute('aria-disabled'), 'false');
+  layout.dispose();
+});
 
-  // A re-requested fourth column that overflows fires once with the newly
-  // collected pane.
+test('double-click divider equalizes the adjacent pair', async () => {
+  const runtime = installAgentRuntime();
+  const { PaneLayoutController } = await import(
+    pathToFileURL(path.join(webviewRoot, 'src', 'PaneLayoutController.js')).href
+  );
+  document.body.innerHTML =
+    '<div id="workspace-stack"><div id="workspace-panes"></div></div>';
+  const stack = document.getElementById('workspace-stack');
+  Object.defineProperty(stack, 'clientWidth', { configurable: true, value: 1600 });
+  Object.defineProperty(stack, 'clientHeight', { configurable: true, value: 900 });
+  const layout = new PaneLayoutController(document.getElementById('workspace-panes'));
   layout.applySnapshot({
-    revision: 2,
-    focusedPaneId: 'pane-3',
-    panes: [
-      { paneId: 'pane-1', workspaceId: 'a', kind: 'agent', ratio: 0.25 },
-      { paneId: 'pane-2', workspaceId: 'b', kind: 'agent', ratio: 0.25 },
-      { paneId: 'pane-3', workspaceId: 'c', kind: 'agent', ratio: 0.25 },
-      { paneId: 'pane-4', workspaceId: 'd', kind: 'agent', ratio: 0.25 }
+    revision: 1,
+    focusedColumnId: 'column-1',
+    columns: [
+      { columnId: 'column-1', tabs: [{ workspaceId: 'a', kind: 'agent' }], activeTabId: 'a', ratio: 0.7 },
+      { columnId: 'column-2', tabs: [{ workspaceId: 'b', kind: 'agent' }], activeTabId: 'b', ratio: 0.3 }
     ]
   });
-  assert.equal(collected.length, 2);
-  assert.deepEqual(collected[1], ['pane-1']);
-
-  // Narrowing further collects the right-side pane; only that new pane fires.
-  setWidth(900);
-  layout.recompute();
-  assert.equal(collected.length, 3);
-  assert.deepEqual(collected[2], ['pane-4']);
-
-  // Zoom is a user action: entering or leaving zoom never fires.
-  layout.toggleZoom();
-  assert.equal(collected.length, 3, 'zoom in does not notify');
-  layout.toggleZoom();
-  assert.equal(collected.length, 3, 'zoom out with the same set does not notify');
+  layout.root.querySelector('.workspace-pane-divider').dispatchEvent(
+    new window.MouseEvent('dblclick', { bubbles: true, cancelable: true })
+  );
+  const sent = runtime.postedMessages.filter((entry) => entry.type === 'pane_ratios_commit');
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].baseRevision, 1);
+  assert.deepEqual(sent[0].panes.map((pane) => pane.paneId), ['column-1', 'column-2']);
+  assert.equal(sent[0].panes[0].ratio, 0.5);
+  assert.equal(sent[0].panes[1].ratio, 0.5);
   layout.dispose();
 });

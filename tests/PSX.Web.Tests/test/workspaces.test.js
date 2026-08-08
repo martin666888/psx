@@ -95,13 +95,13 @@ test('layout-driven app keeps agent panels hidden until the first projection', a
   assert.equal(panel.hidden, true, 'activation never directly shows the panel');
   assert.equal(terminal.visible, true, 'the terminal view stays untouched');
 
-  // The first pane projection (main.js paneLayout.recompute()) reveals it.
+  // The first column projection (main.js paneLayout.recompute()) reveals it.
   app.setPaneLayout(
-    { focusedPaneId: 'pane-1', panes: [{ paneId: 'pane-1', workspaceId: FIRST, kind: 'agent' }] },
-    new Map([['pane-1', { left: 40, top: 40, width: 800, height: 860 }]])
+    { focusedColumnId: 'column-1', columns: [{ columnId: 'column-1', tabs: [{ workspaceId: FIRST, kind: 'agent' }], activeTabId: FIRST, ratio: 1 }] },
+    new Map([['column-1', { left: 40, top: 40, width: 800, height: 860 }]])
   );
   assert.equal(panel.hidden, false, 'the projection shows the panel');
-  assert.equal(panel.dataset.paneId, 'pane-1');
+  assert.equal(panel.dataset.columnId, 'column-1');
 });
 
 test('legacy harness without paneLayout keeps the activation fallback', async () => {
@@ -179,4 +179,28 @@ test('renders each provider identity independently and stays brand-neutral for u
   // Unknown provider falls back to the neutral 'Agent', not a hardcoded brand.
   assert.match(third, /Message Agent Agent/);
   for (const text of [first, second, third]) assert.doesNotMatch(text, /Claude/);
+});
+
+test('inactive tab in a visible column stays hidden keep-alive', async () => {
+  const { app, panelFor } = await mountAgentApp();
+  createAgentWorkspace(app, FIRST);
+  createAgentWorkspace(app, SECOND);
+  const firstPanel = panelFor(FIRST);
+  const secondPanel = panelFor(SECOND);
+
+  app.setPaneLayout(
+    {
+      focusedColumnId: 'column-1',
+      columns: [{
+        columnId: 'column-1',
+        tabs: [{ workspaceId: FIRST, kind: 'agent' }, { workspaceId: SECOND, kind: 'agent' }],
+        activeTabId: FIRST,
+        ratio: 1
+      }]
+    },
+    new Map([['column-1', { left: 40, top: 40, width: 800, height: 860 }]])
+  );
+  assert.equal(firstPanel.hidden, false, 'the active tab of the column is visible');
+  assert.equal(secondPanel.hidden, true, 'an inactive tab in the same column stays hidden keep-alive');
+  assert.equal(firstPanel.dataset.paneFocused, 'true', 'the visible panel marks the focused column');
 });

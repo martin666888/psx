@@ -262,14 +262,12 @@ internal static class TerminalBridgeMessageParser
                 return true;
 
             case "workspace_layout_intent" when source.Action is
-                "activate" or "close" or "split_right" or "move_to_pane" or "swap" or "collapse_single":
+                "activate" or "close" or "split_right" or "collapse_single":
                 Guid? intentWorkspaceId = Guid.TryParse(source.WorkspaceId, out var parsedIntentId)
                     ? parsedIntentId
                     : null;
-                if (source.Action is "activate" or "close" or "split_right" or "move_to_pane"
+                if (source.Action is "activate" or "close" or "split_right"
                     && !intentWorkspaceId.HasValue)
-                    return false;
-                if (source.Action == "move_to_pane" && string.IsNullOrWhiteSpace(source.PaneId))
                     return false;
                 message = new TerminalBridgeMessage(
                     TerminalBridgeMessageKind.WorkspaceLayoutIntent,

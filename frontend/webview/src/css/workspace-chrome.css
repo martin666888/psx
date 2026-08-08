@@ -15,29 +15,73 @@
     font-size: 12px;
 }
 
-.workspace-nameplates {
+.workspace-tab-strips {
     position: absolute;
     inset: 0;
     pointer-events: none;
 }
 
-.workspace-nameplate {
+/* One tab strip per column, positioned exactly on the column rect (the
+   geometry engine owns left/width as inline styles). A single-tab column
+   keeps the legacy nameplate look: the lone tab fills the strip. */
+.workspace-tab-strip {
     position: absolute;
     top: 0;
     height: var(--workspace-chrome-height);
     box-sizing: border-box;
     display: flex;
     align-items: center;
+    gap: 1px;
     min-width: 0;
-    gap: 7px;
-    padding: 0 8px 0 12px;
-    color: var(--agent-text-muted);
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0 4px;
     border-right: 1px solid var(--agent-border);
     pointer-events: auto;
     cursor: default;
 }
 
-.workspace-nameplate::after {
+.workspace-tab {
+    position: relative;
+    flex: 0 1 auto;
+    max-width: 200px;
+    min-width: 0;
+    height: 100%;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 8px 0 12px;
+    color: var(--agent-text-muted);
+    border-right: 1px solid var(--agent-border);
+    background: transparent;
+    font: inherit;
+    pointer-events: auto;
+    cursor: default;
+    user-select: none;
+}
+
+.workspace-tab:last-child {
+    border-right: 0;
+}
+
+.workspace-tab:hover {
+    background: var(--agent-hover);
+}
+
+.workspace-tab:focus-visible {
+    outline: 2px solid var(--agent-focus-ring);
+    outline-offset: -3px;
+}
+
+/* Single-tab columns render the legacy nameplate: the tab fills the strip
+   and carries the full-width title treatment. */
+.workspace-tab-strip:has(.workspace-tab:only-child) .workspace-tab {
+    flex: 1 1 0;
+    max-width: none;
+}
+
+.workspace-tab::after {
     content: "";
     position: absolute;
     inset: auto 10px 0;
@@ -46,16 +90,18 @@
     background: transparent;
 }
 
-.workspace-nameplate[data-focused="true"] {
+.workspace-tab[data-active="true"] {
     color: var(--agent-text);
     background: var(--agent-surface);
 }
 
-.workspace-nameplate[data-focused="true"]::after {
+/* The accent underline marks the focused column's active tab; active tabs of
+   unfocused columns stay muted. */
+.workspace-tab-strip[data-focused="true"] .workspace-tab[data-active="true"]::after {
     background: var(--agent-accent);
 }
 
-.workspace-nameplate-icon {
+.workspace-tab-icon {
     flex: 0 0 18px;
     width: 18px;
     color: var(--agent-accent);
@@ -63,24 +109,24 @@
     text-align: center;
 }
 
-.workspace-nameplate-title {
+.workspace-tab-title {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.workspace-nameplate-attention {
+.workspace-tab-attention {
     flex: 0 0 auto;
     color: var(--agent-warning);
     white-space: nowrap;
 }
 
-.workspace-nameplate-attention[data-kind="error"] {
+.workspace-tab-attention[data-kind="error"] {
     color: var(--agent-error);
 }
 
-.workspace-nameplate-attention:empty {
+.workspace-tab-attention:empty {
     display: none;
 }
 
@@ -160,8 +206,7 @@
     opacity: 0.45;
 }
 
-.workspace-nameplate-more,
-.workspace-nameplate-close {
+.workspace-tab-close {
     flex: 0 0 24px;
     width: 24px;
     height: 24px;

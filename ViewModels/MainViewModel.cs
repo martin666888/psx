@@ -76,8 +76,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         _ = _workspaceManager.CreateAgentAsync(providerKey);
     }
 
-    /// <summary>Creation transaction: when the「+」popover's「新建到右侧列」
-    /// toggle is on, the next created workspace lands in a fresh pane.</summary>
+    /// <summary>Creation transaction: when the「+」popover's「右侧新列」
+    /// toggle is on, the next created workspace lands in a fresh column.</summary>
     private void RecordPendingPlacementIfNeeded()
     {
         if (!NewWorkspaceToNewPane) return;
@@ -98,9 +98,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
             return;
         _workspaceManager.SplitWorkspaceToNewPane(sessionId);
     }
-
-    [RelayCommand]
-    private void SwapPanes() => _workspaceManager.SwapPanes();
 
     [RelayCommand]
     private void CollapseToSinglePane() => _workspaceManager.CollapseToSinglePane();
@@ -174,21 +171,25 @@ public partial class MainViewModel : ObservableObject, IDisposable
         System.Windows.Application.Current.Dispatcher.BeginInvoke(() =>
         {
             if (_disposed) return;
-            IsSplit = snapshot.Panes.Count > 1;
-            var canSplitFurther = snapshot.Panes.Count < WorkspaceLayoutService.MaxPanes;
-            // Tab three-state: focused pane's workspace = active, other visible
-            // panes = muted underline, everything else unmarked.
-            var visible = new Dictionary<Guid, bool>();
-            foreach (var pane in snapshot.Panes)
+            IsSplit = snapshot.Columns.Count > 1;
+            var canSplitFurther = snapshot.Columns.Count < WorkspaceLayoutService.MaxColumns;
+            // Tab three-state: the focused column's active tab = active, other
+            // columns' active tabs = visible, every remaining tab = inactive
+            // (hidden keep-alive — the WebView column tab strip is the real
+            // navigation surface, this WPF projection stays hidden).
+            var stateByTab = new Dictionary<Guid, (bool IsActiveTab, bool IsFocusedColumn)>();
+            foreach (var column in snapshot.Columns)
             {
-                if (!pane.WorkspaceId.HasValue) continue;
-                visible[pane.WorkspaceId.Value] = pane.PaneId == snapshot.FocusedPaneId;
+                foreach (var tab in column.Tabs)
+                {
+                    var isActiveTab = column.ActiveTabId == tab.WorkspaceId;
+                    stateByTab[tab.WorkspaceId] = (isActiveTab, column.ColumnId == snapshot.FocusedColumnId);
+                }
             }
-            var hasBackgroundWorkspace = Tabs.Any(tab => !visible.ContainsKey(tab.SessionId));
             foreach (var tab in Tabs)
             {
                 var hadAttention = tab.NeedsAttention;
-                if (!visible.TryGetValue(tab.SessionId, out var focused))
+                if (!stateByTab.TryGetValue(tab.SessionId, out var state))
                 {
                     tab.IsActive = false;
                     tab.IsPaneVisible = false;
@@ -199,17 +200,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
                         AttentionAppeared?.Invoke(this, EventArgs.Empty);
                     continue;
                 }
-                tab.IsActive = focused;
-                tab.IsPaneVisible = !focused;
+                var active = state.IsActiveTab && state.IsFocusedColumn;
+                tab.IsActive = active;
+                tab.IsPaneVisible = state.IsActiveTab && !state.IsFocusedColumn;
                 tab.IsSplit = IsSplit;
-                // With a background workspace, moving the lone visible Tab
-                // can populate its source pane atomically. In an existing
-                // split, a visible Tab can also be moved to the right.
-                tab.CanSplitFurther = canSplitFurther && (IsSplit || hasBackgroundWorkspace);
-                tab.NeedsAttention = !focused && _workspaceManager.IsAttentionNeeded(tab.SessionId);
+                tab.CanSplitFurther = canSplitFurther;
+                tab.NeedsAttention = !active && _workspaceManager.IsAttentionNeeded(tab.SessionId);
                 if (tab.NeedsAttention && !hadAttention)
                     AttentionAppeared?.Invoke(this, EventArgs.Empty);
-                if (focused) ActiveTab = tab;
+                if (active) ActiveTab = tab;
             }
         });
     }

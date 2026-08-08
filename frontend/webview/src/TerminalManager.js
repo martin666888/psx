@@ -190,10 +190,10 @@ export class TerminalManager {
         terminal.open(wrapper);
         wrapper.addEventListener('mousedown', () => {
             terminal.focus();
-            // Click-to-focus (split panes): the layout engine stamps the
-            // current paneId on the wrapper via applyLayout.
+            // Click-to-focus (split columns): the layout engine stamps the
+            // current columnId on the wrapper via applyLayout.
             const entry = this.terminals.get(sessionId);
-            if (entry?.paneId) Bridge.sendPaneFocus(entry.paneId);
+            if (entry?.columnId) Bridge.sendPaneFocus(entry.columnId);
         });
 
         // Load optional addons (must be after open())
@@ -265,7 +265,7 @@ export class TerminalManager {
             pendingFitFrame: null,
             fitGeneration: 0,
             needsFit: true,
-            paneId: null
+            columnId: null
         };
         this.terminals.set(sessionId, entry);
 
@@ -299,26 +299,28 @@ export class TerminalManager {
     }
 
     /**
-     * Project the pane layout onto terminal wrappers: every terminal assigned
-     * to a pane becomes visible at that pane's rect; every other terminal
-     * hides (its ConPTY session stays alive). Called by PaneLayoutController
-     * with the latest snapshot and measured pane rects.
+     * Project the column layout onto terminal wrappers: every terminal that
+     * is the active tab of a column becomes visible at that column's rect;
+     * every other terminal hides (its ConPTY session stays alive). Called by
+     * PaneLayoutController with the latest snapshot and measured column rects.
      */
     applyLayout(snapshot, rects, { interactiveResize = false } = {}) {
-        if (!snapshot || !Array.isArray(snapshot.panes)) return;
+        if (!snapshot || !Array.isArray(snapshot.columns)) return;
         this._layoutDriven = true;
 
         const assigned = new Map();
-        for (const pane of snapshot.panes) {
-            if (pane.kind !== 'terminal' || !pane.workspaceId) continue;
-            const rect = rects?.get(pane.paneId);
-            if (rect) assigned.set(String(pane.workspaceId), { rect, paneId: pane.paneId });
+        for (const column of snapshot.columns) {
+            if (!column.activeTabId) continue;
+            const tab = (column.tabs || []).find((item) => item.workspaceId === column.activeTabId);
+            if (!tab || tab.kind !== 'terminal') continue;
+            const rect = rects?.get(column.columnId);
+            if (rect) assigned.set(String(tab.workspaceId), { rect, columnId: column.columnId });
         }
 
         for (const [id, entry] of this.terminals) {
             const assignment = assigned.get(id);
             if (!assignment) {
-                entry.paneId = null;
+                entry.columnId = null;
                 if (entry.element.style.display !== 'none') {
                     entry.element.style.display = 'none';
                     entry.needsFit = true;
@@ -327,7 +329,7 @@ export class TerminalManager {
             }
             const wasHidden = entry.element.style.display === 'none';
             entry.element.style.display = 'block';
-            entry.paneId = assignment.paneId;
+            entry.columnId = assignment.columnId;
             const rectChanged = this._applyPaneRect(entry, assignment.rect);
             if (wasHidden) entry.needsFit = true;
             if (rectChanged) entry.needsFit = true;
@@ -363,7 +365,11 @@ export class TerminalManager {
     minimumPaneWidth(sessionId) {
         const entry = this.terminals.get(String(sessionId || ''));
         const measure = entry?.element.querySelector('.xterm-char-measure-element');
-        const charWidth = measure?.getBoundingClientRect?.().width ?? 0;
+        // The xterm probe element holds a REPEATED probe string (32 chars in
+        // xterm 6.x), so its rect is the full string width — divide by the
+        // character count to recover the single-cell width.
+        const charCount = measure?.textContent?.length ?? 0;
+        const charWidth = charCount > 0 ? ((measure.getBoundingClientRect().width ?? 0) / charCount) : 0;
         return charWidth > 0 ? Math.max(400, Math.ceil(60 * charWidth + 16)) : 480;
     }
 

@@ -35,14 +35,17 @@ import { WorkspaceChromeController } from './WorkspaceChromeController.js';
         document.getElementById('workspace-popover-root')
     );
     // Pixel-capacity gate (prevention): the chrome disables "new column"
-    // entries when the requested layout plus one more pane of that kind
-    // would overflow the current width. The C# 4-column count remains the
-    // second defensive line; both layers stay in force.
+    // entries when the requested layout plus one more column of that kind
+    // would overflow the current width. The C# 3-column count remains the
+    // second defensive line; both layers stay in force. The requested
+    // column count rides along so the chrome's cap gate survives zoom
+    // (which presents only the focused column).
     workspaceChrome.setCapacityChecker(() => {
         const available = paneLayout.availableWidth();
         return {
             fitsAgent: paneLayout.requestedMinimumWidthSum() + paneLayout.minimumWidthForNewPane('agent') <= available,
-            fitsTerminal: paneLayout.requestedMinimumWidthSum() + paneLayout.minimumWidthForNewPane('terminal') <= available
+            fitsTerminal: paneLayout.requestedMinimumWidthSum() + paneLayout.minimumWidthForNewPane('terminal') <= available,
+            requestedColumnCount: paneLayout.requestedColumnCount
         };
     });
 
@@ -50,18 +53,12 @@ import { WorkspaceChromeController } from './WorkspaceChromeController.js';
     let agentDisabled = false;
     let agentLoadStarted = false;
 
-    // The geometry engine projects pane rects onto both render systems; the
-    // Agent app joins lazily once its chunk loads.
+    // The geometry engine projects column rects onto both render systems;
+    // the Agent app joins lazily once its chunk loads.
     paneLayout.onLayoutApplied((snapshot, rects, options) => {
         terminalManager.applyLayout(snapshot, rects, options);
         workspaceChrome.applyLayout(snapshot, rects);
         if (agentApp) agentApp.setPaneLayout(snapshot, rects);
-    });
-
-    // Responsive-collection notice (edge-triggered): only newly collected
-    // panes reach the user once; a stable set or a restore stays silent.
-    paneLayout.onPanesCollected(() => {
-        workspaceChrome.showNotice('窗口宽度不足,已临时收编非焦点列,可在「工作区」列表找回');
     });
 
     function applyChromeAppearance(settings) {

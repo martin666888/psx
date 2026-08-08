@@ -1,6 +1,12 @@
-// PaneLayoutController.js — neutral, always-loaded split-pane geometry.
-// C# owns the requested pane order/focus/ratios. This controller owns the
-// effective pixel presentation, including responsive collapse and live drag.
+// PaneLayoutController.js — neutral, always-loaded split-column geometry.
+// C# owns the requested layout: an ordered list of columns (VS Code
+// editor-group model), each with a tab stack, an active tab, a focus and
+// normalized ratios. This controller owns the effective pixel presentation:
+// pixel floors, on-demand focus expansion, live divider drag, sash states and
+// zoom. Columns are never collected or hidden — at extreme narrow widths the
+// ratio allocation squeezes every column below its floor rather than dropping
+// one (decision K), and the focused column expands only when its own ratio
+// share falls below its floor (decision D).
 
 import { Bridge } from './Bridge.js';
 
@@ -27,11 +33,9 @@ export class PaneLayoutController {
         this.pendingDragClientX = null;
         this.areaLeft = 0;
         this.areaWidth = 0;
-        this.effectivePanes = [];
+        this.effectiveColumns = [];
         this.zoomed = false;
         this.terminalMinimumWidthResolver = null;
-        this.onPanesCollectedCallback = null;
-        this.lastCollectedPaneIds = null;
 
         this.onWindowPointerMove = (event) => this.handlePointerMove(event);
         this.onWindowPointerUp = (event) => this.finishDrag(event);
@@ -60,20 +64,20 @@ export class PaneLayoutController {
         return WORKBENCH_GUTTER;
     }
 
+    // Capacity gate for a brand-new column (decision C): the new-column
+    // preview keeps the 400px threshold for Agent columns even though an
+    // existing Agent column displays at the 320px floor below.
     static get minPaneWidth() {
         return 400;
     }
 
-    setTerminalMinimumWidthResolver(resolver) {
-        this.terminalMinimumWidthResolver = typeof resolver === 'function' ? resolver : null;
+    // Display floor for an existing Agent column (decision C).
+    static get minAgentColumnWidth() {
+        return 320;
     }
 
-    // Edge-triggered responsive-collection notice: the callback receives the
-    // paneIds that entered the collected set since the previous recompute and
-    // fires only when that set grows. A stable set or a restored pane never
-    // re-notifies; zoom (a user action) is not collection and never fires.
-    onPanesCollected(callback) {
-        this.onPanesCollectedCallback = typeof callback === 'function' ? callback : null;
+    setTerminalMinimumWidthResolver(resolver) {
+        this.terminalMinimumWidthResolver = typeof resolver === 'function' ? resolver : null;
     }
 
     dispose() {
@@ -109,17 +113,17 @@ export class PaneLayoutController {
         });
     }
 
-    get paneCount() {
+    get columnCount() {
         return this.root.querySelectorAll('.workspace-pane').length;
     }
 
-    paneAt(index) {
+    columnAt(index) {
         return this.root.querySelectorAll('.workspace-pane')[index] ?? null;
     }
 
-    paneById(paneId) {
-        for (const pane of this.root.querySelectorAll('.workspace-pane')) {
-            if (pane.dataset.paneId === paneId) return pane;
+    columnById(columnId) {
+        for (const slot of this.root.querySelectorAll('.workspace-pane')) {
+            if (slot.dataset.columnId === columnId) return slot;
         }
         return null;
     }
@@ -144,6 +148,12 @@ export class PaneLayoutController {
         return this.zoomed;
     }
 
+    /** The requested (C#) column count — never the effective one, which
+     * under-reports while zoomed. Drives the create-menu column-cap gate. */
+    get requestedColumnCount() {
+        return this.snapshot?.columns?.length ?? 1;
+    }
+
     applySnapshot(message) {
         const revision = Number(message?.revision);
         if (!Number.isFinite(revision) || revision <= this.lastRevision) return false;
@@ -152,19 +162,22 @@ export class PaneLayoutController {
         this.previewRatios = null;
         this.snapshot = {
             revision,
-            focusedPaneId: String(message.focusedPaneId || ''),
-            panes: Array.isArray(message.panes) ? message.panes.map((pane) => ({
-                paneId: String(pane.paneId || ''),
-                workspaceId: pane.workspaceId ? String(pane.workspaceId) : null,
-                kind: pane.kind ? String(pane.kind) : null,
-                ratio: Number(pane.ratio) > 0 ? Number(pane.ratio) : 1
+            focusedColumnId: String(message.focusedColumnId || ''),
+            columns: Array.isArray(message.columns) ? message.columns.map((column) => ({
+                columnId: String(column.columnId || ''),
+                tabs: Array.isArray(column.tabs) ? column.tabs.map((tab) => ({
+                    workspaceId: tab.workspaceId ? String(tab.workspaceId) : null,
+                    kind: tab.kind ? String(tab.kind) : null
+                })) : [],
+                activeTabId: column.activeTabId ? String(column.activeTabId) : null,
+                ratio: Number(column.ratio) > 0 ? Number(column.ratio) : 1
             })) : []
         };
         // Diagnostic (permanent, [pane-layout]): accepted snapshots report
-        // their revision, pane count and focused pane.
+        // their revision, column count and focused column.
         console.debug('[pane-layout] applySnapshot: revision =', this.snapshot.revision,
-            '| panes =', this.snapshot.panes.length,
-            '| focused =', this.snapshot.focusedPaneId);
+            '| columns =', this.snapshot.columns.length,
+            '| focused =', this.snapshot.focusedColumnId);
         this.recompute();
         return true;
     }
@@ -173,172 +186,180 @@ export class PaneLayoutController {
         const width = this.root.parentElement?.clientWidth ?? this.root.clientWidth;
         const fullHeight = this.root.parentElement?.clientHeight ?? this.root.clientHeight;
         const height = Math.max(0, fullHeight - CHROME_HEIGHT);
-        const requestedPanes = this.snapshot?.panes?.length
-            ? this.snapshot.panes
-            : [{ paneId: 'pane-1', workspaceId: null, kind: null, ratio: 1 }];
-        const requestedFocus = this.snapshot?.focusedPaneId || requestedPanes[0].paneId;
+        const requestedColumns = this.snapshot?.columns?.length
+            ? this.snapshot.columns
+            : [{ columnId: 'column-1', tabs: [], activeTabId: null, ratio: 1 }];
+        const requestedFocus = this.snapshot?.focusedColumnId || requestedColumns[0].columnId;
         const areaLeft = Math.min(this.dockInset, Math.max(0, width));
         const areaWidth = Math.max(0, width - areaLeft);
         this.areaLeft = areaLeft;
         this.areaWidth = areaWidth;
 
-        let panes = this.selectEffectivePanes(requestedPanes, requestedFocus, areaWidth);
-        if (this.zoomed) panes = [requestedPanes.find((pane) => pane.paneId === requestedFocus) ?? requestedPanes[0]];
-        const focusedPaneId = panes.some((pane) => pane.paneId === requestedFocus)
+        let columns = requestedColumns;
+        if (this.zoomed) columns = [requestedColumns.find((column) => column.columnId === requestedFocus) ?? requestedColumns[0]];
+        const focusedColumnId = columns.some((column) => column.columnId === requestedFocus)
             ? requestedFocus
-            : panes[0].paneId;
-        this.effectivePanes = panes;
-        this.updateCollectedPanes(requestedPanes, panes);
+            : columns[0].columnId;
+        this.effectiveColumns = columns;
 
-        const displayRatios = this.normalizedDisplayRatios(panes);
-        this.syncPaneSlots(panes, focusedPaneId, displayRatios);
+        const displayRatios = this.normalizedDisplayRatios(columns);
+        const widths = this.allocateWidths(columns, focusedColumnId, areaWidth, displayRatios);
+        this.syncPaneSlots(columns, focusedColumnId, displayRatios);
         this.root.style.left = `${areaLeft}px`;
         this.root.style.top = `${CHROME_HEIGHT}px`;
 
         const rects = new Map();
         let x = areaLeft;
-        panes.forEach((pane, index) => {
-            const paneWidth = index === panes.length - 1
+        columns.forEach((column, index) => {
+            const columnWidth = index === columns.length - 1
                 ? areaLeft + areaWidth - x
-                : Math.round(areaWidth * (displayRatios.get(pane.paneId) ?? 0));
-            rects.set(pane.paneId, { left: x, top: CHROME_HEIGHT, width: Math.max(0, paneWidth), height });
-            x += paneWidth;
+                : Math.round(widths.get(column.columnId) ?? 0);
+            rects.set(column.columnId, { left: x, top: CHROME_HEIGHT, width: Math.max(0, columnWidth), height });
+            x += columnWidth;
         });
         this.rects = rects;
+        this.updateSashStates(columns, rects);
 
         const effective = {
             revision: this.snapshot?.revision ?? 0,
-            focusedPaneId,
-            panes
+            focusedColumnId,
+            columns,
+            // The full requested layout travels beside the effective
+            // presentation: the chrome's workspace list and column-cap gates
+            // must reflect the whole open set even while zoomed (decision F).
+            requested: this.snapshot
+                ? { focusedColumnId: this.snapshot.focusedColumnId, columns: this.snapshot.columns }
+                : null
         };
         for (const listener of this.listeners) {
             listener(effective, rects, { interactiveResize: options.interactiveResize === true });
         }
     }
 
-    selectEffectivePanes(requestedPanes, focusedPaneId, areaWidth) {
-        if (requestedPanes.length <= 1 || areaWidth <= 0) return [...requestedPanes];
-        const visible = [...requestedPanes];
-        const focusedIndex = requestedPanes.findIndex((pane) => pane.paneId === focusedPaneId);
-        while (visible.length > 1 && this.minimumWidthSum(visible) > areaWidth) {
-            const candidates = visible
-                .filter((pane) => pane.paneId !== focusedPaneId)
-                .map((pane) => ({ pane, index: requestedPanes.indexOf(pane) }))
-                .sort((a, b) => {
-                    const distance = Math.abs(b.index - focusedIndex) - Math.abs(a.index - focusedIndex);
-                    return distance !== 0 ? distance : b.index - a.index;
-                });
-            if (!candidates.length) break;
-            const collected = candidates[0].pane;
-            // Diagnostic (permanent, [pane-layout]): every responsive
-            // collection reports the collected pane and the width pressure
-            // that caused it (available vs required).
-            console.debug('[pane-layout] selectEffectivePanes: collected', collected.paneId,
-                '| available =', areaWidth, 'required =', this.minimumWidthSum(visible));
-            visible.splice(visible.indexOf(collected), 1);
+    /** The kind of the workspace visible in a column (its active tab), or
+     * null for an empty column. */
+    columnKind(column) {
+        if (!column.activeTabId) return null;
+        const tab = (column.tabs || []).find((item) => item.workspaceId === column.activeTabId);
+        return tab?.kind ?? null;
+    }
+
+    // Pixel-floor allocation (decisions C/D/K). Every requested column is
+    // always shown. Columns allocate by ratio; when the total width cannot
+    // satisfy the sum of floors, the ratio widths squeeze proportionally
+    // below their floors (never hidden). Otherwise, when the FOCUSED column's
+    // ratio share falls below ITS floor, the other columns compress to their
+    // own floors and the focused column takes the remainder; a focused column
+    // already above its floor leaves every width untouched. Drag previews
+    // (previewRatios set) allocate purely by ratio so the user's drag is not
+    // fought by expansion.
+    allocateWidths(columns, focusedColumnId, areaWidth, displayRatios) {
+        const floors = columns.map((column) => this.displayFloorForColumn(column));
+        const ratioSum = columns.reduce((sum, column) => sum + (displayRatios.get(column.columnId) ?? column.ratio), 0) || 1;
+        const ratioWidths = columns.map((column) => areaWidth * (displayRatios.get(column.columnId) ?? column.ratio) / ratioSum);
+        const totalFloor = floors.reduce((sum, floor) => sum + floor, 0);
+
+        let widths = ratioWidths;
+        if (areaWidth >= totalFloor && this.previewRatios === null) {
+            const focusedIndex = columns.findIndex((column) => column.columnId === focusedColumnId);
+            if (focusedIndex >= 0 && ratioWidths[focusedIndex] < floors[focusedIndex]) {
+                widths = columns.map((column, index) => (index === focusedIndex ? 0 : floors[index]));
+                widths[focusedIndex] = areaWidth - (totalFloor - floors[focusedIndex]);
+            }
         }
-        return visible;
+        return new Map(columns.map((column, index) => [column.columnId, widths[index]]));
     }
 
-    minimumWidthSum(panes) {
-        return panes.reduce((sum, pane) => sum + this.minimumWidthForPane(pane), 0);
-    }
-
-    minimumWidthForPane(pane) {
-        if (pane.kind !== 'terminal') return PaneLayoutController.minPaneWidth;
-        const measured = this.terminalMinimumWidthResolver?.(pane.workspaceId);
-        return Number.isFinite(measured) ? Math.max(400, measured) : 480;
+    // Display floor for an existing column (decision C): Agent columns 320px,
+    // Terminal columns max(400, 60 x measured cell width + padding) or 480px
+    // until measured.
+    displayFloorForColumn(column) {
+        if (this.columnKind(column) !== 'terminal') return PaneLayoutController.minAgentColumnWidth;
+        const measured = this.terminalMinimumWidthResolver?.(column.activeTabId);
+        return Number.isFinite(measured) ? Math.max(PaneLayoutController.minPaneWidth, measured) : 480;
     }
 
     // Capacity helpers — the preventive layer. The chrome disables "new right
     // column" entries when the requested layout plus the new pane's minimum
     // would overflow the available width. This pixel gate is the first
-    // defensive line (presentation duty); the C# 4-column count stays the
-    // second, so both layers remain in force.
+    // defensive line (presentation duty); the C# 3-column count stays the
+    // second, so both layers remain in force. The new-column preview keeps
+    // the 400px Agent threshold ("容量预演仍用 400 门槛").
 
     availableWidth() {
         return this.areaWidth;
     }
 
-    // Always measured from the C# REQUESTED layout (snapshot.panes), never
-    // from effectivePanes: after responsive collection the effective list
-    // undercounts and would wrongly allow yet another column.
+    // Always measured from the C# REQUESTED layout (snapshot.columns), never
+    // from effectiveColumns: the effective list under-reports while zoomed and
+    // would wrongly allow yet another column.
     requestedMinimumWidthSum() {
-        return this.minimumWidthSum(this.snapshot?.panes ?? []);
+        return this.minimumWidthSum(this.snapshot?.columns ?? []);
     }
 
-    // A brand-new pane has no workspaceId yet: 'terminal' reuses the measured
+    minimumWidthSum(columns) {
+        return columns.reduce((sum, column) => sum + this.minimumWidthForPane(column), 0);
+    }
+
+    minimumWidthForPane(column) {
+        if (this.columnKind(column) !== 'terminal') return PaneLayoutController.minPaneWidth;
+        const measured = this.terminalMinimumWidthResolver?.(column.activeTabId);
+        return Number.isFinite(measured) ? Math.max(PaneLayoutController.minPaneWidth, measured) : 480;
+    }
+
+    // A brand-new column has no workspace yet: 'terminal' reuses the measured
     // width of an already-open terminal when one exists, otherwise the
-    // unmeasured fallback (480); Agent panes always need 400.
+    // unmeasured fallback (480); Agent columns always need 400.
     minimumWidthForNewPane(kind) {
         if (kind !== 'terminal') return PaneLayoutController.minPaneWidth;
-        const terminalPane = this.snapshot?.panes?.find((pane) => pane.kind === 'terminal');
-        if (terminalPane) {
-            const measured = this.terminalMinimumWidthResolver?.(terminalPane.workspaceId);
-            if (Number.isFinite(measured)) return Math.max(400, measured);
+        const terminalColumn = this.snapshot?.columns?.find(
+            (column) => this.columnKind(column) === 'terminal' && column.activeTabId
+        );
+        if (terminalColumn) {
+            const measured = this.terminalMinimumWidthResolver?.(terminalColumn.activeTabId);
+            if (Number.isFinite(measured)) return Math.max(PaneLayoutController.minPaneWidth, measured);
         }
         return 480;
     }
 
-    // Edge detection for the collection notice. Zoom is a user-initiated
-    // fullscreen — its hidden panes are not "collected" — so the previous
-    // collected set is preserved untouched while zoomed.
-    updateCollectedPanes(requestedPanes, panes) {
-        if (this.zoomed) return;
-        const effectiveIds = new Set(panes.map((pane) => pane.paneId));
-        const collected = requestedPanes
-            .filter((pane) => !effectiveIds.has(pane.paneId))
-            .map((pane) => pane.paneId);
-        if (this.lastCollectedPaneIds === null) {
-            // First recompute establishes the baseline without notifying.
-            this.lastCollectedPaneIds = collected;
-            return;
-        }
-        const newlyCollected = collected.filter((paneId) => !this.lastCollectedPaneIds.includes(paneId));
-        this.lastCollectedPaneIds = collected;
-        if (newlyCollected.length && this.onPanesCollectedCallback) {
-            this.onPanesCollectedCallback(newlyCollected);
-        }
+    normalizedDisplayRatios(columns) {
+        const source = this.previewRatios ?? new Map((this.snapshot?.columns ?? columns).map((column) => [column.columnId, column.ratio]));
+        const sum = columns.reduce((total, column) => total + (source.get(column.columnId) ?? column.ratio), 0) || 1;
+        return new Map(columns.map((column) => [column.columnId, (source.get(column.columnId) ?? column.ratio) / sum]));
     }
 
-    normalizedDisplayRatios(panes) {
-        const source = this.previewRatios ?? new Map((this.snapshot?.panes ?? panes).map((pane) => [pane.paneId, pane.ratio]));
-        const sum = panes.reduce((total, pane) => total + (source.get(pane.paneId) ?? pane.ratio), 0) || 1;
-        return new Map(panes.map((pane) => [pane.paneId, (source.get(pane.paneId) ?? pane.ratio) / sum]));
-    }
-
-    syncPaneSlots(panes, focusedPaneId, displayRatios) {
-        this.root.dataset.splitActive = panes.length > 1 ? 'true' : 'false';
+    syncPaneSlots(columns, focusedColumnId, displayRatios) {
+        this.root.dataset.splitActive = columns.length > 1 ? 'true' : 'false';
         const seen = new Set();
-        for (const pane of panes) {
-            seen.add(pane.paneId);
-            let slot = this.paneById(pane.paneId);
+        for (const column of columns) {
+            seen.add(column.columnId);
+            let slot = this.columnById(column.columnId);
             if (!slot) {
                 slot = document.createElement('div');
                 slot.className = 'workspace-pane';
-                slot.dataset.paneId = pane.paneId;
+                slot.dataset.columnId = column.columnId;
                 this.root.appendChild(slot);
             }
-            slot.style.flexGrow = String(displayRatios.get(pane.paneId) ?? 1);
-            slot.dataset.focused = pane.paneId === focusedPaneId ? 'true' : 'false';
+            slot.style.flexGrow = String(displayRatios.get(column.columnId) ?? 1);
+            slot.dataset.focused = column.columnId === focusedColumnId ? 'true' : 'false';
         }
         for (const slot of [...this.root.querySelectorAll('.workspace-pane')]) {
-            if (!seen.has(slot.dataset.paneId)) slot.remove();
+            if (!seen.has(slot.dataset.columnId)) slot.remove();
         }
 
         const desiredDividers = new Set();
-        panes.forEach((pane, index) => {
-            const slot = this.paneById(pane.paneId) ?? this.createSlot(pane.paneId);
+        columns.forEach((column, index) => {
+            const slot = this.columnById(column.columnId) ?? this.createSlot(column.columnId);
             this.root.appendChild(slot);
-            if (index >= panes.length - 1) return;
-            const rightPane = panes[index + 1];
-            const key = `${pane.paneId}|${rightPane.paneId}`;
+            if (index >= columns.length - 1) return;
+            const rightColumn = columns[index + 1];
+            const key = `${column.columnId}|${rightColumn.columnId}`;
             desiredDividers.add(key);
             let divider = [...this.root.querySelectorAll('.workspace-pane-divider')]
                 .find((candidate) => candidate.dataset.dividerKey === key);
-            if (!divider) divider = this.createDivider(pane.paneId, rightPane.paneId);
-            const leftRatio = displayRatios.get(pane.paneId) ?? 0;
-            const rightRatio = displayRatios.get(rightPane.paneId) ?? 0;
+            if (!divider) divider = this.createDivider(column.columnId, rightColumn.columnId);
+            const leftRatio = displayRatios.get(column.columnId) ?? 0;
+            const rightRatio = displayRatios.get(rightColumn.columnId) ?? 0;
             const pairRatio = leftRatio + rightRatio;
             divider.setAttribute('aria-valuemin', '0');
             divider.setAttribute('aria-valuemax', '100');
@@ -350,48 +371,50 @@ export class PaneLayoutController {
         }
     }
 
-    createSlot(paneId) {
+    createSlot(columnId) {
         const slot = document.createElement('div');
         slot.className = 'workspace-pane';
-        slot.dataset.paneId = paneId;
+        slot.dataset.columnId = columnId;
         return slot;
     }
 
-    createDivider(leftPaneId, rightPaneId) {
+    createDivider(leftColumnId, rightColumnId) {
         const divider = document.createElement('div');
         divider.className = 'workspace-pane-divider';
-        divider.dataset.dividerKey = `${leftPaneId}|${rightPaneId}`;
+        divider.dataset.dividerKey = `${leftColumnId}|${rightColumnId}`;
         divider.setAttribute('role', 'separator');
         divider.setAttribute('aria-orientation', 'vertical');
-        divider.setAttribute('aria-label', '调整相邻工作区宽度');
+        divider.setAttribute('aria-label', '调整相邻列宽度');
         divider.tabIndex = 0;
         divider.title = '拖动调整宽度，双击均分相邻列';
 
         divider.addEventListener('pointerdown', (event) => {
             if (event.button !== 0 || !this.snapshot) return;
-            const leftRect = this.rects.get(leftPaneId);
-            const rightRect = this.rects.get(rightPaneId);
+            // Both sides pinned to their floors: the divider is inert (the
+            // preview clamp could not move it anyway).
+            if (divider.getAttribute('aria-disabled') === 'true') return;
+            const leftRect = this.rects.get(leftColumnId);
+            const rightRect = this.rects.get(rightColumnId);
             if (!leftRect || !rightRect) return;
             divider.setPointerCapture?.(event.pointerId);
             divider.dataset.dragging = 'true';
             this.dragging = {
-                leftPaneId,
-                rightPaneId,
+                leftColumnId,
+                rightColumnId,
                 pointerId: event.pointerId,
                 divider,
                 startClientX: event.clientX,
                 startLeftWidth: leftRect.width,
                 pairWidth: leftRect.width + rightRect.width,
                 baseRevision: this.snapshot.revision,
-                baseRatios: new Map(this.snapshot.panes.map((pane) => [pane.paneId, pane.ratio])),
-                commitAllowed: this.effectivePanes.length === this.snapshot.panes.length
+                baseRatios: new Map(this.snapshot.columns.map((column) => [column.columnId, column.ratio]))
             };
             this.root.dataset.resizing = 'true';
             event.preventDefault();
             event.stopPropagation();
         });
-        divider.addEventListener('dblclick', () => this.equalizePair(leftPaneId, rightPaneId));
-        divider.addEventListener('keydown', (event) => this.resizePairByKeyboard(event, leftPaneId, rightPaneId));
+        divider.addEventListener('dblclick', () => this.equalizePair(leftColumnId, rightColumnId));
+        divider.addEventListener('keydown', (event) => this.resizePairByKeyboard(event, leftColumnId, rightColumnId));
         return divider;
     }
 
@@ -413,7 +436,7 @@ export class PaneLayoutController {
         this.pendingDragClientX = null;
         delete this.root.dataset.resizing;
         this.recompute();
-        if (drag.commitAllowed && payload) Bridge.sendPaneRatios(drag.baseRevision, payload);
+        if (payload) Bridge.sendPaneRatios(drag.baseRevision, payload);
     }
 
     cancelDrag(event, { recompute = true } = {}) {
@@ -461,11 +484,11 @@ export class PaneLayoutController {
 
     updatePreviewRatios(delta, drag) {
         if (!this.snapshot || this.areaWidth <= 0 || drag.pairWidth <= 0) return;
-        const leftPane = this.snapshot.panes.find((pane) => pane.paneId === drag.leftPaneId);
-        const rightPane = this.snapshot.panes.find((pane) => pane.paneId === drag.rightPaneId);
-        if (!leftPane || !rightPane) return;
-        const leftMinimum = this.minimumWidthForPane(leftPane);
-        const rightMinimum = this.minimumWidthForPane(rightPane);
+        const leftColumn = this.snapshot.columns.find((column) => column.columnId === drag.leftColumnId);
+        const rightColumn = this.snapshot.columns.find((column) => column.columnId === drag.rightColumnId);
+        if (!leftColumn || !rightColumn) return;
+        const leftMinimum = this.displayFloorForColumn(leftColumn);
+        const rightMinimum = this.displayFloorForColumn(rightColumn);
         const minimumTotal = leftMinimum + rightMinimum;
         const effectiveLeftMinimum = drag.pairWidth >= minimumTotal
             ? leftMinimum
@@ -479,29 +502,29 @@ export class PaneLayoutController {
         );
         const ratioDelta = (nextLeftWidth - drag.startLeftWidth) / this.areaWidth;
         const ratios = new Map(drag.baseRatios);
-        ratios.set(drag.leftPaneId, (drag.baseRatios.get(drag.leftPaneId) ?? 0) + ratioDelta);
-        ratios.set(drag.rightPaneId, (drag.baseRatios.get(drag.rightPaneId) ?? 0) - ratioDelta);
+        ratios.set(drag.leftColumnId, (drag.baseRatios.get(drag.leftColumnId) ?? 0) + ratioDelta);
+        ratios.set(drag.rightColumnId, (drag.baseRatios.get(drag.rightColumnId) ?? 0) - ratioDelta);
         this.previewRatios = ratios;
     }
 
-    equalizePair(leftPaneId, rightPaneId) {
-        if (!this.snapshot || this.effectivePanes.length !== this.snapshot.panes.length) return;
-        const ratios = new Map(this.snapshot.panes.map((pane) => [pane.paneId, pane.ratio]));
-        const pair = (ratios.get(leftPaneId) ?? 0) + (ratios.get(rightPaneId) ?? 0);
-        ratios.set(leftPaneId, pair / 2);
-        ratios.set(rightPaneId, pair / 2);
+    equalizePair(leftColumnId, rightColumnId) {
+        if (!this.snapshot) return;
+        const ratios = new Map(this.snapshot.columns.map((column) => [column.columnId, column.ratio]));
+        const pair = (ratios.get(leftColumnId) ?? 0) + (ratios.get(rightColumnId) ?? 0);
+        ratios.set(leftColumnId, pair / 2);
+        ratios.set(rightColumnId, pair / 2);
         Bridge.sendPaneRatios(this.snapshot.revision, this.ratioPayload(ratios));
     }
 
-    resizePairByKeyboard(event, leftPaneId, rightPaneId) {
+    resizePairByKeyboard(event, leftColumnId, rightColumnId) {
         if (!this.snapshot || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
-        const leftRect = this.rects.get(leftPaneId);
-        const rightRect = this.rects.get(rightPaneId);
-        if (!leftRect || !rightRect || this.effectivePanes.length !== this.snapshot.panes.length) return;
-        const ratios = new Map(this.snapshot.panes.map((pane) => [pane.paneId, pane.ratio]));
+        const leftRect = this.rects.get(leftColumnId);
+        const rightRect = this.rects.get(rightColumnId);
+        if (!leftRect || !rightRect) return;
+        const ratios = new Map(this.snapshot.columns.map((column) => [column.columnId, column.ratio]));
         const drag = {
-            leftPaneId,
-            rightPaneId,
+            leftColumnId,
+            rightColumnId,
             startLeftWidth: leftRect.width,
             pairWidth: leftRect.width + rightRect.width,
             baseRatios: ratios
@@ -513,9 +536,11 @@ export class PaneLayoutController {
     }
 
     ratioPayload(ratios) {
-        return (this.snapshot?.panes ?? []).map((pane) => ({
-            paneId: pane.paneId,
-            ratio: ratios.get(pane.paneId) ?? pane.ratio
+        // The wire keeps the pane_ratios_commit shape (paneId key) with the
+        // column id as the id space.
+        return (this.snapshot?.columns ?? []).map((column) => ({
+            paneId: column.columnId,
+            ratio: ratios.get(column.columnId) ?? column.ratio
         }));
     }
 
@@ -548,12 +573,35 @@ export class PaneLayoutController {
         event.preventDefault();
         const workspaceId = event.dataTransfer.getData('text/plain');
         if (PaneLayoutController.workspaceIdPattern.test(workspaceId)) {
-            Bridge.sendPaneMove(workspaceId, slot.dataset.paneId);
+            Bridge.sendPaneMove(workspaceId, slot.dataset.columnId);
         }
     }
 
     onDragLeave(event) {
         if (event.relatedTarget && this.root.contains(event.relatedTarget)) return;
         this.markDropTarget(null);
+    }
+
+    // Sash state (decision C/K): a divider reports at-minimum when either
+    // side sits on its pixel floor (the preview clamp cannot shrink it
+    // further); both sides at their floors disables the divider entirely.
+    // The CSS swaps the cursor; the drag preview already clamps.
+    updateSashStates(columns, rects) {
+        for (let index = 0; index < columns.length - 1; index++) {
+            const left = columns[index];
+            const right = columns[index + 1];
+            const divider = [...this.root.querySelectorAll('.workspace-pane-divider')]
+                .find((candidate) => candidate.dataset.dividerKey === `${left.columnId}|${right.columnId}`);
+            if (!divider) continue;
+            const leftRect = rects.get(left.columnId);
+            const rightRect = rects.get(right.columnId);
+            if (!leftRect || !rightRect) continue;
+            const leftAtFloor = Math.abs(leftRect.width - this.displayFloorForColumn(left)) < 1;
+            const rightAtFloor = Math.abs(rightRect.width - this.displayFloorForColumn(right)) < 1;
+            divider.dataset.sashState = leftAtFloor || rightAtFloor ? 'at-minimum' : '';
+            const disabled = leftAtFloor && rightAtFloor;
+            divider.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+            divider.dataset.sashDisabled = disabled ? 'true' : 'false';
+        }
     }
 }
