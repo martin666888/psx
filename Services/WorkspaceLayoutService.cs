@@ -132,17 +132,25 @@ public sealed class WorkspaceLayoutService
     /// <summary>Move a workspace's tab into a fresh right-hand column and
     /// focus it. The source column keeps its remaining tabs (its active tab
     /// falls to the left neighbor when the moved tab was active); an emptied
-    /// source column collapses and the new column takes its place. Returns
-    /// false — without changing anything — at the column cap.</summary>
+    /// source column collapses and the new column lands one position right of
+    /// the collapsed column's original slot. Returns false — without changing
+    /// anything — at the column cap (a sole-tab source column collapsing there
+    /// adds no column and stays allowed), or when the layout holds the single
+    /// open workspace (splitting it cannot produce a second column).</summary>
     public bool SplitWorkspaceToNewPane(Guid workspaceId)
     {
         WorkspaceLayoutSnapshot? changed = null;
         lock (_sync)
         {
-            if (_columns.Count >= MaxColumns)
+            // Splitting the only tab in the only column leaves one column (the
+            // source collapses and the new column replaces it) — a no-op shape.
+            if (_columns.Count == 1 && _columns[0].Tabs.Count == 1 && _columns[0].Tabs[0].Id == workspaceId)
                 return false;
-
             var found = FindTabLocked(workspaceId);
+            // The column cap blocks only splits that add a column: a sole-tab
+            // source column collapses, so the column count stays unchanged.
+            if (_columns.Count >= MaxColumns && !(found.HasValue && found.Value.Column.Tabs.Count == 1))
+                return false;
             var insertAt = found.HasValue
                 ? _columns.IndexOf(found.Value.Column)
                 : _columns.IndexOf(FocusedColumnLocked());
@@ -153,9 +161,11 @@ public sealed class WorkspaceLayoutService
                 RemoveTabFromColumnLocked(found.Value.Column, found.Value.Index);
                 if (found.Value.Column.Tabs.Count == 0)
                 {
-                    // The collapsed column's slot is reused by the new column.
+                    // The collapsed column is gone; the new column lands one
+                    // position right of its original index, clamped to the end
+                    // (never the collapsed slot itself).
                     _columns.Remove(found.Value.Column);
-                    insertAt = Math.Min(insertAt, _columns.Count);
+                    insertAt = Math.Min(insertAt + 1, _columns.Count);
                 }
                 else
                 {
@@ -186,7 +196,16 @@ public sealed class WorkspaceLayoutService
     public string? GetSplitBlockedReason(Guid workspaceId)
     {
         lock (_sync)
-            return _columns.Count >= MaxColumns ? "最多支持 3 列" : null;
+        {
+            if (_columns.Count == 1 && _columns[0].Tabs.Count == 1 && _columns[0].Tabs[0].Id == workspaceId)
+                return "只有一个工作区，无法拆分";
+            // The 3-column cap blocks only splits that add a column; a sole-tab
+            // source column collapses and the count stays put.
+            var found = FindTabLocked(workspaceId);
+            if (_columns.Count >= MaxColumns && !(found.HasValue && found.Value.Column.Tabs.Count == 1))
+                return "最多支持 3 列";
+            return null;
+        }
     }
 
     /// <summary>Focus a column without changing any assignment (click inside

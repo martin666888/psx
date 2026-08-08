@@ -149,11 +149,61 @@ public sealed class WorkspaceLayoutServiceSplitTests
         layout.SplitWorkspaceToNewPane(b);
 
         var snapshot = layout.Snapshot;
-        Assert.HasCount(3, snapshot.Columns, "the collapsed slot is reused, never an empty column");
-        var target = snapshot.Columns.Single(column => column.Tabs.Any(tab => tab.WorkspaceId == b));
+        Assert.HasCount(3, snapshot.Columns, "the collapsed column is replaced, never an empty column");
+        // b's source column (the last one here) collapses; the new column
+        // lands one position right of its original index — clamped to the end.
+        var target = snapshot.Columns[2];
         Assert.AreEqual(b, target.ActiveTabId);
         Assert.AreEqual(b, target.Tabs.Single().WorkspaceId);
+        Assert.AreEqual(target.ColumnId, snapshot.FocusedColumnId);
         Assert.IsFalse(snapshot.Columns.Except(new[] { target }).Any(column => column.Tabs.Any(tab => tab.WorkspaceId == b)));
+    }
+
+    [TestMethod]
+    public void Split_SingleOverallTab_ReturnsFalseWithBlockedReason()
+    {
+        var (layout, _) = Create();
+        var a = Guid.NewGuid();
+        layout.AssignActiveWorkspace(a, WorkspaceKind.Agent);
+        var before = layout.Snapshot;
+
+        var accepted = layout.SplitWorkspaceToNewPane(a);
+
+        Assert.IsFalse(accepted, "splitting the single open workspace cannot produce a second column");
+        var reason = layout.GetSplitBlockedReason(a);
+        Assert.IsNotNull(reason, "the split entry is blocked with a user-facing reason");
+        Assert.AreEqual("只有一个工作区，无法拆分", reason);
+        Assert.AreEqual(before.LayoutRevision, layout.Snapshot.LayoutRevision, "the rejected split changes nothing");
+        Assert.HasCount(1, layout.Snapshot.Columns);
+        Assert.AreEqual(a, layout.Snapshot.Columns.Single().Tabs.Single().WorkspaceId);
+    }
+
+    [TestMethod]
+    public void Split_SoleTabOfLeftColumn_MovesOnePositionRight()
+    {
+        var (layout, _) = Create();
+        var a = Guid.NewGuid();
+        var b = Guid.NewGuid();
+        var c = Guid.NewGuid();
+        layout.AssignActiveWorkspace(a, WorkspaceKind.Agent);
+        layout.AssignActiveWorkspace(b, WorkspaceKind.Terminal);
+        layout.AssignActiveWorkspace(c, WorkspaceKind.Agent);
+        layout.SplitWorkspaceToNewPane(b);
+        layout.SplitWorkspaceToNewPane(c);
+        // Layout: [a] | [c] | [b] — the left column holds a's sole tab.
+        layout.SplitWorkspaceToNewPane(a);
+
+        var snapshot = layout.Snapshot;
+        Assert.HasCount(3, snapshot.Columns);
+        // The collapsed left column is gone; the new column lands one position
+        // right of its original index while the remaining columns keep their
+        // relative order.
+        Assert.AreEqual(a, snapshot.Columns[1].ActiveTabId);
+        Assert.AreEqual(a, snapshot.Columns[1].Tabs.Single().WorkspaceId);
+        Assert.AreEqual(snapshot.Columns[1].ColumnId, snapshot.FocusedColumnId);
+        CollectionAssert.AreEqual(
+            new[] { c, a, b },
+            snapshot.Columns.Select(column => column.Tabs.Single().WorkspaceId).ToArray());
     }
 
     [TestMethod]

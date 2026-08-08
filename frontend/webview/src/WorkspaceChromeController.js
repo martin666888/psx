@@ -443,7 +443,12 @@ export class WorkspaceChromeController {
         menu.appendChild(this.heading(workspace.title));
         const capacity = this.capacityChecker?.() ?? null;
         const newPaneKind = workspace.kind === 'terminal' ? 'terminal' : 'agent';
-        const capacityFits = capacity === null
+        // Splitting the sole tab of its column collapses that column — no
+        // column count grows, so the pixel gate must not add the phantom
+        // new-column minimum width (the removed column's minimum equals the
+        // new one's: the same workspace).
+        const sourceColumnTabs = this.sourceColumnTabCount(workspace);
+        const capacityFits = capacity === null || sourceColumnTabs === 1
             ? true
             : (newPaneKind === 'terminal' ? capacity.fitsTerminal : capacity.fitsAgent);
         const splitBlocked = !workspace.canSplitRight;
@@ -464,6 +469,17 @@ export class WorkspaceChromeController {
             Bridge.sendWorkspaceLayoutIntent('collapse_single');
             this.closeMenu(false);
         }));
+    }
+
+    // The number of tabs in the workspace's requested column, or null when
+    // the layout has no such column yet. A count of one means the split
+    // collapses its source column (the total column count does not grow).
+    sourceColumnTabCount(workspace) {
+        const columns = this.layout?.requested?.columns ?? this.layout?.columns ?? [];
+        const column = columns.find((item) =>
+            (item.tabs || []).some((tab) => tab.workspaceId === workspace.workspaceId)
+        );
+        return column ? column.tabs.length : null;
     }
 
     heading(text) {

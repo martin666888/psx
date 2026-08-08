@@ -219,8 +219,19 @@ test('column menu blocks split-right on pixel capacity and prefers the C# reason
     document.getElementById('workspace-chrome'),
     document.getElementById('workspace-popover-root')
   );
+  // A multi-tab source column: the split adds a column, so the pixel
+  // capacity gate applies (a sole-tab column collapses instead — its gate is
+  // covered by the collapse-split test below).
   chrome.applyLayout(columnSnapshot([
-    { columnId: 'column-1', tabs: [{ workspaceId: 'w1', kind: 'agent' }], activeTabId: 'w1', ratio: 1 }
+    {
+      columnId: 'column-1',
+      tabs: [
+        { workspaceId: 'w1', kind: 'agent' },
+        { workspaceId: 'w2', kind: 'agent' }
+      ],
+      activeTabId: 'w1',
+      ratio: 1
+    }
   ]), new Map([['column-1', { left: 40, top: 40, width: 960, height: 700 }]]));
   chrome.applyCatalog({
     revision: 1,
@@ -282,6 +293,63 @@ test('column menu blocks split-right on pixel capacity and prefers the C# reason
   openMenu();
   assert.equal(splitRow().disabled, true);
   assert.equal(splitRow().querySelector('.workspace-menu-secondary').textContent, '最多支持 3 列');
+  chrome.dispose();
+});
+
+test('column menu split-right gate skips pixel capacity when the source column collapses', async () => {
+  installAgentRuntime();
+  mountChrome();
+  const { WorkspaceChromeController } = await import(controllerUrl);
+  const chrome = new WorkspaceChromeController(
+    document.getElementById('workspace-chrome'),
+    document.getElementById('workspace-popover-root')
+  );
+  chrome.applyCatalog({
+    revision: 1,
+    providers: [],
+    maxColumns: 3,
+    workspaces: [{
+      workspaceId: 'w1', kind: 'agent', title: 'docs', iconKey: 'claude',
+      columnId: 'column-1', isActiveTab: true, canSplitRight: true, splitBlockedReason: '',
+      canCollapse: true
+    }]
+  });
+  const openMenu = () => {
+    const tab = document.querySelector('.workspace-tab');
+    tab.dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+  };
+  const splitRow = () =>
+    [...document.querySelectorAll('.workspace-menu-row')].find(
+      (r) => r.querySelector('.workspace-menu-primary').textContent === '移到右侧新列'
+    );
+
+  // Sole tab of its column: the split collapses the source column and adds
+  // no column, so even a checker reporting the phantom new-column width
+  // would not fit must NOT disable the entry.
+  chrome.applyLayout(columnSnapshot([
+    { columnId: 'column-1', tabs: [{ workspaceId: 'w1', kind: 'agent' }], activeTabId: 'w1', ratio: 1 }
+  ]), new Map([['column-1', { left: 40, top: 40, width: 960, height: 700 }]]));
+  chrome.setCapacityChecker(() => ({ fitsAgent: false, fitsTerminal: true, requestedColumnCount: 1 }));
+  openMenu();
+  assert.equal(splitRow().disabled, false, 'a collapse split adds no column: the pixel gate does not apply');
+  document.querySelector('.workspace-popover').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+  // The column holds multiple tabs: the split adds a column, so the pixel
+  // gate applies and a width shortage disables the entry.
+  chrome.applyLayout(columnSnapshot([
+    {
+      columnId: 'column-1',
+      tabs: [
+        { workspaceId: 'w1', kind: 'agent' },
+        { workspaceId: 'w2', kind: 'agent' }
+      ],
+      activeTabId: 'w1',
+      ratio: 1
+    }
+  ]), new Map([['column-1', { left: 40, top: 40, width: 960, height: 700 }]]));
+  openMenu();
+  assert.equal(splitRow().disabled, true, 'a multi-tab split adds a column: the pixel gate applies');
+  assert.equal(splitRow().querySelector('.workspace-menu-secondary').textContent, '窗口宽度不足以容纳新列');
   chrome.dispose();
 });
 
