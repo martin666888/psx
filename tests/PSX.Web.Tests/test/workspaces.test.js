@@ -104,6 +104,41 @@ test('layout-driven app keeps agent panels hidden until the first projection', a
   assert.equal(panel.dataset.columnId, 'column-1');
 });
 
+test('mixed terminal/agent layout keeps the Agent layer click-through for terminal columns', async () => {
+  const { app } = await mountAgentApp({ paneLayout: { setDockInset() {} } });
+  const container = document.getElementById('agents');
+  createAgentWorkspace(app, FIRST, { ready: false });
+
+  // A visible terminal column beside the agent: the blanket container must
+  // NOT take pointer events, or every click aimed at xterm is swallowed and
+  // the terminal can neither focus nor receive input.
+  app.setPaneLayout(
+    {
+      focusedColumnId: 'column-2',
+      columns: [
+        { columnId: 'column-1', tabs: [{ workspaceId: 'term-1', kind: 'terminal' }], activeTabId: 'term-1', ratio: 0.5 },
+        { columnId: 'column-2', tabs: [{ workspaceId: FIRST, kind: 'agent' }], activeTabId: FIRST, ratio: 0.5 }
+      ]
+    },
+    new Map([
+      ['column-1', { left: 40, top: 40, width: 400, height: 860 }],
+      ['column-2', { left: 440, top: 40, width: 400, height: 860 }]
+    ])
+  );
+  assert.equal(container.classList.contains('agent-workspace-active'), false,
+    'mixed layout leaves the container click-through (panels self-enable)');
+  assert.equal(container.classList.contains('agent-split-active'), true);
+
+  // Pure agent layout: the container still takes events and paints the
+  // workbench backdrop as before.
+  app.setPaneLayout(
+    { focusedColumnId: 'column-1', columns: [{ columnId: 'column-1', tabs: [{ workspaceId: FIRST, kind: 'agent' }], activeTabId: FIRST, ratio: 1 }] },
+    new Map([['column-1', { left: 40, top: 40, width: 800, height: 860 }]])
+  );
+  assert.equal(container.classList.contains('agent-workspace-active'), true,
+    'pure agent layout keeps the active workbench layer');
+});
+
 test('legacy harness without paneLayout keeps the activation fallback', async () => {
   const { app, panelFor, terminal } = await mountAgentApp();
   const container = document.getElementById('agents');

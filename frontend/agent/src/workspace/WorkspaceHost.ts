@@ -129,9 +129,19 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
 
     const anyAgentVisible = assignments.size > 0;
     this.container.classList.toggle('agent-split-active', snapshot.columns.length > 1);
-    // The Agent layer needs pointer events whenever any agent panel shows —
-    // including an unfocused column beside a terminal (click-to-focus).
-    this.container.classList.toggle('agent-workspace-active', anyAgentVisible);
+    // The Agent layer spans the whole window above the terminal layer:
+    // pointer-events: auto on the blanket container would swallow every click
+    // aimed at a visible terminal column (xterm's wrapper focus handler never
+    // fires, so the terminal can neither focus nor receive input). Agent
+    // panels and the History dock re-enable hit-testing on themselves
+    // (pointer-events: auto), so the container only takes events — and paints
+    // the workbench backdrop — when no terminal column is visible.
+    const anyTerminalVisible = snapshot.columns.some((column) => {
+      if (!column.activeTabId) return false;
+      const tab = column.tabs?.find((item) => item.workspaceId === column.activeTabId);
+      return tab?.kind === 'terminal';
+    });
+    this.container.classList.toggle('agent-workspace-active', anyAgentVisible && !anyTerminalVisible);
     this.historyDockView?.setAgentViewActive(this.workspaces.size > 0);
   }
 
