@@ -22,8 +22,9 @@
     --agent-radius-context-card: var(--agent-radius-card);
     /* Composer card: shares the structural radius (borderless soft fill). */
     --agent-radius-composer: var(--agent-radius-structure);
-    /* Desktop breathing room under the Composer; narrow windows reduce it so
-     * the input area is never squeezed. */
+    /* Every pane anchors Composer to the same bottom baseline. Intrinsic
+     * content growth (wrapped placeholder, draft, attachments or decisions)
+     * expands the card upward; responsive bands must not rewrite this inset. */
     --agent-composer-bottom-space: 24px;
     /* Restrained, symmetric panel lift — no wide blurs or gradients. */
     --agent-shadow-canvas: 0 8px 24px color-mix(in srgb, var(--agent-shadow) 16%, transparent);
@@ -285,7 +286,7 @@
     display: contents;
 }
 
-.agent-toolbar-more > summary,
+.agent-toolbar-more-trigger,
 .agent-toolbar-more-session {
     display: none;
 }
@@ -420,7 +421,7 @@
         flex: 0 0 auto;
     }
 
-    .agent-toolbar-more > summary {
+    .agent-toolbar-more-trigger {
         display: inline-flex;
         width: 30px;
         height: 30px;
@@ -431,26 +432,21 @@
         color: var(--agent-text-muted);
         border-radius: var(--agent-radius-control);
         cursor: pointer;
-        list-style: none;
     }
 
     @media (hover: hover) {
-        .agent-toolbar-more > summary:hover {
+        .agent-toolbar-more-trigger:hover {
             background: var(--agent-hover);
         }
     }
 
-    .agent-toolbar-more > summary:active {
+    .agent-toolbar-more-trigger:active {
         transform: translateY(1px);
     }
 
-    .agent-toolbar-more > summary:focus-visible {
+    .agent-toolbar-more-trigger:focus-visible {
         outline: 2px solid var(--agent-focus-ring);
         outline-offset: 2px;
-    }
-
-    .agent-toolbar-more > summary::-webkit-details-marker {
-        display: none;
     }
 
     .agent-toolbar-more-content {
@@ -467,13 +463,17 @@
         box-shadow: var(--agent-shadow-popover);
     }
 
-    .agent-toolbar-more[open] .agent-toolbar-more-content {
+    .agent-toolbar-more[data-open="true"] .agent-toolbar-more-content {
         display: block;
     }
 
     .agent-toolbar-more-session {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
+        /* Text-plus-action rows align by their text baseline. The action is a
+         * fixed-height Button while the metadata is an ordinary inline box;
+         * the grid default leaves their glyphs visibly staggered. */
+        align-items: baseline;
         gap: var(--agent-space-1) var(--agent-space-2);
         padding: var(--agent-space-2);
         color: var(--agent-text-muted);

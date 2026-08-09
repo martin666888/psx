@@ -211,6 +211,58 @@ test('create menu refreshes in place without replaying the entry animation or st
   chrome.dispose();
 });
 
+test('global and pane popovers dismiss outside while internal interaction stays open', async () => {
+  const runtime = installAgentRuntime();
+  mountChrome();
+  const { WorkspaceChromeController } = await import(controllerUrl);
+  const chrome = new WorkspaceChromeController(
+    document.getElementById('workspace-chrome'),
+    document.getElementById('workspace-popover-root')
+  );
+  chrome.applyLayout(columnSnapshot([
+    { columnId: 'column-1', tabs: [{ workspaceId: 'w1', kind: 'agent' }], activeTabId: 'w1', ratio: 1 }
+  ]), new Map([['column-1', { left: 40, top: 40, width: 960, height: 700 }]]));
+  chrome.applyCatalog({
+    revision: 1,
+    providers: [],
+    maxColumns: 3,
+    workspaces: [{
+      workspaceId: 'w1', kind: 'agent', title: 'docs', iconKey: 'claude',
+      columnId: 'column-1', isActiveTab: true, canSplitRight: true, splitBlockedReason: '',
+      canCollapse: false
+    }]
+  });
+
+  const create = document.querySelector('[data-role="workspace-create-toggle"]');
+  create.click();
+  const createMenu = document.querySelector('.workspace-popover-create');
+  createMenu.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true }));
+  assert.ok(document.querySelector('.workspace-popover-create'), 'inside press keeps create open');
+  document.getElementById('workspace-chrome').dispatchEvent(
+    new window.MouseEvent('pointerdown', { bubbles: true })
+  );
+  assert.equal(document.querySelector('.workspace-popover'), null, 'chrome outside press closes create');
+  assert.equal(create.getAttribute('aria-expanded'), 'false');
+
+  const theme = document.querySelector('[data-role="theme-toggle"]');
+  theme.click();
+  document.querySelector('[data-role="history-toggle"]').dispatchEvent(
+    new window.MouseEvent('pointerdown', { bubbles: true })
+  );
+  assert.equal(document.querySelector('.workspace-popover'), null, 'rail outside press closes theme');
+  assert.deepEqual(runtime.postedMessages.at(-1), {
+    type: 'theme_action',
+    action: 'cancel'
+  });
+
+  const tab = document.querySelector('.workspace-tab');
+  tab.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+  assert.ok(document.querySelector('.workspace-popover-pane'));
+  tab.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+  assert.equal(document.querySelector('.workspace-popover-pane'), null, 'left press on pane trigger closes its context menu');
+  chrome.dispose();
+});
+
 test('column menu blocks split-right on pixel capacity and prefers the C# reason', async () => {
   installAgentRuntime();
   mountChrome();

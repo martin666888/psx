@@ -155,6 +155,8 @@ Theme 弹层是全局选择器的参考实现：
 
 交互反馈应快速、平稳，不使用弹跳或夸张动画。普通 hover 和状态切换控制在短时微交互范围；尊重系统减少动画设置。
 
+紧凑元数据行中，普通文本与文字操作按钮按字形基线对齐；纯图标操作组按几何中心对齐。不得用单项 margin、translate 或相对定位补偿视觉错位。
+
 持久化操作遵循以下顺序：
 
 ```text
@@ -185,10 +187,11 @@ Theme 弹层是全局选择器的参考实现：
 ### Agent 壳层布局
 
 - Agent 界面是分层壳层：History 是页面唯一的底层 dock（左侧），Conversation canvas 位于上层并连接窗口顶/右/底边缘，Plan 是浮在 canvas 右上角（工具栏下方）的内容高度小卡片；层级观感 canvas 在上、dock 在下、Plan 最高，靠 background < canvas-surface < surface-raised 的明度阶梯加左缘圆角/细边/阴影表达。
-- 结构 token：`--agent-history-width`（默认 280px，可拖拽，控制器约束在 220–420px）、`--agent-plan-width`（固定 320px，不可调）、`--agent-reading-max-width`（920px）、`--agent-reading-min-width`（320px）、`--agent-toolbar-height`（44px）、`--agent-radius-context-card`（映射到 `--agent-radius-card`，14px）、`--agent-radius-structure`（24px，Workspace 面板 / History dock / Composer 卡片共享；`--agent-workspace-radius` 与 `--agent-radius-composer` 映射到它）、`--agent-shadow-canvas`、`--agent-shadow-context-card`、`--agent-shadow-composer`、`--agent-shadow-popover`、`--agent-shadow-dialog`、`--agent-canvas-surface`（由 surface/surface-raised color-mix 推导）；阴影从 `--agent-shadow` 推导，不硬编码颜色。
-- 阅读列采用“碰撞约束居中”：默认以 viewportWidth / 2 居中且保持 `--agent-reading-max-width`；左侧 dock 会相撞时，阅读列只向右让出 dock + 16px，不为 dock 在右侧镜像预留空白；若 dock + 间距 + 920px 阅读列 + 右侧边距不再同时放得下，Shell 临时收起 History，阅读列保持原宽度，直到视口本身触及左右边距才缩窄。Plan overlay 不参与布局计算；消息条目不卡片化。
-- 响应式：≥1000px 时 History 是参与布局的 dock、Plan 是 overlay；其中 History 会按当前可拖拽宽度和阅读列的碰撞阈值临时收起，不改写用户偏好。<1000px 时两者自动收起但不改变形态，手动打开时一次只显示一个，Esc 关闭并把焦点还给触发控件。Shell 是唯一响应式所有者；恢复不得抢占 Composer 焦点。
-- History 在任何窗口和 Pane 宽度下都保持持久化宽度并可拖拽（220–420px），窄布局不再回落固定宽度；用户保存的 `--agent-history-width` 不被任一响应式状态改写。
+- 结构 token：`--agent-history-width`（默认 280px，可拖拽，控制器约束在 220–420px）、`--agent-plan-width`（固定 320px，不可调）、`--agent-reading-max-width`（920px）、`--agent-reading-min-width`（320px）、`--agent-toolbar-height`（44px）、`--agent-composer-bottom-space`（24px，所有 Pane 和响应式档位共享）、`--agent-radius-context-card`（映射到 `--agent-radius-card`，14px）、`--agent-radius-structure`（24px，Workspace 面板 / History dock / Composer 卡片共享；`--agent-workspace-radius` 与 `--agent-radius-composer` 映射到它）、`--agent-shadow-canvas`、`--agent-shadow-context-card`、`--agent-shadow-composer`、`--agent-shadow-popover`、`--agent-shadow-dialog`、`--agent-canvas-surface`（由 surface/surface-raised color-mix 推导）；阴影从 `--agent-shadow` 推导，不硬编码颜色。
+- 阅读列在 History 推挤后的每个 Pane 实际内容矩形中居中，并保持 `--agent-reading-max-width`；空间不足时各列继续按纯比例压缩，History 不因阅读列碰撞而自动收起。Plan overlay 不参与布局计算；消息条目不卡片化。
+- 响应式只按 Agent Pane 宽度改变 Pane 内部呈现：Plan 在 ≥520px 为内容高度卡片，<520px 为 Pane 内 overlay；Composer 与工具栏使用各自的 container query。Plan / Update 在 ≥520px 直接显示，<520px 移入受控的 ⋯ 弹层；不得用关闭状态的原生 disclosure 承载宽档必须可见的操作。History 是进程级全局 dock，不复用 Pane narrow 状态控制宽度、可见性或拖拽能力。
+- 多 Pane 的 Composer 底边始终锚定到面板底部上方 24px 的同一基线；窄 Pane 的 placeholder、草稿、附件或决策提示增加固有高度时只向上生长，响应式档位不得改写底部 inset，也不通过 JS 同步不同 Workspace 的内容高度。
+- History 在任何窗口和 Pane 宽度下都保持持久化宽度并可拖拽（220–420px）；用户保存的 `--agent-history-width` 不被任一响应式状态改写。空间不足时右侧列缩窄，History 不回落固定宽度也不覆盖列内容。
 - Plan 卡片两态：visible/hidden，workspace 运行时偏好不持久化且默认显示；窄模式以临时覆盖收起，离开窄模式时恢复偏好。工具栏图标切换，隐藏期间新计划在图标上显示未读点。runtime 安装卡等内容卡片使用与对话、Composer 相同的阅读列宽度和位置规则。
 - History 只负责全局 Thread 导航：列表、加载状态和错误只在 dock 内展示，不得写入主对话流；行高亮使用整行圆角背景（`--agent-radius-control`），不使用左侧强调条。线程行是单行结构：标题承担截断，`Current`/`Open` 文字徽标与右侧短时间不收缩，完整的 provider|时间放 tooltip；分组折叠 affordance 用文件夹开合两态图标。
 - 持久化键：`psx.agent.historyDockOpen`、`psx.agent.historyDockWidth`；`psx.agent.planWidth`、`psx.agent.inspectorWidth`、`psx.agent.planPanelWidth` 均已退役（不再读取）。

@@ -6,7 +6,7 @@
 // writer; the Session/History/Plan controllers push their slices through it,
 // so each state kind keeps exactly one authoritative owner.
 
-import type { JSX, RefObject } from 'react';
+import { useCallback, useRef, useState, type JSX, type RefObject } from 'react';
 import { EllipsisIcon } from 'lucide-react';
 import { Button } from '../components/ui/button.js';
 import {
@@ -16,6 +16,7 @@ import {
   TooltipTrigger
 } from '../components/ui/tooltip.js';
 import { SessionMeta, type SessionMetaProps } from './SessionToolbar.js';
+import { useDismissibleLayer } from '../components/use-dismissible-layer.js';
 
 export interface WorkspaceToolbarProps {
   session: SessionMetaProps | null;
@@ -118,13 +119,35 @@ function PlanIcon(): JSX.Element {
 
 export function WorkspaceToolbar(props: WorkspaceToolbarProps): JSX.Element {
   const planLabel = props.plan.unread ? 'Toggle Plan card, plan updated' : 'Toggle Plan card';
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement | null>(null);
+  const moreTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const closeMore = useCallback(() => setMoreOpen(false), []);
+  useDismissibleLayer({
+    open: moreOpen,
+    rootRef: moreRef,
+    triggerRef: moreTriggerRef,
+    onDismiss: closeMore
+  });
+
   return (
     <TooltipProvider>
       <div className="agent-meta">{props.session ? <SessionMeta {...props.session} /> : null}</div>
-      <details className="agent-toolbar-more">
-        <summary aria-label="更多 Agent 操作">
+      <div
+        ref={moreRef}
+        className="agent-toolbar-more"
+        data-open={moreOpen ? 'true' : 'false'}
+      >
+        <button
+          ref={moreTriggerRef}
+          type="button"
+          className="agent-toolbar-more-trigger"
+          aria-label="更多 Agent 操作"
+          aria-expanded={moreOpen}
+          onClick={() => setMoreOpen((open) => !open)}
+        >
           <EllipsisIcon className="size-4" />
-        </summary>
+        </button>
         <div className="agent-toolbar-more-content">
           {props.session ? (
             <div className="agent-toolbar-more-session">
@@ -190,7 +213,7 @@ export function WorkspaceToolbar(props: WorkspaceToolbarProps): JSX.Element {
         </Button>
           </div>
         </div>
-      </details>
+      </div>
     </TooltipProvider>
   );
 }

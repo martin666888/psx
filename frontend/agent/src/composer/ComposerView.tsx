@@ -12,7 +12,7 @@
 // onReady fires after the first commit so the controller can replay any state
 // projection that arrived while the island chunk was loading.
 
-import { useEffect, useLayoutEffect, useRef, useState, type JSX, type RefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type JSX, type RefObject } from 'react';
 import { SlidersHorizontalIcon } from 'lucide-react';
 import { AnnounceContext } from '../ui/announce.js';
 import {
@@ -57,6 +57,7 @@ import {
   ModeTransitionPrompt,
   type ComposerModeTransitionPromptVM
 } from './ModeTransitionPrompt.js';
+import { useDismissibleLayer } from '../components/use-dismissible-layer.js';
 
 export interface ComposerSelectItemVM {
   value: string;
@@ -179,7 +180,12 @@ function ComposerSelectControl({ control }: { control: ComposerSelectVM }): JSX.
         >
           <SelectValue placeholder={currentLabel} />
         </SelectTrigger>
-        <SelectContent side="top" align="start" className="agent-menu-select-popup">
+        <SelectContent
+          side="top"
+          align="start"
+          className="agent-menu-select-popup"
+          data-agent-dismissible-branch="true"
+        >
           {control.items.map((item) => (
             <SelectItem
               key={item.value}
@@ -198,7 +204,7 @@ function ComposerSelectControl({ control }: { control: ComposerSelectVM }): JSX.
 
 function ComposerConfigControls({ controls }: { controls: ComposerControlsProps }): JSX.Element {
   return (
-    <>
+    <div className="agent-config-controls">
       <ComposerSelectControl control={controls.mode} />
       <div
         data-role="config-options"
@@ -226,7 +232,7 @@ function ComposerConfigControls({ controls }: { controls: ComposerControlsProps 
           )
         )}
       </div>
-    </>
+    </div>
   );
 }
 
@@ -422,6 +428,15 @@ export function ComposerView(props: ComposerViewProps): JSX.Element {
   const appliedDraftTokenRef = useRef(props.draft.draftToken);
   const pendingDraftProjectionRef = useRef<{ token: number; text: string } | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const configLayerRef = useRef<HTMLDivElement | null>(null);
+  const configToggleRef = useRef<HTMLButtonElement | null>(null);
+  const closeCompactConfig = useCallback(() => setCompactConfigOpen(false), []);
+  useDismissibleLayer({
+    open: compactConfigOpen,
+    rootRef: configLayerRef,
+    triggerRef: configToggleRef,
+    onDismiss: closeCompactConfig
+  });
 
   useLayoutEffect(() => {
     props.onReady();
@@ -537,8 +552,12 @@ export function ComposerView(props: ComposerViewProps): JSX.Element {
                 data-role="context-usage-host"
                 className="agent-hints flex shrink-0 gap-[var(--agent-space-2)] whitespace-nowrap text-[11px] text-muted-foreground"
               />
-              <div className="agent-composer-controls flex min-w-0 flex-[1_1_auto] items-center justify-end gap-[var(--agent-space-2)]">
+              <div
+                ref={configLayerRef}
+                className="agent-composer-controls flex min-w-0 flex-[1_1_auto] items-center justify-end gap-[var(--agent-space-2)]"
+              >
                 <button
+                  ref={configToggleRef}
                   type="button"
                   className="agent-config-toggle"
                   aria-label="Agent 配置"

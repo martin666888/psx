@@ -41,6 +41,7 @@
 .agent-hints,
 .agent-composer-controls,
 .agent-config-popover,
+.agent-config-controls,
 .agent-config-options {
     min-width: 0;
 }
@@ -50,6 +51,10 @@
 }
 
 .agent-config-popover {
+    display: contents;
+}
+
+.agent-config-controls {
     display: contents;
 }
 
@@ -134,11 +139,6 @@
 }
 
 @container agent-shell (max-width: 719px) {
-    .agent-composer {
-        /* Narrow panes keep some breathing room without squeezing input. */
-        padding-bottom: var(--agent-space-3);
-    }
-
     /* At ≤719px the configuration controls fold into a popover anchored to
        the composer controls row; the context usage hint keeps its footer slot
        until the 519px band hides it. */
@@ -176,9 +176,20 @@
         display: block;
     }
 
-    .agent-config-popover .agent-config-options {
+    .agent-config-popover .agent-config-controls {
         display: grid;
         grid-template-columns: minmax(0, 1fr);
+        gap: var(--agent-space-1);
+    }
+
+    .agent-config-popover .agent-config-options {
+        display: contents;
+    }
+
+    .agent-config-popover .agent-mode-control,
+    .agent-config-popover .agent-config-control {
+        width: 100%;
+        min-height: 36px;
     }
 }
 

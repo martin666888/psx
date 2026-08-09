@@ -3,7 +3,12 @@
 import { afterEach, beforeEach, test } from 'vitest';
 import assert from 'node:assert/strict';
 import { act } from 'react';
-import { mountAgentApp, createAgentWorkspace, appModule } from './agentHarness.js';
+import {
+  mountAgentApp,
+  createAgentWorkspace,
+  appModule,
+  flushAgentAnimationFrames
+} from './agentHarness.js';
 
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -162,4 +167,34 @@ test('config toggle is an icon button with no text', async () => {
   assert.equal(toggle.getAttribute('aria-label'), 'Agent 配置');
   assert.ok(toggle.querySelector('svg'), 'config toggle renders an icon');
   assert.equal(toggle.textContent.trim(), '', 'config toggle carries no text');
+});
+
+test('compact config stays open for internal controls and closes outside or on Escape', async () => {
+  const { app, panel } = await fixture();
+  await settle(
+    () => app.handle({ type: 'agent_state', workspaceId: WS, status: 'ready' }),
+    () => !!panel.querySelector('.agent-config-toggle')
+  );
+  const toggle = panel.querySelector('.agent-config-toggle');
+  const popover = panel.querySelector('.agent-config-popover');
+
+  await act(async () => toggle.click());
+  assert.equal(popover.dataset.open, 'true');
+  await act(async () => {
+    popover.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true }));
+  });
+  assert.equal(popover.dataset.open, 'true', 'interacting inside keeps config open');
+
+  await act(async () => {
+    document.body.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true }));
+  });
+  assert.equal(popover.dataset.open, 'false', 'outside pointer press closes config');
+
+  await act(async () => toggle.click());
+  await act(async () => {
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    flushAgentAnimationFrames();
+  });
+  assert.equal(popover.dataset.open, 'false', 'Escape closes config');
+  assert.equal(document.activeElement, toggle, 'Escape restores focus to the trigger');
 });

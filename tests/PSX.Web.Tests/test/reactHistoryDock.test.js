@@ -283,3 +283,36 @@ test('dock resize batches live layout writes and derives width from the drag sta
   assert.equal(window.localStorage.getItem('psx.agent.historyDockWidth'), '350');
   assert.equal(document.body.classList.contains('agent-history-dock-resizing'), false);
 });
+
+test('dock resize settles the latest preview when capture is lost or the window blurs', async () => {
+  await fixture();
+  const container = document.getElementById('agents');
+  const resizer = document.querySelector('[data-role="history-dock-resizer"]');
+
+  await act(async () => {
+    dispatchPointer(resizer, 'pointerdown', { clientX: 300, pointerId: 7 });
+    dispatchPointer(resizer, 'pointermove', { clientX: 360, pointerId: 7 });
+    flushAgentAnimationFrames();
+  });
+  assert.equal(container.style.getPropertyValue('--agent-history-width'), '340px');
+  assert.equal(document.body.classList.contains('agent-history-dock-resizing'), true);
+
+  await act(async () => {
+    dispatchPointer(resizer, 'lostpointercapture', { clientX: 360, pointerId: 7 });
+  });
+  assert.equal(window.localStorage.getItem('psx.agent.historyDockWidth'), '340');
+  assert.equal(document.body.classList.contains('agent-history-dock-resizing'), false);
+
+  // A second drag that loses the host window follows the same idempotent
+  // settle path. A late pointerup from the interrupted stream is ignored.
+  await act(async () => {
+    dispatchPointer(resizer, 'pointerdown', { clientX: 340, pointerId: 8 });
+    dispatchPointer(resizer, 'pointermove', { clientX: 380, pointerId: 8 });
+    flushAgentAnimationFrames();
+    window.dispatchEvent(new Event('blur'));
+    dispatchPointer(resizer, 'pointerup', { clientX: 420, pointerId: 8 });
+  });
+  assert.equal(window.localStorage.getItem('psx.agent.historyDockWidth'), '380');
+  assert.equal(resizer.getAttribute('aria-valuenow'), '380');
+  assert.equal(document.body.classList.contains('agent-history-dock-resizing'), false);
+});

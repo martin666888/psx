@@ -11,6 +11,7 @@
 // survives unchanged for tests and replay.
 
 import {
+  useCallback,
   useEffect,
   useRef,
   type JSX,
@@ -78,6 +79,7 @@ export function HistoryDockView(props: HistoryDockViewProps): JSX.Element {
   const resizerRef = useRef<HTMLDivElement | null>(null);
   // Pointer-capture drag state: recorded on pointerdown, cleared on release.
   const dragRef = useRef<{
+    pointerId: number;
     startClientX: number;
     startWidth: number;
     latestWidth: number;
@@ -87,6 +89,35 @@ export function HistoryDockView(props: HistoryDockViewProps): JSX.Element {
   const previewFrameRef = useRef<number | null>(null);
   const pendingWidthRef = useRef<number | null>(null);
 
+  /** Every drag exit funnels through one idempotent settle path. Pointer
+   * capture can be lost without a final pointerup (for example when WebView2
+   * loses window focus), so the latest preview width must still become the
+   * committed width and release PaneLayout's interactive-resize mode. */
+  const finishResize = useCallback((
+    event?: PointerEvent<HTMLDivElement>,
+    useLatestWidth = false
+  ): void => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    dragRef.current = null;
+    if (previewFrameRef.current !== null) cancelAnimationFrame(previewFrameRef.current);
+    previewFrameRef.current = null;
+    pendingWidthRef.current = null;
+    document.body.classList.remove('agent-history-dock-resizing');
+    try {
+      if (resizerRef.current?.hasPointerCapture(drag.pointerId)) {
+        resizerRef.current.releasePointerCapture(drag.pointerId);
+      }
+    } catch {
+      // Capture may already be gone when lostpointercapture/window blur wins.
+    }
+    const commitWidth = useLatestWidth || !event
+      ? drag.latestWidth
+      : clampWidth(drag.startWidth + (event.clientX - drag.startClientX));
+    resizerRef.current?.setAttribute('aria-valuenow', String(commitWidth));
+    props.onWidthCommit(commitWidth);
+  }, [props.onWidthCommit]);
+
   // React updates the list in place, so the scroll position survives
   // store-driven renders naturally; only search/filter changes bump the
   // token and zero the viewport.
@@ -94,11 +125,26 @@ export function HistoryDockView(props: HistoryDockViewProps): JSX.Element {
     if (contentRef.current) contentRef.current.scrollTop = 0;
   }, [props.resetScrollToken]);
 
+  useEffect(() => {
+    const onWindowBlur = (): void => finishResize(undefined, true);
+    window.addEventListener('blur', onWindowBlur);
+    return () => window.removeEventListener('blur', onWindowBlur);
+  }, [finishResize]);
+
   useEffect(() => () => {
+    const drag = dragRef.current;
+    dragRef.current = null;
     if (previewFrameRef.current !== null) cancelAnimationFrame(previewFrameRef.current);
     previewFrameRef.current = null;
     pendingWidthRef.current = null;
     document.body.classList.remove('agent-history-dock-resizing');
+    try {
+      if (drag && resizerRef.current?.hasPointerCapture(drag.pointerId)) {
+        resizerRef.current.releasePointerCapture(drag.pointerId);
+      }
+    } catch {
+      // Unmount cleanup is best-effort; the element may already be detached.
+    }
   }, []);
 
   const applyPendingPreview = (): void => {
@@ -116,6 +162,7 @@ export function HistoryDockView(props: HistoryDockViewProps): JSX.Element {
     if (event.button !== 0) return;
     const startWidth = clampWidth(props.width);
     dragRef.current = {
+      pointerId: event.pointerId,
       startClientX: event.clientX,
       startWidth,
       latestWidth: startWidth
@@ -136,26 +183,6 @@ export function HistoryDockView(props: HistoryDockViewProps): JSX.Element {
     if (previewFrameRef.current === null) {
       previewFrameRef.current = requestAnimationFrame(applyPendingPreview);
     }
-  };
-
-  const endResize = (event: PointerEvent<HTMLDivElement>, cancelled = false): void => {
-    const drag = dragRef.current;
-    if (!drag) return;
-    dragRef.current = null;
-    if (previewFrameRef.current !== null) cancelAnimationFrame(previewFrameRef.current);
-    previewFrameRef.current = null;
-    pendingWidthRef.current = null;
-    document.body.classList.remove('agent-history-dock-resizing');
-    try {
-      resizerRef.current?.releasePointerCapture(event.pointerId);
-    } catch {
-      // Pointer capture may already be gone if the window lost focus.
-    }
-    const commitWidth = cancelled
-      ? drag.latestWidth
-      : clampWidth(drag.startWidth + (event.clientX - drag.startClientX));
-    resizerRef.current?.setAttribute('aria-valuenow', String(commitWidth));
-    props.onWidthCommit(commitWidth);
   };
 
   const onResizerKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
@@ -271,8 +298,9 @@ export function HistoryDockView(props: HistoryDockViewProps): JSX.Element {
         tabIndex={0}
         onPointerDown={onResizerPointerDown}
         onPointerMove={onResizerPointerMove}
-        onPointerUp={(event) => endResize(event)}
-        onPointerCancel={(event) => endResize(event, true)}
+        onPointerUp={(event) => finishResize(event)}
+        onPointerCancel={(event) => finishResize(event, true)}
+        onLostPointerCapture={(event) => finishResize(event, true)}
         onKeyDown={onResizerKeyDown}
       />
     </aside>

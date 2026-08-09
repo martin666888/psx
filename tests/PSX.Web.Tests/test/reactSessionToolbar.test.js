@@ -3,7 +3,12 @@
 import { afterEach, beforeEach, test } from 'vitest';
 import assert from 'node:assert/strict';
 import { act } from 'react';
-import { mountAgentApp, createAgentWorkspace, appModule } from './agentHarness.js';
+import {
+  mountAgentApp,
+  createAgentWorkspace,
+  appModule,
+  flushAgentAnimationFrames
+} from './agentHarness.js';
 
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -122,8 +127,8 @@ test('repeated updates preserve the context ring DOM node', async () => {
 });
 
 // The workspace toolbar island (workspace/toolbarIsland.js) renders the More
-// details menu next to the session meta line; these cases pin the icon-only
-// summary and the session-label fallback contract.
+// responsive menu next to the session meta line; these cases pin the icon-only
+// trigger, wide-mode action reachability and the session-label fallback contract.
 async function toolbarMore(panel) {
   for (let attempt = 0; attempt < 200 && !panel.querySelector('.agent-toolbar-more'); attempt++) {
     await act(async () => new Promise((resolve) => setTimeout(resolve, 5)));
@@ -131,14 +136,42 @@ async function toolbarMore(panel) {
   assert.ok(panel.querySelector('.agent-toolbar-more'), 'toolbar More menu did not mount');
 }
 
-test('toolbar More summary renders the Ellipsis icon with no visible text', async () => {
+test('toolbar More trigger renders the Ellipsis icon with no visible text', async () => {
   const { app, panel } = await fixture();
   await settle(app, panel, stateEvent());
   await toolbarMore(panel);
-  const summary = panel.querySelector('.agent-toolbar-more > summary');
-  assert.equal(summary.getAttribute('aria-label'), '更多 Agent 操作');
-  assert.ok(summary.querySelector('svg'), 'summary renders the Ellipsis icon');
-  assert.equal(summary.textContent.trim(), '', 'summary carries no visible text');
+  const trigger = panel.querySelector('.agent-toolbar-more-trigger');
+  assert.equal(trigger.getAttribute('aria-label'), '更多 Agent 操作');
+  assert.equal(trigger.getAttribute('aria-expanded'), 'false');
+  assert.ok(trigger.querySelector('svg'), 'trigger renders the Ellipsis icon');
+  assert.equal(trigger.textContent.trim(), '', 'trigger carries no visible text');
+  assert.equal(panel.querySelector('.agent-toolbar-more').tagName, 'DIV');
+  assert.ok(panel.querySelector('[data-role="plan-toggle"]'), 'wide toolbar keeps Plan reachable');
+  assert.ok(panel.querySelector('[data-role="update"]'), 'wide toolbar keeps Update reachable');
+});
+
+test('toolbar More closes on an outside pointer press and Escape', async () => {
+  const { app, panel } = await fixture();
+  await settle(app, panel, stateEvent());
+  await toolbarMore(panel);
+  const menu = panel.querySelector('.agent-toolbar-more');
+  const trigger = menu.querySelector('.agent-toolbar-more-trigger');
+
+  await act(async () => trigger.click());
+  assert.equal(menu.dataset.open, 'true');
+  assert.equal(trigger.getAttribute('aria-expanded'), 'true');
+  await act(async () => {
+    document.body.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true }));
+  });
+  assert.equal(menu.dataset.open, 'false', 'outside pointer press closes the menu');
+
+  await act(async () => trigger.click());
+  await act(async () => {
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    flushAgentAnimationFrames();
+  });
+  assert.equal(menu.dataset.open, 'false', 'Escape closes the menu');
+  assert.equal(document.activeElement, trigger, 'Escape restores focus to the trigger');
 });
 
 test('toolbar More session label hides without a session id and shows it once set', async () => {

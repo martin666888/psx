@@ -375,18 +375,18 @@ test('shell: composer and conversation share the same reading-column rules', () 
     /\.agent-usage-avatar-button:focus-visible[\s\S]*?outline:\s*2px solid var\(--agent-focus-ring\)(?!\s*!important)/,
     'Usage native controls show the uniform keyboard focus ring without needing !important'
   );
-  // Desktop breathing room is the dedicated token (24px); narrow windows use
-  // the smaller spacing step, never zero.
+  // Every pane uses the same 24px bottom anchor. Responsive bands may change
+  // controls inside Composer, but content growth must proceed upward instead
+  // of shifting the whole card vertically relative to a neighbour.
   assert.match(shell, /--agent-composer-bottom-space: 24px/);
   assert.match(
     composer,
     /\.agent-composer\s*\{[\s\S]*?padding: 0 0 var\(--agent-composer-bottom-space\)/,
     'Composer bottom padding uses the workbench breathing-room token'
   );
-  assert.match(
-    composer,
-    /@container agent-shell \(max-width: 719px\)\s*\{\s*\.agent-composer\s*\{[\s\S]*?padding-bottom: var\(--agent-space-3\)/,
-    'narrow panes reduce but keep the bottom breathing room'
+  assert.ok(
+    !/@container agent-shell[\s\S]*?\.agent-composer\s*\{[\s\S]*?padding-bottom:/.test(composer),
+    'responsive bands never override the cross-pane Composer bottom baseline'
   );
   // The lift stays restrained: no heavy dark halo on the composer card.
   assert.match(shell, /--agent-shadow-composer: 0 6px 18px color-mix\(in srgb, var\(--agent-shadow\) 12%, transparent\)/);
@@ -432,6 +432,16 @@ test('shell: composer bands fold config controls into the overlay and drop the w
   assert.match(band719, /\.agent-config-options/);
   assert.match(
     band719,
+    /\.agent-config-popover \.agent-config-controls\s*\{[\s\S]*?display: grid;[\s\S]*?gap: var\(--agent-space-1\)/,
+    'all compact configuration rows share one 4px grid rhythm'
+  );
+  assert.match(
+    band719,
+    /\.agent-config-popover \.agent-mode-control,[\s\S]*?\.agent-config-popover \.agent-config-control\s*\{[\s\S]*?min-height: 36px/,
+    'select and switch configuration rows share one height'
+  );
+  assert.match(
+    band719,
     /\.agent-composer-controls\s*\{\s*position: relative/,
     '719px block anchors the popover to the composer controls'
   );
@@ -443,6 +453,15 @@ test('shell: composer bands fold config controls into the overlay and drop the w
   assert.match(band519, /\.agent-hints\s*\{\s*display: none/);
   assert.match(band519, /flex-wrap: nowrap/);
   assert.ok(!band519.includes('order: initial'), 'no order reset once the 719px block sets no order');
+});
+
+test('shell: compact toolbar metadata and its text action share one baseline', () => {
+  const shell = readCss('shell.css');
+  assert.match(
+    shell,
+    /\.agent-toolbar-more-session\s*\{[\s\S]*?display: grid;[\s\S]*?grid-template-columns: minmax\(0, 1fr\) auto;[\s\S]*?align-items: baseline;/,
+    'path metadata and Change align by their text baseline instead of independent box tops'
+  );
 });
 
 test('shell: dock width stays persisted at every pane width and narrow never overrides it', () => {

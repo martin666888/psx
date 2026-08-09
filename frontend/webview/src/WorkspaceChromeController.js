@@ -51,9 +51,19 @@ export class WorkspaceChromeController {
         this.themeButton.addEventListener('click', () => this.toggleMenu('theme', this.themeButton));
         this.onDocumentPointerDown = (event) => {
             if (!this.openMenu) return;
-            if (this.portalRoot.contains(event.target)) return;
-            if (this.root.contains(event.target) || this.rail?.contains(event.target)) return;
-            this.closeMenu(this.openMenu === 'theme');
+            const menu = this.portalRoot.firstElementChild;
+            if (menu?.contains(event.target)) return;
+            if (this.openTrigger?.contains(event.target)) {
+                // Create/Theme toggle themselves on click. A pane menu opens
+                // by contextmenu, so a normal click on its tab is an outside
+                // action and should dismiss it before the tab activates.
+                if (this.openMenu !== 'pane' || event.button !== 0) return;
+            }
+            // Pointer dismissal must not put focus back on the trigger: the
+            // pressed target (for example the Agent textarea) owns the next
+            // focus. Theme preview still rolls back on every non-confirming
+            // close.
+            this.closeMenu(this.openMenu === 'theme', false);
         };
         this.onDocumentKeyDown = (event) => this.handleDocumentKeyDown(event);
         this.onHistoryState = (event) => {
