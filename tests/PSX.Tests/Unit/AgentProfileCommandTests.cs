@@ -64,14 +64,15 @@ public sealed class AgentProfileCommandTests
         var (coordinator, bridge, scope) = CreateCoordinator(nameof(ProfileGet_EchoesRequestId));
         using (scope)
         {
-            var workspaceId = (await coordinator.CreateAsync("test"))!.Value;
+            _ = await coordinator.CreateAsync("test");
 
-            bridge.RaiseCommand("profile_get", requestId: "req-1", workspaceId: workspaceId);
+            bridge.RaiseCommand("profile_get", requestId: "req-1");
 
             var reply = await bridge.WaitForEventAsync(
                 "agent_profile", message => message.GetProperty("requestId").GetString() == "req-1");
             Assert.IsFalse(string.IsNullOrWhiteSpace(reply.GetProperty("displayName").GetString()));
             Assert.AreEqual(0, reply.GetProperty("revision").GetInt64());
+            Assert.IsFalse(reply.TryGetProperty("workspaceId", out _));
         }
     }
 
@@ -85,23 +86,32 @@ public sealed class AgentProfileCommandTests
             var first = (await coordinator.CreateAsync("test"))!.Value;
             var second = (await coordinator.CreateAsync("test"))!.Value;
 
-            bridge.RaiseCommand("profile_set_name", requestId: "set-1", value: "Codey", workspaceId: first);
+            bridge.RaiseCommand("profile_set_name", requestId: "set-1", value: "Codey");
 
-            // Requester reply carries the requestId and completes its pending request.
+            // The global requester reply carries the requestId and completes
+            // the singleton broker's pending request.
             var requesterReply = await bridge.WaitForEventAsync(
                 "agent_profile",
-                message => message.GetProperty("workspaceId").GetString() == first.ToString()
+                message => !message.TryGetProperty("workspaceId", out _)
                     && message.TryGetProperty("requestId", out var id)
                     && id.GetString() == "set-1");
             Assert.AreEqual("Codey", requesterReply.GetProperty("displayName").GetString());
 
-            // The other workspace receives a requestId-free broadcast.
-            var broadcast = await bridge.WaitForEventAsync(
+            // Every live workspace receives a requestId-free broadcast.
+            var firstBroadcast = await bridge.WaitForEventAsync(
                 "agent_profile",
-                message => message.GetProperty("workspaceId").GetString() == second.ToString());
-            Assert.AreEqual("Codey", broadcast.GetProperty("displayName").GetString());
-            Assert.AreEqual(JsonValueKind.Null, broadcast.GetProperty("requestId").ValueKind);
-            Assert.AreEqual(1, broadcast.GetProperty("revision").GetInt64());
+                message => message.TryGetProperty("workspaceId", out var workspace)
+                    && workspace.GetString() == first.ToString());
+            var secondBroadcast = await bridge.WaitForEventAsync(
+                "agent_profile",
+                message => message.TryGetProperty("workspaceId", out var workspace)
+                    && workspace.GetString() == second.ToString());
+            foreach (var broadcast in new[] { firstBroadcast, secondBroadcast })
+            {
+                Assert.AreEqual("Codey", broadcast.GetProperty("displayName").GetString());
+                Assert.AreEqual(JsonValueKind.Null, broadcast.GetProperty("requestId").ValueKind);
+                Assert.AreEqual(1, broadcast.GetProperty("revision").GetInt64());
+            }
         }
     }
 
@@ -112,10 +122,9 @@ public sealed class AgentProfileCommandTests
             nameof(ProfileSetAvatar_InvalidBase64_ReportsErrorToRequesterOnly));
         using (scope)
         {
-            var workspaceId = (await coordinator.CreateAsync("test"))!.Value;
+            _ = await coordinator.CreateAsync("test");
 
-            bridge.RaiseCommand("profile_set_avatar", requestId: "av-1", value: "!!!not-base64!!!",
-                workspaceId: workspaceId);
+            bridge.RaiseCommand("profile_set_avatar", requestId: "av-1", value: "!!!not-base64!!!");
 
             var reply = await bridge.WaitForEventAsync(
                 "agent_profile", message => message.GetProperty("requestId").GetString() == "av-1");
@@ -130,16 +139,42 @@ public sealed class AgentProfileCommandTests
             nameof(ProfileSetAvatar_ValidPng_BroadcastsDataUrl));
         using (scope)
         {
-            var workspaceId = (await coordinator.CreateAsync("test"))!.Value;
+            _ = await coordinator.CreateAsync("test");
 
             bridge.RaiseCommand("profile_set_avatar", requestId: "av-2",
-                value: Convert.ToBase64String(TinyPng), workspaceId: workspaceId);
+                value: Convert.ToBase64String(TinyPng));
 
             var reply = await bridge.WaitForEventAsync(
                 "agent_profile", message => message.GetProperty("requestId").GetString() == "av-2");
             Assert.AreEqual(JsonValueKind.Null, reply.GetProperty("error").ValueKind);
             StringAssert.StartsWith(
                 reply.GetProperty("avatarDataUrl").GetString()!, "data:image/png;base64,");
+        }
+    }
+
+    [TestMethod]
+    public async Task WorkspaceScopedGlobalOnlyCommands_AreIgnoredWithoutSideEffects()
+    {
+        var (coordinator, bridge, scope) = CreateCoordinator(
+            nameof(WorkspaceScopedGlobalOnlyCommands_AreIgnoredWithoutSideEffects));
+        using (scope)
+        {
+            var workspaceId = (await coordinator.CreateAsync("test"))!.Value;
+            var eventCount = bridge.Events.Count;
+
+            bridge.RaiseCommand("profile_set_name", requestId: "bad-name", value: "Scoped", workspaceId: workspaceId);
+            bridge.RaiseCommand("profile_get", requestId: "bad-get", workspaceId: workspaceId);
+            bridge.RaiseCommand("usage_report", requestId: "bad-usage", value: "force", workspaceId: workspaceId);
+            bridge.RaiseCommand("config_report", requestId: "bad-config", value: "force", workspaceId: workspaceId);
+
+            await Task.Delay(100);
+            Assert.HasCount(eventCount, bridge.Events, "Scoped global-only commands must emit no reply.");
+
+            bridge.RaiseCommand("profile_get", requestId: "good-get");
+            var profile = await bridge.WaitForEventAsync(
+                "agent_profile", message => message.GetProperty("requestId").GetString() == "good-get");
+            Assert.AreNotEqual("Scoped", profile.GetProperty("displayName").GetString());
+            Assert.IsFalse(profile.TryGetProperty("workspaceId", out _));
         }
     }
 

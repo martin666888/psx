@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -36,6 +37,15 @@ public interface IAgentWorkspaceCoordinator : IDisposable
 
 public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
 {
+    private static readonly HashSet<string> GlobalOnlyCommands = new(StringComparer.Ordinal)
+    {
+        "profile_get",
+        "profile_set_name",
+        "profile_set_avatar",
+        "usage_report",
+        "config_report"
+    };
+
     public const int MaxAgentWorkspaces = 5;
 
     private sealed class Entry
@@ -542,33 +552,16 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
         if (!_entries.TryGetValue(args.WorkspaceId, out var entry) || entry.Closing)
             return;
 
+        if (GlobalOnlyCommands.Contains(args.Command))
+        {
+            Debug.WriteLine(
+                $"Ignoring global-only Agent command '{args.Command}' on workspace {args.WorkspaceId}.");
+            return;
+        }
+
         if (args.Command == "load_thread" && !string.IsNullOrWhiteSpace(args.Value))
         {
             _ = OpenThreadSafelyAsync(args.Value);
-            return;
-        }
-
-        if (args.Command is "profile_get" or "profile_set_name" or "profile_set_avatar")
-        {
-            // Profile commands are global (coordinator-owned) like load_thread:
-            // they never reach the per-workspace session engine.
-            HandleProfileCommand(entry.EventSink, args);
-            return;
-        }
-
-        if (args.Command == "usage_report")
-        {
-            // Usage aggregation is global and coordinator-owned; the report is
-            // returned only to the requester (matched by requestId).
-            _ = HandleUsageReportAsync(entry.EventSink, args);
-            return;
-        }
-
-        if (args.Command == "config_report")
-        {
-            // Config aggregation mirrors usage: global, coordinator-owned,
-            // requestId-matched reply only to the requester.
-            _ = HandleConfigReportAsync(entry.EventSink, args);
             return;
         }
 
