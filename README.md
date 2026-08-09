@@ -5,8 +5,9 @@ Languages: [English](README.md) | [简体中文](docs/zh-CN/README.md)
 PSX is a Windows desktop terminal for AI Agent workflows. It is not trying to be
 another PowerShell. It packages a terminal, an Agent conversation panel, task
 plans, .NET, and Portable Node into a lightweight app that can be unzipped and
-run directly. Terminal mode is ready immediately; Agent mode installs its ACP
-runtime from the official npm registry only after the user confirms.
+run directly. Terminal mode is ready immediately; Agent mode uses curated
+bundled baselines or installs a managed runtime from the official npm registry
+only after the user confirms.
 
 Many polished Agent applications start with an installer, then download more
 runtime components after installation. That is often unfriendly on company
@@ -23,14 +24,19 @@ The core value of PSX is:
 - **Portable first**: distributed as a zip, no installer required.
 - **Terminal ready immediately**: the release package includes the .NET runtime
   and Portable Node; no installer or administrator access is required.
-- **Explicit Agent setup**: PSX downloads the ACP runtime only after the user
-  opens Agent mode and confirms the installation.
-- **More than a terminal**: PSX includes a dedicated Agent panel in addition to
-  normal terminal tabs.
+- **Explicit Agent setup**: when a Provider needs a downloaded runtime, PSX
+  contacts npm only after the user confirms the installation or update.
+- **One workspace for both modes**: mix Terminal and Agent tabs across as many
+  as three side-by-side columns, without hiding background workspaces.
 - **Clear Agent workflow**: conversations, tool calls, permission prompts, and
   task plans are separated in the interface.
-- **Right-side plan panel**: model-generated plans are shown beside the
-  conversation instead of being buried inside the chat stream.
+- **Five managed providers**: Claude Code, Kimi Code, Qwen Code, Qoder CLI, and
+  OpenCode use curated runtime adapters rather than arbitrary executables.
+- **Global history and configuration**: History, profile, exact usage where a
+  provider supports it, and sanitized user-level configuration remain available
+  even when the workspace contains only Terminal tabs.
+- **Pane-local plans**: model-generated plans stay with their Agent workspace as
+  a floating card or narrow overlay, instead of consuming a fixed layout column.
 - **Modern Agent UI**: the conversation panel is built on shadcn/ui and
   AI Elements with Vercel Neutral dark/light presets; reasoning, tool calls,
   permissions and history all share one design language.
@@ -39,14 +45,17 @@ PSX is for people who want to run Claude Code / ACP Agent / node / npm / git and
 other command-line tools on Windows, while keeping the experience lightweight,
 controllable, and easy to distribute on work machines.
 
-![PSX Agent mode with right-side plan panel](docs/assets/psx-agent-plan-panel.png)
+![PSX multi-column Agent workbench](tests/PSX.Web.Tests/visual-baselines/windows-chromium/split-agents--light.png)
 
 ## Features
 
 - Terminal mode with real Windows ConPTY sessions.
-- Multiple terminal tabs.
-- Agent mode for ACP-compatible Claude sessions.
-- Right-side task plan panel with completed items checked and struck through.
+- Mixed Terminal and Agent tab stacks in up to three resizable columns.
+- Managed ACP sessions for Claude Code, Kimi Code, Qwen Code, Qoder CLI, and
+  OpenCode.
+- Process-wide History plus profile, Usage, and sanitized Config views.
+- Workspace-local task Plan card/overlay with completed items checked and
+  struck through.
 - Tool call cards for Agent inputs and outputs.
 - Permission and question prompts handled in the UI.
 - Theme and font configuration through `psx.ini` and `theme-presets/`.
@@ -70,23 +79,24 @@ PSX currently targets Windows x64. Microsoft Edge WebView2 Runtime is required.
 If WebView2 is not installed, PSX will show a prompt instead of opening a blank
 window.
 
-The release package includes the .NET runtime, Portable Node, and the ACP seed
-manifests. It deliberately does **not** include `claude.exe` or an installed ACP
-runtime.
+The release package includes the .NET runtime, Portable Node, Claude/Qoder seed
+manifests, and curated bundled baselines for Kimi, Qwen, and OpenCode. It
+deliberately does **not** include `claude.exe` or a user-installed runtime under
+`runtime/`.
 
 ## First-time Agent Setup
 
-Terminal mode works immediately and never starts an npm download. The first
-time you open Agent mode, PSX shows an installation card. Choose **Install Agent
-runtime** to download the latest compatible ACP dependencies from the official npm
-registry. The UI shows progress and supports cancellation and retry. Agent input
-remains disabled until installation succeeds; no restart is required afterward.
+Terminal mode works immediately and startup never starts an npm download.
+Kimi Code, Qwen Code, and OpenCode can use the curated baseline shipped in the
+portable package. Claude Code and Qoder CLI require an explicit install
+confirmation before PSX downloads their managed runtime from the official npm
+registry. Installation and user-triggered updates show progress and support
+cancellation/retry; cancelling does not leave the runtime directory locked.
 
-The installed runtime is stored under `runtime/` beside `PSX.exe`. The same
-extracted directory reuses it on later launches, while a newly extracted copy
-needs its own first-time download. Keep the PSX directory writable and preserve
-it if you want to keep the installed runtime. Network access to the npm registry
-is required for this step.
+Downloaded or updated runtimes are stored under `runtime/` beside `PSX.exe` and
+reused by that extracted copy. Keep the PSX directory writable and preserve it
+when upgrading if you want to retain those runtime copies. PSX startup only
+promotes an already-staged update locally; it never contacts npm on its own.
 
 PSX does not read, store, or display API keys. Configure credentials and
 provider settings using the tools supported by the Agent runtime. As an optional
@@ -164,6 +174,7 @@ changing web frontend source, rebuild and verify the committed output:
 npm.cmd run build:web
 npm.cmd run verify:web
 npm.cmd run typecheck:web
+npm.cmd run lint:web
 npm.cmd run test:web
 ```
 
@@ -185,7 +196,7 @@ Run the automated test gates:
 # Daily development and CI
 powershell -ExecutionPolicy Bypass -File tools/test.ps1 -Suite Fast
 
-# Local release gate, including Windows desktop probes and package validation
+# Local release gate: Desktop/package smoke, locked-Chromium visual/axe, audits
 powershell -ExecutionPolicy Bypass -File tools/test.ps1 -Suite Full
 ```
 
@@ -206,7 +217,7 @@ PSX is built with:
 - WebView2 for the terminal and Agent frontend.
 - xterm.js for terminal rendering, ANSI sequences, input, and scrollback.
 - Windows ConPTY for real pseudo-console sessions.
-- ACP runtime for Claude sessions in Agent mode.
+- ACP runtimes for the five managed Agent providers.
 
 These technologies are implementation details. The goal of PSX is to provide a
 lightweight Windows desktop entry point for AI Agent CLI workflows, especially
@@ -228,9 +239,10 @@ in environments where installing a heavier application is inconvenient.
 
 The release script creates a self-contained Windows x64 portable package. It
 stages the published WPF app, downloads and verifies Portable Node 22.23.1, and
-includes the ACP seed manifests. Before writing the archive it validates the
-application, Node, npm, frontend, seed, and license files. It also rejects any
-package containing `claude.exe`, `runtime/acp-current`, logs, or temporary files.
+assembles the seed/bundled runtime inputs described above. Before writing the
+archive it validates the application, Node, npm, frontend, runtime entries, and
+license files. It also rejects any package containing `claude.exe`, installed
+`runtime/*-current` directories, logs, or temporary files.
 
 Recommended package name:
 

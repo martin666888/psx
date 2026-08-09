@@ -103,7 +103,7 @@ PSX 使用 borders-only 与轻微表面色差建立层级，不混入明显投�
 
 ### 全局工具栏
 
-- 跨 Terminal 和 Agent 生效的操作放在 WPF 顶部全局栏。
+- 跨 Terminal 和 Agent 生效的可见操作放在 WebView activity rail（History / Create / Theme）或对应的 WebView 全局浮层；WPF 顶栏仅保留隐藏的兼容投影，不得成为第二套导航。
 - 按钮高度、字号和密度应与 Terminal / Agent 切换控件一致。
 - 图标只有在能减少理解成本时使用；文字已经足够清楚时不添加装饰图标。
 - WPF 按钮统一使用 `Themes/Dark.xaml` 的 `SoftWorkbenchButtonStyle` / `SoftWorkbenchToggleButtonStyle` / `SoftWorkbenchIconButtonStyle`；图标使用 XAML `Path` 几何，不使用字体字形。
@@ -146,12 +146,12 @@ Theme 弹层是全局选择器的参考实现：
 - default
 - hover
 - active / selected
-- keyboard navigation（仅行为，不显示独立焦点描边）
+- keyboard navigation（使用统一的 `:focus-visible` 焦点环）
 - disabled
 - loading（适用时）
 - empty / error（数据组件适用时）
 
-焦点规范：键盘导航、程序化 focus、Esc 关闭后的焦点恢复等行为必须保持正常，但 PSX 在 WebView2 和 WPF 中都不因 focus 单独增加 outline、边框、光圈或阴影。不要在指针交互、键盘导航、`:focus-visible`、`:focus-within` 或 `IsKeyboardFocused` 状态下重新引入独立焦点描边。
+焦点规范：键盘导航、程序化 focus 与 Esc 关闭后的焦点恢复必须保持正常。WebView 交互控件仅在 `:focus-visible` 时显示统一的 `2px solid var(--agent-focus-ring)`，`outline-offset: 2px`；指针点击不显示焦点环，Composer 输入通过 `:has([data-role="input"]:focus-visible)`在卡片外框显示同一焦点环。菜单项可保留 focused surface，Pane 焦点只由 tab/nameplate 强度与下划线表达。WPF 隐藏兼容投影不得形成第二套可见焦点表面。
 
 交互反馈应快速、平稳，不使用弹跳或夸张动画。普通 hover 和状态切换控制在短时微交互范围；尊重系统减少动画设置。
 

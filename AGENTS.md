@@ -9,11 +9,11 @@ PSX is a Windows desktop terminal built with C#, WPF, WebView2, xterm.js, and Co
 - `dotnet build PSX.slnx` - restore packages and compile the application.
 - `dotnet run --project PSX.csproj` - launch a development build on Windows.
 - `dotnet format PSX.slnx --verify-no-changes` - check standard .NET formatting.
-- `powershell -ExecutionPolicy Bypass -File tools/test.ps1 -Suite Fast` - run the local/CI unit, integration, frontend, coverage, format, and Release build gate.
-- `powershell -ExecutionPolicy Bypass -File tools/test.ps1 -Suite Full` - add WPF/ConPTY desktop probes and validate the portable Release package.
+- `powershell -ExecutionPolicy Bypass -File tools/test.ps1 -Suite Fast` - run the local/CI Release build, Unit + Integration, frontend, coverage, and format gate without launching a browser.
+- `powershell -ExecutionPolicy Bypass -File tools/test.ps1 -Suite Full` - add Desktop probes, the portable package smoke, locked-Chromium visual/axe checks, and dependency audits.
 - `powershell -ExecutionPolicy Bypass -File tools/build-release.ps1` - create the self-contained Windows x64 package in `bin/releases/`; this may download the verified Portable Node archive but never pre-installs the ACP runtime.
 
-Use the SDK selected by `global.json`. The release script assembles the public portable package; users install the Agent runtime later from Agent mode after explicit confirmation.
+Use the SDK selected by `global.json`. The release script assembles the public portable package with Kimi/Qwen/OpenCode bundled baselines and Claude/Qoder seed inputs; any download into `runtime/` happens later from Agent mode after explicit user confirmation.
 
 ### Agent frontend workflow
 
@@ -31,7 +31,7 @@ Use four spaces in C# and follow existing .NET conventions: `PascalCase` for typ
 
 ## Testing Guidelines
 
-Use `tests/PSX.Tests` for C# Unit, Integration, and Desktop categories; `tests/PSX.Web.Tests` for Vitest frontend tests plus the TypeScript typecheck (`npm run typecheck:web`); `tests/PSX.TestAgent` for deterministic ACP protocol scenarios; `tests/PSX.TestNpm` for process-level ACP runtime installation scenarios; and `tests/PSX.DesktopProbe` for WinExe-hosted ConPTY checks. Name cases by behavior, such as `SaveSettings_InvalidColor_UsesFallback`. Keep every test workspace, dependency cache, diagnostic, and coverage artifact under the ignored repository `TestResults/` directory; tests must never touch the user's real `%USERPROFILE%\.psx`. Coverage is reported but has no percentage gate yet. Run `tools/test.ps1 -Suite Fast` during development and `-Suite Full` before a release. Real provider login, quota, network failure, and subjective UI checks remain manual as documented in `docs/testing.md`.
+Use `tests/PSX.Tests` for C# Unit, Integration, and Desktop categories; `tests/PSX.Web.Tests` for Vitest frontend tests plus the TypeScript typecheck (`npm run typecheck:web`); `tests/PSX.TestAgent` for deterministic ACP protocol scenarios; `tests/PSX.TestNpm` for process-level ACP runtime installation scenarios; and `tests/PSX.DesktopProbe` for WinExe-hosted ConPTY checks. Name cases by behavior, such as `SaveSettings_InvalidColor_UsesFallback`. Keep every test workspace, dependency cache, diagnostic, browser, and coverage artifact under the ignored repository `TestResults/` directory; tests must never touch the user's real `%USERPROFILE%\.psx`. Runner minimums are Unit 329, Integration 112, Desktop 2, Fast 441, Full 443, and Web 287; these are discovered test totals including expanded `DataRow`s. Coverage gates are C# line 67% / branch 55% and Web line 78% / statement 75% / function 75% / branch 65%. Fast never downloads or launches Chromium; Full owns package smoke, locked-Chromium visual/axe checks, and official-registry audits. Run `tools/test.ps1 -Suite Fast` during development and `-Suite Full` before a release. Real provider login, quota, network failure, and subjective UI checks remain manual as documented in `docs/testing.md`.
 
 ## Agent Slash Command Contract
 

@@ -1,7 +1,9 @@
-# React Adoption Decision Record (Stage 0 + Stage 1 Technical Validation)
+# React Adoption Decision Record (Archived)
 
-Status: Stage 1 validation complete on branch `dev-react`; all acceptance
-gates measured in this record pass. See Results below.
+Status: **Archived historical record.** React 19 + Vite islands are now the
+only production rendering path. Test totals, bundle structure, flags and
+commands below describe the migration period and are not current maintenance
+requirements; use `AGENTS.md`, `design.md`, and `docs/testing.md` instead.
 
 ## Decision
 

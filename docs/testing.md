@@ -1,77 +1,155 @@
-# PSX 自动化测试指南
+# PSX 自动化测试与发布证据
 
-> Process-safety rule: run every verification command sequentially. Do not run
-> typecheck, lint, Vitest, frontend build/verification, or `tools/test.ps1` at
-> the same time. C# tests are assembly-level non-parallel, and Vitest is
-> intentionally pinned to one worker
-> (`fileParallelism: false`, `maxWorkers: 1`) because this repository's
-> jsdom/React harness mutates process-wide browser globals. After an interrupted
-> Web test, verify that no test-owned `node` process remains before retrying.
+PSX 的门禁以本地可复现为第一原则。所有验证必须串行执行；不要并发运行
+typecheck、lint、Vitest、前端构建/校验或 `tools/test.ps1`。C# 测试通过
+`[assembly: DoNotParallelize]` 禁止并行，Vitest 固定
+`fileParallelism: false`、`maxWorkers: 1`，因为 jsdom/React Harness 会修改
+进程级浏览器全局。中断 Web 测试后，重试前先确认没有测试所属的 `node`
+进程残留。
 
-PSX 的测试体系采用“本地优先、CI 兼容”的分层结构。自动化测试不会登录真实 Claude/Kimi，不会消耗模型额度，也不会访问 `%USERPROFILE%\.psx`；所有测试工作目录、日志、覆盖率和报告都位于仓库内的 `TestResults/`。
+自动化测试不会登录真实 Provider、消耗模型额度或读取
+`%USERPROFILE%\.psx`。测试工作区、依赖缓存、浏览器、日志、TRX、覆盖率和
+视觉差异全部位于已忽略的 `TestResults/`。
 
-## 分层结构
+## 测试层与真实 runner 基线
 
-- `tests/PSX.Tests/Unit/`：INI/Bridge JSON 解析、设置与主题路径隔离、Theme Picker 状态、ACP Permission 策略、Mode Transition 历史合并，以及 Workspace 上限、Provider 注册冲突、Runtime 去重和关闭隔离等无副作用逻辑。
-- `tests/PSX.Tests/Integration/`：线程存储、Fake ACP JSON-RPC 传输、完整会话、权限选择、取消、历史 replay，以及 ACP runtime 安装与升级编排。多 Agent 场景使用测试内 Fake Provider/Runtime，不登录真实服务。
-- `tests/PSX.Web.Tests/`：使用 Vitest、jsdom 和 c8，加载与生产页面相同顺序的真实前端模块，覆盖 Markdown、Composer、Permission、Mode Transition、Plan、全局 History、Workspace Chrome、Catalog/Layout 乱序、稳定 divider、窄布局下各列按比例压缩（列永不收编/隐藏）、多 Workspace DOM/路由隔离、桥消息常量表和终端剪贴板桥；`npm run typecheck` 额外对桥契约文件执行 `tsc --checkJs`。
-- `tests/PSX.TestAgent/`：可控的 Fake ACP Agent，支持正常响应、通知、并发请求、超时、协议错误、权限请求、取消和历史 replay。
-- `tests/PSX.TestNpm/`：作为假 `node.exe` 启动的独立进程，模拟 npm 成功、退出码、网络错误、挂起与安装产物，验证 `AcpRuntimeManager` 而不访问 registry。
-- `tests/PSX.DesktopProbe/`：无窗口 WinExe 探针，在与正式应用相同的宿主类型下验证 ConPTY 输出、自然退出、resize 和进程树清理。
-- `MainWindowSmokeTests`：在 STA 线程构建 WPF XAML 树，但不显示窗口、不初始化 WebView2 用户数据，也不加载真实配置。
+| 层级 | 内容 | 最低发现数 |
+|---|---|---:|
+| Unit | 纯逻辑、解析、状态与架构约束 | 329 |
+| Integration | Fake ACP/npm、持久化、Runtime 与进程边界 | 112 |
+| Desktop | WPF/ConPTY 桌面探针 | 2 |
+| Fast | Unit + Integration | 441 |
+| Full | 全部 C# 测试 | 443 |
+| Web | Vitest/jsdom 契约 | 287 |
 
-## 统一命令
+数字来自 Microsoft Testing Platform TRX 和 Vitest JSON reporter；C# 数量包含
+`DataRow` 展开结果，不是源码中的 `[TestMethod]` 个数。只有明确删除测试时
+才允许降低门槛，并必须在提交说明中记录原因。
+
+## 常用命令
 
 ```powershell
-# 日常开发与 GitHub CI：格式、Release build、C# Unit/Integration、前端测试与覆盖率
+# 日常开发/本地 CI 门禁；不下载、不启动浏览器
 powershell -ExecutionPolicy Bypass -File tools/test.ps1 -Suite Fast
 
-# 发布前：Fast 的全部内容 + WPF/ConPTY Desktop + Release zip 构建与内容审计
+# 正式本地发布门禁
 powershell -ExecutionPolicy Bypass -File tools/test.ps1 -Suite Full
 
-# 按层定位问题
+# 分层定位
 powershell -ExecutionPolicy Bypass -File tools/test.ps1 -Suite Unit
-powershell -ExecutionPolicy Bypass -File tools/test.ps1 -Suite Frontend
 powershell -ExecutionPolicy Bypass -File tools/test.ps1 -Suite Integration
 powershell -ExecutionPolicy Bypass -File tools/test.ps1 -Suite Desktop
+powershell -ExecutionPolicy Bypass -File tools/test.ps1 -Suite Frontend
 ```
 
-`Fast` 排除桌面探针，以降低 CI 对图形会话和 Windows 运行环境差异的敏感度；`Full` 是本机发布门禁。首次运行前端测试会通过锁文件执行 `npm ci`。npm、NuGet、.NET CLI 和临时目录都在脚本执行期间固定到 `TestResults/`，不会把测试依赖或运行数据写入用户配置目录。
+Fast 严格按以下顺序运行：
 
-Workspace 自动化重点验证 Agent 与 Terminal 上限口径、`workspaceId` 桥路由、Thread 去重打开、关闭 tombstone、Provider/Runtime 扩展边界，以及多个 `AgentWorkspaceController` 的状态隔离。真实 Claude 登录、多进程并行对话的主观体验、900px 布局和系统进程树观察仍属于桌面人工验收。
+```text
+依赖状态检查
+→ Release build
+→ C# Unit/Integration + coverage
+→ TypeScript typecheck
+→ ESLint
+→ verify:web
+→ Vitest/jsdom + coverage
+→ dotnet format verify
+```
 
-## 结果与诊断
+Full 在 Fast 能力上加入 Desktop、便携 ZIP 构建与浏览器 smoke、锁版本
+Chromium 的视觉/axe 门禁，以及 NuGet/npm 官方源依赖审计。Full 必须使用
+Node 22；脚本会优先使用 `TestResults/node22/` 或发布 staging 中的便携 Node，
+不会误用 PATH 上的其他主版本。
 
-- C# TRX、Cobertura 覆盖率和 Microsoft Testing Platform 诊断：`TestResults/dotnet/<suite>/`
-- Fake ACP、线程数据与进程探针数据：`TestResults/runtime/`
-- 前端生产脚本 bundle 与覆盖率：`TestResults/web/`
-- GitHub Actions 无论成功或失败都会上传 `TestResults/`，保留 14 天。
+## npm 恢复状态
 
-当前覆盖率是观察指标，不设百分比门槛。测试命令通过“最少发现测试数”防止筛选错误导致零测试却显示成功。Release 构建会再次检查 zip，不允许包含测试程序集、Fake Agent、Fake npm、Desktop Probe、测试目录、日志或已安装 ACP runtime。
+`TestResults/npm-state.json` 记录 `package-lock.json` SHA-256、Node 主版本、
+npm 版本和最后一次成功恢复时间。stamp 完整匹配且
+`npm ls --depth=0` 成功时跳过 `npm ci`；缺失、损坏、lock/toolchain 变化或
+依赖树异常时执行干净恢复。只有成功的 `npm ci` 才写 stamp。
 
-## Agent React 前端门禁
+需要强制重装时使用：
 
-Agent 前端只有 React 渲染路径。Web 前端源码位于 `frontend/webview/`（外壳）与
-`frontend/agent/src/`（Agent TS/TSX），Vite 构建产物位于 `wwwroot/app/` 并随仓库
-提交。修改前端源码后必须依次运行 `npm.cmd run build:web`、`npm.cmd run verify:web`、
-`npm.cmd run typecheck:web`、`npm.cmd run lint:web`
-和 Web 测试。测试直接验证 React 语义 DOM、状态变化和 Bridge payload，不再以
-已删除的命令式渲染器作为对照。Release smoke 以
-`data-island-state="mounted"`、真实 React DOM、React vendor chunk 请求和浏览器控制台
-为证据。
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/test.ps1 -Suite Fast -ForceFrontendRestore
+```
 
-## 仍需人工验收的真实 Agent 流程
+## 覆盖率与机器可读结果
 
-以下行为依赖账号、网络、模型版本、服务端状态或主观视觉判断，不应放入稳定自动化门禁：
+- C#（Fast/Full）：行 ≥ 67%，分支 ≥ 55%。
+- Web：行 ≥ 78%，语句 ≥ 75%，函数 ≥ 75%，分支 ≥ 65%。
+- TRX/Cobertura：`TestResults/dotnet/<suite>/`。
+- Vitest JSON：`TestResults/web/test-summary.json`。
+- Web coverage：`TestResults/web/coverage/coverage-summary.json`。
 
-1. 安装真实 ACP runtime，完成 Claude 登录；同时完成 Kimi Code、Qwen Code、Qoder CLI、OpenCode 的登录验收（Qoder：安装卡 → `runtime/qoder-current` → 托管入口 `login`；OpenCode：随包开箱就绪 → 托管入口 `auth login` TUI，凭据落 `~/.local/share/opencode/auth.json`；注意 opencode 1.3+ 上游移除了内置 Anthropic 登录插件，可选 provider 以当时上游为准）。
-2. 发起真实普通对话，确认流式文本、Thinking、Tool Activity、上下文用量和文件编辑结果。
-3. 进入 Plan 模式并触发 `switch_mode`，确认正文 Markdown、复制、折叠、Composer 位置的动态 ACP 选项和最终选择状态。
-4. 分别验证允许、拒绝、Stop、新请求替换旧决策，以及应用重启后的 selected/cancelled/interrupted 历史显示。
-5. 验证网络中断、登录过期、额度不足和 provider 进程异常时的错误文案与恢复路径。
-6. 在深色/浅色主题、最小窗口和高 DPI 下检查布局、滚动、键盘焦点与可读性。
-7. Pane/阅读列人工验收（jsdom 不做真实布局，此项必须人工）：首次启动仅保留默认 Terminal 时，History 按钮必须立即可用、能加载历史并能从历史打开 Agent 线程；History footer 必须直接显示已保存的头像/名称而非 `?`，且「用量与配置」的用量、配置读取及资料修改均无需先创建 Agent Workspace。关闭最后一个 Agent 后重复验证，行为应完全一致。创建 Agent+Agent、Agent+Terminal 和 Terminal+Terminal，在 720 / 719 / 520 / 519 / 400 / 399px 的实际 Pane 宽度检查工具栏和 Composer，确认 `scrollWidth <= clientWidth`、输入区不跨 Pane、720/520/400 三档按容器而非整窗切换。将相邻 Agent Pane 调成不同宽度，使一个空 Composer 的 placeholder 换行：两张卡的底边仍应保持同一条 24px inset 基线，较高卡片只向上生长。连续左右快速拖 divider，边界应逐帧跟随且只改变相邻两列；拖动中 Terminal 不 fit，松手后每个可见 Terminal 只 fit/resize 一次。打开 History 后应从永久 40px 轨道向右推挤所有 Pane；空间不足时各列按其比例在像素地板下继续压缩，永不收编/隐藏任何列。窄 Pane（<519px）下 History 仍按持久化宽度显示且 resizer 鼠标/键盘均可用；默认 280 / 最小 220 / 最大 420 时第一列左缘 = History 右缘 + 12px，无额外留白；拖动中列实时跟随、Terminal 拖动中不 fit、松手仅 fit 一次、宽度只在结束时写入 localStorage；三档 DPI（100/125/150%）下结构圆角一致。Plan 在 ≥520px 保持 Pane 内卡片且 Plan / Update 操作直接可见，<520px 从 ⋯ 入口覆盖打开并可从同一菜单切换；开关均不得改变 Pane 宽度，任何可见 Plan 都必须有可达的关闭入口。确认顶部只有 WebView Workspace Chrome，无 WPF TabBar、绿色整列边框、青色/橙色圆点；权限/提问/错误/完成显示为铭牌短文字。
-8. 手动更新流程（真实 registry，不可自动化）：启动 PSX 后确认无任何 npm 进程被拉起（启动只推广已 staged 目录）；在 Claude / Kimi / Qwen / Qoder / OpenCode 各自的 Agent Tab 点击 Update，确认 Checking → 结果（Up to date / Restart to update）生命周期在同 runtime 的多个 Tab 同步显示，且新建 Tab 能看到上一次结果；断网后点击 Update 应显示 Retry update，Tooltip 展示后端失败原因，恢复网络后重试成功；Kimi/Qwen 有新版本时确认下载落入 `runtime/*-next`、重启后推广到 `runtime/*-current` 并可正常对话；Qoder 有新版本时确认 `npm install` 带 `--ignore-scripts`、产物在 `runtime/qoder-next`、重启 promote 后对话可用；OpenCode 有新版本时确认 canonical 版本源是平台包（`npm view opencode-windows-x64@latest`）、产物在 `runtime/opencode-next`、重启 promote 后对话可用，且会话期间 `runtime/` 未被 opencode 自更新改写（`OPENCODE_DISABLE_AUTOUPDATE` 生效；用户项目 plugin bootstrap 触网属上游行为，不算违例）；升级 PSX 到含同版或更新 bundled Kimi/Qwen/OpenCode 的包后，确认 runtime 副本被丢弃并回落 bundled（无 AVX2 的机器例外：OpenCode 的 baseline `runtime/opencode-current` 必须保留）。公开 ZIP 不得包含 `runtime/acp-current`、`runtime/qoder-current` 或 `runtime/opencode-current`。
-9. Usage 面板「配置」页签（只读）：打开 History footer →「用量与配置」→ 首次点「配置」才发起 `config_report`；核对五家 Agent 与本机用户级文件（Claude `~/.claude` + `~/.claude.json` mcp、Kimi `~/.kimi-code`、Qwen `~/.qwen`、Qoder 空态 note、OpenCode `~/.config/opencode` + auth ids）；目检秘密打码（env/header 仅键名、URL 无 query、stdio 长 token 为 `•••`、auth 值不出现）；确认与 Composer 内 live `agent_config_options` 无关。
+PowerShell 读取 JSON/XML，不解析本地化控制台文本。当前基线通过并不允许
+以修改 reporter 输出或降低门槛的方式掩盖测试/覆盖率回退。
 
-人工验收前先运行 `-Suite Full`，这样人工步骤只负责真实服务与体验层，不重复验证可自动化的协议和状态机。
+## 两级 UI 门禁
+
+Fast 仅使用 Vitest/jsdom 验证高价值结构契约：Terminal-only 首次启动的
+History/Profile/Provider 图标、代表性全局与 Agent 弹层的重复触发/外点/Esc/
+焦点恢复、响应式状态抽样，以及 React 生命周期错误。Fast 不准备或启动
+Playwright Chromium。
+
+Full 使用 `playwright@1.62.0` 清单锁定的 Chrome for Testing 151.0.7922.34
+（revision 1234）。浏览器只解压到
+`TestResults/playwright-browsers/`，不会安装进系统，也不会进入发布包。首次
+准备命令：
+
+```powershell
+npm.cmd run prepare:visual
+```
+
+若网络需要代理，可只为当前 PowerShell 会话设置 `HTTP_PROXY`、
+`HTTPS_PROXY`、`ALL_PROXY` 后重试。准备脚本支持断点续传；浏览器已完整存在
+时命令立即返回，不再联网。
+
+视觉门禁固定 device scale、locale、主题、reduced motion 和字体等待，覆盖
+720/719、520/519、400/399px Pane 边界、非对称 Agent Composer 底边、
+Terminal-only History/Profile、History 推移与 12px gap、宽/窄 Plan、
+Permission、Elicitation、Usage Dialog 以及深浅主题。每个场景同时执行 axe，
+serious/critical 直接失败；console error、page error、资源失败也直接失败。
+
+```powershell
+# 只比较，不创建或覆盖基线
+npm.cmd run test:visual
+
+# 仅在有意修改 UI 时更新；必须人工查看 actual/diff 后单独提交
+npm.cmd run update:visual
+```
+
+基线位于 `tests/PSX.Web.Tests/visual-baselines/windows-chromium/`。差异超过总
+像素 0.15% 失败；actual、expected diff 和 axe 报告位于
+`TestResults/visual/`。普通 `test:visual` 永远不会自动接受差异。
+
+## 依赖审计
+
+Full 默认执行：
+
+```text
+dotnet list PSX.slnx package --vulnerable --include-transitive
+npm audit --omit=dev --audit-level=low --registry=https://registry.npmjs.org
+npm audit --audit-level=high --registry=https://registry.npmjs.org
+```
+
+正式发布证据要求 NuGet 0、生产 npm 0、完整 npm 无 high/critical。仅为离线
+定位其他 Full 失败时可用 `-SkipDependencyAudit`；输出会明确标记
+“Full diagnostics passed, release gate incomplete”，不能作为发布通过证据。
+npmmirror advisories 不可用或返回 404 也不能视为审计通过。
+
+## 仍需人工验收
+
+自动化完成后，正式发布前仍需一次真实 Terminal + Agent 验收：
+
+1. 首次启动只有 Terminal 时，直接打开 History，确认保存的 Profile、Provider
+   图标、Usage/Config 均正确；关闭最后一个 Agent 后再次验证同样行为。
+2. 真实登录五个 Managed Provider，验证流式文本、Thinking、Tool、Permission、
+   Elicitation、Plan、停止与恢复；不要求每个 Provider 都提供精确 Usage parser。
+3. 实际拖拽两/三列、History 宽度和 divider，在 100/125/150% DPI 下确认圆角、
+   Composer 底边、焦点环和 Terminal fit 没有主观异常。
+4. 真实点击 Runtime Update，验证取消/超时返回前进程已退出、目录可立即操作，
+   重启后只在本地 promote 已 staged 目录；启动本身不得触网。
+5. 验证断网、登录过期、额度不足和 Provider 异常时的用户文案与恢复路径。
+
+只有未使用 `-SkipDependencyAudit` 的 Full、人工查看过的视觉差异，以及上述
+真实 Terminal + Agent 验收共同完成，才能作为发布证据。
