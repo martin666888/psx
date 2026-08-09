@@ -79,14 +79,13 @@ export class AgentWorkspaceRegistry {
       },
       this.historyStore
     );
-    // Global Usage + profile: one store + one broker for the whole process,
-    // reusing the same live-workspace channel policy as History.
+    // Global Usage + profile: one store + one root-bridge broker for the whole
+    // process, independent of Agent workspace lifecycle.
     this.usageStore = new UsageStore();
     this.usageBroker = new UsageRequestBroker(
       {
-        isAlive: (id) => this.controllers.has(id),
-        activeAgentWorkspace: () => this.activeAgentWorkspace(),
-        bridgeFor: (id) => this.host.bridgeFor(id)
+        sendGlobalCommand: (command, value, requestId) =>
+          Bridge.sendAgentGlobalCommand(command, value, requestId)
       },
       this.usageStore
     );
@@ -208,7 +207,6 @@ export class AgentWorkspaceRegistry {
           }
           if (event.kind === 'agent') {
             this.historyBroker.activateWorkspace(event.workspaceId);
-            this.usageBroker.activateWorkspace(event.workspaceId);
             // The active workspace changed: re-evaluate the narrow rule.
             this.notifyPlanVisibility(event.workspaceId);
           } else {
@@ -387,7 +385,6 @@ export class AgentWorkspaceRegistry {
     this.controllers.set(workspaceId, controller);
     this.noticeSinks.set(workspaceId, (text) => timeline.appendSystemMessage(text));
     this.historyBroker.registerWorkspace(workspaceId);
-    this.usageBroker.registerWorkspace(workspaceId);
     controller.mount();
     this.historyDock?.updateOpenState();
   }
@@ -401,9 +398,6 @@ export class AgentWorkspaceRegistry {
     this.noticeSinks.delete(workspaceId);
     this.store.delete(workspaceId);
     this.historyBroker.unregisterWorkspace(workspaceId);
-    this.usageBroker.unregisterWorkspace(workspaceId);
-    // Usage still requires a live Agent workspace channel; History does not.
-    if (this.controllers.size === 0) this.usageStore.setPanelOpen(false);
     controller.dispose();
     this.host.closeWorkspace(workspaceId);
     this.historyDock?.updateOpenState();

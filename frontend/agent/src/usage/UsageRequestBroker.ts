@@ -1,16 +1,16 @@
 // UsageRequestBroker.ts — the single owner of profile + usage + config bridge
 // commands.
 //
-// Like the History broker, panel data is global but every command travels
-// through one live Agent workspace picked by the shared
-// WorkspaceChannelSelector. Unlike History (whose responses have no id), every
-// request here carries a requestId and only the matching reply resolves it:
+// Panel data is process-global, so every command travels through the root
+// bridge and remains available before the first Agent workspace exists and
+// after the last one closes. Every request carries a requestId and only the
+// matching reply resolves it:
 //   - profile_get / profile_set_* replies echo the requestId; profile
 //     broadcasts (no requestId) still apply through the revision guard.
 //   - usage_report / config_report replies must match the in-flight requestId
 //     or are dropped (late scans, superseded refreshes).
-// One 30s timeout per attempt plus one retry on another channel, then an
-// inline error. Config is distinct from live ACP agent_config_options.
+// One 30s timeout per attempt plus one retry on the root bridge, then an inline
+// error. Config is distinct from live ACP agent_config_options.
 
 import type { RawHostMessage } from '../contracts/host-events.js';
 import type {
@@ -27,11 +27,11 @@ import type {
   UsageReport,
   UsageWindow
 } from '../contracts/agent-usage.js';
-import {
-  WorkspaceChannelSelector,
-  type WorkspaceChannelHost
-} from '../workspace/WorkspaceChannelSelector.js';
 import { UsageStore } from './UsageStore.js';
+
+export interface UsageRequestHost {
+  sendGlobalCommand(command: string, value?: string | boolean, requestId?: string): void;
+}
 
 export interface UsageRequestBrokerOptions {
   timeoutMs?: number;
@@ -50,10 +50,8 @@ const USAGE_GAP_REASONS = new Set<UsageGapReason>([
   'damaged_thread_files',
   'unregistered_provider'
 ]);
-const NO_CHANNEL_TEXT = 'Open an Agent workspace to load usage.';
 const TIMEOUT_TEXT = 'Loading usage timed out.';
 const DEFAULT_ERROR_TEXT = 'Unable to load usage.';
-const NO_CHANNEL_CONFIG_TEXT = 'Open an Agent workspace to load config.';
 const TIMEOUT_CONFIG_TEXT = 'Loading config timed out.';
 const DEFAULT_CONFIG_ERROR_TEXT = 'Unable to load config.';
 
@@ -240,86 +238,39 @@ export function normalizeConfigReport(value: unknown): ConfigReport {
 export class UsageRequestBroker {
   private readonly store: UsageStore;
   private readonly timeoutMs: number;
-  private readonly channels: WorkspaceChannelSelector;
+  private readonly host: UsageRequestHost;
 
   private counter = 0;
   private readonly pendingProfileRequests = new Set<string>();
 
   private usageRequestId = '';
-  private usageChannel = '';
   private usageValue: 'cached' | 'force' = 'cached';
   private usageRetried = false;
   private usageTimer: ReturnType<typeof setTimeout> | null = null;
 
   private configRequestId = '';
-  private configChannel = '';
   private configValue: 'cached' | 'force' = 'cached';
   private configRetried = false;
   private configTimer: ReturnType<typeof setTimeout> | null = null;
 
-  private profileRequested = false;
   private disposed = false;
 
-  constructor(host: WorkspaceChannelHost, store: UsageStore, options?: UsageRequestBrokerOptions) {
+  constructor(host: UsageRequestHost, store: UsageStore, options?: UsageRequestBrokerOptions) {
+    this.host = host;
     this.store = store;
     this.timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-    this.channels = new WorkspaceChannelSelector(host);
-  }
-
-  // --- Workspace registry hooks ---------------------------------------------
-
-  registerWorkspace(workspaceId: string): void {
-    if (!this.channels.register(workspaceId)) return;
-    // The footer needs the profile before the panel is ever opened: fetch it
-    // once as soon as the first Agent workspace can carry the command.
-    if (!this.profileRequested) {
-      this.profileRequested = true;
-      this.requestProfile();
-    }
-  }
-
-  activateWorkspace(workspaceId: string): void {
-    this.channels.activate(workspaceId);
-  }
-
-  unregisterWorkspace(workspaceId: string): void {
-    if (!this.channels.unregister(workspaceId)) return;
-    if (this.usageChannel && this.usageChannel === workspaceId) {
-      // Carrier closed mid-scan: retry once elsewhere, else report the error.
-      this.clearUsageTimer();
-      const channel = this.channels.pickExcept(workspaceId);
-      if (!this.usageRetried && channel) {
-        this.usageRetried = true;
-        this.sendUsage(channel);
-      } else {
-        this.usageChannel = '';
-        this.usageRequestId = '';
-        this.store.applyUsageError(NO_CHANNEL_TEXT);
-      }
-    }
-    if (this.configChannel && this.configChannel === workspaceId) {
-      this.clearConfigTimer();
-      const channel = this.channels.pickExcept(workspaceId);
-      if (!this.configRetried && channel) {
-        this.configRetried = true;
-        this.sendConfig(channel);
-      } else {
-        this.configChannel = '';
-        this.configRequestId = '';
-        this.store.applyConfigError(NO_CHANNEL_CONFIG_TEXT);
-      }
-    }
+    // The History footer exists during terminal-only startup, so its profile
+    // bootstrap cannot wait for an Agent workspace lifecycle event.
+    this.requestProfile();
   }
 
   // --- Request entry points ---------------------------------------------------
 
   requestProfile(): void {
     if (this.disposed) return;
-    const channel = this.channels.pick('');
-    if (!channel) return;
     const requestId = this.nextId('p');
     this.pendingProfileRequests.add(requestId);
-    this.channels.bridgeFor(channel)?.sendAgentCommand('profile_get', undefined, requestId);
+    this.host.sendGlobalCommand('profile_get', undefined, requestId);
   }
 
   setDisplayName(name: string): void {
@@ -334,29 +285,19 @@ export class UsageRequestBroker {
    * supersedes any in-flight scan (the old requestId's reply is then dropped). */
   requestUsage(force: boolean): void {
     if (this.disposed) return;
-    const channel = this.channels.pick('');
-    if (!channel) {
-      this.store.applyUsageError(NO_CHANNEL_TEXT);
-      return;
-    }
     this.usageValue = force ? 'force' : 'cached';
     this.usageRetried = false;
     this.store.applyUsageLoading();
-    this.sendUsage(channel);
+    this.sendUsage();
   }
 
   /** Config tab: first activation uses cached; Refresh uses force. */
   requestConfig(force: boolean): void {
     if (this.disposed) return;
-    const channel = this.channels.pick('');
-    if (!channel) {
-      this.store.applyConfigError(NO_CHANNEL_CONFIG_TEXT);
-      return;
-    }
     this.configValue = force ? 'force' : 'cached';
     this.configRetried = false;
     this.store.applyConfigLoading();
-    this.sendConfig(channel);
+    this.sendConfig();
   }
 
   // --- Response handlers ------------------------------------------------------
@@ -377,7 +318,6 @@ export class UsageRequestBroker {
     if (!this.usageRequestId || requestId !== this.usageRequestId) return;
     this.clearUsageTimer();
     this.usageRequestId = '';
-    this.usageChannel = '';
 
     const error = strOrNull(raw.error);
     if (error || !raw.report || !raw.completeness) {
@@ -398,7 +338,6 @@ export class UsageRequestBroker {
     if (!this.configRequestId || requestId !== this.configRequestId) return;
     this.clearConfigTimer();
     this.configRequestId = '';
-    this.configChannel = '';
 
     const error = strOrNull(raw.error);
     if (error || !raw.report) {
@@ -418,53 +357,33 @@ export class UsageRequestBroker {
 
   private sendProfileMutation(command: string, value: string): void {
     if (this.disposed) return;
-    const channel = this.channels.pick('');
-    if (!channel) return;
     const requestId = this.nextId('p');
     this.pendingProfileRequests.add(requestId);
-    this.channels.bridgeFor(channel)?.sendAgentCommand(command, value, requestId);
+    this.host.sendGlobalCommand(command, value, requestId);
   }
 
-  private sendUsage(channel: string): void {
-    const bridge = this.channels.bridgeFor(channel);
-    if (!bridge) {
-      this.store.applyUsageError(NO_CHANNEL_TEXT);
-      return;
-    }
+  private sendUsage(): void {
     const requestId = this.nextId('u');
     this.usageRequestId = requestId;
-    this.usageChannel = channel;
-    bridge.sendAgentCommand('usage_report', this.usageValue, requestId);
+    this.host.sendGlobalCommand('usage_report', this.usageValue, requestId);
     this.usageTimer = setTimeout(() => this.onUsageTimeout(requestId), this.timeoutMs);
   }
 
-  private sendConfig(channel: string): void {
-    const bridge = this.channels.bridgeFor(channel);
-    if (!bridge) {
-      this.store.applyConfigError(NO_CHANNEL_CONFIG_TEXT);
-      return;
-    }
+  private sendConfig(): void {
     const requestId = this.nextId('c');
     this.configRequestId = requestId;
-    this.configChannel = channel;
-    bridge.sendAgentCommand('config_report', this.configValue, requestId);
+    this.host.sendGlobalCommand('config_report', this.configValue, requestId);
     this.configTimer = setTimeout(() => this.onConfigTimeout(requestId), this.timeoutMs);
   }
 
   private onUsageTimeout(requestId: string): void {
     this.usageTimer = null;
     if (this.disposed || requestId !== this.usageRequestId) return;
-    const failedChannel = this.usageChannel;
     this.usageRequestId = '';
-    this.usageChannel = '';
     if (!this.usageRetried) {
       this.usageRetried = true;
-      const channel = this.channels.pickExcept(failedChannel)
-        || (this.channels.has(failedChannel) ? failedChannel : '');
-      if (channel) {
-        this.sendUsage(channel);
-        return;
-      }
+      this.sendUsage();
+      return;
     }
     this.store.applyUsageError(TIMEOUT_TEXT);
   }
@@ -472,17 +391,11 @@ export class UsageRequestBroker {
   private onConfigTimeout(requestId: string): void {
     this.configTimer = null;
     if (this.disposed || requestId !== this.configRequestId) return;
-    const failedChannel = this.configChannel;
     this.configRequestId = '';
-    this.configChannel = '';
     if (!this.configRetried) {
       this.configRetried = true;
-      const channel = this.channels.pickExcept(failedChannel)
-        || (this.channels.has(failedChannel) ? failedChannel : '');
-      if (channel) {
-        this.sendConfig(channel);
-        return;
-      }
+      this.sendConfig();
+      return;
     }
     this.store.applyConfigError(TIMEOUT_CONFIG_TEXT);
   }

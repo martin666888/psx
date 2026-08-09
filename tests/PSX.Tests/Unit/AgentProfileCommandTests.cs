@@ -31,6 +31,34 @@ public sealed class AgentProfileCommandTests
     }
 
     [TestMethod]
+    public async Task GlobalProfileCommands_WithoutAgentWorkspace_LoadAndApplySavedName()
+    {
+        var (coordinator, bridge, scope) = CreateCoordinator(
+            nameof(GlobalProfileCommands_WithoutAgentWorkspace_LoadAndApplySavedName));
+        using (scope)
+        {
+            bridge.RaiseCommand(
+                "profile_set_name", requestId: "global-profile-set", value: "Terminal User");
+
+            var mutationReply = await bridge.WaitForEventAsync(
+                "agent_profile",
+                message => message.GetProperty("requestId").GetString() == "global-profile-set");
+            Assert.AreEqual("Terminal User", mutationReply.GetProperty("displayName").GetString());
+            Assert.AreEqual(1, mutationReply.GetProperty("revision").GetInt64());
+
+            bridge.RaiseCommand("profile_get", requestId: "global-profile-get");
+
+            var reply = await bridge.WaitForEventAsync(
+                "agent_profile",
+                message => message.GetProperty("requestId").GetString() == "global-profile-get");
+            Assert.IsEmpty(coordinator.Workspaces);
+            Assert.AreEqual("Terminal User", reply.GetProperty("displayName").GetString());
+            Assert.AreEqual(1, reply.GetProperty("revision").GetInt64());
+            Assert.IsFalse(reply.TryGetProperty("workspaceId", out _));
+        }
+    }
+
+    [TestMethod]
     public async Task ProfileGet_EchoesRequestId()
     {
         var (coordinator, bridge, scope) = CreateCoordinator(nameof(ProfileGet_EchoesRequestId));

@@ -552,7 +552,7 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
         {
             // Profile commands are global (coordinator-owned) like load_thread:
             // they never reach the per-workspace session engine.
-            HandleProfileCommand(entry, args);
+            HandleProfileCommand(entry.EventSink, args);
             return;
         }
 
@@ -560,7 +560,7 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
         {
             // Usage aggregation is global and coordinator-owned; the report is
             // returned only to the requester (matched by requestId).
-            _ = HandleUsageReportAsync(entry, args);
+            _ = HandleUsageReportAsync(entry.EventSink, args);
             return;
         }
 
@@ -568,7 +568,7 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
         {
             // Config aggregation mirrors usage: global, coordinator-owned,
             // requestId-matched reply only to the requester.
-            _ = HandleConfigReportAsync(entry, args);
+            _ = HandleConfigReportAsync(entry.EventSink, args);
             return;
         }
 
@@ -605,6 +605,15 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
                 break;
             case "load_thread" when !string.IsNullOrWhiteSpace(args.Value):
                 _ = OpenThreadSafelyAsync(args.Value);
+                break;
+            case "profile_get" or "profile_set_name" or "profile_set_avatar":
+                HandleProfileCommand(_rootBridge, args);
+                break;
+            case "usage_report":
+                _ = HandleUsageReportAsync(_rootBridge, args);
+                break;
+            case "config_report":
+                _ = HandleConfigReportAsync(_rootBridge, args);
                 break;
         }
     }
@@ -688,7 +697,7 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
     /// broadcast that frontends apply by monotonic revision. Failures reply
     /// only to the requester and never enter thread history.
     /// </summary>
-    private void HandleProfileCommand(Entry requester, AgentCommandEventArgs args)
+    private void HandleProfileCommand(IAgentBridgeService requester, AgentCommandEventArgs args)
     {
         try
         {
@@ -734,7 +743,7 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
     }
 
     private void CompleteProfileMutation(
-        Entry requester, string? requestId, AgentProfileUpdateResult result)
+        IAgentBridgeService requester, string? requestId, AgentProfileUpdateResult result)
     {
         if (!result.Success)
         {
@@ -745,15 +754,15 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
         SendProfileEvent(requester, result.Profile, requestId);
         foreach (var entry in _entries.Values)
         {
-            if (!ReferenceEquals(entry, requester) && !entry.Closing)
-                SendProfileEvent(entry, result.Profile, requestId: null);
+            if (!ReferenceEquals(entry.EventSink, requester) && !entry.Closing)
+                SendProfileEvent(entry.EventSink, result.Profile, requestId: null);
         }
     }
 
     private static void SendProfileEvent(
-        Entry entry, AgentProfile profile, string? requestId, string? error = null)
+        IAgentBridgeService requester, AgentProfile profile, string? requestId, string? error = null)
     {
-        var sendTask = entry.EventSink.SendEventAsync(new
+        var sendTask = requester.SendEventAsync(new
         {
             type = "agent_profile",
             requestId,
@@ -778,7 +787,7 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
     /// the requester, echoing its requestId. Failures reply on the same event
     /// with an error field and never enter thread history.
     /// </summary>
-    private async Task HandleUsageReportAsync(Entry requester, AgentCommandEventArgs args)
+    private async Task HandleUsageReportAsync(IAgentBridgeService requester, AgentCommandEventArgs args)
     {
         var force = string.Equals(args.Value, "force", StringComparison.OrdinalIgnoreCase);
         try
@@ -787,7 +796,7 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
                 .CollectAsync(force, _shutdownCts.Token)
                 .ConfigureAwait(false);
 
-            await requester.EventSink.SendEventAsync(new
+            await requester.SendEventAsync(new
             {
                 type = "agent_usage_report",
                 requestId = args.RequestId,
@@ -808,7 +817,7 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
                 $"Agent usage scan failed: {ex}");
             try
             {
-                await requester.EventSink.SendEventAsync(new
+                await requester.SendEventAsync(new
                 {
                     type = "agent_usage_report",
                     requestId = args.RequestId,
@@ -833,7 +842,7 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
     /// event with an error field and never enter thread history. Distinct from
     /// live ACP <c>agent_config_options</c>.
     /// </summary>
-    private async Task HandleConfigReportAsync(Entry requester, AgentCommandEventArgs args)
+    private async Task HandleConfigReportAsync(IAgentBridgeService requester, AgentCommandEventArgs args)
     {
         var force = string.Equals(args.Value, "force", StringComparison.OrdinalIgnoreCase);
         try
@@ -842,7 +851,7 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
                 .CollectAsync(force, _shutdownCts.Token)
                 .ConfigureAwait(false);
 
-            await requester.EventSink.SendEventAsync(new
+            await requester.SendEventAsync(new
             {
                 type = "agent_config_report",
                 requestId = args.RequestId,
@@ -861,7 +870,7 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
                 $"Agent config scan failed: {ex}");
             try
             {
-                await requester.EventSink.SendEventAsync(new
+                await requester.SendEventAsync(new
                 {
                     type = "agent_config_report",
                     requestId = args.RequestId,

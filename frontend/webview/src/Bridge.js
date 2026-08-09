@@ -196,8 +196,8 @@ export const Bridge = {
 
     /**
      * Sends a process-wide Agent command that does not require a live Agent
-     * workspace. History uses this as its fallback channel during a
-     * terminal-only session.
+     * workspace. Process-global History, profile, usage and config operations
+     * use this channel during terminal-only startup and normal Agent use.
      * @param {string} command
      * @param {string|boolean} [value]
      * @param {string} [requestId]

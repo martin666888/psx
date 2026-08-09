@@ -1,8 +1,8 @@
 // WorkspaceChannelSelector.ts — shared live-workspace channel picker.
 //
-// Global brokers (History, Usage) send commands through one live Agent
-// workspace's scoped bridge. This owns the alive set + activation order and the
-// channel-priority policy so both brokers select identically: originating
+// The History broker may send commands through one live Agent workspace's
+// scoped bridge before falling back to the process-wide bridge. This owns the
+// alive set + activation order and the channel-priority policy: originating
 // workspace (alive) -> active Agent workspace -> most recently activated live
 // workspace -> any live workspace. Busy and transcript-only workspaces are
 // valid carriers; closing/closed/unknown are not.

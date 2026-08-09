@@ -62,7 +62,7 @@ const report = (overrides = {}) => ({
   ...overrides
 });
 
-async function fixture() {
+async function fixture({ withWorkspace = true } = {}) {
   const runtime = installAgentRuntime();
   await appModule('history/historyIsland.js');
   await appModule('usage/usageIsland.js');
@@ -76,7 +76,7 @@ async function fixture() {
     template: document.getElementById('agent-workspace-template')
   });
   registerAgentCleanup(() => app.dispose());
-  createAgentWorkspace(app, WS);
+  if (withWorkspace) createAgentWorkspace(app, WS);
   const footer = () => document.querySelector('[data-role="history-profile"]');
   for (let index = 0; index < 100 && !footer(); index++) {
     await act(async () => new Promise((resolve) => setTimeout(resolve, 5)));
@@ -98,7 +98,7 @@ async function settle(run, predicate, what = 'usage island') {
 
 function usageCommands(posted) {
   return posted.filter(
-    (message) => message.type === 'agent_command' && message.command === 'usage_report'
+    (message) => message.type === 'agent_global_command' && message.command === 'usage_report'
   );
 }
 
@@ -124,16 +124,25 @@ async function openPanelWith(rig, payload) {
   return request;
 }
 
-test('footer: keeps button semantics and the first-character avatar fallback', async () => {
-  const rig = await fixture();
+test('footer: terminal-only startup fetches the saved profile and renders its avatar fallback', async () => {
+  const rig = await fixture({ withWorkspace: false });
   const footer = rig.footer();
 
   assert.equal(footer.tagName, 'BUTTON');
   assert.ok(footer.getAttribute('aria-label'));
   assert.ok(footer.querySelector('svg[aria-hidden="true"]'));
 
+  const bootstrap = rig.posted.find(
+    (message) => message.type === 'agent_global_command' && message.command === 'profile_get'
+  );
+  assert.ok(bootstrap, 'profile bootstrap must not wait for an Agent workspace');
   await settle(
-    () => rig.app.handle({ type: 'agent_profile', revision: 1, displayName: 'neo wang' }),
+    () => rig.app.handle({
+      type: 'agent_profile',
+      requestId: bootstrap.requestId,
+      revision: 1,
+      displayName: 'neo wang'
+    }),
     () => rig.footer().textContent.includes('neo wang')
   );
   const fallback = rig.footer().querySelector('.agent-history-dock-footer-avatar-fallback');
@@ -410,7 +419,7 @@ test('panel: config tab lazy-loads config_report and switches agent sub-tabs', a
 
   function configCommands(posted) {
     return posted.filter(
-      (message) => message.type === 'agent_command' && message.command === 'config_report'
+      (message) => message.type === 'agent_global_command' && message.command === 'config_report'
     );
   }
 

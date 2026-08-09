@@ -115,6 +115,30 @@ public sealed class AgentWorkspaceActivationTests
     }
 
     [TestMethod]
+    public async Task GlobalUsageAndConfigCommands_ReturnWithoutAgentWorkspace()
+    {
+        using var fixture = new Fixture(nameof(GlobalUsageAndConfigCommands_ReturnWithoutAgentWorkspace));
+
+        fixture.Bridge.RaiseCommand("usage_report", requestId: "global-usage", value: "cached");
+        var usage = await fixture.Bridge.WaitForEventAsync(
+            "agent_usage_report",
+            message => message.TryGetProperty("requestId", out var requestId)
+                && requestId.GetString() == "global-usage");
+
+        fixture.Bridge.RaiseCommand("config_report", requestId: "global-config", value: "cached");
+        var config = await fixture.Bridge.WaitForEventAsync(
+            "agent_config_report",
+            message => message.TryGetProperty("requestId", out var requestId)
+                && requestId.GetString() == "global-config");
+
+        Assert.IsEmpty(fixture.Coordinator.Workspaces);
+        Assert.IsFalse(usage.TryGetProperty("workspaceId", out _));
+        Assert.IsFalse(config.TryGetProperty("workspaceId", out _));
+        Assert.AreEqual(System.Text.Json.JsonValueKind.Object, usage.GetProperty("report").ValueKind);
+        Assert.AreEqual(System.Text.Json.JsonValueKind.Object, config.GetProperty("report").ValueKind);
+    }
+
+    [TestMethod]
     public async Task OpenThread_ActivatesBeforeRestoreContentArrives()
     {
         using var fixture = new Fixture(nameof(OpenThread_ActivatesBeforeRestoreContentArrives));

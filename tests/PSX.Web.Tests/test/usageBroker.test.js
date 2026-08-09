@@ -1,9 +1,9 @@
 // usageBroker.test.js — drives the UsageStore + UsageRequestBroker pair with a
-// fake workspace host, mirroring agentHistoryBroker.test.js. Unlike History,
+// fake root bridge. Unlike History,
 // every profile/usage command carries a requestId and only the matching reply
 // resolves it: usage replies for a superseded (or never-issued) requestId are
 // dropped, profile broadcasts with no requestId still apply through the
-// monotonic revision guard, and one 30s timeout triggers a single channel retry.
+// monotonic revision guard, and one 30s timeout triggers one root-bridge retry.
 
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
@@ -20,41 +20,12 @@ function makeRig({ timeoutMs = 5000 } = {}) {
   const store = new UsageStore();
   const commands = [];
   const host = {
-    alive: new Set(),
-    active: '',
-    isAlive(id) {
-      return this.alive.has(id);
-    },
-    activeAgentWorkspace() {
-      return this.active;
-    },
-    bridgeFor(id) {
-      return {
-        sendAgentMessage() {},
-        uploadAgentAttachment() {},
-        sendAgentCommand(command, value, requestId) {
-          commands.push({ workspaceId: id, command, value, requestId });
-        },
-        sendAgentPermissionResponse() {},
-        sendAgentQuestionResponse() {},
-        sendAgentElicitationResponse() {}
-      };
+    sendGlobalCommand(command, value, requestId) {
+      commands.push({ command, value, requestId });
     }
   };
   const broker = new UsageRequestBroker(host, store, { timeoutMs });
   return { store, broker, host, commands };
-}
-
-// Mirror agent_workspace_created.
-function addWorkspace(rig, id) {
-  rig.host.alive.add(id);
-  rig.broker.registerWorkspace(id);
-}
-
-// Mirror agent_workspace_closed.
-function removeWorkspace(rig, id) {
-  rig.host.alive.delete(id);
-  rig.broker.unregisterWorkspace(id);
 }
 
 function usageCommands(commands) {
@@ -100,13 +71,10 @@ function completeness(overrides = {}) {
 
 // --- profile bootstrap ---------------------------------------------------------
 
-test('broker: fetches the profile once as soon as the first workspace registers', () => {
+test('broker: fetches the profile immediately through the process-wide bridge', () => {
   const rig = makeRig();
-  addWorkspace(rig, 'a');
-  addWorkspace(rig, 'b');
   const gets = profileGets(rig.commands);
-  assert.equal(gets.length, 1, 'only the first live workspace triggers the bootstrap fetch');
-  assert.equal(gets[0].workspaceId, 'a');
+  assert.equal(gets.length, 1, 'construction triggers exactly one bootstrap fetch');
   assert.ok(gets[0].requestId, 'the bootstrap profile_get carries a requestId');
 });
 
@@ -114,7 +82,6 @@ test('broker: fetches the profile once as soon as the first workspace registers'
 
 test('broker: a usage reply with the in-flight requestId lands in the store', () => {
   const rig = makeRig();
-  addWorkspace(rig, 'a');
 
   rig.broker.requestUsage(false);
   assert.equal(rig.store.getState().status, 'loading');
@@ -140,7 +107,6 @@ test('broker: a usage reply with the in-flight requestId lands in the store', ()
 
 test('broker: drops a usage reply whose requestId does not match the in-flight one', () => {
   const rig = makeRig();
-  addWorkspace(rig, 'a');
 
   rig.broker.requestUsage(false);
   rig.broker.handleUsageReport({ requestId: 'stale-id', report: minimalReport() });
@@ -152,7 +118,6 @@ test('broker: drops a usage reply whose requestId does not match the in-flight o
 
 test('broker: drops a usage reply that arrives without any in-flight request', () => {
   const rig = makeRig();
-  addWorkspace(rig, 'a');
 
   // No requestUsage yet: a spontaneous reply must not clobber the idle state.
   rig.broker.handleUsageReport({ requestId: 'u1', report: minimalReport() });
@@ -165,7 +130,6 @@ test('broker: drops a usage reply that arrives without any in-flight request', (
 
 test('broker: consecutive force refreshes supersede — the older reply is dropped', () => {
   const rig = makeRig();
-  addWorkspace(rig, 'a');
 
   rig.broker.requestUsage(true);
   const first = usageCommands(rig.commands).at(-1);
@@ -191,11 +155,10 @@ test('broker: consecutive force refreshes supersede — the older reply is dropp
   assert.equal(state.report.heatmapStartDate, 'FRESH');
 });
 
-// --- usage error + no channel --------------------------------------------------
+// --- usage error + terminal-only global channel -------------------------------
 
 test('broker: a usage reply carrying an error surfaces the error text', () => {
   const rig = makeRig();
-  addWorkspace(rig, 'a');
 
   rig.broker.requestUsage(false);
   const sent = usageCommands(rig.commands).at(-1);
@@ -206,18 +169,19 @@ test('broker: a usage reply carrying an error surfaces the error text', () => {
   assert.equal(state.errorText, 'scan failed');
 });
 
-test('broker: requesting usage with no live workspace reports an inline error', () => {
+test('broker: requesting usage without an Agent workspace uses the global bridge', () => {
   const rig = makeRig();
   rig.broker.requestUsage(false);
-  assert.equal(usageCommands(rig.commands).length, 0);
-  assert.equal(rig.store.getState().status, 'error');
+  const sent = usageCommands(rig.commands).at(-1);
+  assert.equal(sent.value, 'cached');
+  assert.ok(sent.requestId);
+  assert.equal(rig.store.getState().status, 'loading');
 });
 
 // --- profile broadcasts apply by revision, never complete pending -------------
 
 test('broker: a profile broadcast (no requestId) applies through the revision guard', () => {
   const rig = makeRig();
-  addWorkspace(rig, 'a');
 
   // Broadcast from a set on another window: no requestId, monotonic revision.
   rig.broker.handleProfile({ revision: 2, displayName: 'Neo', avatarDataUrl: 'data:image/png;base64,AAA' });
@@ -234,7 +198,6 @@ test('broker: a profile broadcast (no requestId) applies through the revision gu
 
 test('broker: a profile reply carrying an error leaves the stored revision untouched', () => {
   const rig = makeRig();
-  addWorkspace(rig, 'a');
 
   rig.broker.handleProfile({ revision: 3, displayName: 'Trinity' });
   assert.equal(rig.store.getState().profile.revision, 3);
@@ -253,52 +216,21 @@ test('broker: a profile reply carrying an error leaves the stored revision untou
 
 // --- timeout + retry -----------------------------------------------------------
 
-test('broker: times out, retries once on another channel, then errors', async () => {
+test('broker: times out, retries once on the global bridge, then errors', async () => {
   const rig = makeRig({ timeoutMs: 30 });
-  addWorkspace(rig, 'a');
-  addWorkspace(rig, 'b');
-  rig.host.active = 'a';
 
   rig.broker.requestUsage(true);
   const first = usageCommands(rig.commands).at(-1);
-  assert.equal(first.workspaceId, 'a');
 
   await sleep(50);
   const retried = usageCommands(rig.commands);
   assert.equal(retried.length, 2, 'one retry after the first timeout');
-  assert.notEqual(retried[1].workspaceId, 'a', 'the retry prefers a different channel');
   assert.notEqual(retried[1].requestId, first.requestId, 'the retry uses a fresh requestId');
 
   await sleep(50);
   const state = rig.store.getState();
   assert.equal(state.status, 'error');
   assert.match(state.errorText, /timed out/i);
-});
-
-test('broker: retries on another channel when the carrier closes mid-scan', () => {
-  const rig = makeRig();
-  addWorkspace(rig, 'a');
-  addWorkspace(rig, 'b');
-  rig.host.active = 'a';
-
-  rig.broker.requestUsage(false);
-  const first = usageCommands(rig.commands).at(-1);
-  assert.equal(first.workspaceId, 'a');
-
-  removeWorkspace(rig, 'a');
-  const retried = usageCommands(rig.commands);
-  assert.equal(retried.length, 2, 'the closed carrier triggers one retry elsewhere');
-  assert.equal(retried[1].workspaceId, 'b');
-
-  // The current channel lands; the late reply from the closed carrier is dropped.
-  rig.broker.handleUsageReport({ requestId: first.requestId, report: minimalReport() });
-  assert.equal(rig.store.getState().status, 'loading');
-  rig.broker.handleUsageReport({
-    requestId: retried[1].requestId,
-    report: minimalReport(),
-    completeness: completeness()
-  });
-  assert.equal(rig.store.getState().status, 'idle');
 });
 
 // --- config_report (Usage panel「配置」tab) -----------------------------------
@@ -325,7 +257,6 @@ function minimalConfigReport() {
 
 test('broker: requestConfig sends config_report and applies a matching reply', () => {
   const rig = makeRig();
-  addWorkspace(rig, 'a');
   rig.broker.requestConfig(false);
   const sent = configCommands(rig.commands).at(-1);
   assert.equal(sent.command, 'config_report');
@@ -346,7 +277,6 @@ test('broker: requestConfig sends config_report and applies a matching reply', (
 
 test('broker: drops late or superseded config_report replies', () => {
   const rig = makeRig();
-  addWorkspace(rig, 'a');
   rig.broker.requestConfig(false);
   const first = configCommands(rig.commands).at(-1);
   rig.broker.requestConfig(true);
@@ -370,7 +300,6 @@ test('broker: drops late or superseded config_report replies', () => {
 
 test('broker: config error payload surfaces in the config slice', () => {
   const rig = makeRig();
-  addWorkspace(rig, 'a');
   rig.broker.requestConfig(false);
   const sent = configCommands(rig.commands).at(-1);
   rig.broker.handleConfigReport({ requestId: sent.requestId, error: '无法读取配置信息，请重试。' });
@@ -378,29 +307,4 @@ test('broker: config error payload surfaces in the config slice', () => {
   assert.equal(state.configStatus, 'error');
   assert.match(state.configErrorText, /无法读取配置/);
   assert.equal(state.configLoadedOnce, true);
-});
-
-test('broker: retries config on another channel when the carrier closes mid-scan', () => {
-  const rig = makeRig();
-  addWorkspace(rig, 'a');
-  addWorkspace(rig, 'b');
-  rig.host.active = 'a';
-
-  rig.broker.requestConfig(false);
-  const first = configCommands(rig.commands).at(-1);
-  assert.equal(first.workspaceId, 'a');
-
-  removeWorkspace(rig, 'a');
-  const retried = configCommands(rig.commands);
-  assert.equal(retried.length, 2, 'the closed carrier triggers one retry elsewhere');
-  assert.equal(retried[1].workspaceId, 'b');
-
-  // The current channel lands; the late reply from the closed carrier is dropped.
-  rig.broker.handleConfigReport({ requestId: first.requestId, report: minimalConfigReport() });
-  assert.equal(rig.store.getState().configStatus, 'loading');
-  rig.broker.handleConfigReport({
-    requestId: retried[1].requestId,
-    report: minimalConfigReport()
-  });
-  assert.equal(rig.store.getState().configStatus, 'idle');
 });
