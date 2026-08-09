@@ -100,24 +100,28 @@ public sealed class AcpRuntimeManagerTests
     [TestMethod]
     public async Task EnsureInstalled_CancelledProcess_IsKilledAndReportedCancelled()
     {
-        using var fixture = new FakeNpmFixture(nameof(EnsureInstalled_CancelledProcess_IsKilledAndReportedCancelled));
-        fixture.Configure(Hanging("install", "acp-current"));
-        using var cancellation = new CancellationTokenSource();
-        var operation = fixture.Manager.EnsureInstalledAsync(cancellationToken: cancellation.Token);
-        await TestWorkspace.WaitUntilAsync(
-            () => fixture.ReadInvocations().Count == 1,
-            TimeSpan.FromSeconds(5),
-            "Fake npm did not start.");
-        var processId = fixture.ReadInvocations().Single().ProcessId;
+        for (var iteration = 0; iteration < 3; iteration++)
+        {
+            using var fixture = new FakeNpmFixture(
+                $"{nameof(EnsureInstalled_CancelledProcess_IsKilledAndReportedCancelled)}-{iteration}");
+            fixture.Configure(Hanging("install", "acp-current"));
+            using var cancellation = new CancellationTokenSource();
+            var operation = fixture.Manager.EnsureInstalledAsync(cancellationToken: cancellation.Token);
+            await TestWorkspace.WaitUntilAsync(
+                () => fixture.ReadInvocations().Count == 1,
+                TimeSpan.FromSeconds(5),
+                "Fake npm did not start.");
+            var processId = fixture.ReadInvocations().Single().ProcessId;
 
-        cancellation.Cancel();
-        var result = await operation;
+            cancellation.Cancel();
+            var result = await operation;
 
-        Assert.AreEqual(AcpRuntimeOperationKind.Cancelled, result.Kind);
-        await TestWorkspace.WaitUntilAsync(
-            () => !FakeNpmFixture.IsProcessRunning(processId),
-            TimeSpan.FromSeconds(5),
-            "Cancelled Fake npm process was not killed.");
+            Assert.AreEqual(AcpRuntimeOperationKind.Cancelled, result.Kind);
+            Assert.IsFalse(
+                FakeNpmFixture.IsProcessRunning(processId),
+                "The cancellation result must not return until Fake npm has exited.");
+            AssertDirectoryReleased(fixture.Paths.AcpCurrentDirectory);
+        }
     }
 
     [TestMethod]
@@ -127,24 +131,32 @@ public sealed class AcpRuntimeManagerTests
         // startup alone can exceed a few hundred milliseconds. The timeout must
         // stay comfortably above that or the kill can land before the process
         // writes its invocation marker, making this assertion flaky.
-        using var fixture = new FakeNpmFixture(
-            nameof(EnsureInstalled_ProcessTimeout_IsKilledAndReportedFailed),
-            TimeSpan.FromSeconds(5));
-        fixture.Configure(Hanging("install", "acp-current"));
-
-        var result = await fixture.Manager.EnsureInstalledAsync();
-        var invocations = fixture.ReadInvocations();
-
-        Assert.AreEqual(AcpRuntimeOperationKind.Failed, result.Kind);
-        StringAssert.Contains(result.Message, "timed out");
-        Assert.HasCount(1, invocations);
-        foreach (var processId in invocations.Select(invocation => invocation.ProcessId))
+        for (var iteration = 0; iteration < 3; iteration++)
         {
-            await TestWorkspace.WaitUntilAsync(
-                () => !FakeNpmFixture.IsProcessRunning(processId),
-                TimeSpan.FromSeconds(5),
-                "Timed-out Fake npm process was not killed.");
+            using var fixture = new FakeNpmFixture(
+                $"{nameof(EnsureInstalled_ProcessTimeout_IsKilledAndReportedFailed)}-{iteration}",
+                TimeSpan.FromSeconds(5));
+            fixture.Configure(Hanging("install", "acp-current"));
+
+            var result = await fixture.Manager.EnsureInstalledAsync();
+            var invocations = fixture.ReadInvocations();
+
+            Assert.AreEqual(AcpRuntimeOperationKind.Failed, result.Kind);
+            StringAssert.Contains(result.Message, "timed out");
+            Assert.HasCount(1, invocations);
+            Assert.IsFalse(
+                FakeNpmFixture.IsProcessRunning(invocations.Single().ProcessId),
+                "The timeout result must not return until Fake npm has exited.");
+            AssertDirectoryReleased(fixture.Paths.AcpCurrentDirectory);
         }
+    }
+
+    private static void AssertDirectoryReleased(string directory)
+    {
+        Assert.IsTrue(Directory.Exists(directory), $"Expected runtime directory '{directory}' to exist.");
+        var probe = directory + ".released";
+        Directory.Move(directory, probe);
+        Directory.Move(probe, directory);
     }
 
     [TestMethod]

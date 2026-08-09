@@ -757,14 +757,16 @@ public sealed class AcpRuntimeManager : IAcpAgentRuntime
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            TryKill(process);
+            await RuntimeProcessCleanup.TerminateAndDrainAsync(
+                process, stdoutTask, stderrTask, Log).ConfigureAwait(false);
             Log($"{label} timed out after {_processTimeout.TotalMinutes:0.##} minutes.");
             return new AcpRuntimeOperationResult(AcpRuntimeOperationKind.Failed,
                 $"{label} timed out.");
         }
         catch (OperationCanceledException)
         {
-            TryKill(process);
+            await RuntimeProcessCleanup.TerminateAndDrainAsync(
+                process, stdoutTask, stderrTask, Log).ConfigureAwait(false);
             Log($"{label} was cancelled.");
             return new AcpRuntimeOperationResult(AcpRuntimeOperationKind.Cancelled,
                 $"{label} was cancelled.");
@@ -792,12 +794,6 @@ public sealed class AcpRuntimeManager : IAcpAgentRuntime
         progress?.Report($"{label} completed.");
         return new AcpRuntimeOperationResult(AcpRuntimeOperationKind.Success,
             $"{label} completed successfully.");
-    }
-
-    private static void TryKill(Process process)
-    {
-        try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
-        catch { /* best effort */ }
     }
 
     private static bool LooksLikeNetworkError(string stderr)

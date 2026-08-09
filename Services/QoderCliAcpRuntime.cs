@@ -801,14 +801,16 @@ public sealed class QoderCliAcpRuntime : IAcpAgentRuntime
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            TryKill(process);
+            await RuntimeProcessCleanup.TerminateAndDrainAsync(
+                process, stdoutTask, stderrTask, Log).ConfigureAwait(false);
             Log($"{label} timed out after {_processTimeout.TotalMinutes:0.##} minutes.");
             return new NpmRunOutcome(AcpRuntimeOperationKind.Failed,
                 $"{label} timed out.", null, "");
         }
         catch (OperationCanceledException)
         {
-            TryKill(process);
+            await RuntimeProcessCleanup.TerminateAndDrainAsync(
+                process, stdoutTask, stderrTask, Log).ConfigureAwait(false);
             Log($"{label} was cancelled.");
             return new NpmRunOutcome(AcpRuntimeOperationKind.Cancelled,
                 $"{label} was cancelled.", null, "");
@@ -880,7 +882,8 @@ public sealed class QoderCliAcpRuntime : IAcpAgentRuntime
         }
         catch (OperationCanceledException)
         {
-            TryKill(process);
+            await RuntimeProcessCleanup.TerminateAndDrainAsync(
+                process, stdoutTask, stderrTask, Log).ConfigureAwait(false);
             return $"--version did not finish within {SmokeCheckTimeout.TotalSeconds:0} seconds";
         }
 
@@ -926,12 +929,6 @@ public sealed class QoderCliAcpRuntime : IAcpAgentRuntime
             Log($"Failed to write Qoder active pointer '{token}': {ex}");
             return false;
         }
-    }
-
-    private static void TryKill(Process process)
-    {
-        try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
-        catch { /* best effort */ }
     }
 
     private static bool LooksLikeNetworkError(string stderr)
