@@ -51,6 +51,7 @@ export const CircleIcon = createTestIcon('circle');
 export const ClockIcon = createTestIcon('clock');
 export const CopyIcon = createTestIcon('copy');
 export const CornerDownLeftIcon = createTestIcon('corner-down-left');
+export const EllipsisIcon = createTestIcon('ellipsis');
 export const FolderIcon = createTestIcon('folder');
 export const FolderOpenIcon = createTestIcon('folder-open');
 export const ImageIcon = createTestIcon('image');

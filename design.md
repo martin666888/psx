@@ -12,12 +12,12 @@ The shape language is **Soft Workbench**: continuous, generous corner radii on a
 
 - Shell: the WebView owns a permanent 40px full-height activity rail at the left holding the global History, workspace list, create, and Theme buttons, plus a 40px workspace chrome row above the pane contents carrying only the nameplates aligned to each visible pane. There is no second WPF tab or theme row.
 - Pane nameplates: the focused pane uses an accent underline and stronger text. Provider/Terminal icon, truncated title, explicit attention text, close, and More occupy the pane's exact top rect, never colliding with the activity rail.
-- Agent toolbar: a pane-local status row with working directory and thread actions. At 720px it is complete, at 520–719px metadata truncates, and at 400–519px only the cwd basename and More remain.
+- Agent toolbar: a pane-local status row with working directory and thread actions. At 720px it is complete, at 520–719px metadata truncates, and at 400–519px only the cwd basename and a ⋯ overflow entry remain.
 - Layered shell: History is one global left dock (default 280px, draggable 220–420px) opened from the permanent rail and pushes every pane. Plan is a workspace-local card; below 520px it opens as a pane-local overlay from a summary entry.
 - Conversation: one centered reading column per pane, max 920px. Its containing block is the pane rect after the History inset, never the application viewport.
 - Composer: shares the reading column. The composer card is the one large-radius signature surface (24px); the circular send button's center lands on the card's corner arc center (footer right/bottom padding = card radius − send radius = 7px).
-- Pane minimums: Agent 400px; Terminal `max(400px, 60 measured columns + horizontal padding)`, with a 480px fallback before measurement. When the sum does not fit, retain the focused pane and temporarily collect the farthest non-focused panes (right wins ties), restoring original order and ratios on widen.
-- Composer response: at 720px all configuration stays on one row; at 520–719px controls may wrap and model text truncates; at 400–519px Mode/Model/Thinking/Context move into the configuration overlay while attachment, input, configuration, and send remain. Every width-bearing flex ancestor permits shrinkage and no pane paints into its neighbor.
+- Pane minimums: Agent 400px; Terminal `max(400px, 60 measured columns + horizontal padding)`, with a 480px fallback before measurement. When the sum does not fit, columns squeeze proportionally below their pixel floors rather than ever being collected, hidden, or dropped.
+- Composer response: at 720px all configuration stays on one row; at 520–719px session mode and provider config controls move into the configuration overlay while Context usage stays in the footer; at 400–519px the Composer keeps controls in the configuration overlay with context hints hidden while attachment, input, configuration, and send remain. Every width-bearing flex ancestor permits shrinkage and no pane paints into its neighbor.
 
 ## Typography
 

@@ -120,3 +120,35 @@ test('repeated updates preserve the context ring DOM node', async () => {
   });
   assert.equal(panel.querySelector('[data-role="context-ring-progress"]'), ring);
 });
+
+// The workspace toolbar island (workspace/toolbarIsland.js) renders the More
+// details menu next to the session meta line; these cases pin the icon-only
+// summary and the session-label fallback contract.
+async function toolbarMore(panel) {
+  for (let attempt = 0; attempt < 200 && !panel.querySelector('.agent-toolbar-more'); attempt++) {
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 5)));
+  }
+  assert.ok(panel.querySelector('.agent-toolbar-more'), 'toolbar More menu did not mount');
+}
+
+test('toolbar More summary renders the Ellipsis icon with no visible text', async () => {
+  const { app, panel } = await fixture();
+  await settle(app, panel, stateEvent());
+  await toolbarMore(panel);
+  const summary = panel.querySelector('.agent-toolbar-more > summary');
+  assert.equal(summary.getAttribute('aria-label'), '更多 Agent 操作');
+  assert.ok(summary.querySelector('svg'), 'summary renders the Ellipsis icon');
+  assert.equal(summary.textContent.trim(), '', 'summary carries no visible text');
+});
+
+test('toolbar More session label hides without a session id and shows it once set', async () => {
+  const { app, panel } = await fixture();
+  await settle(app, panel, stateEvent({ sessionId: '' }));
+  await toolbarMore(panel);
+  assert.equal(panel.querySelector('.agent-toolbar-more-session small'), null, 'no session id renders no session label');
+
+  await settle(app, panel, stateEvent());
+  const small = panel.querySelector('.agent-toolbar-more-session small');
+  assert.ok(small, 'session label renders once a session id exists');
+  assert.equal(small.textContent, 'session: abcdef123456');
+});

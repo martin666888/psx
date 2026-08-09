@@ -139,41 +139,11 @@
         padding-bottom: var(--agent-space-3);
     }
 
-    .agent-composer-footer {
-        flex-wrap: wrap;
-    }
-
-    .agent-composer-controls {
-        order: 5;
-        flex: 1 0 100%;
-        justify-content: flex-start;
-    }
-
-    /* In the 520–719px band the controls wrap onto their own line, so the
-       send button must push itself to the end of its own line. */
-    .agent-composer-footer [data-role="send"] {
-        margin-left: auto;
-    }
-
-    .agent-config-options {
-        flex-wrap: wrap;
-    }
-}
-
-@container agent-shell (max-width: 519px) {
-    .agent-hints {
-        display: none;
-    }
-
-    .agent-composer-footer {
-        flex-wrap: nowrap;
-    }
-
+    /* At ≤719px the configuration controls fold into a popover anchored to
+       the composer controls row; the context usage hint keeps its footer slot
+       until the 519px band hides it. */
     .agent-composer-controls {
         position: relative;
-        order: initial;
-        flex: 1 1 auto;
-        justify-content: flex-end;
     }
 
     .agent-config-toggle {
@@ -209,6 +179,21 @@
     .agent-config-popover .agent-config-options {
         display: grid;
         grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@container agent-shell (max-width: 519px) {
+    .agent-hints {
+        display: none;
+    }
+
+    .agent-composer-footer {
+        flex-wrap: nowrap;
+    }
+
+    .agent-composer-controls {
+        flex: 1 1 auto;
+        justify-content: flex-end;
     }
 }
 

@@ -403,6 +403,47 @@ test('shell: composer and conversation share the same reading-column rules', () 
   assert.match(view, /rounded-b-\[var\(--agent-radius-composer\)\]/);
 });
 
+// The composer responsive bands: at ≤719px the configuration controls fold
+// into the popover anchored to the composer controls row (no wrap band); at
+// ≤519px the context usage hint hides but the footer stays on one row.
+function containerBlock(css, width) {
+  const header = `@container agent-shell (max-width: ${width}px) {`;
+  const start = css.indexOf(header);
+  assert.ok(start !== -1, `missing @container (max-width: ${width}px) block`);
+  const bodyStart = start + header.length;
+  const nextContainer = css.indexOf('@container', bodyStart);
+  const nextMedia = css.indexOf('@media', bodyStart);
+  const ends = [nextContainer, nextMedia].filter((index) => index !== -1);
+  const end = ends.length ? Math.min(...ends) : css.length;
+  return css.slice(bodyStart, end);
+}
+
+test('shell: composer bands fold config controls into the overlay and drop the wrap rules', () => {
+  const composer = readCss('composer.css');
+  const band719 = containerBlock(composer, 719);
+  assert.match(band719, /\.agent-config-toggle/);
+  assert.match(
+    band719,
+    /\.agent-config-popover\[data-open="true"\]\s*\{\s*display: block/,
+    '719px block opens the popover from the toggle'
+  );
+  assert.match(band719, /\.agent-config-popover/);
+  assert.match(band719, /\.agent-config-options/);
+  assert.match(
+    band719,
+    /\.agent-composer-controls\s*\{\s*position: relative/,
+    '719px block anchors the popover to the composer controls'
+  );
+  assert.ok(!band719.includes('flex-wrap: wrap'), 'no wrap band remains in the 719px block');
+  assert.ok(!band719.includes('order: 5'), 'no wrap order remains in the 719px block');
+  assert.ok(!band719.includes('flex: 1 0 100%'), 'no full-row flex remains in the 719px block');
+  assert.ok(!band719.includes('margin-left: auto'), 'no send auto-margin remains in the 719px block');
+  const band519 = containerBlock(composer, 519);
+  assert.match(band519, /\.agent-hints\s*\{\s*display: none/);
+  assert.match(band519, /flex-wrap: nowrap/);
+  assert.ok(!band519.includes('order: initial'), 'no order reset once the 719px block sets no order');
+});
+
 test('shell: dock width stays persisted in wide mode and becomes fixed only while narrow', () => {
   const shell = readCss('shell.css');
   assert.match(shell, /--agent-history-width-effective: var\(--agent-history-width\);/);

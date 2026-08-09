@@ -7,6 +7,7 @@
 // so each state kind keeps exactly one authoritative owner.
 
 import type { JSX, RefObject } from 'react';
+import { EllipsisIcon } from 'lucide-react';
 import { Button } from '../components/ui/button.js';
 import {
   Tooltip,
@@ -121,7 +122,9 @@ export function WorkspaceToolbar(props: WorkspaceToolbarProps): JSX.Element {
     <TooltipProvider>
       <div className="agent-meta">{props.session ? <SessionMeta {...props.session} /> : null}</div>
       <details className="agent-toolbar-more">
-        <summary aria-label="更多 Agent 操作">更多</summary>
+        <summary aria-label="更多 Agent 操作">
+          <EllipsisIcon className="size-4" />
+        </summary>
         <div className="agent-toolbar-more-content">
           {props.session ? (
             <div className="agent-toolbar-more-session">
@@ -135,7 +138,7 @@ export function WorkspaceToolbar(props: WorkspaceToolbarProps): JSX.Element {
               >
                 Change
               </Button>
-              <small>{props.session.sessionLabel}</small>
+              {props.session.sessionLabel ? <small>{props.session.sessionLabel}</small> : null}
             </div>
           ) : null}
           <div className="agent-toolbar-actions">
