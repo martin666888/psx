@@ -54,10 +54,9 @@ const REACT_SMOKE_BOOTSTRAP = String.raw`
         if (typeof message === 'string') {
           try { message = JSON.parse(message); } catch { return; }
         }
-        if (message && message.type === 'agent_command' && message.command === 'history') {
+        if (message && message.type === 'agent_global_command' && message.command === 'history') {
           setTimeout(() => emit({
             type: 'agent_threads',
-            workspaceId: message.workspaceId,
             requestId: message.requestId,
             threads: [{
               threadId: 'ht1',
@@ -97,21 +96,55 @@ const REACT_SMOKE_BOOTSTRAP = String.raw`
         themeColors: { background: '#ffffff', text: '#171717', border: '#e5e5e5' }
       }
     });
-    emit({ type: 'agent_workspace_created', workspaceId });
-    // Pane layouts are now the source of visibility. Mirror the host's
-    // creation ordering: announce the workspace, assign it to pane-1, then
-    // send the legacy activation event consumed by the Agent island.
+    emit({
+      type: 'agent_providers',
+      providers: [{
+        id: 'claude-code',
+        displayName: 'Claude Code',
+        iconKey: 'claude',
+        assistantName: 'Claude'
+      }]
+    });
+    emit({
+      type: 'agent_workspace_created',
+      workspaceId,
+      providerKey: 'claude-code',
+      assistantName: 'Claude',
+      providerDisplayName: 'Claude Code'
+    });
+    emit({
+      type: 'workspace_catalog',
+      revision: 1,
+      maxColumns: 3,
+      providers: [{
+        id: 'claude-code',
+        displayName: 'Claude Code',
+        iconKey: 'claude',
+        assistantName: 'Claude'
+      }],
+      workspaces: [{
+        workspaceId,
+        kind: 'agent',
+        title: 'Release smoke',
+        iconKey: 'claude',
+        columnId: 'column-1',
+        isActiveTab: true,
+        canSplitRight: true,
+        splitBlockedReason: '',
+        canCollapse: false
+      }]
+    });
+    // Ordered columns are the sole visibility truth. Use the production wire
+    // shape so the packaged smoke cannot pass through legacy pane fallbacks.
     emit({
       type: 'workspace_layout',
       revision: 1,
-      focusedPaneId: 'pane-1',
-      panes: [{
-        paneId: 'pane-1',
-        workspaceId,
-        kind: 'agent',
-        ratio: 1,
-        attention: false,
-        sharedWorktree: false
+      focusedColumnId: 'column-1',
+      columns: [{
+        columnId: 'column-1',
+        tabs: [{ workspaceId, kind: 'agent' }],
+        activeTabId: workspaceId,
+        ratio: 1
       }]
     });
     emit({ type: 'workspace_activated', workspaceId, kind: 'agent' });
@@ -169,7 +202,7 @@ const REACT_SMOKE_BOOTSTRAP = String.raw`
     });
 
     const mounted = await waitFor(() => {
-      const panel = document.querySelector('[data-workspace-id="' + workspaceId + '"]');
+      const panel = document.querySelector('.agent-panel[data-workspace-id="' + workspaceId + '"]');
       return panel
         && panel.querySelector('[data-role="conversation-host"]')?.dataset.islandState === 'mounted'
         && panel.querySelector('[data-role="toolbar-host"]')?.dataset.islandState === 'mounted'
@@ -177,7 +210,7 @@ const REACT_SMOKE_BOOTSTRAP = String.raw`
         && panel.querySelector('[data-role="runtime-host"]')?.dataset.islandState === 'mounted'
         && panel.querySelector('[data-role="plan-card"]')?.dataset.islandState === 'mounted';
     });
-    const panel = document.querySelector('[data-workspace-id="' + workspaceId + '"]');
+    const panel = document.querySelector('.agent-panel[data-workspace-id="' + workspaceId + '"]');
     result.checks.islandsMounted = mounted;
     result.checks.realTimelineNode =
       panel?.querySelector('.agent-message-user')?.textContent.includes('React release smoke') === true;
@@ -193,7 +226,7 @@ const REACT_SMOKE_BOOTSTRAP = String.raw`
     // Narrow viewports responsively collapse the dock; the toggle re-opens it
     // exactly like a user would.
     const dock = document.querySelector('.agent-history-dock');
-    if (dock?.hidden) panel?.querySelector('[data-role="history-toggle"]')?.click();
+    if (dock?.hidden) document.querySelector('[data-role="history-toggle"]')?.click();
     await waitFor(() => !!document.querySelector('.agent-history-item[data-thread-id="ht1"]'));
     result.checks.realHistoryThread =
       document.querySelector('.agent-history-item[data-thread-id="ht1"]')

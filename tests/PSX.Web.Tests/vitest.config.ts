@@ -36,6 +36,12 @@ export default defineConfig({
     environment: 'node',
     include: ['test/**/*.test.js'],
     setupFiles: ['test/vitest.setup.js'],
+    reporters: [
+      'default',
+      ['json', {
+        outputFile: path.join(repoRoot, 'TestResults', 'web', 'test-summary.json')
+      }]
+    ],
     // Each file needs a fresh module graph because Agent modules capture the
     // active jsdom/React root. A single isolated worker thread preserves that
     // boundary without retaining one child process per file under V8 coverage.

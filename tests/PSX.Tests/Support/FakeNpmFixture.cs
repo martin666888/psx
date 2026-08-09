@@ -233,9 +233,34 @@ internal sealed class FakeNpmFixture : IDisposable
     {
         if (!File.Exists(InvocationLogPath))
             return [];
-        return File.ReadAllLines(InvocationLogPath)
+
+        // The fake process appends this marker immediately after startup while
+        // the test polls it to learn the process id. Open it as an actual IPC
+        // log: concurrent reads must not depend on the writer having already
+        // closed its short-lived append handle. A final partial line is simply
+        // not an invocation yet and will be observed on the next poll.
+        using var stream = new FileStream(
+            InvocationLogPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd()
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
             .Where(line => !string.IsNullOrWhiteSpace(line))
-            .Select(line => JsonSerializer.Deserialize<FakeNpmInvocation>(line, JsonOptions)!)
+            .Select(line =>
+            {
+                try
+                {
+                    return JsonSerializer.Deserialize<FakeNpmInvocation>(line, JsonOptions);
+                }
+                catch (JsonException)
+                {
+                    return null;
+                }
+            })
+            .Where(invocation => invocation != null)
+            .Select(invocation => invocation!)
             .ToArray();
     }
 
