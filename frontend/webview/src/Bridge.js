@@ -195,6 +195,23 @@ export const Bridge = {
     },
 
     /**
+     * Sends a process-wide Agent command that does not require a live Agent
+     * workspace. History uses this as its fallback channel during a
+     * terminal-only session.
+     * @param {string} command
+     * @param {string|boolean} [value]
+     * @param {string} [requestId]
+     */
+    sendAgentGlobalCommand(command, value, requestId) {
+        this.sendToHost({
+            type: BridgeSendType.AgentGlobalCommand,
+            command: command,
+            value: value ?? '',
+            requestId: requestId || ''
+        });
+    },
+
+    /**
      * @param {string} workspaceId
      * @param {string} requestId
      * @param {string} value

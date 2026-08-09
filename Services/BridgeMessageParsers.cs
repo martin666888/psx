@@ -29,6 +29,24 @@ internal static class AgentBridgeMessageParser
             using var document = JsonDocument.Parse(json);
             var root = document.RootElement;
             var type = GetString(root, "type");
+            switch (type)
+            {
+                case "agent_global_command":
+                    var command = GetString(root, "command");
+                    if (string.IsNullOrWhiteSpace(command))
+                        return false;
+                    message = new AgentBridgeMessage(
+                        AgentBridgeMessageKind.Command,
+                        Command: new AgentCommandEventArgs
+                        {
+                            WorkspaceId = Guid.Empty,
+                            Command = command,
+                            RequestId = GetString(root, "requestId"),
+                            Value = GetString(root, "value"),
+                            BooleanValue = GetBoolean(root, "value")
+                        });
+                    return true;
+            }
             if (!Guid.TryParse(GetString(root, "workspaceId"), out var workspaceId)
                 || workspaceId == Guid.Empty)
             {

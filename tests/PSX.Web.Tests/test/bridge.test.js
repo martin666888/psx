@@ -9,12 +9,14 @@ describe('WebView bridge', () => {
     Bridge.sendAgentPermissionResponse('workspace-1', 'request-9', 'bypassPermissions');
     Bridge.sendAgentCommand('workspace-1', 'set_config_option', 'plan', 'mode');
     Bridge.sendAgentCommand('workspace-1', 'set_config_option', true, 'fast_mode');
+    Bridge.sendAgentGlobalCommand('history', undefined, 'history-1');
     Bridge.sendPasteRequest('session-1', 'paste-1');
 
     assert.deepEqual(postedMessages, [
       { type: 'agent_permission_response', workspaceId: 'workspace-1', requestId: 'request-9', value: 'bypassPermissions' },
       { type: 'agent_command', workspaceId: 'workspace-1', command: 'set_config_option', value: 'plan', requestId: 'mode' },
       { type: 'agent_command', workspaceId: 'workspace-1', command: 'set_config_option', value: true, requestId: 'fast_mode' },
+      { type: 'agent_global_command', command: 'history', value: '', requestId: 'history-1' },
       { type: 'paste_request', sessionId: 'session-1', requestId: 'paste-1' }
     ]);
   });

@@ -42,6 +42,9 @@ function makeRig({ timeoutMs = 5000 } = {}) {
         sendAgentQuestionResponse() {},
         sendAgentElicitationResponse() {}
       };
+    },
+    sendGlobalCommand(command, value, requestId) {
+      commands.push({ workspaceId: '', command, value, requestId, global: true });
     }
   };
   const broker = new AgentHistoryRequestBroker(host, store, { timeoutMs });
@@ -172,18 +175,36 @@ test('broker: any live workspace can carry the request when none is active', () 
   assertHistoryRequestId(sent.requestId);
 });
 
-test('broker: without a live workspace the request is unavailable and keeps the cached list', () => {
+test('broker: without a live workspace loads through the process-wide bridge', () => {
   const rig = makeRig();
   rig.store.applyThreads(
     [{ threadId: 'cached', title: 'Cached', cwd: '', updatedAt: '', sessionId: '', providerKey: 'unknown' }]
   );
 
   rig.broker.requestRefresh('');
-  assert.equal(rig.commands.length, 0);
+  const sent = latestHistoryRequest(rig.commands);
+  assert.equal(sent.workspaceId, '');
+  assert.equal(sent.global, true);
+  assertHistoryRequestId(sent.requestId);
+
+  threadsReply(rig, '', { threads: [{ threadId: 'fresh' }] });
   const state = rig.store.getState();
-  assert.equal(state.status, 'unavailable');
-  assert.equal(state.dirty, true);
-  assert.equal(state.threads.length, 1);
+  assert.equal(state.status, 'idle');
+  assert.equal(state.dirty, false);
+  assert.equal(state.threads[0].threadId, 'fresh');
+});
+
+test('broker: opens a saved thread through the global bridge without a workspace', () => {
+  const rig = makeRig();
+
+  assert.equal(rig.broker.sendCommandOnChannel('load_thread', 'thread-1'), true);
+  assert.deepEqual(rig.commands, [{
+    workspaceId: '',
+    command: 'load_thread',
+    value: 'thread-1',
+    requestId: undefined,
+    global: true
+  }]);
 });
 
 // --- carrier loss + dirty retry -------------------------------------------------
@@ -211,21 +232,19 @@ test('broker: retries on another channel when the carrier closes mid-request', (
   assert.equal(state.threads[0].threadId, 'fresh');
 });
 
-test('broker: goes unavailable when the last carrier closes and retries dirty on workspace creation', () => {
+test('broker: falls back to the global bridge when the last workspace carrier closes', () => {
   const rig = makeRig();
   addWorkspace(rig, 'a');
   rig.broker.requestRefresh('a');
   removeWorkspace(rig, 'a');
 
-  const down = rig.store.getState();
-  assert.equal(down.status, 'unavailable');
-  assert.equal(down.dirty, true);
-  assert.equal(historyCommands(rig.commands).length, 1);
-
-  addWorkspace(rig, 'b');
   const retried = historyCommands(rig.commands);
   assert.equal(retried.length, 2);
-  assert.equal(retried[1].workspaceId, 'b');
+  assert.equal(retried[1].workspaceId, '');
+  assert.equal(retried[1].global, true);
+
+  threadsReply(rig, '', { threads: [{ threadId: 'global-fresh' }] });
+  assert.equal(rig.store.getState().threads[0].threadId, 'global-fresh');
 });
 
 // --- invalidation coalescing ------------------------------------------------------

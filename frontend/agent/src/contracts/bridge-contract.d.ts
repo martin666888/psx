@@ -119,6 +119,13 @@ interface AgentCommandPayload {
     requestId: string;
 }
 
+interface AgentGlobalCommandPayload {
+    type: 'agent_global_command';
+    command: string;
+    value: string | boolean;
+    requestId: string;
+}
+
 interface AgentPermissionResponsePayload {
     type: 'agent_permission_response';
     workspaceId: string;
@@ -156,6 +163,7 @@ type BridgeOutboundMessage =
     | AgentSubmitPayload
     | AgentUploadAttachmentPayload
     | AgentCommandPayload
+    | AgentGlobalCommandPayload
     | AgentPermissionResponsePayload
     | AgentQuestionResponsePayload
     | AgentElicitationResponsePayload;

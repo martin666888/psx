@@ -458,6 +458,14 @@ test('activity rail owns the three global buttons and the chrome row keeps only 
   assert.equal(header.querySelectorAll('button').length, 0, 'chrome row owns no global buttons');
   assert.ok(header.querySelector('[data-role="pane-nameplates"]'), 'chrome row keeps the tab-strip host');
   assert.equal(chrome.historyButton, document.querySelector('[data-role="history-toggle"]'));
+  assert.equal(chrome.historyButton.disabled, false, 'History is available before any Agent workspace exists');
+  chrome.applyCatalog({
+    revision: 1,
+    providers: [],
+    maxColumns: 3,
+    workspaces: [{ workspaceId: 'terminal-1', kind: 'terminal', title: 'Terminal' }]
+  });
+  assert.equal(chrome.historyButton.disabled, false, 'a terminal-only catalog does not disable global History');
   chrome.dispose();
 });
 

@@ -4,11 +4,10 @@
 // left column inside #agent-workspace-container). It renders the global
 // AgentHistoryStore: grouped/searchable/filterable thread list, loading /
 // error / unavailable states, open-thread markers and a search/filter/refresh
-// top bar. Open/close lives on the per-workspace toolbar toggle (event
-// delegation from the container); all `history` loads go through the
-// AgentHistoryRequestBroker and `load_thread` clicks use the broker's channel
-// picker without entering the request state machine. Open state and width
-// persist in localStorage.
+// top bar. Open/close is driven by the permanent activity-rail button; all
+// `history` loads go through AgentHistoryRequestBroker and `load_thread`
+// clicks use the broker's workspace-or-global channel picker without entering
+// the request state machine. Open state and width persist in localStorage.
 //
 // The dock chrome (aside frame, top bar, scroll node, resizer) renders
 // through the history-dock React island; this controller owns the business
@@ -35,15 +34,14 @@ import {
 import { createIslandLoader, type IslandLoader } from '../core/islandHost.js';
 import type { HistoryDockViewProps } from './HistoryDockView.js';
 
-/** Everything the dock needs from the registry (store + broker + the live
- * workspace set). Provided as one seam so the controller stays testable. */
+/** Everything the dock needs from the registry (store + broker + open-thread
+ * markers). Provided as one seam so the controller stays testable. */
 export interface HistoryDockHost {
   getState(): AgentHistoryState;
   subscribe(listener: AgentHistoryListener): () => void;
   requestRefresh(originWorkspaceId: string): void;
   openThread(threadId: string): boolean;
   dismissThreadOpenError(): void;
-  hasAgentWorkspaces(): boolean;
   /** The active Agent workspace, or '' when a terminal/nothing is active. */
   activeWorkspaceId(): string;
   /** workspaceId → currentThreadId for every live workspace bound to a thread. */
@@ -73,7 +71,6 @@ export class HistoryDockController {
   // responsive layout is currently in control.
   private preferredOpen = true;
   private responsiveOverride: boolean | null = null;
-  private agentViewActive = true;
   private width = HISTORY_DOCK_DEFAULT_WIDTH;
   private query = '';
   private providerFilterValue = '';
@@ -164,14 +161,6 @@ export class HistoryDockController {
   /** Focus entry point for user-initiated History open requests. */
   focusSearch(): void {
     this.dockHost?.querySelector<HTMLElement>('[data-role="history-search"]')?.focus();
-  }
-
-  /** WorkspaceHost view toggle: the whole agent area (dock included) hides
-   * while a terminal workspace is active. */
-  setAgentViewActive(active: boolean): void {
-    if (this.agentViewActive === active) return;
-    this.agentViewActive = active;
-    this.syncVisibility();
   }
 
   /** Registry hook after workspace events/lifecycle: refresh open-thread
@@ -278,7 +267,7 @@ export class HistoryDockController {
   }
 
   private isVisible(): boolean {
-    return this.effectiveOpen() && this.agentViewActive;
+    return this.effectiveOpen();
   }
 
   private syncVisibility(): void {
@@ -298,7 +287,6 @@ export class HistoryDockController {
 
   private maybeAutoLoad(): void {
     if (!this.dockHost || !this.isVisible()) return;
-    if (!this.host.hasAgentWorkspaces()) return;
     const state = this.host.getState();
     if (state.loaded || state.status !== 'idle' || state.inFlightWorkspaceId) return;
     this.host.requestRefresh('');
@@ -405,7 +393,6 @@ export class HistoryDockController {
       },
       onOpenUsage: () => this.host.openUsagePanel(),
       list: {
-        hasWorkspaces: this.host.hasAgentWorkspaces(),
         state,
         query: this.query,
         providerFilter: this.providerFilterValue,

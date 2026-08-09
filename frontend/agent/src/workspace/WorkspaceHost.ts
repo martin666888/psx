@@ -20,12 +20,6 @@ interface TerminalViewToggle {
   setViewVisible(visible: boolean): void;
 }
 
-/** The global History dock view: the whole agent area (dock included) hides
- * while a terminal workspace is active. */
-export interface AgentViewVisibilityListener {
-  setAgentViewActive(active: boolean): void;
-}
-
 /** Appearance settings shape (subset of the app 'settings' host event). */
 interface AgentAppearanceSettings {
   agentFontSize?: number;
@@ -56,7 +50,6 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
   private readonly workspaces = new Map<string, WorkspaceEntry>();
   private activeWorkspaceId = '';
   private settings: AgentAppearanceSettings | null = null;
-  private historyDockView: AgentViewVisibilityListener | null = null;
   // Once the first workspace_layout snapshot arrives, pane assignment owns
   // panel visibility/rects; activate() keeps only its side effects.
   private layoutDriven = false;
@@ -142,7 +135,6 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
       return tab?.kind === 'terminal';
     });
     this.container.classList.toggle('agent-workspace-active', anyAgentVisible && !anyTerminalVisible);
-    this.historyDockView?.setAgentViewActive(this.workspaces.size > 0);
   }
 
   /** Width of the focused pane's agent panel, for pane-relative responsive
@@ -249,11 +241,6 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
     if (this.activeWorkspaceId === id) this.activeWorkspaceId = '';
   }
 
-  /** entry.ts attaches the global History dock after construction. */
-  setHistoryDockView(view: AgentViewVisibilityListener): void {
-    this.historyDockView = view;
-  }
-
   activate(workspaceId: string, kind: 'terminal' | 'agent'): void {
     const id = String(workspaceId || '');
     this.activeWorkspaceId = id;
@@ -275,8 +262,6 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
     // otherwise its transparent surface prevents blank-area terminal clicks
     // from reaching xterm's wrapper focus handler.
     this.container.classList.toggle('agent-workspace-active', kind === 'agent');
-    this.historyDockView?.setAgentViewActive(kind === 'agent');
-
     if (kind === 'terminal') {
       for (const entry of this.workspaces.values()) this.setPanelVisible(entry.panel, false);
       this.terminalManager.setViewVisible(true);

@@ -42,6 +42,9 @@ export interface AgentApp {
     },
     rects: Map<string, { left: number; top: number; width: number; height: number; dockAdjacent?: boolean }>
   ): void;
+  /** Opens the process-wide History dock. Used by the always-loaded rail when
+   * it is the action that lazily starts the Agent app. */
+  openHistory(): void;
   /** Tears down every controller, global broker, island and layout listener.
    * The shipped app runs for the process lifetime; tests call this in
    * afterEach so no app instance, subscription or pending timer survives. */
@@ -62,7 +65,6 @@ export function createAgentApp(options: AgentAppOptions): AgentApp {
   // panel; the registry owns its data seam, the host its view visibility.
   const historyDock = new HistoryDockController(registry.createHistoryDockHost());
   registry.attachHistoryDock(historyDock);
-  host.setHistoryDockView(historyDock);
   historyDock.mount(options.container);
   // The global Usage panel dialog is a second singleton beside the dock: the
   // footer opens it through the registry, the store's panelOpen drives it.
@@ -117,6 +119,9 @@ export function createAgentApp(options: AgentAppOptions): AgentApp {
       if (disposed) return;
       host.applyLayout(snapshot, rects);
       registry.applyLayoutVisibility(snapshot);
+    },
+    openHistory(): void {
+      if (!disposed) historyDock.requestOpen('');
     },
     dispose(): void {
       if (disposed) return;

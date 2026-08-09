@@ -38,15 +38,21 @@ const THREADS = [
   thread({ threadId: 't3', title: 'Write docs', cwd: 'D:/other', updatedAt: '2026-07-18 10:00:00Z' })
 ];
 
-function historyRequestId(posted) {
-  const command = [...posted].reverse().find(
-    (message) => message.type === 'agent_command' && message.command === 'history'
+function historyRequest(posted) {
+  return [...posted].reverse().find(
+    (message) => (message.type === 'agent_command' || message.type === 'agent_global_command')
+      && message.command === 'history'
   );
-  return command?.requestId ?? '';
 }
 
 function agentThreads(posted, threads) {
-  return { type: 'agent_threads', workspaceId: WS, requestId: historyRequestId(posted), threads };
+  const request = historyRequest(posted);
+  return {
+    type: 'agent_threads',
+    ...(request?.type === 'agent_command' ? { workspaceId: WS } : {}),
+    requestId: request?.requestId ?? '',
+    threads
+  };
 }
 
 async function fixture() {
@@ -100,7 +106,7 @@ function dispatchPointer(target, type, { clientX, pointerId = 1, button = 0 }) {
 test('loading, grouped list and empty states render semantically', async () => {
   const { app, content, posted } = await fixture();
   await settle(() => {}, () => !!content().querySelector('.agent-history-state'));
-  assert.match(content().textContent, /Loading|No Agent workspace/);
+  assert.match(content().textContent, /Loading/);
   await settle(
     () => app.handle(agentThreads(posted, THREADS)),
     () => !!content().querySelector('.agent-history-group')

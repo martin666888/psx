@@ -83,6 +83,27 @@ public sealed class AgentBridgeMessageParserTests
     }
 
     [TestMethod]
+    public void TryParse_GlobalCommand_DoesNotRequireWorkspaceId()
+    {
+        Assert.IsTrue(AgentBridgeMessageParser.TryParse(
+            """{"type":"agent_global_command","command":"history","requestId":"history-1"}""",
+            out var message));
+
+        Assert.AreEqual(AgentBridgeMessageKind.Command, message!.Kind);
+        Assert.AreEqual(Guid.Empty, message.Command!.WorkspaceId);
+        Assert.AreEqual("history", message.Command.Command);
+        Assert.AreEqual("history-1", message.Command.RequestId);
+    }
+
+    [TestMethod]
+    public void TryParse_GlobalCommandWithoutCommand_IsRejected()
+    {
+        Assert.IsFalse(AgentBridgeMessageParser.TryParse(
+            """{"type":"agent_global_command","requestId":"history-1"}""",
+            out _));
+    }
+
+    [TestMethod]
     [DataRow("")]
     [DataRow("not-a-guid")]
     [DataRow("00000000-0000-0000-0000-000000000000")]

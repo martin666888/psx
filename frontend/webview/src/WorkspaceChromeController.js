@@ -41,7 +41,7 @@ export class WorkspaceChromeController {
         this.paneMenuWorkspace = null;
         this.createPlacement = 'focused';
         this.capacityChecker = null;
-        this.historyButton.disabled = true;
+        this.historyButton.disabled = false;
         this.historyButton.setAttribute('aria-expanded', 'false');
 
         this.historyButton.addEventListener('click', () => {
@@ -91,7 +91,6 @@ export class WorkspaceChromeController {
             providers: Array.isArray(message.providers) ? message.providers : [],
             maxColumns: Number(message.maxColumns) || 3
         };
-        this.historyButton.disabled = !this.catalog.workspaces.some((workspace) => workspace.kind === 'agent');
         // The open column menu holds a workspace object from the previous
         // catalog: rebind it to the fresh entry so capabilities (canSplitRight,
         // canCollapse…) never render stale; the menu closes when its workspace

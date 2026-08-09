@@ -37,7 +37,6 @@ interface HistoryGroupView {
 }
 
 export interface HistoryListProps {
-  hasWorkspaces: boolean;
   state: AgentHistoryState;
   query: string;
   providerFilter: string;
@@ -191,14 +190,11 @@ function HistoryGroup(
 
 export function HistoryList(props: HistoryListProps): JSX.Element {
   const { state } = props;
-  if (!props.hasWorkspaces) {
-    return <StateBox name="empty" text="Open an Agent workspace to load history." />;
-  }
   if (state.status === 'initial-loading') {
     return <StateBox name="loading" text="Loading history…" />;
   }
   if (state.status === 'unavailable') {
-    return <StateBox name="empty" text="Open an Agent workspace to load history." />;
+    return <StateBox name="empty" text="Agent history is unavailable." />;
   }
   if (state.status === 'error') {
     return (

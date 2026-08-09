@@ -1,7 +1,8 @@
 // AgentHistoryRequestBroker.ts — the single owner of `history` bridge loads.
 //
-// History data is global, but the bridge command must travel through one live
-// Agent workspace. This broker picks the channel, owns the request status
+// History data is global. This broker prefers a live Agent workspace channel
+// for compatibility and falls back to the process-wide bridge when none
+// exists. It owns the request status
 // machine (idle / initial-loading / refreshing / unavailable / error) and
 // guards agent_threads / agent_history_error with a matching requestId (late or
 // superseded replies are dropped) plus an in-flight workspace match and a
@@ -14,10 +15,8 @@
 //     → most recently activated live workspace → any live workspace. Busy and
 //     transcript-only workspaces are valid channels; closing/closed/unknown
 //     are not.
-//   no channel: no bridge message, cached list kept, status 'unavailable'.
 //   carrier closed mid-request: end the load, mark dirty, retry once on
-//     another channel; without any channel go 'unavailable'. Dirty loads are
-//     retried when a workspace is created or activated.
+//     another workspace or the global channel.
 //   one 10s timeout per attempt, one retry per wave, then 'error'.
 //   invalidation coalescing: a broadcast wave (one message per workspace)
 //     collapses into a single refresh; an invalidation arriving mid-flight
@@ -34,6 +33,7 @@ export interface AgentHistoryBrokerHost {
   /** The active Agent workspace, or '' when a terminal/nothing is active. */
   activeAgentWorkspace(): string;
   bridgeFor(workspaceId: string): AgentBridgePort | null;
+  sendGlobalCommand(command: string, value?: string, requestId?: string): void;
 }
 
 export interface AgentHistoryRequestBrokerOptions {
@@ -41,6 +41,7 @@ export interface AgentHistoryRequestBrokerOptions {
 }
 
 const DEFAULT_TIMEOUT_MS = 10000;
+const GLOBAL_CHANNEL = '@global';
 const TIMEOUT_ERROR_TEXT = 'Loading Agent thread history timed out.';
 const DEFAULT_ERROR_TEXT = 'Unable to load Agent thread history.';
 
@@ -126,7 +127,8 @@ export class AgentHistoryRequestBroker {
    * workspaces) are ignored and never join the coalesced wave. */
   handleInvalidated(senderWorkspaceId: string): void {
     if (this.disposed) return;
-    if (!this.channels.has(senderWorkspaceId) || !this.host.isAlive(senderWorkspaceId)) return;
+    if (senderWorkspaceId
+      && (!this.channels.has(senderWorkspaceId) || !this.host.isAlive(senderWorkspaceId))) return;
     if (this.invalidationTimer !== null) return;
     this.invalidationTimer = setTimeout(() => {
       this.invalidationTimer = null;
@@ -145,9 +147,11 @@ export class AgentHistoryRequestBroker {
    * response with no in-flight request (or from a stale/superseded attempt) is
    * dropped. */
   handleThreads(workspaceId: string, raw: RawHostMessage): void {
-    if (this.disposed || !this.channels.has(workspaceId)) return;
+    if (this.disposed) return;
+    const channel = workspaceId || GLOBAL_CHANNEL;
+    if (channel !== GLOBAL_CHANNEL && !this.channels.has(channel)) return;
     if (!this.inFlightRequestId || asString(raw.requestId) !== this.inFlightRequestId) return;
-    if (!this.inFlightWorkspaceId || this.inFlightWorkspaceId !== workspaceId) return;
+    if (!this.inFlightWorkspaceId || this.inFlightWorkspaceId !== channel) return;
     this.clearInFlight();
     this.store.applyThreads(normalizeHistoryThreads(raw.threads));
     this.startQueuedWave();
@@ -155,9 +159,11 @@ export class AgentHistoryRequestBroker {
 
   /** agent_history_error response: same acceptance rules as agent_threads. */
   handleHistoryError(workspaceId: string, raw: RawHostMessage): void {
-    if (this.disposed || !this.channels.has(workspaceId)) return;
+    if (this.disposed) return;
+    const channel = workspaceId || GLOBAL_CHANNEL;
+    if (channel !== GLOBAL_CHANNEL && !this.channels.has(channel)) return;
     if (!this.inFlightRequestId || asString(raw.requestId) !== this.inFlightRequestId) return;
-    if (!this.inFlightWorkspaceId || this.inFlightWorkspaceId !== workspaceId) return;
+    if (!this.inFlightWorkspaceId || this.inFlightWorkspaceId !== channel) return;
     this.clearInFlight();
     this.refreshQueued = false;
     this.store.applyError(asString(raw.text) || DEFAULT_ERROR_TEXT);
@@ -166,12 +172,12 @@ export class AgentHistoryRequestBroker {
   /** Sends a non-history command through the best available channel (used by
    * the History dock for `load_thread`). The response is NOT broker-owned, so
    * this never touches the in-flight tracker or the epoch guard. Returns
-   * false when no live workspace can carry the command. */
+   * true while the process-wide bridge is available. */
   sendCommandOnChannel(command: string, value: string, preferredWorkspaceId = ''): boolean {
     if (this.disposed) return false;
     const channel = this.pickChannel(preferredWorkspaceId);
-    if (!channel) return false;
-    this.host.bridgeFor(channel)?.sendAgentCommand(command, value);
+    if (channel === GLOBAL_CHANNEL) this.host.sendGlobalCommand(command, value);
+    else this.host.bridgeFor(channel)?.sendAgentCommand(command, value);
     return true;
   }
 
@@ -209,6 +215,11 @@ export class AgentHistoryRequestBroker {
   }
 
   private sendRequest(channel: string): void {
+    if (channel === GLOBAL_CHANNEL) {
+      const requestId = this.beginRequest(channel);
+      this.host.sendGlobalCommand('history', undefined, requestId);
+      return;
+    }
     const bridge = this.host.bridgeFor(channel);
     if (!bridge) {
       // The channel vanished between selection and send: treat as a lost
@@ -224,6 +235,11 @@ export class AgentHistoryRequestBroker {
       this.store.applyUnavailable();
       return;
     }
+    const requestId = this.beginRequest(channel);
+    bridge.sendAgentCommand('history', undefined, requestId);
+  }
+
+  private beginRequest(channel: string): string {
     const requestId = this.nextId();
     this.epoch++;
     this.inFlightWorkspaceId = channel;
@@ -231,9 +247,9 @@ export class AgentHistoryRequestBroker {
     this.inFlightEpoch = this.epoch;
     const status = this.store.getState().threads.length > 0 ? 'refreshing' : 'initial-loading';
     this.store.applyLoading(status, channel);
-    bridge.sendAgentCommand('history', undefined, requestId);
     const epoch = this.epoch;
     this.timer = setTimeout(() => this.onTimeout(epoch), this.timeoutMs);
+    return requestId;
   }
 
   private onTimeout(epoch: number): void {
@@ -247,7 +263,7 @@ export class AgentHistoryRequestBroker {
       // Prefer a different channel; the failed one is still a valid retry
       // target when it is the only live workspace.
       const channel = this.pickChannelExcept(failedChannel)
-        || (this.channels.has(failedChannel) ? failedChannel : '');
+        || (failedChannel === GLOBAL_CHANNEL || this.channels.has(failedChannel) ? failedChannel : '');
       if (channel) {
         this.sendRequest(channel);
         return;
@@ -268,11 +284,12 @@ export class AgentHistoryRequestBroker {
   // --- Channel selection ------------------------------------------------------
 
   private pickChannel(preferred: string): string {
-    return this.channels.pick(preferred);
+    return this.channels.pick(preferred) || GLOBAL_CHANNEL;
   }
 
   private pickChannelExcept(excluded: string): string {
-    return this.channels.pickExcept(excluded);
+    return this.channels.pickExcept(excluded)
+      || (excluded === GLOBAL_CHANNEL ? '' : GLOBAL_CHANNEL);
   }
 
   private nextId(): string {

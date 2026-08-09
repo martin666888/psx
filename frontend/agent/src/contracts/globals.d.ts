@@ -11,6 +11,7 @@ declare global {
     sendToHost(message: BridgeOutboundMessage): void;
     onHostMessage(callback: (message: BridgeInboundMessage) => void): void;
     sendReady(): void;
+    sendAgentGlobalCommand(command: string, value?: string | boolean, requestId?: string): void;
     createAgentScope(
       workspaceId: string
     ): import('./bridge-port.js').AgentBridgePort;

@@ -533,6 +533,12 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
 
     private void OnCommand(object? sender, AgentCommandEventArgs args)
     {
+        if (args.WorkspaceId == Guid.Empty)
+        {
+            HandleGlobalCommand(args);
+            return;
+        }
+
         if (!_entries.TryGetValue(args.WorkspaceId, out var entry) || entry.Closing)
             return;
 
@@ -590,6 +596,42 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
         entry.EventSink.Command(args);
     }
 
+    private void HandleGlobalCommand(AgentCommandEventArgs args)
+    {
+        switch (args.Command)
+        {
+            case "history":
+                _ = ListThreadsGloballyAsync(args.RequestId);
+                break;
+            case "load_thread" when !string.IsNullOrWhiteSpace(args.Value):
+                _ = OpenThreadSafelyAsync(args.Value);
+                break;
+        }
+    }
+
+    private async Task ListThreadsGloballyAsync(string? requestId)
+    {
+        try
+        {
+            // The startup provider broadcast can precede the WebView's host
+            // listener. A terminal-only History open is therefore its own
+            // authoritative catalog handshake: publish brands first, then
+            // the rows that reference their provider keys.
+            await PublishProvidersAsync().ConfigureAwait(false);
+            await _rootBridge.SendEventAsync(
+                AgentThreadBridgePayload.ThreadList(_threadStore.ListThreads(), requestId)).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            await _rootBridge.SendEventAsync(new
+            {
+                type = "agent_history_error",
+                requestId = string.IsNullOrWhiteSpace(requestId) ? null : requestId,
+                text = $"Unable to load Agent thread history. {ex.Message}"
+            }).ConfigureAwait(false);
+        }
+    }
+
     /// <summary>
     /// Observed fire-and-forget wrapper for History loads: failures surface as
     /// a global agent_thread_open_error in the History dock instead of
@@ -636,8 +678,7 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
 
     private void OnHistoryInvalidated(object? sender, EventArgs args)
     {
-        foreach (var entry in _entries.Values)
-            _ = entry.EventSink.SendEventAsync(new { type = "agent_history_invalidated" });
+        _ = _rootBridge.SendEventAsync(new { type = "agent_history_invalidated" });
     }
 
     /// <summary>

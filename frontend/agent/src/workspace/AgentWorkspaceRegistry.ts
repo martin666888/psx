@@ -66,14 +66,16 @@ export class AgentWorkspaceRegistry {
     this.store = new AgentWorkspaceStore();
     this.decoder = new HostEventDecoder((id) => this.controllers.has(id), diagnostics);
     // Global History: one store + one broker for the whole process. The broker
-    // sees the same live-workspace set as the controllers map and sends every
-    // `history` command through the best available workspace channel.
+    // sees the same live-workspace set as the controllers map, prefers the
+    // best workspace channel and falls back to the process-wide bridge.
     this.historyStore = new AgentHistoryStore();
     this.historyBroker = new AgentHistoryRequestBroker(
       {
         isAlive: (id) => this.controllers.has(id),
         activeAgentWorkspace: () => this.activeAgentWorkspace(),
-        bridgeFor: (id) => this.host.bridgeFor(id)
+        bridgeFor: (id) => this.host.bridgeFor(id),
+        sendGlobalCommand: (command, value, requestId) =>
+          Bridge.sendAgentGlobalCommand(command, value, requestId)
       },
       this.historyStore
     );
@@ -102,7 +104,6 @@ export class AgentWorkspaceRegistry {
         return sent;
       },
       dismissThreadOpenError: () => this.historyStore.clearThreadOpenError(),
-      hasAgentWorkspaces: () => this.controllers.size > 0,
       activeWorkspaceId: () => this.activeAgentWorkspace(),
       openWorkspaceThreadIds: () => this.openWorkspaceThreadIds(),
       getProfile: () => this.usageStore.getState().profile,
@@ -401,7 +402,7 @@ export class AgentWorkspaceRegistry {
     this.store.delete(workspaceId);
     this.historyBroker.unregisterWorkspace(workspaceId);
     this.usageBroker.unregisterWorkspace(workspaceId);
-    // With no Agent workspace left there is no channel to serve the panel.
+    // Usage still requires a live Agent workspace channel; History does not.
     if (this.controllers.size === 0) this.usageStore.setPanelOpen(false);
     controller.dispose();
     this.host.closeWorkspace(workspaceId);

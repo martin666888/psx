@@ -203,8 +203,9 @@ import { WorkspaceChromeController } from './WorkspaceChromeController.js';
             return;
         }
         stageAgentEvent(message);
-        // Lazy trigger (CP3b): only the first Agent workspace pulls in the
-        // Agent chunk. A terminal-only session never reaches this import.
+        // Lazy trigger (CP3b): the first Agent workspace pulls in the Agent
+        // chunk. A terminal-only session still avoids it until the user asks
+        // to open the global History dock.
         if (message.type === BridgeEventType.AgentWorkspaceCreated) loadAgentApp();
     }
 
@@ -233,6 +234,10 @@ import { WorkspaceChromeController } from './WorkspaceChromeController.js';
                 // The app may have missed earlier rect projections while its
                 // chunk loaded; replay the current layout once.
                 paneLayout.recompute();
+                if (pendingHistoryOpen) {
+                    pendingHistoryOpen = false;
+                    app.openHistory();
+                }
             })
             .catch((error) => {
                 agentDisabled = true;
@@ -241,6 +246,13 @@ import { WorkspaceChromeController } from './WorkspaceChromeController.js';
                 drainStagedEvents((staged) => handleAgentFallback(staged));
             });
     }
+
+    let pendingHistoryOpen = false;
+    document.addEventListener('psx-history-toggle', () => {
+        if (agentApp || agentDisabled) return;
+        pendingHistoryOpen = true;
+        loadAgentApp();
+    });
 
     Bridge.onHostMessage((message) => {
         switch (message.type) {
@@ -308,7 +320,8 @@ import { WorkspaceChromeController } from './WorkspaceChromeController.js';
     });
 
     // Send ready IMMEDIATELY so the host creates the initial terminal without
-    // waiting for anything Agent-related; the Agent chunk is only imported
-    // once the host announces the first Agent workspace (loadAgentApp above).
+    // waiting for anything Agent-related; the Agent chunk is imported only
+    // when the host announces the first Agent workspace or the user opens
+    // process-wide History (loadAgentApp above).
     Bridge.sendReady();
 })();

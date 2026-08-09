@@ -28,6 +28,7 @@ export const BridgeSendType = Object.freeze({
     AgentSubmit: 'agent_submit',
     AgentUploadAttachment: 'agent_upload_attachment',
     AgentCommand: 'agent_command',
+    AgentGlobalCommand: 'agent_global_command',
     AgentPermissionResponse: 'agent_permission_response',
     AgentQuestionResponse: 'agent_question_response',
     AgentElicitationResponse: 'agent_elicitation_response'

@@ -89,6 +89,32 @@ public sealed class AgentWorkspaceActivationTests
     }
 
     [TestMethod]
+    public async Task GlobalHistoryCommand_ListsThreadsWithoutAgentWorkspace()
+    {
+        using var fixture = new Fixture(nameof(GlobalHistoryCommand_ListsThreadsWithoutAgentWorkspace));
+        var thread = CreateRestorableThread(fixture.Store, fixture.Workspace.Path, "terminal-only");
+
+        fixture.Bridge.RaiseCommand("history", requestId: "global-history");
+
+        var response = await fixture.Bridge.WaitForEventAsync(
+            "agent_threads",
+            message => message.TryGetProperty("requestId", out var requestId)
+                && requestId.GetString() == "global-history");
+        Assert.IsEmpty(fixture.Coordinator.Workspaces);
+        var providersIndex = fixture.EventIndex("agent_providers");
+        var threadsIndex = fixture.EventIndex(
+            "agent_threads",
+            message => message.TryGetProperty("requestId", out var requestId)
+                && requestId.GetString() == "global-history");
+        Assert.IsGreaterThanOrEqualTo(
+            0, providersIndex, "Terminal-only History must receive the provider icon catalog.");
+        Assert.IsLessThan(
+            threadsIndex, providersIndex, "Provider brands must arrive before History rows.");
+        Assert.IsTrue(response.GetProperty("threads").EnumerateArray()
+            .Any(item => item.GetProperty("threadId").GetString() == thread.ThreadId));
+    }
+
+    [TestMethod]
     public async Task OpenThread_ActivatesBeforeRestoreContentArrives()
     {
         using var fixture = new Fixture(nameof(OpenThread_ActivatesBeforeRestoreContentArrives));

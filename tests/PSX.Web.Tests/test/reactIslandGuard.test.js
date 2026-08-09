@@ -117,6 +117,16 @@ describe('lazy React-island loading guard', () => {
     }
   });
 
+  it('uses the History rail as a second lazy Agent-app entry point', () => {
+    const source = fs.readFileSync(
+      path.join(repositoryRoot, 'frontend', 'webview', 'src', 'main.js'),
+      'utf8'
+    );
+    assert.ok(source.includes("document.addEventListener('psx-history-toggle'"));
+    assert.ok(source.includes('pendingHistoryOpen = true'));
+    assert.ok(source.includes('app.openHistory()'));
+  });
+
   it('contains no migration switch, fallback seam, or direct vendor bypass', () => {
     const forbidden = [
       'psx.agent.experimental.react',
