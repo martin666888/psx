@@ -14,6 +14,7 @@
     "test:web": "npm run --workspace psx-web-tests test",
     "typecheck": "npm run typecheck:web",
     "test:coverage:web": "npm run --workspace psx-web-tests test:coverage",
+    "prepare:visual": "powershell -ExecutionPolicy Bypass -File tools/prepare-playwright.ps1",
     "screenshots:web": "node tools/screenshot-baseline.mjs"
   },
   "devDependencies": {
@@ -23,16 +24,18 @@
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "5.1.4",
-    "@vitest/coverage-v8": "4.0.18",
+    "@vitest/coverage-v8": "4.1.10",
     "eslint": "9.39.2",
-    "playwright": "^1.62.0",
+    "pixelmatch": "7.1.0",
+    "playwright": "1.62.0",
+    "pngjs": "7.0.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "tailwindcss": "^4.3.3",
     "typescript": "5.9.3",
     "typescript-eslint": "8.53.1",
     "vite": "7.3.6",
-    "vitest": "4.0.18"
+    "vitest": "4.1.10"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.23",
