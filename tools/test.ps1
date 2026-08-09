@@ -2,7 +2,8 @@
 param(
     [ValidateSet("Unit", "Frontend", "Integration", "Desktop", "Fast", "Full")]
     [string]$Suite = "Fast",
-    [switch]$ForceFrontendRestore
+    [switch]$ForceFrontendRestore,
+    [switch]$SkipDependencyAudit
 )
 
 $ErrorActionPreference = "Stop"
@@ -387,6 +388,13 @@ try {
         }
         Invoke-Checked "Run Full visual and accessibility checks" {
             & $toolchain.NodePath (Join-Path $repoRoot "tools\screenshot-baseline.mjs")
+        }
+        if ($SkipDependencyAudit) {
+            Write-Warning "Full diagnostics passed, release gate incomplete: dependency audit was skipped."
+        } else {
+            Invoke-Checked "Audit NuGet and npm dependencies" {
+                powershell -ExecutionPolicy Bypass -File (Join-Path $repoRoot "tools\audit-dependencies.ps1") -NodePath $toolchain.NodePath
+            }
         }
     }
 
