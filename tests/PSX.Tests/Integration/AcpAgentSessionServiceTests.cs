@@ -221,6 +221,8 @@ public sealed class AcpAgentSessionServiceTests
             new[] { "approve", "reject" },
             permission.GetProperty("options").EnumerateArray()
                 .Select(option => option.GetProperty("optionId").GetString()).ToArray());
+        var toolEventCountBeforeResolution = fixture.Bridge.Events.Count(message =>
+            IsToolLifecycleEvent(message, "tool-mode-transition"));
 
         var requestId = permission.GetProperty("requestId").GetString();
         fixture.Bridge.RaiseCommand("agent_permission_response", requestId, "approve");
@@ -234,6 +236,9 @@ public sealed class AcpAgentSessionServiceTests
         Assert.AreEqual(2, snapshot.DecisionOptions?.Count);
         Assert.IsFalse(thread.Messages.Any(message => message.Role == "tool"
             && message.ToolCallId == "tool-mode-transition"));
+        Assert.AreEqual(toolEventCountBeforeResolution, fixture.Bridge.Events.Count(message =>
+            IsToolLifecycleEvent(message, "tool-mode-transition")),
+            "Mode-transition updates after the permission request must not re-enter the ordinary tool lifecycle.");
     }
 
     [TestMethod]
@@ -306,6 +311,8 @@ public sealed class AcpAgentSessionServiceTests
             new[] { "approve", "revise", "reject" },
             permission.GetProperty("options").EnumerateArray()
                 .Select(option => option.GetProperty("optionId").GetString()).ToArray());
+        var toolEventCountBeforeResolution = fixture.Bridge.Events.Count(message =>
+            IsToolLifecycleEvent(message, "tool-document-permission"));
 
         fixture.Bridge.RaiseCommand(
             "agent_permission_response",
@@ -321,6 +328,9 @@ public sealed class AcpAgentSessionServiceTests
         Assert.AreEqual(3, snapshot.DecisionOptions?.Count);
         Assert.IsFalse(thread.Messages.Any(message => message.Role == "tool"
             && message.ToolCallId == "tool-document-permission"));
+        Assert.AreEqual(toolEventCountBeforeResolution, fixture.Bridge.Events.Count(message =>
+            IsToolLifecycleEvent(message, "tool-document-permission")),
+            "Document-decision updates after the permission request must not re-enter the ordinary tool lifecycle.");
     }
 
     [TestMethod]
@@ -906,4 +916,9 @@ public sealed class AcpAgentSessionServiceTests
 
     private static string? EventType(JsonElement message) =>
         message.TryGetProperty("type", out var type) ? type.GetString() : null;
+
+    private static bool IsToolLifecycleEvent(JsonElement message, string expectedToolCallId) =>
+        (EventType(message) is "tool_started" or "tool_updated" or "tool_finished" or "tool_delta")
+        && message.TryGetProperty("toolCallId", out var toolCallId)
+        && toolCallId.GetString() == expectedToolCallId;
 }

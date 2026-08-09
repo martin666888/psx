@@ -60,7 +60,7 @@ internal sealed class AcpToolStateTracker
         var toolCallId = GetString(update, "toolCallId");
         if (IsDocumentDecision(toolCallId))
         {
-            Remove(toolCallId);
+            RemoveTrackedState(toolCallId);
             return new(true, false, false, null, false, null, null);
         }
 
@@ -154,7 +154,7 @@ internal sealed class AcpToolStateTracker
     {
         if (IsDocumentDecision(toolCallId))
         {
-            Remove(toolCallId);
+            RemoveTrackedState(toolCallId);
             return null;
         }
 
@@ -166,7 +166,7 @@ internal sealed class AcpToolStateTracker
             snapshot = snapshot with { Output = pending };
         }
 
-        Remove(toolCallId);
+        RemoveTrackedState(toolCallId);
         return snapshot;
     }
 
@@ -188,7 +188,7 @@ internal sealed class AcpToolStateTracker
             status);
     }
 
-    private void Remove(string toolCallId)
+    private void RemoveTrackedState(string toolCallId)
     {
         if (string.IsNullOrWhiteSpace(toolCallId))
             return;
@@ -199,7 +199,6 @@ internal sealed class AcpToolStateTracker
         _outputs.Remove(toolCallId);
         _pendingParamSnapshots.Remove(toolCallId);
         _startedCallIds.Remove(toolCallId);
-        _documentDecisionCallIds.Remove(toolCallId);
     }
 
     public static string ReadStandardName(JsonElement update)

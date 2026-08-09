@@ -74,18 +74,33 @@ public sealed class AcpToolStateTrackerTests
     }
 
     [TestMethod]
-    public void MarkDocumentDecision_SuppressesAndRemovesToolState()
+    public void MarkDocumentDecision_SuppressesEveryUpdateUntilTheRunIsCleared()
     {
         var tracker = new AcpToolStateTracker();
+        using var initial = JsonDocument.Parse(
+            """{"toolCallId":"tool-1","kind":"ask","status":"in_progress","rawInput":{"prompt":"Review"}}""");
+        _ = tracker.ApplyUpdate(initial.RootElement, AcpToolStateTracker.ReadStandardName);
         tracker.MarkDocumentDecision("tool-1");
-        using var update = JsonDocument.Parse("""{"toolCallId":"tool-1","kind":"ask"}""");
+        using var progress = JsonDocument.Parse(
+            """{"toolCallId":"tool-1","kind":"ask","status":"in_progress","content":[{"type":"text","text":"waiting"}]}""");
+        using var completed = JsonDocument.Parse(
+            """{"toolCallId":"tool-1","kind":"ask","status":"completed","rawOutput":{"approved":true}}""");
 
-        var result = tracker.ApplyUpdate(update.RootElement, AcpToolStateTracker.ReadStandardName);
-        var reused = tracker.ApplyUpdate(update.RootElement, AcpToolStateTracker.ReadStandardName);
+        var first = tracker.ApplyUpdate(progress.RootElement, AcpToolStateTracker.ReadStandardName);
+        var second = tracker.ApplyUpdate(progress.RootElement, AcpToolStateTracker.ReadStandardName);
+        var terminal = tracker.ApplyUpdate(completed.RootElement, AcpToolStateTracker.ReadStandardName);
 
-        Assert.IsTrue(result.Suppressed);
-        Assert.IsNull(result.Snapshot);
-        Assert.IsFalse(reused.Suppressed);
-        Assert.IsTrue(reused.Started);
+        Assert.IsTrue(first.Suppressed);
+        Assert.IsNull(first.Snapshot);
+        Assert.IsTrue(second.Suppressed);
+        Assert.IsNull(second.Snapshot);
+        Assert.IsTrue(terminal.Suppressed);
+        Assert.IsNull(terminal.Snapshot);
+        Assert.IsNull(tracker.Complete("tool-1", "completed"));
+
+        tracker.Clear();
+        var nextRun = tracker.ApplyUpdate(progress.RootElement, AcpToolStateTracker.ReadStandardName);
+        Assert.IsFalse(nextRun.Suppressed);
+        Assert.IsTrue(nextRun.Started);
     }
 }

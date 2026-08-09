@@ -614,6 +614,17 @@ internal sealed class FakeAcpAgent
                 sessionUpdate = "tool_call_update",
                 toolCallId = "tool-document-permission",
                 title = "ExitPlanMode",
+                status = "in_progress",
+                content = new object[]
+                {
+                    new { type = "text", text = "Decision accepted; finalizing plan mode." }
+                }
+            });
+            WriteSessionUpdate(new
+            {
+                sessionUpdate = "tool_call_update",
+                toolCallId = "tool-document-permission",
+                title = "ExitPlanMode",
                 status = "completed"
             });
             WriteAssistantChunk($"Document permission result: {optionId}");
@@ -712,6 +723,18 @@ internal sealed class FakeAcpAgent
             }).ConfigureAwait(false);
 
             var optionId = ReadPermissionOption(permission);
+            WriteSessionUpdate(new
+            {
+                sessionUpdate = "tool_call_update",
+                toolCallId = "tool-mode-transition",
+                title = "Ready to code?",
+                kind = "switch_mode",
+                status = "in_progress",
+                content = new object[]
+                {
+                    new { type = "text", text = "Mode transition approved; applying." }
+                }
+            });
             WriteSessionUpdate(new
             {
                 sessionUpdate = "tool_call_update",
