@@ -45,38 +45,6 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         public string Description { get; init; } = "";
     }
 
-    private enum PermissionPresentation
-    {
-        Ordinary,
-        Document,
-        ModeTransition
-    }
-
-    private sealed class PendingPermission
-    {
-        public TaskCompletionSource<string> Completion { get; } =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public IReadOnlyList<AgentDecisionOption> Options { get; init; } = Array.Empty<AgentDecisionOption>();
-        public PermissionPresentation Presentation { get; init; }
-        public string DecisionSnapshotId { get; init; } = "";
-        /// <summary>
-        /// When set, this permission is the ask-user form variant: the frontend
-        /// renders an elicitation-shaped schema and may reply with JSON
-        /// <c>{ optionId, content }</c> instead of a bare optionId.
-        /// </summary>
-        public bool IsAskUserForm { get; init; }
-        public IReadOnlyList<int> AskUserAnswerIndexes { get; init; } = Array.Empty<int>();
-        public string? FormSubmitOptionId { get; init; }
-        public bool IsDocumentDecision => Presentation is PermissionPresentation.Document or PermissionPresentation.ModeTransition;
-        public bool IsModeTransition => Presentation == PermissionPresentation.ModeTransition;
-    }
-
-    private sealed class PendingElicitation
-    {
-        public TaskCompletionSource<string> Completion { get; } =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
-    }
-
     /// <summary>
     /// A standard ACP authentication method as advertised by the agent in the
     /// <c>initialize</c> result's <c>authMethods</c> array. Parsed generically
@@ -99,17 +67,6 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     private sealed class AcpAuthRequiredException : Exception
     {
         public AcpAuthRequiredException(string message) : base(message) { }
-    }
-
-    private sealed class AcpTerminalProcess
-    {
-        public Process Process { get; init; } = null!;
-        public StringBuilder Output { get; } = new();
-        public int OutputByteCount { get; set; }
-        public int OutputByteLimit { get; init; } = 200_000;
-        public bool Truncated { get; set; }
-        public long TransportGeneration { get; init; }
-        public CancellationToken TransportToken { get; init; }
     }
 
     private sealed class ReplayHistoryState
@@ -141,21 +98,18 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     private readonly object _sessionMutationSync = new();
     private readonly object _commandLock = new();
     private readonly object _runtimeInstallLock = new();
-    private readonly SemaphoreSlim _transportLock = new(1, 1);
+    private readonly AcpTransportLifecycle _transportLifecycle = new();
     private readonly SemaphoreSlim _sessionRestoreLock = new(1, 1);
     private readonly CancellationTokenSource _serviceLifetimeCts = new();
-    private readonly ConcurrentDictionary<string, PendingPermission> _pendingPermissions = new();
-    private readonly ConcurrentDictionary<string, PendingElicitation> _pendingElicitations = new();
-    private readonly ConcurrentDictionary<string, AcpTerminalProcess> _terminals = new();
+    private readonly AcpDecisionCoordinator _decisions;
+    private readonly AcpTerminalRequestHandler _terminalRequests;
     private readonly StringBuilder _thinkingBuffer = new();
     private readonly StringBuilder _assistantBuffer = new();
     private readonly AcpToolStateTracker _toolState = new();
     private readonly Dictionary<string, string> _availableAgentCommands = new(StringComparer.OrdinalIgnoreCase);
     private AgentThread _currentThread;
-    private AcpJsonRpcTransport? _transport;
     private string _workingDirectory = "";
     private string? _acpSessionId;
-    private string? _sessionIdForTransportRecovery;
     private string? _adapterVersion;
     private string _status = "ready";
     private string? _currentRunId;
@@ -172,9 +126,6 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     private Task? _currentRunTask;
     private AcpJsonRpcTransport? _currentRunTransport;
     private long _currentRunTransportGeneration;
-    private CancellationTokenSource? _transportLifetimeCts;
-    private long _transportGeneration;
-    private bool _transportRecoveryRequired;
     private bool _agentCommandsReady;
     private CancellationTokenSource? _runtimeInstallCts;
     private bool _runtimeInstallInProgress;
@@ -232,6 +183,33 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         _provider = provider;
         _runtime = _provider.Runtime;
         _runtimeCoordinator = runtimeCoordinator;
+        _decisions = new AcpDecisionCoordinator(
+            _bridgeService,
+            _provider.Descriptor.AssistantName,
+            toolCallId =>
+            {
+                lock (_sessionMutationSync)
+                    _toolState.MarkDocumentDecision(toolCallId);
+            },
+            request => UpsertDocumentDecisionMessage(
+                request.Presentation,
+                request.DecisionSnapshotId,
+                request.RequestId,
+                request.ToolCallId,
+                request.Title,
+                request.DocumentText,
+                request.Options,
+                "pending"),
+            change => UpdateDocumentDecisionState(
+                change.RequestId,
+                change.Presentation,
+                change.State,
+                change.SelectedOptionId,
+                change.DecisionSnapshotId));
+        _terminalRequests = new AcpTerminalRequestHandler(
+            () => _workingDirectory,
+            () => _transportLifecycle.Generation,
+            () => _transportLifecycle.LifetimeToken ?? _serviceLifetimeCts.Token);
         if (IsAgentRuntimeReady())
         {
             _runtimeInstallState = ResolveReadyRuntimeState();
@@ -319,10 +297,10 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             // we waited for the old task to finish.
             stoppingRunId = _currentRunId;
             hadRun = stoppingRunId != null || cts != null || requestCts != null || oldTask != null;
-            runTransport = _currentRunTransport ?? _transport;
+            runTransport = _currentRunTransport ?? _transportLifecycle.Current;
             runTransportGeneration = _currentRunTransportGeneration != 0
                 ? _currentRunTransportGeneration
-                : _transportGeneration;
+                : _transportLifecycle.Generation;
         }
 
         // Mark the run cancelled immediately, but let the in-flight prompt
@@ -342,7 +320,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         }
 
         var sessionId = _acpSessionId;
-        var notificationTransport = runTransport ?? _transport;
+        var notificationTransport = runTransport ?? _transportLifecycle.Current;
         if (oldTask != null && !string.IsNullOrWhiteSpace(sessionId) && notificationTransport != null)
         {
             try
@@ -359,35 +337,9 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             catch { }
         }
 
-        foreach (var item in _pendingPermissions.ToArray())
-        {
-            if (_pendingPermissions.TryRemove(item.Key, out var pending))
-            {
-                pending.Completion.TrySetResult("__cancelled__");
-                if (pending.IsDocumentDecision)
-                    UpdateDocumentDecisionState(item.Key, pending.Presentation, "cancelled", decisionSnapshotId: pending.DecisionSnapshotId);
-                await _bridgeService.SendEventAsync(new
-                {
-                    type = "permission_cancelled",
-                    requestId = item.Key,
-                    text = "Request cancelled because the current run stopped."
-                }).ConfigureAwait(false);
-            }
-        }
-
-        foreach (var item in _pendingElicitations.ToArray())
-        {
-            if (_pendingElicitations.TryRemove(item.Key, out var pending))
-            {
-                pending.Completion.TrySetResult("{\"action\":\"cancel\"}");
-                await _bridgeService.SendEventAsync(new
-                {
-                    type = "elicitation_cancelled",
-                    requestId = item.Key,
-                    text = "Input request cancelled because the current run stopped."
-                }).ConfigureAwait(false);
-            }
-        }
+        await _decisions.CancelAllAsync(
+            "Request cancelled because the current run stopped.",
+            "Input request cancelled because the current run stopped.").ConfigureAwait(false);
 
         var forceReset = false;
         if (oldTask != null)
@@ -448,7 +400,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 // A forced cancel resets (kills) the transport, so the next
                 // prompt must reload the session. Report that instead of a
                 // misleading "ready".
-                _status = _transportRecoveryRequired ? "recovery_pending" : "ready";
+                _status = _transportLifecycle.RecoveryRequired ? "recovery_pending" : "ready";
                 _currentRunId = null;
                 _runCts = null;
                 _runRequestCts = null;
@@ -456,7 +408,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 _currentRunTransport = null;
                 _currentRunTransportGeneration = 0;
             }
-            else if (_transportRecoveryRequired
+            else if (_transportLifecycle.RecoveryRequired
                 && _currentRunId == null
                 && _status != "transcript_only")
             {
@@ -652,11 +604,11 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         await CancelRunAsync(notify: false).ConfigureAwait(false);
         var token = _serviceLifetimeCts.Token;
 
-        if (!string.IsNullOrWhiteSpace(_acpSessionId) && _transport != null)
+        if (!string.IsNullOrWhiteSpace(_acpSessionId) && _transportLifecycle.Current != null)
         {
             try
             {
-                await _transport.SendRequestAsync(
+                await _transportLifecycle.Current.SendRequestAsync(
                         "session/delete",
                         new { sessionId = _acpSessionId },
                         TimeSpan.FromSeconds(15),
@@ -739,7 +691,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         {
             type = "agent_state",
             cwd = _workingDirectory,
-            sessionId = _acpSessionId ?? _sessionIdForTransportRecovery ?? _currentThread.AcpSessionId ?? "",
+            sessionId = _acpSessionId ?? _transportLifecycle.RecoverySessionId ?? _currentThread.AcpSessionId ?? "",
             threadId = _currentThread.ThreadId,
             title = _currentThread.Title,
             status = _status,
@@ -841,18 +793,10 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 }
                 break;
             case "agent_permission_response":
-                if (!string.IsNullOrWhiteSpace(e.RequestId)
-                    && _pendingPermissions.TryRemove(e.RequestId, out var pending))
-                {
-                    pending.Completion.TrySetResult(e.Value ?? "");
-                }
+                _decisions.ResolvePermission(e.RequestId ?? "", e.Value ?? "");
                 break;
             case "agent_elicitation_response":
-                if (!string.IsNullOrWhiteSpace(e.RequestId)
-                    && _pendingElicitations.TryRemove(e.RequestId, out var elicitation))
-                {
-                    elicitation.Completion.TrySetResult(e.Value ?? "{\"action\":\"cancel\"}");
-                }
+                _decisions.ResolveElicitation(e.RequestId ?? "", e.Value);
                 break;
         }
     }
@@ -1384,7 +1328,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     private async Task<bool> TryAuthenticateAsync(CancellationToken cancellationToken)
     {
-        var transport = _transport;
+        var transport = _transportLifecycle.Current;
         if (transport is not { IsRunning: true })
             return false;
 
@@ -1532,7 +1476,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             return;
         }
 
-        if (_transportRecoveryRequired)
+        if (_transportLifecycle.RecoveryRequired)
         {
             try
             {
@@ -1616,9 +1560,9 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 await EnsureAcpSessionAsync(createIfMissing: true, requestCts.Token).ConfigureAwait(false);
                 token.ThrowIfCancellationRequested();
 
-                usedTransport = _transport
+                usedTransport = _transportLifecycle.Current
                     ?? throw new InvalidOperationException("ACP adapter transport was not initialized.");
-                usedTransportGeneration = _transportGeneration;
+                usedTransportGeneration = _transportLifecycle.Generation;
                 lock (_runLock)
                 {
                     if (_currentRunId == runId)
@@ -1697,10 +1641,10 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             catch (TimeoutException ex)
             {
                 await FinalizeRunOutputAsync(runId, cts).ConfigureAwait(false);
-                var timedOutTransport = usedTransport ?? _transport;
+                var timedOutTransport = usedTransport ?? _transportLifecycle.Current;
                 var timedOutGeneration = usedTransportGeneration != 0
                     ? usedTransportGeneration
-                    : _transportGeneration;
+                    : _transportLifecycle.Generation;
                 if (timedOutTransport != null)
                     await ResetTransportAsync(timedOutTransport, timedOutGeneration).ConfigureAwait(false);
 
@@ -1710,7 +1654,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                     // "transcript_only" and then surface here as TimeoutException;
                     // never downgrade that terminal read-only state to "error".
                     if (_currentRunId == runId && _status != "transcript_only")
-                        _status = _transportRecoveryRequired ? "recovery_pending" : "error";
+                        _status = _transportLifecycle.RecoveryRequired ? "recovery_pending" : "error";
                 }
                 if (!_disposed)
                 {
@@ -1732,7 +1676,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 lock (_runLock)
                 {
                     if (_currentRunId == runId && _status != "transcript_only")
-                        _status = _transportRecoveryRequired ? "recovery_pending" : "error";
+                        _status = _transportLifecycle.RecoveryRequired ? "recovery_pending" : "error";
                 }
                 if (!_disposed)
                 {
@@ -1754,7 +1698,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                         // forced reset that killed the transport surfaces as
                         // recovery_pending so the next prompt reloads the session.
                         if (_status == "running" || _status == "stopping")
-                            _status = _transportRecoveryRequired ? "recovery_pending" : "ready";
+                            _status = _transportLifecycle.RecoveryRequired ? "recovery_pending" : "ready";
                         _currentRunId = null;
                         _runCts = null;
                         _runRequestCts = null;
@@ -1789,7 +1733,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     {
         await EnsureTransportAsync(cancellationToken).ConfigureAwait(false);
 
-        if (_transportRecoveryRequired)
+        if (_transportLifecycle.RecoveryRequired)
             await RestoreSessionAfterTransportResetAsync(cancellationToken).ConfigureAwait(false);
 
         if (!string.IsNullOrWhiteSpace(_acpSessionId))
@@ -1807,7 +1751,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             return;
 
         var result = await SendWithAuthRetryAsync(
-            token => _transport!.SendRequestAsync(
+            token => _transportLifecycle.Current!.SendRequestAsync(
                 "session/new",
                 _provider.CreateNewSessionParameters(_workingDirectory),
                 _provider.NewSessionTimeout,
@@ -1816,8 +1760,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             treatTimeoutAsAuthRequired: _provider.TreatNewSessionTimeoutAsAuthRequired).ConfigureAwait(false);
 
         _acpSessionId = GetString(result, "sessionId");
-        _sessionIdForTransportRecovery = null;
-        _transportRecoveryRequired = false;
+        _transportLifecycle.ClearRecovery();
         lock (_sessionMutationSync)
         {
             _currentThread.Provider = _provider.Descriptor.Key;
@@ -1890,8 +1833,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 .ConfigureAwait(false);
 
             _acpSessionId = sessionId;
-            _sessionIdForTransportRecovery = null;
-            _transportRecoveryRequired = false;
+            _transportLifecycle.ClearRecovery();
             // session/resume succeeds with an empty result object; it must not
             // clear the modes a session/load result would have carried.
             if (restoreResult.ValueKind == JsonValueKind.Object && restoreResult.TryGetProperty("modes", out _))
@@ -1971,7 +1913,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             try
             {
                 return await SendWithAuthRetryAsync(
-                    token => _transport!.SendRequestAsync(
+                    token => _transportLifecycle.Current!.SendRequestAsync(
                         "session/resume",
                         _provider.CreateRestoreSessionParameters(sessionId, _workingDirectory),
                         TimeSpan.FromSeconds(45),
@@ -1985,7 +1927,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         }
 
         return await SendWithAuthRetryAsync(
-            token => _transport!.SendRequestAsync(
+            token => _transportLifecycle.Current!.SendRequestAsync(
                 "session/load",
                 _provider.CreateRestoreSessionParameters(sessionId, _workingDirectory),
                 TimeSpan.FromSeconds(45),
@@ -2000,15 +1942,15 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             throw new InvalidOperationException(BuildUnsupportedProviderMessage(_currentThread.Provider));
 
         var effectiveToken = GetEffectiveCancellationToken(cancellationToken);
-        await _transportLock.WaitAsync(effectiveToken).ConfigureAwait(false);
+        await _transportLifecycle.EnterAsync(effectiveToken).ConfigureAwait(false);
         try
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            if (_transport?.IsRunning == true)
+            if (_transportLifecycle.Current?.IsRunning == true)
                 return;
 
-            if (_transport != null)
-                ResetTransportCore(_transport, _transportGeneration);
+            if (_transportLifecycle.Current != null)
+                ResetTransportCore(_transportLifecycle.Current, _transportLifecycle.Generation);
 
             if (!IsAgentRuntimeReady())
             {
@@ -2021,7 +1963,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             var logPath = Path.Combine(
                 logDirectory,
                 $"{DateTimeOffset.Now:yyyyMMdd-HHmmss-fff}-{WorkspaceId:N}.ndjson.log");
-            var generation = ++_transportGeneration;
+            var generation = _transportLifecycle.ReserveGeneration();
             var transportLifetimeCts = CancellationTokenSource.CreateLinkedTokenSource(_serviceLifetimeCts.Token);
             var transport = new AcpJsonRpcTransport(
                 _runtime.CreateProcessSpec(_workingDirectory),
@@ -2029,8 +1971,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 HandleAgentRequestAsync,
                 notification => HandleAgentNotificationAsync(notification, generation));
 
-            _transport = transport;
-            _transportLifetimeCts = transportLifetimeCts;
+            _transportLifecycle.Attach(generation, transport, transportLifetimeCts);
 
             try
             {
@@ -2068,7 +2009,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         }
         finally
         {
-            _transportLock.Release();
+            _transportLifecycle.Exit();
         }
     }
 
@@ -2108,26 +2049,25 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         await _sessionRestoreLock.WaitAsync(effectiveToken).ConfigureAwait(false);
         try
         {
-            if (!_transportRecoveryRequired)
+            if (!_transportLifecycle.RecoveryRequired)
                 return;
 
-            var sessionId = _sessionIdForTransportRecovery ?? _currentThread.AcpSessionId;
+            var sessionId = _transportLifecycle.RecoverySessionId ?? _currentThread.AcpSessionId;
             if (string.IsNullOrWhiteSpace(sessionId))
             {
-                _transportRecoveryRequired = false;
+                _transportLifecycle.DisableRecovery();
                 return;
             }
 
             var restored = await LoadAcpHistoryAsync(sessionId, effectiveToken).ConfigureAwait(false);
             if (!restored)
             {
-                _transportRecoveryRequired = false;
+                _transportLifecycle.DisableRecovery();
                 _status = "transcript_only";
                 throw new InvalidOperationException("ACP session reconnected, but no transcript was replayed.");
             }
 
-            _sessionIdForTransportRecovery = null;
-            _transportRecoveryRequired = false;
+            _transportLifecycle.ClearRecovery();
             _status = _isRunning ? "running" : "restored";
         }
         catch (AcpAuthRequiredException)
@@ -2142,12 +2082,12 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         }
         catch (Exception ex)
         {
-            var failedTransport = _transport;
-            var failedGeneration = _transportGeneration;
+            var failedTransport = _transportLifecycle.Current;
+            var failedGeneration = _transportLifecycle.Generation;
             if (failedTransport != null && (ex is TimeoutException || !failedTransport.IsRunning))
                 await ResetTransportAsync(failedTransport, failedGeneration).ConfigureAwait(false);
 
-            _transportRecoveryRequired = false;
+            _transportLifecycle.DisableRecovery();
             _status = "transcript_only";
             throw;
         }
@@ -2159,7 +2099,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     private async Task ResetTransportAsync(AcpJsonRpcTransport expectedTransport, long expectedGeneration)
     {
-        if (await _transportLock.WaitAsync(TransportResetLockBudget).ConfigureAwait(false))
+        if (await _transportLifecycle.TryEnterAsync(TransportResetLockBudget).ConfigureAwait(false))
         {
             try
             {
@@ -2167,7 +2107,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             }
             finally
             {
-                _transportLock.Release();
+                _transportLifecycle.Exit();
             }
         }
         else
@@ -2176,54 +2116,30 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             // dispose the transport directly (idempotent, non-blocking, kills the
             // whole process tree) so the forced reset always completes. Remaining
             // state cleanup runs when the lock frees.
-            expectedTransport.Dispose();
+            _transportLifecycle.ForceDispose(expectedTransport);
         }
     }
 
     private bool ResetTransportCore(AcpJsonRpcTransport expectedTransport, long expectedGeneration)
     {
-        if (!ReferenceEquals(_transport, expectedTransport) || _transportGeneration != expectedGeneration)
+        if (!_transportLifecycle.IsCurrent(expectedTransport, expectedGeneration))
             return false;
 
         ClearAvailableAgentCommands();
         if (!_disposed)
             _ = SendAgentCommandsUnavailableAsync();
-        _sessionIdForTransportRecovery ??= _acpSessionId ?? _currentThread.AcpSessionId;
+        if (!_transportLifecycle.Reset(
+                expectedTransport,
+                expectedGeneration,
+                _acpSessionId,
+                _currentThread.AcpSessionId))
+        {
+            return false;
+        }
+
         _acpSessionId = null;
-        _transportRecoveryRequired = !string.IsNullOrWhiteSpace(_sessionIdForTransportRecovery);
-
-        try { _transportLifetimeCts?.Cancel(); } catch { }
-        _transportLifetimeCts?.Dispose();
-        _transportLifetimeCts = null;
-
-        _transport = null;
-        expectedTransport.Dispose();
-        CleanupTerminalsForGeneration(expectedGeneration);
+        _terminalRequests.CleanupGeneration(expectedGeneration);
         return true;
-    }
-
-    private void CleanupTerminalsForGeneration(long generation)
-    {
-        foreach (var item in _terminals.ToArray())
-        {
-            if (item.Value.TransportGeneration != generation)
-                continue;
-
-            if (_terminals.TryRemove(item.Key, out var terminal))
-                StopAndDisposeTerminal(terminal);
-        }
-    }
-
-    private static void StopAndDisposeTerminal(AcpTerminalProcess terminal)
-    {
-        try
-        {
-            if (!terminal.Process.HasExited)
-                terminal.Process.Kill(entireProcessTree: true);
-        }
-        catch { }
-
-        terminal.Process.Dispose();
     }
 
     private CancellationToken GetEffectiveCancellationToken(CancellationToken cancellationToken)
@@ -2238,274 +2154,17 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         var method = GetString(request, "method");
         var parameters = request.TryGetProperty("params", out var p) ? p : default;
 
+        if (method.StartsWith("terminal/", StringComparison.Ordinal))
+            return await _terminalRequests.HandleAsync(method, parameters).ConfigureAwait(false);
+
         return method switch
         {
-            "session/request_permission" => await HandlePermissionRequestAsync(request, parameters).ConfigureAwait(false),
-            "elicitation/create" => await HandleElicitationCreateAsync(request, parameters).ConfigureAwait(false),
+            "session/request_permission" => await _decisions.HandlePermissionRequestAsync(request, parameters).ConfigureAwait(false),
+            "elicitation/create" => await _decisions.HandleElicitationCreateAsync(request, parameters).ConfigureAwait(false),
             "fs/read_text_file" => HandleReadTextFile(parameters),
             "fs/write_text_file" => HandleWriteTextFile(parameters),
-            "terminal/create" => HandleCreateTerminal(parameters),
-            "terminal/output" => HandleTerminalOutput(parameters),
-            "terminal/wait_for_exit" => await HandleWaitForTerminalExitAsync(parameters).ConfigureAwait(false),
-            "terminal/kill" => HandleKillTerminal(parameters),
-            "terminal/release" => HandleReleaseTerminal(parameters),
             _ => new { }
         };
-    }
-
-    private async Task<object?> HandlePermissionRequestAsync(JsonElement request, JsonElement parameters)
-    {
-        var requestId = request.GetProperty("id").ToString();
-        var options = AcpPermissionPolicy.ReadOptions(parameters);
-
-        var toolCall = parameters.TryGetProperty("toolCall", out var tc) ? tc : default;
-        var toolCallId = GetString(toolCall, "toolCallId");
-        var toolKind = GetString(toolCall, "kind");
-        var toolStatus = GetString(toolCall, "status");
-        var classified = AcpPermissionPolicy.Classify(toolCall);
-        var presentation = classified.Presentation switch
-        {
-            AcpPermissionPresentation.ModeTransition => PermissionPresentation.ModeTransition,
-            AcpPermissionPresentation.Document => PermissionPresentation.Document,
-            _ => PermissionPresentation.Ordinary
-        };
-        var documentText = classified.DocumentText;
-        var description = classified.Description;
-        var explicitToolInput = classified.ExplicitRawInput;
-
-        // Structural ask-user lift: nested rawInput.questions → permission form
-        // variant (same pending table / agent_permission_response channel).
-        // Never emit elicitation_request for this — that would break pairing.
-        var isAskUserForm = false;
-        object? askUserSchema = null;
-        string? askUserMessage = null;
-        IReadOnlyList<int> askUserIndexes = Array.Empty<int>();
-        string? formSubmitOptionId = null;
-        if (presentation == PermissionPresentation.Ordinary
-            && AcpAskUserQuestionAdapter.TryCreateForm(
-                toolCall,
-                out askUserMessage,
-                out askUserSchema,
-                out askUserIndexes))
-        {
-            formSubmitOptionId = AcpAskUserQuestionAdapter.ResolveProceedOptionId(options);
-            if (!string.IsNullOrWhiteSpace(formSubmitOptionId))
-            {
-                isAskUserForm = true;
-                explicitToolInput = null;
-                description = "";
-            }
-        }
-
-        var pending = new PendingPermission
-        {
-            Options = options,
-            Presentation = presentation,
-            DecisionSnapshotId = Guid.NewGuid().ToString("N"),
-            IsAskUserForm = isAskUserForm,
-            AskUserAnswerIndexes = askUserIndexes,
-            FormSubmitOptionId = formSubmitOptionId
-        };
-        _pendingPermissions[requestId] = pending;
-
-        var title = GetString(toolCall, "title");
-        if (string.IsNullOrWhiteSpace(title))
-        {
-            title = GetString(toolCall, "name") ?? $"{_provider.Descriptor.AssistantName} permission request";
-        }
-
-        if (pending.IsDocumentDecision)
-        {
-            lock (_sessionMutationSync)
-            {
-                if (!string.IsNullOrWhiteSpace(toolCallId))
-                    _toolState.MarkDocumentDecision(toolCallId);
-            }
-
-            UpsertDocumentDecisionMessage(
-                pending.Presentation,
-                pending.DecisionSnapshotId,
-                requestId,
-                toolCallId,
-                title,
-                documentText,
-                options,
-                "pending");
-        }
-
-        await _bridgeService.SendEventAsync(new
-        {
-            type = "permission_request",
-            requestId,
-            decisionSnapshotId = pending.DecisionSnapshotId,
-            title,
-            text = explicitToolInput,
-            description = pending.IsDocumentDecision || string.IsNullOrWhiteSpace(description)
-                ? null
-                : description,
-            presentation = pending.IsAskUserForm
-                ? "form"
-                : pending.Presentation switch
-                {
-                    PermissionPresentation.ModeTransition => "mode_transition",
-                    PermissionPresentation.Document => "document",
-                    _ => null
-                },
-            message = pending.IsAskUserForm ? askUserMessage : null,
-            schema = pending.IsAskUserForm ? askUserSchema : null,
-            formSubmitOptionId = pending.IsAskUserForm ? formSubmitOptionId : null,
-            toolCallId,
-            toolKind,
-            toolStatus,
-            documentText = pending.IsDocumentDecision ? documentText : null,
-            options = options.Select(option => new
-            {
-                optionId = option.OptionId,
-                name = option.Name,
-                kind = option.Kind
-            }).ToArray()
-        }).ConfigureAwait(false);
-
-        if (options.Length == 0)
-        {
-            _pendingPermissions.TryRemove(requestId, out _);
-            if (pending.IsDocumentDecision)
-                UpdateDocumentDecisionState(requestId, pending.Presentation, "cancelled", decisionSnapshotId: pending.DecisionSnapshotId);
-            await _bridgeService.SendEventAsync(new
-            {
-                type = "permission_cancelled",
-                requestId,
-                text = "The ACP Agent did not provide any response options."
-            }).ConfigureAwait(false);
-            return new { outcome = new { outcome = "cancelled" } };
-        }
-
-        var selectedRaw = await pending.Completion.Task.ConfigureAwait(false);
-        if (selectedRaw == "__cancelled__")
-        {
-            if (pending.IsDocumentDecision)
-                UpdateDocumentDecisionState(requestId, pending.Presentation, "cancelled", decisionSnapshotId: pending.DecisionSnapshotId);
-            return new { outcome = new { outcome = "cancelled" } };
-        }
-
-        if (!AcpAskUserQuestionAdapter.TryParsePermissionResponseValue(
-                selectedRaw,
-                out var selected,
-                out var formContent,
-                out var hasFormContent))
-        {
-            if (pending.IsDocumentDecision)
-                UpdateDocumentDecisionState(requestId, pending.Presentation, "cancelled", decisionSnapshotId: pending.DecisionSnapshotId);
-
-            await _bridgeService.SendEventAsync(new
-            {
-                type = "permission_cancelled",
-                requestId,
-                text = "The selected option was not offered by the ACP Agent."
-            }).ConfigureAwait(false);
-            return new { outcome = new { outcome = "cancelled" } };
-        }
-
-        var selectedOption = AcpPermissionPolicy.FindOfferedOption(pending.Options, selected);
-        if (selectedOption == null)
-        {
-            if (pending.IsDocumentDecision)
-                UpdateDocumentDecisionState(requestId, pending.Presentation, "cancelled", decisionSnapshotId: pending.DecisionSnapshotId);
-
-            await _bridgeService.SendEventAsync(new
-            {
-                type = "permission_cancelled",
-                requestId,
-                text = "The selected option was not offered by the ACP Agent."
-            }).ConfigureAwait(false);
-            return new { outcome = new { outcome = "cancelled" } };
-        }
-
-        selected = selectedOption.OptionId;
-        if (pending.IsDocumentDecision)
-            UpdateDocumentDecisionState(requestId, pending.Presentation, "selected", selected, pending.DecisionSnapshotId);
-
-        await _bridgeService.SendEventAsync(new
-        {
-            type = "permission_resolved",
-            requestId,
-            optionId = selected,
-            optionName = selectedOption.Name
-        }).ConfigureAwait(false);
-
-        Dictionary<string, string>? answers = null;
-        if (pending.IsAskUserForm
-            && hasFormContent
-            && string.Equals(selected, pending.FormSubmitOptionId, StringComparison.OrdinalIgnoreCase))
-        {
-            answers = AcpAskUserQuestionAdapter.MapContentToAnswers(
-                formContent,
-                pending.AskUserAnswerIndexes);
-        }
-
-        if (answers is { Count: > 0 })
-        {
-            return new Dictionary<string, object?>
-            {
-                ["outcome"] = new Dictionary<string, object?>
-                {
-                    ["outcome"] = "selected",
-                    ["optionId"] = selected
-                },
-                ["answers"] = answers
-            };
-        }
-
-        return new
-        {
-            outcome = new
-            {
-                outcome = "selected",
-                optionId = selected
-            }
-        };
-    }
-
-    private async Task<object?> HandleElicitationCreateAsync(JsonElement request, JsonElement parameters)
-    {
-        var requestId = request.GetProperty("id").ToString();
-        var pending = new PendingElicitation();
-        _pendingElicitations[requestId] = pending;
-
-        await _bridgeService.SendEventAsync(new
-        {
-            type = "elicitation_request",
-            requestId,
-            mode = GetString(parameters, "mode"),
-            message = GetString(parameters, "message", $"{_provider.Descriptor.AssistantName} needs more information."),
-            schema = parameters.TryGetProperty("requestedSchema", out var schema) ? JsonElementToObject(schema) : null,
-            url = GetString(parameters, "url")
-        }).ConfigureAwait(false);
-
-        var responseJson = await pending.Completion.Task.ConfigureAwait(false);
-        try
-        {
-            using var document = JsonDocument.Parse(responseJson);
-            var root = document.RootElement;
-            var action = GetString(root, "action", "cancel");
-            if (action is "decline" or "cancel")
-                return new { action };
-
-            if (root.TryGetProperty("content", out var content))
-            {
-                return new
-                {
-                    action = "accept",
-                    content = JsonElementToObject(content)
-                };
-            }
-
-            return new { action = "accept", content = new { } };
-        }
-        catch
-        {
-            return new { action = "cancel" };
-        }
     }
 
     private object HandleReadTextFile(JsonElement parameters)
@@ -2556,217 +2215,9 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         return new { };
     }
 
-    private object HandleCreateTerminal(JsonElement parameters)
-    {
-        var command = GetString(parameters, "command");
-        if (string.IsNullOrWhiteSpace(command))
-            throw new InvalidOperationException("ACP terminal/create did not include a command.");
-
-        var args = parameters.TryGetProperty("args", out var argsElement) && argsElement.ValueKind == JsonValueKind.Array
-            ? argsElement.EnumerateArray().Where(a => a.ValueKind == JsonValueKind.String).Select(a => a.GetString()!).ToArray()
-            : Array.Empty<string>();
-        var cwd = GetString(parameters, "cwd");
-        if (string.IsNullOrWhiteSpace(cwd))
-            cwd = _workingDirectory;
-        cwd = EnsureAllowedDirectory(cwd);
-
-        var terminalId = Guid.NewGuid().ToString();
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = command,
-            WorkingDirectory = cwd,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8
-        };
-
-        foreach (var arg in args)
-            startInfo.ArgumentList.Add(arg);
-
-        if (parameters.TryGetProperty("env", out var envElement) && envElement.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var item in envElement.EnumerateArray())
-            {
-                var name = GetString(item, "name");
-                if (!string.IsNullOrWhiteSpace(name))
-                    startInfo.Environment[name] = GetString(item, "value");
-            }
-        }
-
-        const int MaxOutputByteLimit = 2_000_000;
-        var rawLimit = TryGetInt(parameters, "outputByteLimit") ?? 200_000;
-        var limit = Math.Clamp(rawLimit, 0, MaxOutputByteLimit);
-        var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
-        if (!process.Start())
-            throw new InvalidOperationException($"Failed to start ACP terminal command: {command}");
-
-        var terminal = new AcpTerminalProcess
-        {
-            Process = process,
-            OutputByteLimit = limit,
-            TransportGeneration = _transportGeneration,
-            TransportToken = _transportLifetimeCts?.Token ?? _serviceLifetimeCts.Token
-        };
-        _terminals[terminalId] = terminal;
-        _ = Task.Run(() => ReadTerminalStreamAsync(terminalId, process.StandardOutput));
-        _ = Task.Run(() => ReadTerminalStreamAsync(terminalId, process.StandardError));
-
-        return new { terminalId };
-    }
-
-    private object HandleTerminalOutput(JsonElement parameters)
-    {
-        var terminal = GetTerminal(GetString(parameters, "terminalId"));
-        lock (terminal.Output)
-        {
-            return new
-            {
-                output = terminal.Output.ToString(),
-                truncated = terminal.Truncated,
-                exitStatus = terminal.Process.HasExited
-                    ? new { exitCode = terminal.Process.ExitCode, signal = (string?)null }
-                    : null
-            };
-        }
-    }
-
-    private async Task<object> HandleWaitForTerminalExitAsync(JsonElement parameters)
-    {
-        var terminal = GetTerminal(GetString(parameters, "terminalId"));
-        await terminal.Process.WaitForExitAsync(terminal.TransportToken).ConfigureAwait(false);
-        return new
-        {
-            exitCode = terminal.Process.ExitCode,
-            signal = (string?)null
-        };
-    }
-
-    private object HandleKillTerminal(JsonElement parameters)
-    {
-        var terminal = GetTerminal(GetString(parameters, "terminalId"));
-        try
-        {
-            if (!terminal.Process.HasExited)
-                terminal.Process.Kill(entireProcessTree: true);
-        }
-        catch { }
-
-        return new { };
-    }
-
-    private object HandleReleaseTerminal(JsonElement parameters)
-    {
-        var terminalId = GetString(parameters, "terminalId");
-        if (_terminals.TryRemove(terminalId, out var terminal))
-            terminal.Process.Dispose();
-        return new { };
-    }
-
-    private async Task ReadTerminalStreamAsync(string terminalId, StreamReader reader)
-    {
-        try
-        {
-            var buffer = new char[4096];
-            while (true)
-            {
-                var count = await reader.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
-                if (count <= 0)
-                    break;
-
-                if (!_terminals.TryGetValue(terminalId, out var terminal))
-                    break;
-
-                lock (terminal.Output)
-                {
-                    terminal.OutputByteCount = AppendBoundedUtf8(
-                        terminal.Output,
-                        terminal.OutputByteCount,
-                        buffer.AsSpan(0, count),
-                        terminal.OutputByteLimit,
-                        out var truncated);
-                    terminal.Truncated |= truncated;
-                }
-            }
-        }
-        catch (Exception) when (!_terminals.ContainsKey(terminalId) || _disposed)
-        {
-            // The transport reset or service shutdown disposed the stream.
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"ReadTerminalStreamAsync failed for terminal {terminalId}: {ex}");
-        }
-    }
-
-    /// <summary>
-    /// Appends UTF-16 text while retaining at most <paramref name="byteLimit"/>
-    /// UTF-8 bytes. The oldest complete Unicode scalars are removed in one
-    /// StringBuilder operation, avoiding one allocation/removal per character.
-    /// </summary>
-    internal static int AppendBoundedUtf8(
-        StringBuilder output,
-        int currentByteCount,
-        ReadOnlySpan<char> text,
-        int byteLimit,
-        out bool truncated)
-    {
-        var joinsSplitSurrogate = output.Length > 0
-            && text.Length > 0
-            && char.IsHighSurrogate(output[^1])
-            && char.IsLowSurrogate(text[0]);
-        var appendedBytes = Encoding.UTF8.GetByteCount(text);
-        // Each half was previously counted as a three-byte replacement. Once
-        // joined they form one four-byte scalar, so correct the rolling count.
-        if (joinsSplitSurrogate)
-            appendedBytes -= 2;
-
-        output.Append(text);
-        var byteCount = currentByteCount + appendedBytes;
-        var excess = byteCount - Math.Max(0, byteLimit);
-        if (excess <= 0)
-        {
-            truncated = false;
-            return byteCount;
-        }
-
-        var removeChars = 0;
-        var removedBytes = 0;
-        while (removedBytes < excess && removeChars < output.Length)
-        {
-            var current = output[removeChars];
-            if (char.IsHighSurrogate(current)
-                && removeChars + 1 < output.Length
-                && char.IsLowSurrogate(output[removeChars + 1]))
-            {
-                removeChars += 2;
-                removedBytes += 4;
-            }
-            else
-            {
-                removeChars++;
-                removedBytes += current <= 0x7f ? 1 : current <= 0x7ff ? 2 : 3;
-            }
-        }
-
-        if (removeChars > 0)
-            output.Remove(0, removeChars);
-        truncated = removeChars > 0;
-        return byteCount - removedBytes;
-    }
-
-    private AcpTerminalProcess GetTerminal(string terminalId)
-    {
-        if (!_terminals.TryGetValue(terminalId, out var terminal))
-            throw new InvalidOperationException($"ACP terminal not found: {terminalId}");
-        return terminal;
-    }
-
     private Task HandleAgentNotificationAsync(JsonElement notification, long generation)
     {
-        if (_transport == null || _transportGeneration != generation)
+        if (_transportLifecycle.Current == null || _transportLifecycle.Generation != generation)
             return Task.CompletedTask;
 
         var method = GetString(notification, "method");
@@ -3356,7 +2807,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         if (string.IsNullOrWhiteSpace(_acpSessionId))
             return;
 
-        await _transport!.SendRequestAsync("session/set_mode", new
+        await _transportLifecycle.Current!.SendRequestAsync("session/set_mode", new
         {
             sessionId = _acpSessionId,
             modeId
@@ -3391,7 +2842,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 ["configId"] = configId,
                 ["value"] = value
             };
-        var result = await _transport!.SendRequestAsync("session/set_config_option", parameters,
+        var result = await _transportLifecycle.Current!.SendRequestAsync("session/set_config_option", parameters,
             TimeSpan.FromSeconds(15), _serviceLifetimeCts.Token).ConfigureAwait(false);
 
         lock (_sessionMutationSync)
@@ -3696,7 +3147,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         {
             _currentThread.Cwd = _workingDirectory;
             _currentThread.Provider = _provider.Descriptor.Key;
-            _currentThread.AcpSessionId = _acpSessionId ?? _sessionIdForTransportRecovery;
+            _currentThread.AcpSessionId = _acpSessionId ?? _transportLifecycle.RecoverySessionId;
             _currentThread.ModeId = _currentModeId;
             _currentThread.AdapterVersion = _adapterVersion;
         }
@@ -3737,8 +3188,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             EnsureImageContextFlag(thread);
             _workingDirectory = Directory.Exists(thread.Cwd) ? thread.Cwd : ResolveWorkspaceRoot();
             _acpSessionId = null;
-            _sessionIdForTransportRecovery = null;
-            _transportRecoveryRequired = false;
+            _transportLifecycle.ClearRecovery();
             _currentModeId = thread.ModeId;
             _adapterVersion = thread.AdapterVersion;
             _status = IsBoundProviderThread(thread) ? "ready" : "transcript_only";
@@ -4082,7 +3532,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     }
 
     private void UpsertDocumentDecisionMessage(
-        PermissionPresentation presentation,
+        AcpDecisionPresentation presentation,
         string decisionSnapshotId,
         string requestId,
         string toolCallId,
@@ -4153,7 +3603,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     private void UpdateDocumentDecisionState(
         string requestId,
-        PermissionPresentation presentation,
+        AcpDecisionPresentation presentation,
         string state,
         string? selectedOptionId = null,
         string? decisionSnapshotId = null)
@@ -4190,12 +3640,12 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         string.Equals(state, "pending", StringComparison.OrdinalIgnoreCase)
         || string.Equals(state, "sending", StringComparison.OrdinalIgnoreCase);
 
-    private static string GetDocumentDecisionRole(PermissionPresentation presentation)
+    private static string GetDocumentDecisionRole(AcpDecisionPresentation presentation)
     {
         return presentation switch
         {
-            PermissionPresentation.ModeTransition => "mode_transition",
-            PermissionPresentation.Document => "document_permission",
+            AcpDecisionPresentation.ModeTransition => "mode_transition",
+            AcpDecisionPresentation.Document => "document_permission",
             _ => throw new ArgumentOutOfRangeException(nameof(presentation), presentation, "Only document presentations have transcript snapshots.")
         };
     }
@@ -4479,17 +3929,8 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         try { _runRequestCts?.Cancel(); } catch { }
         try { _runtimeInstallCts?.Cancel(); } catch { }
 
-        foreach (var item in _pendingPermissions.ToArray())
-        {
-            if (_pendingPermissions.TryRemove(item.Key, out var pending))
-                pending.Completion.TrySetResult("__cancelled__");
-        }
-
-        foreach (var item in _pendingElicitations.ToArray())
-        {
-            if (_pendingElicitations.TryRemove(item.Key, out var pending))
-                pending.Completion.TrySetResult("{\"action\":\"cancel\"}");
-        }
+        _decisions.CancelAllWithoutEvents();
+        _terminalRequests.Dispose();
 
         _runtimeInstallCts?.Dispose();
         _runCts?.Dispose();
@@ -4514,34 +3955,31 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         }
         catch { }
 
-        var lockTaken = _transportLock.Wait(TransportResetLockBudget);
+        var lockTaken = _transportLifecycle.TryEnter(TransportResetLockBudget);
         try
         {
             if (lockTaken)
             {
-                if (_transport != null)
-                    ResetTransportCore(_transport, _transportGeneration);
+                if (_transportLifecycle.Current != null)
+                    ResetTransportCore(_transportLifecycle.Current, _transportLifecycle.Generation);
             }
             else
             {
                 // Could not acquire the lock within the budget (a stalled op holds
                 // it). Never block shutdown: dispose the transport directly so the
                 // child process tree is killed and the window can always close.
-                _transport?.Dispose();
+                if (_transportLifecycle.Current != null)
+                    _transportLifecycle.ForceDispose(_transportLifecycle.Current);
             }
 
-            foreach (var item in _terminals.ToArray())
-            {
-                if (_terminals.TryRemove(item.Key, out var terminal))
-                    StopAndDisposeTerminal(terminal);
-            }
         }
         finally
         {
             if (lockTaken)
-                _transportLock.Release();
+                _transportLifecycle.Exit();
         }
 
+        _transportLifecycle.Dispose();
         _serviceLifetimeCts.Dispose();
     }
 }

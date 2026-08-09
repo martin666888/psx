@@ -12,7 +12,7 @@ public sealed class AcpTerminalBufferTests
     {
         var output = new StringBuilder();
 
-        var byteCount = AcpAgentSessionService.AppendBoundedUtf8(
+        var byteCount = AcpTerminalRequestHandler.AppendBoundedUtf8(
             output,
             0,
             "abcdef".AsSpan(),
@@ -29,7 +29,7 @@ public sealed class AcpTerminalBufferTests
     {
         var output = new StringBuilder();
 
-        var byteCount = AcpAgentSessionService.AppendBoundedUtf8(
+        var byteCount = AcpTerminalRequestHandler.AppendBoundedUtf8(
             output,
             0,
             "你好吗".AsSpan(),
@@ -46,14 +46,14 @@ public sealed class AcpTerminalBufferTests
     public void AppendBoundedUtf8_SurrogatePairSplitAcrossReads_ReconcilesRollingByteCount()
     {
         var output = new StringBuilder();
-        var byteCount = AcpAgentSessionService.AppendBoundedUtf8(
+        var byteCount = AcpTerminalRequestHandler.AppendBoundedUtf8(
             output,
             0,
             "\uD83D".AsSpan(),
             8,
             out var firstTruncated);
 
-        byteCount = AcpAgentSessionService.AppendBoundedUtf8(
+        byteCount = AcpTerminalRequestHandler.AppendBoundedUtf8(
             output,
             byteCount,
             "\uDE00x".AsSpan(),
@@ -72,7 +72,7 @@ public sealed class AcpTerminalBufferTests
     {
         var output = new StringBuilder();
 
-        var byteCount = AcpAgentSessionService.AppendBoundedUtf8(
+        var byteCount = AcpTerminalRequestHandler.AppendBoundedUtf8(
             output,
             0,
             "😀中文".AsSpan(),
