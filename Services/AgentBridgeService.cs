@@ -8,6 +8,7 @@ public sealed class AgentBridgeService : IAgentBridgeService, IDisposable
 {
     private WebView2? _webView;
     private CoreWebView2? _coreWebView;
+    private WebViewJsonDispatcher? _messageDispatcher;
     private bool _disposed;
 
     public event EventHandler<AgentSubmitEventArgs>? UserMessageSubmitted;
@@ -21,6 +22,10 @@ public sealed class AgentBridgeService : IAgentBridgeService, IDisposable
 
         if (_coreWebView != null)
         {
+            _messageDispatcher?.Dispose();
+            _messageDispatcher = new WebViewJsonDispatcher(
+                webView.Dispatcher,
+                _coreWebView.PostWebMessageAsJson);
             _coreWebView.WebMessageReceived += OnWebMessageReceived;
         }
 
@@ -29,29 +34,8 @@ public sealed class AgentBridgeService : IAgentBridgeService, IDisposable
 
     public Task SendEventAsync(object message)
     {
-        if (_coreWebView == null)
-            return Task.CompletedTask;
-
         var json = JsonSerializer.Serialize(message);
-        var coreWebView = _coreWebView;
-        var dispatcher = _webView?.Dispatcher;
-
-        if (dispatcher != null && !dispatcher.CheckAccess())
-        {
-            // Return the dispatcher operation so callers awaiting us observe
-            // the actual in-order delivery instead of a bare enqueue.
-            if (dispatcher.HasShutdownStarted)
-                return Task.CompletedTask;
-
-            return dispatcher
-                .InvokeAsync(() => coreWebView.PostWebMessageAsJson(json))
-                .Task;
-        }
-
-        // Already on the UI thread: deliver directly (never self-await the
-        // dispatcher).
-        coreWebView.PostWebMessageAsJson(json);
-        return Task.CompletedTask;
+        return _messageDispatcher?.SendAsync(json) ?? Task.CompletedTask;
     }
 
     private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
@@ -80,6 +64,8 @@ public sealed class AgentBridgeService : IAgentBridgeService, IDisposable
             return;
 
         _disposed = true;
+        _messageDispatcher?.Dispose();
+        _messageDispatcher = null;
 
         if (_coreWebView != null)
         {

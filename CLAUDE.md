@@ -125,7 +125,7 @@ When `runtime/acp-current/` is missing, Agent mode publishes `runtime_status: mi
 
 ## Cross-cutting rules (learned from the code, not invented)
 
-1. **All thread-hopping to WebView2 uses `BeginInvoke`, never `Invoke`.** `TerminalBridgeService` has a comment explaining deadlock avoidance near its `BeginInvoke` calls (search for "deadlock" in that file). Match this pattern everywhere you call `PostWebMessageAsJson` from a background thread.
+1. **All browser-bound JSON goes through `WebViewJsonDispatcher`.** It posts directly on the owning thread, returns the real `Dispatcher.InvokeAsync` task off-thread, preserves queue order, and drops callbacks after bridge disposal. Do not add bridge-local `BeginInvoke` calls or capture a mutable `_coreWebView` field inside a queued callback. High-volume Terminal output may keep fire-and-forget call sites; awaiting the returned task is reserved for flows that need observable delivery ordering.
 
 2. **All thread-hopping to `ObservableCollection<T>` in ViewModels uses `Dispatcher.BeginInvoke`** (see the `OnTabCreated` / `OnTabClosed` / `OnTabTitleChanged` handlers in `MainViewModel`). Don't modify `Tabs` directly from a service event handler.
 

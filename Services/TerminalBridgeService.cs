@@ -24,6 +24,7 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
     private readonly ConcurrentDictionary<Guid, byte> _terminalSessionIds = new();
     private WebView2? _webView;
     private CoreWebView2? _coreWebView;
+    private WebViewJsonDispatcher? _messageDispatcher;
     private string _viewMode = "terminal";
     private bool _disposed;
 #if DEBUG
@@ -62,6 +63,10 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
             browserExecutableFolder: runtimePaths.WebView2FixedRuntimePath);
         await webView.EnsureCoreWebView2Async(env);
         _coreWebView = webView.CoreWebView2;
+        _messageDispatcher?.Dispose();
+        _messageDispatcher = new WebViewJsonDispatcher(
+            webView.Dispatcher,
+            _coreWebView.PostWebMessageAsJson);
 
         // Set up virtual host mapping for wwwroot
         var wwwrootPath = Path.Combine(AppContext.BaseDirectory, "wwwroot");
@@ -387,28 +392,16 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
 
     private Task SendMessageToJs(object message)
     {
-        if (_coreWebView == null) return Task.CompletedTask;
-
         var json = JsonSerializer.Serialize(message, JsonOptions);
-
-        var dispatcher = _webView?.Dispatcher;
-        if (dispatcher != null && !dispatcher.CheckAccess())
-        {
-            // Use BeginInvoke (async) instead of Invoke (sync) to avoid deadlocks
-            dispatcher.BeginInvoke(() => _coreWebView.PostWebMessageAsJson(json));
-        }
-        else
-        {
-            _coreWebView.PostWebMessageAsJson(json);
-        }
-
-        return Task.CompletedTask;
+        return _messageDispatcher?.SendAsync(json) ?? Task.CompletedTask;
     }
 
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
+        _messageDispatcher?.Dispose();
+        _messageDispatcher = null;
 
         if (_coreWebView != null)
         {
