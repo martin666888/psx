@@ -731,6 +731,13 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     private async Task HandleFrontendCommandAsync(AgentCommandEventArgs e)
     {
+        if (_provider.Compatibility.IsLegacyPromptCommand(e.Command))
+        {
+            if (!string.IsNullOrWhiteSpace(e.Value))
+                await SubmitMessageAsync(e.Value).ConfigureAwait(false);
+            return;
+        }
+
         switch (e.Command)
         {
             case "state":
@@ -774,7 +781,6 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 await SendHelpAsync().ConfigureAwait(false);
                 break;
             case "agent_command":
-            case "claude_command":
                 if (!string.IsNullOrWhiteSpace(e.Value))
                     await SubmitMessageAsync(e.Value).ConfigureAwait(false);
                 break;
@@ -2399,7 +2405,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     {
         AcpToolUpdateResult result;
         lock (_sessionMutationSync)
-            result = _toolState.ApplyUpdate(update, ReadToolName);
+            result = _toolState.ApplyUpdate(update, _provider.Compatibility.ResolveToolName);
 
         if (result.Suppressed || result.Snapshot == null)
             return;
@@ -2498,7 +2504,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         replay.AssistantBuffer.Append(text);
     }
 
-    private static void CaptureReplayToolCall(ReplayHistoryState replay, JsonElement update)
+    private void CaptureReplayToolCall(ReplayHistoryState replay, JsonElement update)
     {
         // Do NOT flush the assistant buffer here: replayed turns must keep the
         // live persistence shape (one assistant message per turn), so tool
@@ -2506,12 +2512,12 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         ApplyReplayToolUpdate(replay, update);
     }
 
-    private static void CaptureReplayToolUpdate(ReplayHistoryState replay, JsonElement update)
+    private void CaptureReplayToolUpdate(ReplayHistoryState replay, JsonElement update)
     {
         ApplyReplayToolUpdate(replay, update);
     }
 
-    private static void ApplyReplayToolUpdate(ReplayHistoryState replay, JsonElement update)
+    private void ApplyReplayToolUpdate(ReplayHistoryState replay, JsonElement update)
     {
         if (string.IsNullOrWhiteSpace(replay.CurrentRunId))
             replay.CurrentRunId = $"history-{++replay.TurnIndex}";
@@ -2520,7 +2526,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         if (string.IsNullOrWhiteSpace(toolCallId))
             toolCallId = "history-tool-" + Guid.NewGuid().ToString("N");
 
-        var name = ReadToolName(update);
+        var name = _provider.Compatibility.ResolveToolName(update);
         if (!replay.ToolNames.ContainsKey(toolCallId))
             replay.ToolNames[toolCallId] = name;
         else if (string.Equals(replay.ToolNames[toolCallId], "Tool", StringComparison.OrdinalIgnoreCase)
@@ -2534,9 +2540,9 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         var hasRawInput = update.TryGetProperty("rawInput", out _);
         if (hasRawInput)
         {
-            var input = FormatToolInput(update);
+            var input = AcpToolStateTracker.FormatInput(update);
             replay.ToolInputs[toolCallId] = input;
-            replay.ToolSummaries[toolCallId] = BuildToolSummary(replay.ToolNames[toolCallId], input, update);
+            replay.ToolSummaries[toolCallId] = AcpToolStateTracker.BuildSummary(replay.ToolNames[toolCallId], input, update);
         }
         else if (!replay.ToolInputs.ContainsKey(toolCallId))
         {
@@ -2545,7 +2551,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
         if (!string.IsNullOrWhiteSpace(presentTitle) || !replay.ToolSummaries.ContainsKey(toolCallId))
         {
-            replay.ToolSummaries[toolCallId] = BuildToolSummary(
+            replay.ToolSummaries[toolCallId] = AcpToolStateTracker.BuildSummary(
                 replay.ToolNames[toolCallId],
                 replay.ToolInputs.GetValueOrDefault(toolCallId, ""),
                 update);
@@ -2560,17 +2566,17 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         var isTerminalStatus = status is "completed" or "failed";
         var hasContent = update.TryGetProperty("content", out _);
         var hasRawOutput = update.TryGetProperty("rawOutput", out _);
-        var terminalChunk = ReadTerminalOutputChunk(update);
+        var terminalChunk = AcpToolStateTracker.ReadTerminalOutputChunk(update);
 
         if (hasContent || hasRawOutput)
         {
-            var displayOutput = FormatContentAndRawOutput(update);
+            var displayOutput = AcpToolStateTracker.FormatContentAndRawOutput(update);
             var hasCommittedInput = replay.ToolInputs.TryGetValue(toolCallId, out var existingInput)
                 && !string.IsNullOrWhiteSpace(existingInput);
             if (!isTerminalStatus
                 && !hasRawInput
                 && !hasCommittedInput
-                && IsPendingParamSnapshot(displayOutput))
+                && AcpToolStateTracker.IsPendingParamSnapshot(displayOutput))
             {
                 // Keep the latest pending snapshot out of ToolOutputs until
                 // rawInput or a terminal formal result arrives.
@@ -3368,140 +3374,6 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             return "Agent Chat";
 
         return compact.Length <= 48 ? compact : compact[..48] + "...";
-    }
-
-    private static string ReadToolName(JsonElement update)
-    {
-        var metaName = ReadNestedString(update, "_meta", "claudeCode", "toolName");
-        if (!string.IsNullOrWhiteSpace(metaName))
-            return metaName;
-
-        var title = GetString(update, "title");
-        if (!string.IsNullOrWhiteSpace(title))
-            return title;
-
-        var kind = GetString(update, "kind");
-        return string.IsNullOrWhiteSpace(kind) ? "Tool" : kind;
-    }
-
-    private static string FormatToolInput(JsonElement update)
-    {
-        if (!update.TryGetProperty("rawInput", out var rawInput))
-            return "";
-
-        return rawInput.ValueKind == JsonValueKind.String
-            ? rawInput.GetString() ?? ""
-            : rawInput.GetRawText();
-    }
-
-    private static string ReadTerminalOutputChunk(JsonElement update)
-    {
-        var terminalOutput = ReadNestedElement(update, "_meta", "terminal_output");
-        return terminalOutput.HasValue
-            ? GetString(terminalOutput.Value, "data")
-            : "";
-    }
-
-    /// <summary>
-    /// Prefer readable <c>content</c>; fall back to <c>rawOutput</c> only when
-    /// content is empty. Never concatenate both — Claude Read often ships the
-    /// same result as fenced content plus plain rawOutput.
-    /// </summary>
-    private static string FormatContentAndRawOutput(JsonElement update)
-    {
-        var contentText = FormatContentBlocks(update);
-        if (!string.IsNullOrWhiteSpace(contentText))
-            return contentText;
-
-        if (!update.TryGetProperty("rawOutput", out var rawOutput))
-            return "";
-
-        if (rawOutput.ValueKind == JsonValueKind.String)
-            return rawOutput.GetString() ?? "";
-        if (rawOutput.ValueKind != JsonValueKind.Null)
-            return rawOutput.GetRawText();
-        return "";
-    }
-
-    private static string FormatContentBlocks(JsonElement update)
-    {
-        if (!update.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.Array)
-            return "";
-
-        var parts = new List<string>();
-        foreach (var item in content.EnumerateArray())
-        {
-            var itemType = GetString(item, "type");
-            if (itemType == "content"
-                && item.TryGetProperty("content", out var block)
-                && GetString(block, "type") == "text")
-            {
-                parts.Add(GetString(block, "text"));
-            }
-            else if (itemType == "text")
-            {
-                parts.Add(GetString(item, "text"));
-            }
-            else if (itemType == "diff")
-            {
-                parts.Add(item.GetRawText());
-            }
-        }
-
-        return string.Join(Environment.NewLine, parts.Where(part => !string.IsNullOrWhiteSpace(part)));
-    }
-
-    private static string FormatToolOutput(JsonElement update)
-    {
-        var parts = new List<string>();
-        var terminal = ReadTerminalOutputChunk(update);
-        if (!string.IsNullOrWhiteSpace(terminal))
-            parts.Add(terminal);
-
-        var body = FormatContentAndRawOutput(update);
-        if (!string.IsNullOrWhiteSpace(body))
-            parts.Add(body);
-
-        return string.Join(Environment.NewLine, parts.Where(part => !string.IsNullOrWhiteSpace(part)));
-    }
-
-    private static bool IsPendingParamSnapshot(string text)
-    {
-        var trimmed = text.TrimStart();
-        return trimmed.StartsWith('{') || trimmed.StartsWith('[');
-    }
-
-    private static string BuildToolSummary(string name, string input, JsonElement update)
-    {
-        var title = GetString(update, "title");
-        if (!string.IsNullOrWhiteSpace(title))
-            return title.Length <= 100 ? title : title[..97] + "...";
-
-        if (string.IsNullOrWhiteSpace(input))
-            return name;
-
-        try
-        {
-            using var document = JsonDocument.Parse(input);
-            var root = document.RootElement;
-            var detail = GetString(root, "file_path");
-            if (string.IsNullOrWhiteSpace(detail))
-                detail = GetString(root, "path");
-            if (string.IsNullOrWhiteSpace(detail))
-                detail = GetString(root, "command");
-            if (string.IsNullOrWhiteSpace(detail))
-                detail = GetString(root, "description");
-
-            if (string.IsNullOrWhiteSpace(detail))
-                return name;
-
-            var summary = name + " " + detail;
-            return summary.Length <= 100 ? summary : summary[..97] + "...";
-        }
-        catch
-        {
-            return name;
-        }
     }
 
     private static void UpsertPlanMessage(List<AgentMessage> messages, string? runId, IReadOnlyList<AgentPlanEntry> entries, string text)

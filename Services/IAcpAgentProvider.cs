@@ -14,6 +14,9 @@ public interface IAcpAgentProvider
     /// </summary>
     AcpClientCapabilityProfile ClientCapabilities { get; }
 
+    /// <summary>Optional provider-specific ACP wire compatibility policy.</summary>
+    IAcpProviderCompatibility Compatibility => DefaultAcpProviderCompatibility.Instance;
+
     /// <summary>
     /// Optional exact-usage data source for the global Usage panel. Providers
     /// that can attribute precise token counts to PSX sessions (e.g. Claude

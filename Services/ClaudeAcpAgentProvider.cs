@@ -34,6 +34,8 @@ public sealed class ClaudeAcpAgentProvider : IAcpAgentProvider
 
     public IAcpAgentRuntime Runtime { get; }
 
+    public IAcpProviderCompatibility Compatibility { get; } = new ClaudeAcpProviderCompatibility();
+
     // Claude uses the full ACP client surface, including the reverse filesystem
     // bridge (fs/read_text_file, fs/write_text_file).
     public AcpClientCapabilityProfile ClientCapabilities { get; } = new()
