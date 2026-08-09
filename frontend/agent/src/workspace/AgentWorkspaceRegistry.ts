@@ -164,6 +164,7 @@ export class AgentWorkspaceRegistry {
       onHistoryOpenChanged: (listener) => dock.onOpenChanged(listener),
       historyWidth: () => dock.getWidth(),
       onHistoryWidthChanged: (listener) => dock.onWidthChanged(listener),
+      onHistoryWidthPreview: (listener) => dock.onWidthPreview(listener),
       focusHistoryToggle: () =>
         this.toolbarControllers.get(this.activeAgentWorkspace())?.focusHistoryToggle(),
       isActivePlanVisible: () => activePlan()?.isVisible() ?? false,

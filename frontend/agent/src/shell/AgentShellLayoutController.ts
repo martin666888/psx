@@ -20,6 +20,10 @@ export interface AgentShellLayoutHost {
   /** Persisted History width is part of the reading-fit calculation. */
   historyWidth(): number;
   onHistoryWidthChanged(listener: (width: number) => void): void;
+  /** Live History width previews (resizer drag): pane geometry follows the
+   * dock during the drag; the final width still arrives via
+   * onHistoryWidthChanged. */
+  onHistoryWidthPreview(listener: (width: number) => void): void;
   focusHistoryToggle(): void;
   /** Active workspace's Plan card (narrow mode is about what the user sees). */
   isActivePlanVisible(): boolean;

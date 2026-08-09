@@ -15,8 +15,8 @@ The shape language is **Soft Workbench**: continuous, generous corner radii on a
 - Agent toolbar: a pane-local status row with working directory and thread actions. At 720px it is complete, at 520–719px metadata truncates, and at 400–519px only the cwd basename and a ⋯ overflow entry remain.
 - Layered shell: History is one global left dock (default 280px, draggable 220–420px) opened from the permanent rail and pushes every pane. Plan is a workspace-local card; below 520px it opens as a pane-local overlay from a summary entry.
 - Conversation: one centered reading column per pane, max 920px. Its containing block is the pane rect after the History inset, never the application viewport.
-- Composer: shares the reading column. The composer card is the one large-radius signature surface (24px); the circular send button's center lands on the card's corner arc center (footer right/bottom padding = card radius − send radius = 7px).
-- Pane minimums: Agent 400px; Terminal `max(400px, 60 measured columns + horizontal padding)`, with a 480px fallback before measurement. When the sum does not fit, columns squeeze proportionally below their pixel floors rather than ever being collected, hidden, or dropped.
+- Composer: shares the reading column. The composer card shares the 24px structure radius with the panels; the circular send button's center lands on the card's corner arc center (footer right/bottom padding = card radius − send radius = 7px).
+- Pane minimums: existing Agent columns display at a 320px floor; the 400px figure is only the capacity-preview gate for a brand-new Agent column. Terminal `max(400px, 60 measured columns + horizontal padding)`, with a 480px fallback before measurement. When the sum does not fit, columns squeeze proportionally below their pixel floors rather than ever being collected, hidden, or dropped.
 - Composer response: at 720px all configuration stays on one row; at 520–719px session mode and provider config controls move into the configuration overlay while Context usage stays in the footer; at 400–519px the Composer keeps controls in the configuration overlay with context hints hidden while attachment, input, configuration, and send remain. Every width-bearing flex ancestor permits shrinkage and no pane paints into its neighbor.
 
 ## Typography
@@ -36,10 +36,9 @@ The shape language is **Soft Workbench**: continuous, generous corner radii on a
   | `--agent-radius-control` | 8px | buttons, icon buttons, chips, list rows, menu items, inline code |
   | `--agent-radius-input` | 10px | text inputs, search fields, select triggers |
   | `--agent-radius-card` | 14px | tool/decision/runtime/recovery/Plan cards, popovers, menus, tooltips, image previews, code blocks |
-  | `--agent-workspace-radius` | 18px | the two soft-workbench panels: History dock + main conversation panel (structural, shell.css) |
-  | `--agent-radius-composer` | 24px | the composer card (structural, shell.css) |
+  | `--agent-radius-structure` | 24px | the structural panels: Workspace panel + History dock + Composer card (structural, shell.css) |
 
-- The structural shell tokens `--agent-radius-context-card` / `--agent-workspace-radius` / `--agent-radius-composer` stay in shell.css and map onto this ladder; component CSS never defines its own radius values. The Agent page is a soft workbench: both the History dock and the main panel are free-standing rounded blocks floating on the `--agent-bg` backdrop, spaced by `--agent-workbench-gutter` / `--agent-panel-gap`.
+- The structural shell token `--agent-radius-structure` (24px) stays in shell.css; `--agent-workspace-radius` / `--agent-radius-composer` map onto it and `--agent-radius-context-card` maps onto `--agent-radius-card`. Component CSS never defines its own radius values. The Agent page is a soft workbench: both the History dock and the main panel are free-standing rounded blocks floating on the `--agent-bg` backdrop, spaced by `--agent-workbench-gutter` / `--agent-panel-gap`.
 - Pills (`50%` / `999px`) are reserved for genuinely circular or capsule elements: the send button, switches, status dots, badge dots, scrollbar thumbs.
 - WPF chrome mirrors the ladder through `ControlCornerRadius` (8), `InputCornerRadius` (10), `CardCornerRadius` (14) in `Themes/Dark.xaml`.
 - Borders are 1px. Focus indication uses the single uniform outline ring defined in Interaction states.

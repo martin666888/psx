@@ -89,8 +89,8 @@ test('PaneLayoutController projects column rects and ring slots from a snapshot'
   });
 
   const { rects } = applied.at(-1);
-  assert.deepEqual(rects.get('column-1'), { left: 40, top: 40, width: 936, height: 860 });
-  assert.deepEqual(rects.get('column-2'), { left: 976, top: 40, width: 624, height: 860 });
+  assert.deepEqual(rects.get('column-1'), { left: 40, top: 40, width: 936, height: 860, dockAdjacent: false });
+  assert.deepEqual(rects.get('column-2'), { left: 976, top: 40, width: 624, height: 860, dockAdjacent: false });
 
   const slot1 = layout.columnById('column-1');
   const slot2 = layout.columnById('column-2');
@@ -115,6 +115,59 @@ test('PaneLayoutController projects column rects and ring slots from a snapshot'
   assert.equal(layout.columnCount, 1);
   assert.equal(layout.columnById('column-2'), null);
   assert.equal(layout.root.dataset.splitActive, 'false');
+  layout.dispose();
+});
+
+test('History dock preview moves columns interactively and settles once at the same width', async () => {
+  installAgentRuntime();
+  const { PaneLayoutController } = await import(
+    pathToFileURL(path.join(webviewRoot, 'src', 'PaneLayoutController.js')).href
+  );
+  document.body.innerHTML =
+    '<div id="workspace-stack"><div id="workspace-panes"></div></div>';
+  const stack = document.getElementById('workspace-stack');
+  Object.defineProperty(stack, 'clientWidth', { configurable: true, value: 1600 });
+  Object.defineProperty(stack, 'clientHeight', { configurable: true, value: 900 });
+  const layout = new PaneLayoutController(document.getElementById('workspace-panes'));
+  const applied = [];
+  layout.onLayoutApplied((snapshot, rects, options) => applied.push({ rects, options }));
+  layout.applySnapshot({
+    revision: 1,
+    focusedColumnId: 'column-1',
+    columns: [
+      { columnId: 'column-1', tabs: [{ workspaceId: 'a', kind: 'agent' }], activeTabId: 'a', ratio: 0.6 },
+      { columnId: 'column-2', tabs: [{ workspaceId: 'b', kind: 'terminal' }], activeTabId: 'b', ratio: 0.4 }
+    ]
+  });
+
+  // Live drag frame: the dock inset moves every column immediately and flags
+  // the layout interactive so Terminal fit stays deferred until release.
+  layout.setDockInset(350, { interactiveResize: true });
+  const previewed = applied.at(-1);
+  assert.equal(previewed.rects.get('column-1').left, 350);
+  assert.equal(previewed.rects.get('column-1').width, Math.round((1600 - 350) * 0.6));
+  assert.equal(previewed.options.interactiveResize, true, 'preview defers terminal fit');
+  assert.equal(previewed.rects.get('column-1').dockAdjacent, true,
+    'the open dock flags the first column so the Agent host drops its second left gutter');
+  assert.equal(previewed.rects.get('column-2').dockAdjacent, false,
+    'only the dock-adjacent first column carries the flag');
+
+  // An identical preview frame is a no-op: same width AND same interactive mode.
+  const count = applied.length;
+  layout.setDockInset(350, { interactiveResize: true });
+  assert.equal(applied.length, count, 'identical interactive preview is skipped');
+
+  // The commit settles at the SAME width: the early-return must not swallow
+  // the non-interactive recompute, so terminals fit exactly once at drag end.
+  layout.setDockInset(350, { interactiveResize: false });
+  const settled = applied.at(-1);
+  assert.equal(settled.rects.get('column-1').left, 350);
+  assert.equal(settled.options.interactiveResize, false, 'same-width settle still recomputes non-interactively');
+
+  // Dock closed (inset == rail width): no column is dock-adjacent.
+  layout.setDockInset(40, { interactiveResize: false });
+  assert.equal(applied.at(-1).rects.get('column-1').dockAdjacent, false,
+    'a closed dock leaves every column with the full gutter');
   layout.dispose();
 });
 

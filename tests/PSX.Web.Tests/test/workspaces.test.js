@@ -104,6 +104,30 @@ test('layout-driven app keeps agent panels hidden until the first projection', a
   assert.equal(panel.dataset.columnId, 'column-1');
 });
 
+test('dock-adjacent first column drops the panel left gutter', async () => {
+  const { app, panelFor } = await mountAgentApp({ paneLayout: { setDockInset() {} } });
+  createAgentWorkspace(app, FIRST, { ready: false });
+  const panel = panelFor(FIRST);
+
+  // Dock open: the inset already carries the left gutter + panel gap, so the
+  // flagged first column sits at the rect edge — exactly one panel gap (12px)
+  // from the dock edge, the same spacing a terminal column gets.
+  app.setPaneLayout(
+    { focusedColumnId: 'column-1', columns: [{ columnId: 'column-1', tabs: [{ workspaceId: FIRST, kind: 'agent' }], activeTabId: FIRST, ratio: 1 }] },
+    new Map([['column-1', { left: 344, top: 40, width: 800, height: 860, dockAdjacent: true }]])
+  );
+  assert.equal(panel.style.left, '344px', 'dock-adjacent panel adds no second left gutter');
+  assert.equal(panel.style.width, '788px', 'width loses only the right gutter');
+
+  // Dock closed (no flag): the panel floats with the full gutter on every side.
+  app.setPaneLayout(
+    { focusedColumnId: 'column-1', columns: [{ columnId: 'column-1', tabs: [{ workspaceId: FIRST, kind: 'agent' }], activeTabId: FIRST, ratio: 1 }] },
+    new Map([['column-1', { left: 40, top: 40, width: 800, height: 860 }]])
+  );
+  assert.equal(panel.style.left, '52px', 'undocked panel keeps the workbench gutter');
+  assert.equal(panel.style.width, '776px', 'width loses both gutters');
+});
+
 test('mixed terminal/agent layout keeps the Agent layer click-through for terminal columns', async () => {
   const { app } = await mountAgentApp({ paneLayout: { setDockInset() {} } });
   const container = document.getElementById('agents');

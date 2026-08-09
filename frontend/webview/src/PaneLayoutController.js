@@ -21,6 +21,7 @@ export class PaneLayoutController {
         this.lastRevision = -1;
         this.snapshot = null;
         this.dockInset = HISTORY_RAIL_WIDTH;
+        this.dockInsetInteractive = false;
         this.rects = new Map();
         this.listeners = new Set();
         this.resizeObserver = null;
@@ -133,12 +134,18 @@ export class PaneLayoutController {
         return () => this.listeners.delete(listener);
     }
 
-    setDockInset(px) {
+    /** Applies the History dock inset to the pane geometry. `interactiveResize`
+     * marks live preview frames (Terminal fit deferred until the final settle).
+     * Settling at the SAME width after an interactive preview still recomputes
+     * once non-interactively, so terminals fit exactly once at drag end. */
+    setDockInset(px, { interactiveResize = false } = {}) {
         const next = Math.max(HISTORY_RAIL_WIDTH, Math.round(Number(px) || 0));
-        if (next === this.dockInset) return;
+        const interactive = interactiveResize === true;
+        if (next === this.dockInset && this.dockInsetInteractive === interactive) return;
         if (this.dragging) this.cancelDrag(undefined, { recompute: false });
         this.dockInset = next;
-        this.recompute();
+        this.dockInsetInteractive = interactive;
+        this.recompute({ interactiveResize: interactive });
     }
 
     toggleZoom() {
@@ -214,7 +221,17 @@ export class PaneLayoutController {
             const columnWidth = index === columns.length - 1
                 ? areaLeft + areaWidth - x
                 : Math.round(widths.get(column.columnId) ?? 0);
-            rects.set(column.columnId, { left: x, top: CHROME_HEIGHT, width: Math.max(0, columnWidth), height });
+            rects.set(column.columnId, {
+                left: x,
+                top: CHROME_HEIGHT,
+                width: Math.max(0, columnWidth),
+                height,
+                // The open History dock already carries the left gutter and
+                // the panel gap inside the dock inset; the Agent host drops
+                // its own left gutter on this column so the dock edge and the
+                // panel edge stay exactly one panel gap apart.
+                dockAdjacent: index === 0 && this.dockInset > HISTORY_RAIL_WIDTH
+            });
             x += columnWidth;
         });
         this.rects = rects;

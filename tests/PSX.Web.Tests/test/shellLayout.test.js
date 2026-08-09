@@ -233,11 +233,12 @@ test('shell: structural tokens and the centerline mechanism exist in shell.css',
   const shell = readCss('shell.css');
   for (const token of [
     '--agent-history-width: 280px',
-    '--agent-history-narrow-width: 220px',
     '--agent-reading-max-width: 920px',
     '--agent-workbench-gutter: 12px',
     '--agent-panel-gap: 12px',
-    '--agent-workspace-radius: 18px',
+    '--agent-radius-structure: 24px',
+    '--agent-workspace-radius: var(--agent-radius-structure)',
+    '--agent-radius-composer: var(--agent-radius-structure)',
     '--agent-radius-context-card: var(--agent-radius-card)',
     '--agent-shadow-canvas',
     '--agent-shadow-context-card',
@@ -444,16 +445,18 @@ test('shell: composer bands fold config controls into the overlay and drop the w
   assert.ok(!band519.includes('order: initial'), 'no order reset once the 719px block sets no order');
 });
 
-test('shell: dock width stays persisted in wide mode and becomes fixed only while narrow', () => {
+test('shell: dock width stays persisted at every pane width and narrow never overrides it', () => {
   const shell = readCss('shell.css');
-  assert.match(shell, /--agent-history-width-effective: var\(--agent-history-width\);/);
-  assert.match(shell, /#agent-workspace-container\.agent-shell-narrow \{\s*--agent-history-width-effective: var\(--agent-history-narrow-width\);?\s*\}/);
-  // Canvas and the collision-aware reading rules consume the effective width,
-  // never the raw one — with the workbench gutter and panel gap folded into
-  // every offset (the pre-layout fallback block keeps the 100vw math).
+  // The narrow fixed-width mechanism is gone: no narrow-width token and no
+  // effective-width indirection anywhere in the stylesheet.
+  assert.ok(!shell.includes('--agent-history-width-effective'), 'the effective-width indirection is retired');
+  assert.ok(!shell.includes('--agent-history-narrow-width'), 'the narrow fixed width is retired');
+  // Canvas and the collision-aware reading rules consume the persisted width
+  // directly — with the workbench gutter and panel gap folded into every
+  // offset (the pre-layout fallback block keeps the 100vw math).
   assert.match(
     shell,
-    /left: calc\(\s*var\(--agent-workbench-gutter\) \+ var\(--agent-history-width-effective\) \+ var\(--agent-panel-gap\)\s*\)/
+    /left: calc\(\s*var\(--agent-workbench-gutter\) \+ var\(--agent-history-width\) \+ var\(--agent-panel-gap\)\s*\)/
   );
   assert.match(
     shell,
@@ -461,15 +464,20 @@ test('shell: dock width stays persisted in wide mode and becomes fixed only whil
   );
   assert.match(
     shell,
-    /--agent-main-panel-inline-size: calc\(\s*100vw - 2 \* var\(--agent-workbench-gutter\) - var\(--agent-history-width-effective\) - var\(--agent-panel-gap\)\s*\)/
+    /--agent-main-panel-inline-size: calc\(\s*100vw - 2 \* var\(--agent-workbench-gutter\) - var\(--agent-history-width\) - var\(--agent-panel-gap\)\s*\)/
   );
   assert.match(
     shell,
     /calc\(\(var\(--agent-main-panel-inline-size\) - var\(--agent-reading-column-max\)\) \/ 2\)/
   );
   const history = readCss('history.css');
-  assert.match(history, /width: var\(--agent-history-width-effective, 280px\)/);
-  assert.match(history, /\.agent-shell-narrow \.agent-history-dock-resizer/);
+  assert.match(history, /width: var\(--agent-history-width, 280px\)/);
+  // The resizer stays usable in narrow shells; agent-shell-narrow survives
+  // only for the Plan/toolbar/Composer responsive rules.
+  assert.ok(
+    !/\.agent-shell-narrow \.agent-history-dock-resizer/.test(history),
+    'narrow shells must keep the History resizer available'
+  );
 });
 
 test('shell: the History dock is a free-standing rounded workbench panel', () => {

@@ -90,6 +90,7 @@ export class HistoryDockController {
   private readonly expandedGroups = new Set<string>();
   private readonly openListeners = new Set<(open: boolean) => void>();
   private readonly widthListeners = new Set<(width: number) => void>();
+  private readonly previewListeners = new Set<(width: number) => void>();
 
   // React owns the entire dock subtree (chrome + list) inside dockHost.
   private historyIsland: IslandLoader<HistoryDockViewProps> | null = null;
@@ -154,6 +155,12 @@ export class HistoryDockController {
     this.widthListeners.add(listener);
   }
 
+  /** Live preview frames from a resizer drag. A preview is never a commit —
+   * the final width still arrives through onWidthChanged. */
+  onWidthPreview(listener: (width: number) => void): void {
+    this.previewListeners.add(listener);
+  }
+
   /** Focus entry point for user-initiated History open requests. */
   focusSearch(): void {
     this.dockHost?.querySelector<HTMLElement>('[data-role="history-search"]')?.focus();
@@ -188,6 +195,7 @@ export class HistoryDockController {
       this.unsubscribeProfile();
       this.unsubscribeProfile = null;
     }
+    this.previewListeners.clear();
     this.historyIsland?.dispose();
     this.historyIsland = null;
     this.dockHost?.remove();
@@ -314,9 +322,13 @@ export class HistoryDockController {
   }
 
   /** Resizer drag preview from the island: live width, no persistence and no
-   * Shell broadcast until the pointer is released. */
+   * committed-width broadcast until the pointer is released. Preview
+   * listeners track the drag live; the committed width still arrives through
+   * onWidthChanged. */
   private previewWidth(width: number): void {
-    this.applyWidth(width);
+    const clamped = this.clampWidth(width);
+    this.applyWidth(clamped);
+    for (const listener of this.previewListeners) listener(clamped);
   }
 
   /** Completed pointer drag or keyboard resize: clamp, persist, broadcast

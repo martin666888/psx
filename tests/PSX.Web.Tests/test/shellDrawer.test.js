@@ -94,7 +94,11 @@ test('responsive CSS preserves dock/card shapes and reduced-motion discipline', 
   const history = fs.readFileSync(path.join(repositoryRoot, 'frontend', 'webview', 'src', 'css', 'agent', 'history.css'), 'utf8');
   const plan = fs.readFileSync(path.join(repositoryRoot, 'frontend', 'webview', 'src', 'css', 'agent', 'plan.css'), 'utf8');
   const shell = fs.readFileSync(path.join(repositoryRoot, 'frontend', 'webview', 'src', 'css', 'agent', 'shell.css'), 'utf8');
-  assert.match(history, /\.agent-shell-narrow \.agent-history-dock-resizer/);
+  // Narrow shells keep the History resizer available (no dock width fallback).
+  assert.ok(
+    !/\.agent-shell-narrow \.agent-history-dock-resizer/.test(history),
+    'narrow shells must keep the History resizer available'
+  );
   assert.match(plan, /@container agent-shell \(max-width: 519px\)/);
   assert.match(plan, /@keyframes agent-plan-card-in/);
   assert.match(history, /@keyframes agent-history-in/);

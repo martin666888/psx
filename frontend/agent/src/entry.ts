@@ -20,7 +20,7 @@ export interface AgentAppOptions {
   /** Neutral pane geometry engine (webview layer); the dock inset feeds back
    * so panes shift when the global History dock opens or resizes. */
   paneLayout?: {
-    setDockInset(px: number): void;
+    setDockInset(px: number, options?: { interactiveResize?: boolean }): void;
   };
 }
 
@@ -40,7 +40,7 @@ export interface AgentApp {
         ratio?: number;
       }>;
     },
-    rects: Map<string, { left: number; top: number; width: number; height: number }>
+    rects: Map<string, { left: number; top: number; width: number; height: number; dockAdjacent?: boolean }>
   ): void;
   /** Tears down every controller, global broker, island and layout listener.
    * The shipped app runs for the process lifetime; tests call this in
@@ -84,8 +84,15 @@ export function createAgentApp(options: AgentAppOptions): AgentApp {
     host.markLayoutDriven();
     const paneLayout = options.paneLayout;
     const reportDockInset = (): void => {
-      paneLayout.setDockInset(shellLayoutHost.isHistoryOpen() ? 40 + shellLayoutHost.historyWidth() + 24 : 40);
+      paneLayout.setDockInset(shellLayoutHost.isHistoryOpen() ? 40 + shellLayoutHost.historyWidth() + 24 : 40, {
+        interactiveResize: false
+      });
     };
+    // Live dock drag frames move the columns on every preview; the final
+    // settle still arrives through onHistoryWidthChanged (reportDockInset).
+    shellLayoutHost.onHistoryWidthPreview((width) => {
+      paneLayout.setDockInset(shellLayoutHost.isHistoryOpen() ? 40 + width + 24 : 40, { interactiveResize: true });
+    });
     shellLayoutHost.onHistoryOpenChanged(reportDockInset);
     shellLayoutHost.onHistoryOpenChanged((open) => {
       document.dispatchEvent(new CustomEvent('psx-history-state', { detail: { open } }));

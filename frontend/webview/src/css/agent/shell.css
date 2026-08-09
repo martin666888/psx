@@ -1,7 +1,6 @@
 /* AgentShell structural tokens (base values; theme tuning is a later step). */
 :root {
     --agent-history-width: 280px;
-    --agent-history-narrow-width: 220px;
     --agent-plan-width: 320px;
     --agent-reading-min-width: 320px;
     --agent-reading-max-width: 920px;
@@ -10,7 +9,10 @@
      * them. Derived layout constants only — never new INI settings. */
     --agent-workbench-gutter: 12px;
     --agent-panel-gap: 12px;
-    --agent-workspace-radius: 18px;
+    /* Structural corner radius shared by the Workspace panel, the History
+     * dock and the Composer card. */
+    --agent-radius-structure: 24px;
+    --agent-workspace-radius: var(--agent-radius-structure);
     --agent-toolbar-height: 44px;
     /* Canvas surface: one step above the workbench backdrop (--agent-bg), one
      * below the context cards (--agent-surface-raised) — the luminance ladder
@@ -18,8 +20,8 @@
      * hardcoded. */
     --agent-canvas-surface: color-mix(in srgb, var(--agent-surface) 50%, var(--agent-surface-raised));
     --agent-radius-context-card: var(--agent-radius-card);
-    /* Composer card: the one large-radius surface (borderless soft fill). */
-    --agent-radius-composer: 24px;
+    /* Composer card: shares the structural radius (borderless soft fill). */
+    --agent-radius-composer: var(--agent-radius-structure);
     /* Desktop breathing room under the Composer; narrow windows reduce it so
      * the input area is never squeezed. */
     --agent-composer-bottom-space: 24px;
@@ -46,7 +48,6 @@
      * it transparent to pointer hit-testing until an Agent workspace is the
      * active view, so a blank terminal click still focuses xterm. */
     pointer-events: none;
-    --agent-history-width-effective: var(--agent-history-width);
 }
 
 #agent-workspace-container.agent-workspace-active {
@@ -61,10 +62,6 @@
             var(--agent-workbench-tint),
             transparent 62%),
         var(--agent-bg);
-}
-
-#agent-workspace-container.agent-shell-narrow {
-    --agent-history-width-effective: var(--agent-history-narrow-width);
 }
 
 .agent-load-error {
@@ -156,10 +153,10 @@
  * dock inset replaces this block entirely. */
 #agent-workspace-container.agent-history-dock-open:not(.agent-layout-driven) .agent-panel {
     left: calc(
-        var(--agent-workbench-gutter) + var(--agent-history-width-effective) + var(--agent-panel-gap)
+        var(--agent-workbench-gutter) + var(--agent-history-width) + var(--agent-panel-gap)
     );
     --agent-main-panel-inline-size: calc(
-        100vw - 2 * var(--agent-workbench-gutter) - var(--agent-history-width-effective) - var(--agent-panel-gap)
+        100vw - 2 * var(--agent-workbench-gutter) - var(--agent-history-width) - var(--agent-panel-gap)
     );
     --agent-reading-column-max: min(
         var(--agent-reading-max-width),

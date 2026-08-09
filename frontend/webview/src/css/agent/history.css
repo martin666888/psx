@@ -17,7 +17,7 @@
     z-index: var(--agent-layer-dock);
     display: flex;
     flex-direction: column;
-    width: var(--agent-history-width-effective, 280px);
+    width: var(--agent-history-width, 280px);
     min-width: 0;
     border: 1px solid var(--agent-border);
     border-radius: var(--agent-workspace-radius);
@@ -180,12 +180,6 @@
 .agent-history-dock-resizing {
     cursor: col-resize;
     user-select: none;
-}
-
-/* Narrow mode preserves the dock form. It only uses a fixed effective width
- * and hides the unavailable resize affordance. */
-.agent-shell-narrow .agent-history-dock-resizer {
-    display: none;
 }
 
 /* Open transitions: opacity + a small slide only (reduced-motion zeroes them
