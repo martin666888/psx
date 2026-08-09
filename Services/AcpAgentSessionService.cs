@@ -149,13 +149,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     private readonly ConcurrentDictionary<string, AcpTerminalProcess> _terminals = new();
     private readonly StringBuilder _thinkingBuffer = new();
     private readonly StringBuilder _assistantBuffer = new();
-    private readonly Dictionary<string, string> _toolNames = new();
-    private readonly Dictionary<string, string> _toolSummaries = new();
-    private readonly Dictionary<string, string> _toolInputs = new();
-    private readonly Dictionary<string, string> _toolOutputs = new();
-    private readonly Dictionary<string, string> _toolPendingParamSnapshots = new();
-    private readonly HashSet<string> _startedToolCallIds = new();
-    private readonly HashSet<string> _documentDecisionToolCallIds = new();
+    private readonly AcpToolStateTracker _toolState = new();
     private readonly Dictionary<string, string> _availableAgentCommands = new(StringComparer.OrdinalIgnoreCase);
     private AgentThread _currentThread;
     private AcpJsonRpcTransport? _transport;
@@ -1596,13 +1590,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             _assistantBuffer.Clear();
             lock (_sessionMutationSync)
             {
-                _toolNames.Clear();
-                _toolSummaries.Clear();
-                _toolInputs.Clear();
-                _toolOutputs.Clear();
-                _toolPendingParamSnapshots.Clear();
-                _startedToolCallIds.Clear();
-                _documentDecisionToolCallIds.Clear();
+                _toolState.Clear();
             }
             _currentRunId = Guid.NewGuid().ToString();
             _runCts = cts;
@@ -2331,7 +2319,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             lock (_sessionMutationSync)
             {
                 if (!string.IsNullOrWhiteSpace(toolCallId))
-                    _documentDecisionToolCallIds.Add(toolCallId);
+                    _toolState.MarkDocumentDecision(toolCallId);
             }
 
             UpsertDocumentDecisionMessage(
@@ -2810,40 +2798,39 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 return;
         }
 
-        var updateType = GetString(update, "sessionUpdate");
-        switch (updateType)
+        switch (AcpSessionUpdateReader.ReadKind(update))
         {
-            case "user_message_chunk":
+            case AcpSessionUpdateKind.UserMessageChunk:
                 break;
-            case "agent_message_chunk":
-                await SendAssistantTextAsync(ExtractContentText(update)).ConfigureAwait(false);
+            case AcpSessionUpdateKind.AgentMessageChunk:
+                await SendAssistantTextAsync(AcpSessionUpdateReader.ReadContentText(update)).ConfigureAwait(false);
                 break;
-            case "agent_thought_chunk":
-                await SendThinkingTextAsync(ExtractContentText(update)).ConfigureAwait(false);
+            case AcpSessionUpdateKind.AgentThoughtChunk:
+                await SendThinkingTextAsync(AcpSessionUpdateReader.ReadContentText(update)).ConfigureAwait(false);
                 break;
-            case "tool_call":
+            case AcpSessionUpdateKind.ToolCall:
                 await HandleToolCallAsync(update).ConfigureAwait(false);
                 break;
-            case "tool_call_update":
+            case AcpSessionUpdateKind.ToolCallUpdate:
                 await HandleToolCallUpdateAsync(update).ConfigureAwait(false);
                 break;
-            case "plan":
+            case AcpSessionUpdateKind.Plan:
                 await HandlePlanUpdateAsync(update).ConfigureAwait(false);
                 break;
-            case "available_commands_update":
+            case AcpSessionUpdateKind.AvailableCommands:
                 await SendAvailableCommandsAsync(update).ConfigureAwait(false);
                 break;
-            case "usage_update":
+            case AcpSessionUpdateKind.Usage:
                 await HandleUsageUpdateAsync(update).ConfigureAwait(false);
                 break;
-            case "config_option_update":
+            case AcpSessionUpdateKind.ConfigOption:
                 CaptureConfigOptions(update);
                 await SendConfigOptionsAsync().ConfigureAwait(false);
                 break;
-            case "current_mode_update":
+            case AcpSessionUpdateKind.CurrentMode:
                 await ApplyCurrentModeUpdateAsync(update, persist: true).ConfigureAwait(false);
                 break;
-            case "session_info_update":
+            case AcpSessionUpdateKind.SessionInfo:
                 ApplySessionInfoUpdate(update, persist: true);
                 break;
         }
@@ -2851,39 +2838,38 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     private async Task HandleReplaySessionUpdateAsync(JsonElement update, ReplayHistoryState replay)
     {
-        var updateType = GetString(update, "sessionUpdate");
-        switch (updateType)
+        switch (AcpSessionUpdateReader.ReadKind(update))
         {
-            case "user_message_chunk":
-                AppendReplayUserMessage(replay, ExtractContentText(update));
+            case AcpSessionUpdateKind.UserMessageChunk:
+                AppendReplayUserMessage(replay, AcpSessionUpdateReader.ReadContentText(update));
                 break;
-            case "agent_thought_chunk":
-                AppendReplayThinking(replay, ExtractContentText(update));
+            case AcpSessionUpdateKind.AgentThoughtChunk:
+                AppendReplayThinking(replay, AcpSessionUpdateReader.ReadContentText(update));
                 break;
-            case "agent_message_chunk":
-                AppendReplayAssistantMessage(replay, ExtractContentText(update));
+            case AcpSessionUpdateKind.AgentMessageChunk:
+                AppendReplayAssistantMessage(replay, AcpSessionUpdateReader.ReadContentText(update));
                 break;
-            case "tool_call":
+            case AcpSessionUpdateKind.ToolCall:
                 CaptureReplayToolCall(replay, update);
                 break;
-            case "tool_call_update":
+            case AcpSessionUpdateKind.ToolCallUpdate:
                 CaptureReplayToolUpdate(replay, update);
                 break;
-            case "plan":
+            case AcpSessionUpdateKind.Plan:
                 UpsertReplayPlan(replay, update);
                 break;
-            case "available_commands_update":
+            case AcpSessionUpdateKind.AvailableCommands:
                 await SendAvailableCommandsAsync(update).ConfigureAwait(false);
                 break;
-            case "usage_update":
+            case AcpSessionUpdateKind.Usage:
                 await HandleUsageUpdateAsync(update).ConfigureAwait(false);
                 break;
-            case "config_option_update":
+            case AcpSessionUpdateKind.ConfigOption:
                 break;
-            case "current_mode_update":
+            case AcpSessionUpdateKind.CurrentMode:
                 await ApplyCurrentModeUpdateAsync(update, persist: false).ConfigureAwait(false);
                 break;
-            case "session_info_update":
+            case AcpSessionUpdateKind.SessionInfo:
                 ApplySessionInfoUpdate(update, persist: false);
                 break;
         }
@@ -2898,22 +2884,22 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     /// </summary>
     private async Task HandleControlOnlySessionUpdateAsync(JsonElement update)
     {
-        switch (GetString(update, "sessionUpdate"))
+        switch (AcpSessionUpdateReader.ReadKind(update))
         {
-            case "available_commands_update":
+            case AcpSessionUpdateKind.AvailableCommands:
                 await SendAvailableCommandsAsync(update).ConfigureAwait(false);
                 break;
-            case "usage_update":
+            case AcpSessionUpdateKind.Usage:
                 await HandleUsageUpdateAsync(update, persist: false).ConfigureAwait(false);
                 break;
-            case "config_option_update":
+            case AcpSessionUpdateKind.ConfigOption:
                 CaptureConfigOptions(update);
                 await SendConfigOptionsAsync().ConfigureAwait(false);
                 break;
-            case "current_mode_update":
+            case AcpSessionUpdateKind.CurrentMode:
                 await ApplyCurrentModeUpdateAsync(update, persist: false).ConfigureAwait(false);
                 break;
-            case "session_info_update":
+            case AcpSessionUpdateKind.SessionInfo:
                 ApplySessionInfoUpdate(update, persist: false);
                 break;
         }
@@ -2960,200 +2946,60 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     /// </summary>
     private async Task ApplyLiveToolUpdateAsync(JsonElement update)
     {
-        var reportedToolCallId = GetString(update, "toolCallId");
+        AcpToolUpdateResult result;
         lock (_sessionMutationSync)
+            result = _toolState.ApplyUpdate(update, ReadToolName);
+
+        if (result.Suppressed || result.Snapshot == null)
+            return;
+
+        var snapshot = result.Snapshot;
+        if (result.Started && result.StartSnapshot != null)
         {
-            if (ShouldSuppressDocumentDecisionToolCore(reportedToolCallId))
+            var started = result.StartSnapshot;
+            await _bridgeService.SendEventAsync(new
             {
-                CleanupToolTrackingCore(reportedToolCallId);
-                return;
-            }
+                type = "tool_started",
+                name = started.Name,
+                input = started.Input,
+                runId = _currentRunId,
+                toolCallId = started.ToolCallId,
+                summary = started.Summary,
+                status = "running"
+            }).ConfigureAwait(false);
         }
 
-        var toolCallId = await EnsureToolStartedAsync(update).ConfigureAwait(false);
-        var snapshotChanged = false;
-        var terminalChunk = ReadTerminalOutputChunk(update);
-        var hasRawInput = update.TryGetProperty("rawInput", out _);
-        var hasContent = update.TryGetProperty("content", out _);
-        var hasRawOutput = update.TryGetProperty("rawOutput", out _);
-        var status = GetString(update, "status");
-        var isTerminalStatus = status is "completed" or "failed";
-        string? terminalDelta = null;
-
-        lock (_sessionMutationSync)
-        {
-            // ACP present-field replace for title: update name/summary even when
-            // rawInput is absent, and emit a full tool_updated snapshot.
-            var presentTitle = GetString(update, "title");
-            if (!string.IsNullOrWhiteSpace(presentTitle))
-            {
-                if (!_toolNames.TryGetValue(toolCallId, out var existingName)
-                    || !string.Equals(existingName, presentTitle, StringComparison.Ordinal))
-                {
-                    _toolNames[toolCallId] = presentTitle;
-                    snapshotChanged = true;
-                }
-
-                var titledSummary = BuildToolSummary(
-                    presentTitle,
-                    _toolInputs.GetValueOrDefault(toolCallId, ""),
-                    update);
-                if (!_toolSummaries.TryGetValue(toolCallId, out var existingSummary)
-                    || !string.Equals(existingSummary, titledSummary, StringComparison.Ordinal))
-                {
-                    _toolSummaries[toolCallId] = titledSummary;
-                    snapshotChanged = true;
-                }
-            }
-
-            if (hasRawInput)
-            {
-                var input = FormatToolInput(update);
-                _toolInputs[toolCallId] = input;
-                _toolPendingParamSnapshots.Remove(toolCallId);
-                var name = _toolNames.TryGetValue(toolCallId, out var existingName) ? existingName : ReadToolName(update);
-                _toolSummaries[toolCallId] = BuildToolSummary(name, input, update);
-                snapshotChanged = true;
-            }
-
-            if (hasContent || hasRawOutput)
-            {
-                var displayOutput = FormatContentAndRawOutput(update);
-                if (!isTerminalStatus
-                    && !hasRawInput
-                    && !(_toolInputs.TryGetValue(toolCallId, out var existingInput)
-                         && !string.IsNullOrWhiteSpace(existingInput))
-                    && IsPendingParamSnapshot(displayOutput))
-                {
-                    _toolPendingParamSnapshots[toolCallId] = displayOutput;
-                }
-                else
-                {
-                    _toolPendingParamSnapshots.Remove(toolCallId);
-                    _toolOutputs[toolCallId] = displayOutput;
-                    snapshotChanged = true;
-                }
-            }
-            else if (!string.IsNullOrEmpty(terminalChunk))
-            {
-                _toolOutputs[toolCallId] = (_toolOutputs.TryGetValue(toolCallId, out var existing) ? existing : "")
-                    + terminalChunk;
-                terminalDelta = terminalChunk;
-            }
-        }
-
-        if (!string.IsNullOrEmpty(terminalDelta))
+        if (!string.IsNullOrEmpty(result.TerminalDelta))
         {
             await _bridgeService.SendEventAsync(new
             {
                 type = "tool_delta",
-                text = terminalDelta,
+                text = result.TerminalDelta,
                 runId = _currentRunId,
-                toolCallId
+                toolCallId = snapshot.ToolCallId
             }).ConfigureAwait(false);
         }
 
-        if (snapshotChanged)
-            await SendToolUpdatedAsync(toolCallId, status).ConfigureAwait(false);
+        if (result.SnapshotChanged)
+            await SendToolUpdatedSnapshotAsync(snapshot).ConfigureAwait(false);
 
-        if (isTerminalStatus)
-            await FinishToolAsync(toolCallId, status).ConfigureAwait(false);
+        if (result.IsTerminal)
+            await FinishToolAsync(snapshot.ToolCallId, snapshot.Status).ConfigureAwait(false);
     }
 
-    private async Task SendToolUpdatedAsync(string toolCallId, string? status)
-    {
-        string name;
-        string summary;
-        string input;
-        string output;
-        lock (_sessionMutationSync)
-        {
-            name = _toolNames.TryGetValue(toolCallId, out var n) ? n : "Tool";
-            summary = _toolSummaries.TryGetValue(toolCallId, out var s) ? s : name;
-            input = _toolInputs.TryGetValue(toolCallId, out var i) ? i : "";
-            output = _toolOutputs.TryGetValue(toolCallId, out var o) ? o : "";
-        }
-
-        await SendToolUpdatedSnapshotAsync(toolCallId, status, name, summary, input, output)
-            .ConfigureAwait(false);
-    }
-
-    private Task SendToolUpdatedSnapshotAsync(
-        string toolCallId,
-        string? status,
-        string name,
-        string summary,
-        string input,
-        string output)
+    private Task SendToolUpdatedSnapshotAsync(AcpToolSnapshot snapshot)
     {
         return _bridgeService.SendEventAsync(new
         {
             type = "tool_updated",
             runId = _currentRunId,
-            toolCallId,
-            name,
-            summary,
-            input,
-            output,
-            status = string.IsNullOrWhiteSpace(status) ? "running" : status
+            toolCallId = snapshot.ToolCallId,
+            name = snapshot.Name,
+            summary = snapshot.Summary,
+            input = snapshot.Input,
+            output = snapshot.Output,
+            status = snapshot.Status
         });
-    }
-
-    private async Task<string> EnsureToolStartedAsync(JsonElement update)
-    {
-        var toolCallId = GetString(update, "toolCallId");
-        var name = ReadToolName(update);
-        var input = FormatToolInput(update);
-        var started = false;
-        string startedName;
-        string startedInput;
-        string startedSummary;
-
-        // Initialize only. Subsequent title / input / output field replaces are
-        // applied in ApplyLiveToolUpdateAsync so change detection can emit
-        // tool_updated for title-only updates.
-        lock (_sessionMutationSync)
-        {
-            if (!_toolNames.ContainsKey(toolCallId))
-                _toolNames[toolCallId] = name;
-            else if (string.Equals(_toolNames[toolCallId], "Tool", StringComparison.OrdinalIgnoreCase)
-                     && !string.Equals(name, "Tool", StringComparison.OrdinalIgnoreCase))
-                _toolNames[toolCallId] = name;
-
-            if (!string.IsNullOrEmpty(input) || update.TryGetProperty("rawInput", out _))
-                _toolInputs[toolCallId] = input;
-
-            if (!_toolSummaries.ContainsKey(toolCallId))
-                _toolSummaries[toolCallId] = BuildToolSummary(
-                    _toolNames[toolCallId],
-                    _toolInputs.GetValueOrDefault(toolCallId, ""),
-                    update);
-            if (!_toolOutputs.ContainsKey(toolCallId))
-                _toolOutputs[toolCallId] = "";
-            if (!_toolInputs.ContainsKey(toolCallId))
-                _toolInputs[toolCallId] = "";
-
-            started = _startedToolCallIds.Add(toolCallId);
-            startedName = _toolNames[toolCallId];
-            startedInput = _toolInputs[toolCallId];
-            startedSummary = _toolSummaries[toolCallId];
-        }
-
-        if (started)
-        {
-            await _bridgeService.SendEventAsync(new
-            {
-                type = "tool_started",
-                name = startedName,
-                input = startedInput,
-                runId = _currentRunId,
-                toolCallId,
-                summary = startedSummary,
-                status = "running"
-            }).ConfigureAwait(false);
-        }
-
-        return toolCallId;
     }
 
     private static void AppendReplayUserMessage(ReplayHistoryState replay, string text)
@@ -3402,63 +3248,35 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     private async Task FinishToolAsync(string toolCallId, string status)
     {
-        string name;
-        string summary;
-        string input;
-        string output;
+        AcpToolSnapshot? snapshot;
         lock (_sessionMutationSync)
         {
-            if (ShouldSuppressDocumentDecisionToolCore(toolCallId))
+            snapshot = _toolState.Complete(toolCallId, status);
+            if (snapshot != null)
             {
-                CleanupToolTrackingCore(toolCallId);
-                return;
+                AddToolMessageCore(
+                    snapshot.Input,
+                    snapshot.Name,
+                    _currentRunId,
+                    snapshot.ToolCallId,
+                    snapshot.Output,
+                    snapshot.Status,
+                    snapshot.Summary);
             }
-
-            name = _toolNames.TryGetValue(toolCallId, out var n) ? n : "Tool";
-            summary = _toolSummaries.TryGetValue(toolCallId, out var s) ? s : name;
-            input = _toolInputs.TryGetValue(toolCallId, out var i) ? i : "";
-            output = _toolOutputs.TryGetValue(toolCallId, out var o) ? o : "";
-            if (string.IsNullOrWhiteSpace(output)
-                && _toolPendingParamSnapshots.TryGetValue(toolCallId, out var pending)
-                && !IsPendingParamSnapshot(pending))
-            {
-                output = pending;
-                _toolOutputs[toolCallId] = output;
-            }
-
-            AddToolMessageCore(input, name, _currentRunId, toolCallId, output, status, summary);
-            CleanupToolTrackingCore(toolCallId);
         }
 
-        await SendToolUpdatedSnapshotAsync(toolCallId, status, name, summary, input, output)
-            .ConfigureAwait(false);
+        if (snapshot == null)
+            return;
+
+        await SendToolUpdatedSnapshotAsync(snapshot).ConfigureAwait(false);
         await _bridgeService.SendEventAsync(new
         {
             type = "tool_finished",
             runId = _currentRunId,
-            toolCallId,
-            summary,
-            status
+            toolCallId = snapshot.ToolCallId,
+            summary = snapshot.Summary,
+            status = snapshot.Status
         }).ConfigureAwait(false);
-    }
-
-    private bool ShouldSuppressDocumentDecisionToolCore(string toolCallId)
-    {
-        return !string.IsNullOrWhiteSpace(toolCallId)
-               && _documentDecisionToolCallIds.Contains(toolCallId);
-    }
-
-    private void CleanupToolTrackingCore(string toolCallId)
-    {
-        if (string.IsNullOrWhiteSpace(toolCallId))
-            return;
-
-        _toolNames.Remove(toolCallId);
-        _toolSummaries.Remove(toolCallId);
-        _toolInputs.Remove(toolCallId);
-        _toolOutputs.Remove(toolCallId);
-        _toolPendingParamSnapshots.Remove(toolCallId);
-        _startedToolCallIds.Remove(toolCallId);
     }
 
     private Task SendAvailableCommandsAsync(JsonElement update)
@@ -3926,13 +3744,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             _status = IsBoundProviderThread(thread) ? "ready" : "transcript_only";
             _thinkingBuffer.Clear();
             _assistantBuffer.Clear();
-            _toolNames.Clear();
-            _toolSummaries.Clear();
-            _toolInputs.Clear();
-            _toolOutputs.Clear();
-            _toolPendingParamSnapshots.Clear();
-            _startedToolCallIds.Clear();
-            _documentDecisionToolCallIds.Clear();
+            _toolState.Clear();
             _currentRunId = null;
         }
     }
@@ -4106,21 +3918,6 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             return "Agent Chat";
 
         return compact.Length <= 48 ? compact : compact[..48] + "...";
-    }
-
-    private static string ExtractContentText(JsonElement update)
-    {
-        if (!update.TryGetProperty("content", out var content))
-            return "";
-
-        if (content.TryGetProperty("type", out var type)
-            && type.ValueKind == JsonValueKind.String
-            && type.GetString() == "text")
-        {
-            return GetString(content, "text");
-        }
-
-        return content.GetRawText();
     }
 
     private static string ReadToolName(JsonElement update)
