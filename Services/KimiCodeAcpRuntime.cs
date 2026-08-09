@@ -43,6 +43,8 @@ public sealed class KimiCodeAcpRuntime : IAcpAgentRuntime
     private readonly RuntimeLocator _locator;
     private readonly string _logPath;
     private readonly TimeSpan _processTimeout;
+    private readonly NpmRuntimeProcessRunner _npmRunner;
+    private readonly StagedRuntimeStore _stagedStore;
 
     /// <summary>
     /// Serializes npm staging and the startup promote so they never rewrite
@@ -69,6 +71,8 @@ public sealed class KimiCodeAcpRuntime : IAcpAgentRuntime
         _processTimeout = processTimeout;
         Directory.CreateDirectory(logDirectory);
         _logPath = Path.Combine(logDirectory, "kimi-runtime.log");
+        _npmRunner = new NpmRuntimeProcessRunner(_processTimeout, Log);
+        _stagedStore = new StagedRuntimeStore("Kimi", Log);
     }
 
     public string LogPath => _logPath;
@@ -503,43 +507,16 @@ public sealed class KimiCodeAcpRuntime : IAcpAgentRuntime
 
     private void PromoteNextToCurrent(RuntimePaths paths)
     {
-        // Swap. Order matters: move the live kimi-current aside first so
-        // there is always at most one of {current, next} mid-move. If we
-        // crash mid-swap, the pointer is "next" and the next launch retries.
-        var backup = paths.KimiCurrentDirectory + ".old";
-        try
+        if (_stagedStore.PromoteNextToCurrent(
+                paths.RuntimeRoot,
+                paths.KimiCurrentDirectory,
+                paths.KimiNextDirectory,
+                paths.KimiActivePointerFile,
+                ActiveCurrentToken))
         {
-            if (Directory.Exists(backup))
-                Directory.Delete(backup, recursive: true);
-
-            if (Directory.Exists(paths.KimiCurrentDirectory))
-                Directory.Move(paths.KimiCurrentDirectory, backup);
-
-            Directory.Move(paths.KimiNextDirectory, paths.KimiCurrentDirectory);
-            Directory.Delete(backup, recursive: true);
+            StatusChanged?.Invoke(BuildStatusText());
         }
-        catch (Exception ex)
-        {
-            Log($"Kimi promote failed mid-swap: {ex}. Recovering.");
-            if (Directory.Exists(backup) && !Directory.Exists(paths.KimiCurrentDirectory))
-            {
-                try { Directory.Move(backup, paths.KimiCurrentDirectory); } catch { /* give up */ }
-            }
-            TryWriteActivePointer(paths, ActiveCurrentToken);
-            return;
-        }
-
-        TryWriteActivePointer(paths, ActiveCurrentToken);
-        Log("Kimi promote: kimi-next is now kimi-current.");
-        StatusChanged?.Invoke(BuildStatusText());
     }
-
-    /// <summary>
-    /// A PSX release always ships a bundled baseline. When that baseline is
-    /// the same or newer than the self-updated copy (the user upgraded PSX),
-    /// the runtime copies are redundant at best and stale at worst — drop
-    /// them and fall back to the bundled install.
-    /// </summary>
     private void DropRuntimeCopyWhenBundledIsSameOrNewer(RuntimePaths paths)
     {
         if (ValidateKimiRoot(paths, paths.KimiCurrentDirectory, requireLockfile: false, out _) != null)
@@ -553,18 +530,7 @@ public sealed class KimiCodeAcpRuntime : IAcpAgentRuntime
             return;
 
         Log($"Bundled Kimi {bundledVersion} supersedes self-updated {currentVersion}; dropping runtime copies.");
-        foreach (var directory in new[] { paths.KimiCurrentDirectory, paths.KimiNextDirectory })
-        {
-            try
-            {
-                if (Directory.Exists(directory))
-                    Directory.Delete(directory, recursive: true);
-            }
-            catch (Exception ex)
-            {
-                Log($"WARN: could not drop {directory}: {ex.Message}");
-            }
-        }
+        _stagedStore.DropRuntimeCopies(paths.KimiCurrentDirectory, paths.KimiNextDirectory);
         TryWriteActivePointer(paths, ActiveCurrentToken);
     }
 
@@ -601,22 +567,7 @@ public sealed class KimiCodeAcpRuntime : IAcpAgentRuntime
     }
 
     private void ClearStaleNext(RuntimePaths paths)
-    {
-        try
-        {
-            if (Directory.Exists(paths.KimiNextDirectory))
-                Directory.Delete(paths.KimiNextDirectory, recursive: true);
-        }
-        catch (Exception ex)
-        {
-            Log($"WARN: could not clear stale kimi-next: {ex.Message}");
-        }
-    }
-
-    /// <summary>
-    /// npm's <c>view … version --json</c> prints the version as a JSON
-    /// string (<c>"0.30.0"</c>). Tolerates a bare unquoted version too.
-    /// </summary>
+        => _stagedStore.ClearStaleNext(paths.KimiNextDirectory);
     private static string? ParseNpmViewVersion(string stdout)
     {
         var trimmed = stdout.Trim();
@@ -635,115 +586,21 @@ public sealed class KimiCodeAcpRuntime : IAcpAgentRuntime
         }
     }
 
-    private sealed record NpmRunOutcome(
-        AcpRuntimeOperationKind Kind,
-        string Message,
-        int? ExitCode,
-        string Stdout);
-
-    private async Task<NpmRunOutcome> RunNpmAsync(
+    private Task<NpmRuntimeProcessResult> RunNpmAsync(
         RuntimePaths paths,
         string workingDirectory,
         string label,
         string[] arguments,
         CancellationToken cancellationToken)
     {
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = paths.PortableNodePath,
-            WorkingDirectory = workingDirectory,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8,
-        };
-
-        // Same flag policy as the build-time staging install: the seeded
-        // .npmrc constrains os/cpu so nothing besides win32-x64 is pulled in.
-        startInfo.ArgumentList.Add(paths.PortableNpmCliPath!);
-        foreach (var argument in arguments)
-            startInfo.ArgumentList.Add(argument);
-
-        Log($"Starting: {label} in {workingDirectory}");
-
-        Process? process;
-        try
-        {
-            process = Process.Start(startInfo);
-        }
-        catch (Exception ex)
-        {
-            Log($"Failed to start {label}: {ex}");
-            return new NpmRunOutcome(AcpRuntimeOperationKind.Failed,
-                $"Failed to start {label}: {ex.Message}", null, "");
-        }
-
-        if (process == null)
-        {
-            return new NpmRunOutcome(AcpRuntimeOperationKind.Failed,
-                $"{label} did not start.", null, "");
-        }
-        using var processLifetime = process;
-
-        var stdoutTask = process.StandardOutput.ReadToEndAsync();
-        var stderrTask = process.StandardError.ReadToEndAsync();
-
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(_processTimeout);
-
-        try
-        {
-            await process.WaitForExitAsync(timeoutCts.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            await RuntimeProcessCleanup.TerminateAndDrainAsync(
-                process, stdoutTask, stderrTask, Log).ConfigureAwait(false);
-            Log($"{label} timed out after {_processTimeout.TotalMinutes:0.##} minutes.");
-            return new NpmRunOutcome(AcpRuntimeOperationKind.Failed,
-                $"{label} timed out.", null, "");
-        }
-        catch (OperationCanceledException)
-        {
-            await RuntimeProcessCleanup.TerminateAndDrainAsync(
-                process, stdoutTask, stderrTask, Log).ConfigureAwait(false);
-            Log($"{label} was cancelled.");
-            return new NpmRunOutcome(AcpRuntimeOperationKind.Cancelled,
-                $"{label} was cancelled.", null, "");
-        }
-
-        var stdout = await stdoutTask.ConfigureAwait(false);
-        var stderr = await stderrTask.ConfigureAwait(false);
-        var exitCode = process.ExitCode;
-
-        if (!string.IsNullOrWhiteSpace(stdout))
-            Log($"stdout:\n{stdout.Trim()}");
-        if (!string.IsNullOrWhiteSpace(stderr))
-            Log($"stderr:\n{stderr.Trim()}");
-        Log($"{label} exited with code {exitCode}.");
-
-        if (exitCode != 0)
-        {
-            var kind = LooksLikeNetworkError(stderr)
-                ? AcpRuntimeOperationKind.NetworkUnavailable
-                : AcpRuntimeOperationKind.Failed;
-            return new NpmRunOutcome(kind,
-                $"{label} failed with exit code {exitCode}.", exitCode, stdout);
-        }
-
-        return new NpmRunOutcome(AcpRuntimeOperationKind.Success,
-            $"{label} completed successfully.", exitCode, stdout);
+        return _npmRunner.RunAsync(
+            paths.PortableNodePath!,
+            paths.PortableNpmCliPath!,
+            workingDirectory,
+            label,
+            arguments,
+            cancellationToken);
     }
-
-    /// <summary>
-    /// Runs the staged entry once with <c>--version</c> on the portable Node.
-    /// Returns null when it exits 0 within <see cref="SmokeCheckTimeout"/>,
-    /// otherwise a human-readable failure reason. Guards against a package
-    /// whose files installed fine but whose entry cannot start at all (for
-    /// example an engines mismatch that slipped past npm).
-    /// </summary>
     private async Task<string?> RunStagedSmokeCheckAsync(
         RuntimePaths paths,
         string entryPath,
@@ -804,61 +661,10 @@ public sealed class KimiCodeAcpRuntime : IAcpAgentRuntime
         return null;
     }
 
-    private static bool LooksLikeNetworkError(string stderr)
-    {
-        if (string.IsNullOrEmpty(stderr)) return false;
-        var lowered = stderr.ToLowerInvariant();
-        return lowered.Contains("etimedout")
-            || lowered.Contains("enotfound")
-            || lowered.Contains("econnrefused")
-            || lowered.Contains("network")
-            || lowered.Contains("registry.npmjs.org")
-            || lowered.Contains("getaddrinfo");
-    }
-
     private bool PointerSaysNext(RuntimePaths paths)
-    {
-        try
-        {
-            if (!File.Exists(paths.KimiActivePointerFile))
-                return false;
-            var token = File.ReadAllText(paths.KimiActivePointerFile).Trim();
-            return string.Equals(token, ActiveNextToken, StringComparison.Ordinal);
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// Writes the active pointer atomically. Best-effort callers (startup
-    /// promote, bundled fallback) may ignore the result, but the refresh
-    /// activation step must observe a failure instead of reporting a staged
-    /// update that never applies.
-    /// </summary>
+        => _stagedStore.PointerSaysNext(paths.KimiActivePointerFile, ActiveNextToken);
     private bool TryWriteActivePointer(RuntimePaths paths, string token)
-    {
-        try
-        {
-            Directory.CreateDirectory(paths.RuntimeRoot);
-            var tmp = paths.KimiActivePointerFile + ".tmp";
-            File.WriteAllText(tmp, token);
-            File.Move(tmp, paths.KimiActivePointerFile, overwrite: true);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Log($"Failed to write Kimi active pointer '{token}': {ex}");
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// Extracts the Kimi bin entry from a package.json root. Supports both the
-    /// object form (<c>"bin": { "kimi": "dist/main.mjs" }</c>) and the string
-    /// form (<c>"bin": "dist/main.mjs"</c>).
-    /// </summary>
+        => _stagedStore.TryWriteActivePointer(paths.RuntimeRoot, paths.KimiActivePointerFile, token);
     private static string? ExtractBinPath(JsonElement root)
     {
         if (!root.TryGetProperty("bin", out var bin))

@@ -40,6 +40,8 @@ public sealed class QoderCliAcpRuntime : IAcpAgentRuntime
     private readonly RuntimeLocator _locator;
     private readonly string _logPath;
     private readonly TimeSpan _processTimeout;
+    private readonly NpmRuntimeProcessRunner _npmRunner;
+    private readonly StagedRuntimeStore _stagedStore;
     private readonly SemaphoreSlim _npmLock = new(1, 1);
 
     public event Action<string>? StatusChanged;
@@ -57,6 +59,8 @@ public sealed class QoderCliAcpRuntime : IAcpAgentRuntime
         _processTimeout = processTimeout;
         Directory.CreateDirectory(logDirectory);
         _logPath = Path.Combine(logDirectory, "qoder-runtime.log");
+        _npmRunner = new NpmRuntimeProcessRunner(_processTimeout, Log);
+        _stagedStore = new StagedRuntimeStore("Qoder", Log);
     }
 
     public string LogPath => _logPath;
@@ -680,47 +684,18 @@ public sealed class QoderCliAcpRuntime : IAcpAgentRuntime
 
     private void PromoteNextToCurrent(RuntimePaths paths)
     {
-        var backup = paths.QoderCurrentDirectory + ".old";
-        try
+        if (_stagedStore.PromoteNextToCurrent(
+                paths.RuntimeRoot,
+                paths.QoderCurrentDirectory,
+                paths.QoderNextDirectory,
+                paths.QoderActivePointerFile,
+                ActiveCurrentToken))
         {
-            if (Directory.Exists(backup))
-                Directory.Delete(backup, recursive: true);
-
-            if (Directory.Exists(paths.QoderCurrentDirectory))
-                Directory.Move(paths.QoderCurrentDirectory, backup);
-
-            Directory.Move(paths.QoderNextDirectory, paths.QoderCurrentDirectory);
-            Directory.Delete(backup, recursive: true);
+            StatusChanged?.Invoke(BuildStatusText());
         }
-        catch (Exception ex)
-        {
-            Log($"Qoder promote failed mid-swap: {ex}. Recovering.");
-            if (Directory.Exists(backup) && !Directory.Exists(paths.QoderCurrentDirectory))
-            {
-                try { Directory.Move(backup, paths.QoderCurrentDirectory); } catch { /* give up */ }
-            }
-            TryWriteActivePointer(paths, ActiveCurrentToken);
-            return;
-        }
-
-        TryWriteActivePointer(paths, ActiveCurrentToken);
-        Log("Qoder promote: qoder-next is now qoder-current.");
-        StatusChanged?.Invoke(BuildStatusText());
     }
-
     private void ClearStaleNext(RuntimePaths paths)
-    {
-        try
-        {
-            if (Directory.Exists(paths.QoderNextDirectory))
-                Directory.Delete(paths.QoderNextDirectory, recursive: true);
-        }
-        catch (Exception ex)
-        {
-            Log($"WARN: could not clear stale qoder-next: {ex.Message}");
-        }
-    }
-
+        => _stagedStore.ClearStaleNext(paths.QoderNextDirectory);
     private static string? ParseNpmViewVersion(string stdout)
     {
         var trimmed = stdout.Trim();
@@ -739,106 +714,21 @@ public sealed class QoderCliAcpRuntime : IAcpAgentRuntime
         }
     }
 
-    private sealed record NpmRunOutcome(
-        AcpRuntimeOperationKind Kind,
-        string Message,
-        int? ExitCode,
-        string Stdout);
-
-    private async Task<NpmRunOutcome> RunNpmAsync(
+    private Task<NpmRuntimeProcessResult> RunNpmAsync(
         RuntimePaths paths,
         string workingDirectory,
         string label,
         string[] arguments,
         CancellationToken cancellationToken)
     {
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = paths.PortableNodePath,
-            WorkingDirectory = workingDirectory,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8,
-        };
-
-        startInfo.ArgumentList.Add(paths.PortableNpmCliPath!);
-        foreach (var argument in arguments)
-            startInfo.ArgumentList.Add(argument);
-
-        Log($"Starting: {label} in {workingDirectory}");
-
-        Process? process;
-        try
-        {
-            process = Process.Start(startInfo);
-        }
-        catch (Exception ex)
-        {
-            Log($"Failed to start {label}: {ex}");
-            return new NpmRunOutcome(AcpRuntimeOperationKind.Failed,
-                $"Failed to start {label}: {ex.Message}", null, "");
-        }
-
-        if (process == null)
-        {
-            return new NpmRunOutcome(AcpRuntimeOperationKind.Failed,
-                $"{label} did not start.", null, "");
-        }
-        using var processLifetime = process;
-
-        var stdoutTask = process.StandardOutput.ReadToEndAsync();
-        var stderrTask = process.StandardError.ReadToEndAsync();
-
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(_processTimeout);
-
-        try
-        {
-            await process.WaitForExitAsync(timeoutCts.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            await RuntimeProcessCleanup.TerminateAndDrainAsync(
-                process, stdoutTask, stderrTask, Log).ConfigureAwait(false);
-            Log($"{label} timed out after {_processTimeout.TotalMinutes:0.##} minutes.");
-            return new NpmRunOutcome(AcpRuntimeOperationKind.Failed,
-                $"{label} timed out.", null, "");
-        }
-        catch (OperationCanceledException)
-        {
-            await RuntimeProcessCleanup.TerminateAndDrainAsync(
-                process, stdoutTask, stderrTask, Log).ConfigureAwait(false);
-            Log($"{label} was cancelled.");
-            return new NpmRunOutcome(AcpRuntimeOperationKind.Cancelled,
-                $"{label} was cancelled.", null, "");
-        }
-
-        var stdout = await stdoutTask.ConfigureAwait(false);
-        var stderr = await stderrTask.ConfigureAwait(false);
-        var exitCode = process.ExitCode;
-
-        if (!string.IsNullOrWhiteSpace(stdout))
-            Log($"stdout:\n{stdout.Trim()}");
-        if (!string.IsNullOrWhiteSpace(stderr))
-            Log($"stderr:\n{stderr.Trim()}");
-        Log($"{label} exited with code {exitCode}.");
-
-        if (exitCode != 0)
-        {
-            var kind = LooksLikeNetworkError(stderr)
-                ? AcpRuntimeOperationKind.NetworkUnavailable
-                : AcpRuntimeOperationKind.Failed;
-            return new NpmRunOutcome(kind,
-                $"{label} failed with exit code {exitCode}.", exitCode, stdout);
-        }
-
-        return new NpmRunOutcome(AcpRuntimeOperationKind.Success,
-            $"{label} completed successfully.", exitCode, stdout);
+        return _npmRunner.RunAsync(
+            paths.PortableNodePath!,
+            paths.PortableNpmCliPath!,
+            workingDirectory,
+            label,
+            arguments,
+            cancellationToken);
     }
-
     private async Task<string?> RunStagedSmokeCheckAsync(
         RuntimePaths paths,
         string entryPath,
@@ -900,49 +790,9 @@ public sealed class QoderCliAcpRuntime : IAcpAgentRuntime
     }
 
     private bool PointerSaysNext(RuntimePaths paths)
-    {
-        try
-        {
-            if (!File.Exists(paths.QoderActivePointerFile))
-                return false;
-            var token = File.ReadAllText(paths.QoderActivePointerFile).Trim();
-            return string.Equals(token, ActiveNextToken, StringComparison.Ordinal);
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
+        => _stagedStore.PointerSaysNext(paths.QoderActivePointerFile, ActiveNextToken);
     private bool TryWriteActivePointer(RuntimePaths paths, string token)
-    {
-        try
-        {
-            Directory.CreateDirectory(paths.RuntimeRoot);
-            var tmp = paths.QoderActivePointerFile + ".tmp";
-            File.WriteAllText(tmp, token);
-            File.Move(tmp, paths.QoderActivePointerFile, overwrite: true);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Log($"Failed to write Qoder active pointer '{token}': {ex}");
-            return false;
-        }
-    }
-
-    private static bool LooksLikeNetworkError(string stderr)
-    {
-        if (string.IsNullOrEmpty(stderr)) return false;
-        var lowered = stderr.ToLowerInvariant();
-        return lowered.Contains("etimedout")
-            || lowered.Contains("enotfound")
-            || lowered.Contains("econnrefused")
-            || lowered.Contains("network")
-            || lowered.Contains("registry.npmjs.org")
-            || lowered.Contains("getaddrinfo");
-    }
-
+        => _stagedStore.TryWriteActivePointer(paths.RuntimeRoot, paths.QoderActivePointerFile, token);
     private static void ForwardEnvironmentVariable(IDictionary<string, string?> environment, string name)
     {
         var value = Environment.GetEnvironmentVariable(name);
