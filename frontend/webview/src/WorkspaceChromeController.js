@@ -159,7 +159,8 @@ export class WorkspaceChromeController {
                 strip = document.createElement('div');
                 strip.className = 'workspace-tab-strip';
                 strip.dataset.columnId = column.columnId;
-                strip.setAttribute('role', 'tablist');
+                strip.setAttribute('role', 'group');
+                strip.setAttribute('aria-label', 'Workspaces in column');
                 // Wheel over an overflowed strip scrolls horizontally; a strip
                 // that fits its column leaves the wheel untouched.
                 strip.addEventListener('wheel', (event) => {
@@ -199,12 +200,16 @@ export class WorkspaceChromeController {
     buildTab(tab, workspace, column) {
         const tabEl = document.createElement('div');
         tabEl.className = 'workspace-tab';
+        tabEl.setAttribute('role', 'presentation');
         tabEl.dataset.workspaceId = tab.workspaceId || '';
         tabEl.dataset.active = tab.workspaceId === column.activeTabId ? 'true' : 'false';
-        tabEl.setAttribute('role', 'tab');
-        tabEl.setAttribute('aria-selected', tab.workspaceId === column.activeTabId ? 'true' : 'false');
-        tabEl.tabIndex = 0;
         tabEl.title = workspace?.title || 'Workspace';
+
+        const target = document.createElement('button');
+        target.type = 'button';
+        target.className = 'workspace-tab-target';
+        target.setAttribute('aria-pressed', tab.workspaceId === column.activeTabId ? 'true' : 'false');
+        target.title = workspace?.title || 'Workspace';
 
         const icon = document.createElement('span');
         icon.className = 'workspace-tab-icon';
@@ -241,19 +246,14 @@ export class WorkspaceChromeController {
         const activate = () => {
             if (workspace) Bridge.sendWorkspaceLayoutIntent('activate', workspace.workspaceId);
         };
-        tabEl.addEventListener('click', activate);
-        tabEl.addEventListener('keydown', (event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault();
-                activate();
-            }
-        });
+        target.addEventListener('click', activate);
         tabEl.addEventListener('contextmenu', (event) => {
             event.preventDefault();
-            if (workspace) this.openPaneMenu(workspace, tabEl);
+            if (workspace) this.openPaneMenu(workspace, target);
         });
 
-        tabEl.append(icon, title, attention, close);
+        target.append(icon, title, attention);
+        tabEl.append(target, close);
         return tabEl;
     }
 

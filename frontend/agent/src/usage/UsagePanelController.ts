@@ -80,7 +80,10 @@ export class UsagePanelController {
       onSelectTab: (tab) => this.host.setActiveTab(tab),
       onRequestConfig: (force) => this.host.requestConfig(force),
       onSetDisplayName: (name) => this.host.setDisplayName(name),
-      onSetAvatar: (base64Png) => this.host.setAvatar(base64Png)
+      onSetAvatar: (base64Png) => this.host.setAvatar(base64Png),
+      onRestoreFocus: () => {
+        document.querySelector<HTMLElement>('[data-role="history-profile"]')?.focus();
+      }
     });
   }
 }

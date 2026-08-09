@@ -39,6 +39,8 @@ export interface UsagePanelProps {
   onSetDisplayName(name: string): void;
   /** Raw base64 PNG (no data: prefix) produced by the canvas resize. */
   onSetAvatar(base64Png: string): void;
+  /** Controlled Dialogs have no Radix Trigger; restore the real opener explicitly. */
+  onRestoreFocus(): void;
 }
 
 const WINDOW_LABELS: Array<{ key: UsageWindowKey; label: string }> = [
@@ -445,6 +447,10 @@ export function UsagePanel(props: UsagePanelProps): JSX.Element {
       <DialogContent
         className="agent-usage-panel max-h-[85vh] gap-0 sm:max-w-[640px]"
         data-role="usage-panel"
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          props.onRestoreFocus();
+        }}
       >
         <DialogTitle className="agent-usage-title">用量与配置</DialogTitle>
         <DialogDescription className="sr-only">
@@ -470,7 +476,6 @@ export function UsagePanel(props: UsagePanelProps): JSX.Element {
               data-role="usage-tab"
               data-tab="usage"
               aria-selected={activeTab === 'usage'}
-              aria-pressed={activeTab === 'usage'}
               onClick={() => selectTab('usage')}
             >
               用量
@@ -481,7 +486,6 @@ export function UsagePanel(props: UsagePanelProps): JSX.Element {
               data-role="usage-tab"
               data-tab="config"
               aria-selected={activeTab === 'config'}
-              aria-pressed={activeTab === 'config'}
               onClick={() => selectTab('config')}
             >
               配置

@@ -15,7 +15,9 @@
     "typecheck": "npm run typecheck:web",
     "test:coverage:web": "npm run --workspace psx-web-tests test:coverage",
     "prepare:visual": "powershell -ExecutionPolicy Bypass -File tools/prepare-playwright.ps1",
-    "screenshots:web": "node tools/screenshot-baseline.mjs"
+    "test:visual": "node tools/screenshot-baseline.mjs",
+    "update:visual": "node tools/screenshot-baseline.mjs --update",
+    "screenshots:web": "npm run test:visual"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",

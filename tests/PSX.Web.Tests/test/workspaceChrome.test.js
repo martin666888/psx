@@ -538,7 +538,9 @@ test('column menu anchors under its tab trigger, right-aligned to it', async () 
     }]
   });
   const tab = document.querySelector('.workspace-tab');
-  tab.getBoundingClientRect = () => ({ top: 10, bottom: 34, left: 700, right: 732, width: 32, height: 24 });
+  tab.querySelector('.workspace-tab-target').getBoundingClientRect = () => ({
+    top: 10, bottom: 34, left: 700, right: 732, width: 32, height: 24
+  });
   tab.dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
   const menu = document.querySelector('.workspace-popover-pane');
   assert.ok(menu, 'column menu renders');
@@ -589,14 +591,22 @@ test('tab strips render attention badges and single-tab columns keep the namepla
   assert.equal(second.querySelector('.workspace-tab-attention').textContent, '出错');
   assert.equal(first.querySelector('.workspace-tab-title').textContent, 'First');
 
-  // The close button closes; clicking the tab activates it in place.
+  // The workspace target and close action are sibling buttons in a labelled
+  // control group, so both remain independently keyboard reachable.
+  assert.equal(first.getAttribute('role'), 'presentation');
+  assert.equal(first.querySelector('.workspace-tab-target').getAttribute('role'), null);
+  assert.equal(first.querySelector('.workspace-tab-target').getAttribute('aria-pressed'), 'true');
+  assert.equal(
+    first.querySelector('.workspace-tab-target').contains(first.querySelector('.workspace-tab-close')),
+    false
+  );
   first.querySelector('.workspace-tab-close').click();
   assert.deepEqual(runtime.postedMessages.at(-1), {
     type: 'workspace_layout_intent',
     action: 'close',
     workspaceId: 'w1'
   });
-  second.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  second.querySelector('.workspace-tab-target').click();
   assert.deepEqual(runtime.postedMessages.at(-1), {
     type: 'workspace_layout_intent',
     action: 'activate',

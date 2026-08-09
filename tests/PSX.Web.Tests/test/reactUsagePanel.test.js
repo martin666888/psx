@@ -166,6 +166,23 @@ test('footer: terminal-only startup fetches the saved profile and renders its av
   assert.equal(image.getAttribute('alt'), '');
 });
 
+test('panel: Escape restores focus to the global History profile button', async () => {
+  const rig = await fixture({ withWorkspace: false });
+  await openPanelWith(rig, {
+    report: report(),
+    completeness: completeness()
+  });
+  assert.ok(document.querySelector('[data-role="usage-panel"]'));
+
+  await act(async () => {
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  assert.equal(document.querySelector('[data-role="usage-panel"]'), null);
+  assert.equal(document.activeElement, rig.footer());
+});
+
 test('panel: window switching changes only the backend-owned total', async () => {
   const rig = await fixture();
   const year = dailyTokens({ 0: 1, 20: 12, 364: 300 });
