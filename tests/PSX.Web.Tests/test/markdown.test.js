@@ -105,3 +105,30 @@ test('memoized renderer is byte-identical to renderMarkdown (incl. streaming pre
     assert.equal(renderMarkdownMemoized(doc), renderMarkdown(doc), `repeat mismatch: ${JSON.stringify(doc.slice(0, 40))}`);
   }
 });
+
+// Tailwind Preflight clears list markers globally; markdown.css must restore
+// them on .agent-message-body or assistant lists look like indented plain text.
+test('markdown.css restores list markers against Preflight list-style:none', async () => {
+  const { installAgentRuntime, repositoryRoot } = await import('./agentHarness.js');
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  installAgentRuntime();
+  const css = fs.readFileSync(
+    path.join(repositoryRoot, 'frontend', 'webview', 'src', 'css', 'agent', 'markdown.css'),
+    'utf8'
+  );
+  const style = document.createElement('style');
+  style.textContent = 'ol,ul,menu{list-style:none}' + css;
+  document.head.appendChild(style);
+  const host = document.createElement('div');
+  host.className = 'agent-message-body';
+  host.innerHTML = '<ul><li>u</li></ul><ol><li>o</li></ol>';
+  document.body.appendChild(host);
+  const ul = host.querySelector('ul');
+  const ol = host.querySelector('ol');
+  assert.equal(window.getComputedStyle(ul).listStyleType, 'disc');
+  assert.equal(window.getComputedStyle(ol).listStyleType, 'decimal');
+  // Indent lives on padding so outside markers stay inside overflow-hidden parents.
+  assert.equal(window.getComputedStyle(ul).paddingLeft, '22px');
+  assert.equal(window.getComputedStyle(ol).marginLeft, '0px');
+});

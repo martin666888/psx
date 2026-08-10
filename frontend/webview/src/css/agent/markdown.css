@@ -35,10 +35,21 @@
     font-size: 1.13em;
 }
 
+/* Tailwind Preflight sets `ol,ul,menu { list-style: none }`. Restore markers
+   here; keep indent on padding-left so outside markers stay inside the box
+   (MessageContent uses overflow-hidden). */
 .agent-message-body ul,
 .agent-message-body ol {
-    margin: 8px 0 12px 22px;
-    padding: 0;
+    margin: 8px 0 12px;
+    padding: 0 0 0 22px;
+}
+
+.agent-message-body ul {
+    list-style-type: disc;
+}
+
+.agent-message-body ol {
+    list-style-type: decimal;
 }
 
 .agent-message-body li {

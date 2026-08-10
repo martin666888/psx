@@ -9,7 +9,8 @@
 //   renders plain <pre><code> and CP4 styles it to match.
 // - CP4: ToolHeader accepts `badge` (overrides the default status label with
 //   PSX's ACP tool-state wording) and `titleClassName` (semantic anchor
-//   classes for tests/replay tooling).
+//   classes for tests/replay tooling). Title sizing lives on `.agent-tool-title`
+//   in messages.css so it tracks --agent-font-size.
 
 import { Badge } from "@/components/ui/badge";
 import {
@@ -106,7 +107,7 @@ export const ToolHeader = ({
   >
     <div className="flex items-center gap-2">
       <WrenchIcon className="size-4 text-muted-foreground" />
-      <span className={cn("font-medium text-sm", titleClassName)}>
+      <span className={cn("agent-tool-title font-medium", titleClassName)}>
         {title ?? type.split("-").slice(1).join("-")}
       </span>
       {getStatusBadge(state, badge)}

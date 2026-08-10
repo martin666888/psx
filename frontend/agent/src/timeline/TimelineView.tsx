@@ -297,7 +297,7 @@ function ToolCardView({
                 Input
               </CollapsibleTrigger>
               <CollapsibleContent forceMount className="data-[state=closed]:hidden">
-                <pre className="agent-tool-card-input-content agent-native-scroll m-0 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/50 p-3 font-mono text-xs">
+                <pre className="agent-tool-card-input-content agent-native-scroll m-0 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/50 p-3">
                   {card.input}
                 </pre>
               </CollapsibleContent>
@@ -306,7 +306,7 @@ function ToolCardView({
           {hasOutput ? (
             <div className="agent-tool-card-output">
               <div className="mb-1 text-xs font-semibold text-muted-foreground">Output</div>
-              <pre className="agent-tool-card-content agent-native-scroll max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/50 p-3 font-mono text-xs">
+              <pre className="agent-tool-card-content agent-native-scroll max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/50 p-3">
                 {card.output}
               </pre>
             </div>
@@ -336,7 +336,7 @@ function ToolGroup({ item }: { item: ToolGroupItem }): JSX.Element {
       style={item.visible ? undefined : { display: 'none' }}
     >
       <TaskTrigger title={label}>
-        <div className="agent-run-group-header flex w-full cursor-pointer items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground">
+        <div className="agent-run-group-header flex w-full cursor-pointer items-center gap-2 text-muted-foreground transition-colors hover:text-foreground">
           <WrenchIcon className="size-4" />
           <span className="agent-run-group-summary font-medium">{label}</span>
           {item.error ? <span className="font-medium text-destructive">{'\u00b7 Failed'}</span> : null}
@@ -384,7 +384,7 @@ function InlineTool({ item }: { item: InlineToolItem }): JSX.Element {
       {/* forceMount keeps the collapsed output in the DOM (old static-card
           semantics) for text search and replay tooling. */}
       <ToolContent forceMount className="data-[state=closed]:hidden">
-        <pre className="agent-native-scroll max-h-72 overflow-auto whitespace-pre-wrap break-words px-3 pb-3 font-mono text-xs">{item.text}</pre>
+        <pre className="agent-tool-output agent-native-scroll max-h-72 overflow-auto whitespace-pre-wrap break-words px-3 pb-3">{item.text}</pre>
       </ToolContent>
     </Tool>
   );
@@ -513,11 +513,15 @@ function UserMessageBody({
 const MessageRow = function MessageRow({
   item,
   showLabel,
+  tightenToPrevious,
   assistantName,
   callbacks
 }: {
   item: MessageItem;
   showLabel: boolean;
+  /** Only pull up when the previous turn row is also a same-role message;
+   *  never after thinking/tool/decision or the tool↔body gap collapses. */
+  tightenToPrevious: boolean;
   assistantName: string;
   callbacks: TimelineCallbacks;
 }): JSX.Element {
@@ -528,7 +532,11 @@ const MessageRow = function MessageRow({
     <Message
       from={isUser ? 'user' : 'assistant'}
       className={
-        'agent-message agent-message-' + item.role + (showLabel ? ' mb-5' : ' agent-message-continuation mb-5 -mt-2')
+        'agent-message agent-message-' +
+        item.role +
+        ' mb-4' +
+        (showLabel ? '' : ' agent-message-continuation') +
+        (tightenToPrevious ? ' -mt-2' : '')
       }
       aria-label={ariaLabel}
       role="article"
@@ -583,15 +591,24 @@ function renderItem(
       );
     case 'message': {
       // Label logic mirrors legacy: the first message of each role in a turn
-      // carries the label, later ones are continuations.
+      // carries the label, later ones are continuations. Spacing tighten is
+      // separate: only collapse into the previous row when that row is also a
+      // same-role message (not when a tool/thinking block sits in between).
       const first = rowsInTurn.find(
         (candidate) => candidate.item.type === 'message' && (candidate.item as MessageItem).role === item.role
       );
+      const index = rowsInTurn.findIndex((candidate) => candidate.item === item);
+      const previous = index > 0 ? rowsInTurn[index - 1]?.item : null;
+      const tightenToPrevious =
+        !!previous &&
+        previous.type === 'message' &&
+        (previous as MessageItem).role === item.role;
       return (
         <MessageRow
           key={item.id}
           item={item}
           showLabel={first?.item === item}
+          tightenToPrevious={tightenToPrevious}
           assistantName={assistantName}
           callbacks={callbacks}
         />

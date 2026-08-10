@@ -13,12 +13,30 @@
 }
 
 /* appearance_settings drives the Agent font size; unlayered CSS outranks
-   Tailwind's layered utilities, so this wins over text-sm. */
+   Tailwind's layered utilities, so this wins over text-sm / text-xs. */
 .agent-message-body {
     color: var(--agent-text);
     font-size: var(--agent-font-size);
-    line-height: 1.65;
+    line-height: 1.6;
     white-space: normal;
+}
+
+/* Tool chrome stays a step below body, but shares the agent font contract
+   (not a fixed Tailwind 14px) so appearance_settings scales it too. */
+.agent-run-group-header,
+.agent-tool-title {
+    font-size: calc(var(--agent-font-size) * 0.93);
+    line-height: 1.5;
+}
+
+/* Tool mono output matches markdown fenced-code sizing: tighter than body,
+   still keyed off --agent-font-size. */
+.agent-tool-card-input-content,
+.agent-tool-card-content,
+.agent-tool-output {
+    font-family: var(--agent-font-mono);
+    font-size: clamp(11px, calc(var(--agent-font-size) * 0.8), 18px);
+    line-height: 1.5;
 }
 
 /* The collapse toggle is a plain in-flow row now, so the collapsible body

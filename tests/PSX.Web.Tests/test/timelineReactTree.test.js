@@ -119,6 +119,28 @@ test('streaming renders messages, thinking, tools, attachments and completion st
   await view.dispose();
 });
 
+test('assistant message after a tool keeps full spacing (no continuation -mt-2)', async () => {
+  const view = await renderEvents([
+    ['user_message', { text: 'q' }],
+    ['assistant_delta', { text: 'before tool' }],
+    ['tool_started', { runId: 'r1', toolCallId: 't1', name: 'Bash', summary: 'run', input: 'ls' }],
+    ['tool_finished', { toolCallId: 't1', status: 'completed' }],
+    ['assistant_delta', { text: 'after tool' }],
+    ['run_finished', {}]
+  ]);
+  const assistants = [...view.host.querySelectorAll('.agent-message-assistant')];
+  assert.equal(assistants.length, 2);
+  assert.ok(assistants[0].classList.contains('mb-4'));
+  assert.ok(!assistants[0].classList.contains('-mt-2'));
+  assert.ok(assistants[1].classList.contains('agent-message-continuation'));
+  assert.ok(assistants[1].classList.contains('mb-4'));
+  assert.ok(
+    !assistants[1].classList.contains('-mt-2'),
+    'tool interrupts message adjacency; do not collapse the tool↔body gap'
+  );
+  await view.dispose();
+});
+
 test('history replay restores every persisted row kind', async () => {
   const view = await renderEvents([
     ['agent_thread_loaded', {
