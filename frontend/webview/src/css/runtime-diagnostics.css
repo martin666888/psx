@@ -1,0 +1,47 @@
+.psx-runtime-diagnostic {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    max-width: min(420px, calc(100vw - 32px));
+    padding: 10px 12px;
+    color: var(--agent-text);
+    background: var(--agent-surface-raised);
+    border: 1px solid var(--agent-error);
+    border-radius: var(--agent-radius-control, 10px);
+    box-shadow: var(--agent-shadow-popover, 0 12px 32px rgb(0 0 0 / 18%));
+    font-family: var(--agent-font-ui);
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.psx-runtime-diagnostic-message {
+    min-width: 0;
+    flex: 1;
+}
+
+.psx-runtime-diagnostic-dismiss {
+    flex: none;
+    min-height: 30px;
+    padding: 4px 10px;
+    color: var(--agent-text);
+    background: transparent;
+    border: 1px solid var(--agent-border-strong);
+    border-radius: var(--agent-radius-control, 10px);
+    font: inherit;
+    cursor: pointer;
+}
+
+@media (hover: hover) {
+    .psx-runtime-diagnostic-dismiss:hover {
+        background: var(--agent-hover);
+    }
+}
+
+.psx-runtime-diagnostic-dismiss:focus-visible {
+    outline: 2px solid var(--agent-focus-ring);
+    outline-offset: 2px;
+}

@@ -28,7 +28,7 @@ test('scrollbars: explicit React overflow nodes opt into the shared native skin'
   }
 });
 
-test('scrollbars: shared WebView skin covers the utility and emergency overlay', () => {
+test('scrollbars: shared WebView skin covers the native-scroll utility', () => {
   const css = fs.readFileSync(
     path.join(repositoryRoot, 'frontend', 'webview', 'src', 'css', 'agent', 'scrollbars.css'),
     'utf8'
@@ -39,9 +39,6 @@ test('scrollbars: shared WebView skin covers the utility and emergency overlay',
       `shared skin is missing ::-webkit-scrollbar${pseudo}`
     );
   }
-
-  const entry = fs.readFileSync(path.join(repositoryRoot, 'frontend', 'webview', 'index.html'), 'utf8');
-  assert.match(entry, /d\.className = 'agent-native-scroll'/);
 });
 
 test('scrollbars: WPF ScrollViewer bars consume the shared theme brushes', () => {

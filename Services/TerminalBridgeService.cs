@@ -1,6 +1,5 @@
 using System.IO;
 using System.Diagnostics;
-using System.ComponentModel;
 using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -25,6 +24,7 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
     private WebView2? _webView;
     private CoreWebView2? _coreWebView;
     private WebViewJsonDispatcher? _messageDispatcher;
+    private WebViewHostPolicy? _hostPolicy;
     private string _viewMode = "terminal";
     private bool _disposed;
 #if DEBUG
@@ -83,19 +83,6 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
             attachmentsPath,
             CoreWebView2HostResourceAccessKind.Allow);
 
-        // Keep browser-level shortcuts from stealing terminal shortcuts like Ctrl+Shift+C.
-        _coreWebView.Settings.AreDevToolsEnabled = false;
-        _coreWebView.Settings.AreBrowserAcceleratorKeysEnabled = false;
-        _coreWebView.Settings.IsZoomControlEnabled = false;
-        webView.ZoomFactor = 1.0;
-
-        // Keep the embedded renderer on PSX-owned origins. User-initiated external
-        // links are handed to Windows instead of creating browser-style popups.
-        _coreWebView.WebMessageReceived += OnWebMessageReceived;
-        _coreWebView.NewWindowRequested += OnNewWindowRequested;
-        _coreWebView.NavigationStarting += OnNavigationStarting;
-        _coreWebView.PermissionRequested += OnPermissionRequested;
-
         // Navigate to the packaged frontend under the /app/ virtual-host path.
         // Debug builds may point at a loopback Vite dev server for HMR through
         // PSX_WEB_DEV_SERVER; Release builds ignore the variable entirely.
@@ -111,6 +98,17 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
             navigationUrl = devUri.ToString();
         }
 #endif
+        _hostPolicy?.Dispose();
+        _hostPolicy = new WebViewHostPolicy(
+            _coreWebView,
+#if DEBUG
+            _debugDevServerOrigin
+#else
+            null
+#endif
+        );
+        webView.ZoomFactor = 1.0;
+        _coreWebView.WebMessageReceived += OnWebMessageReceived;
         _coreWebView.Navigate(navigationUrl);
     }
 
@@ -286,64 +284,6 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
         }
     }
 
-    private void OnNewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
-    {
-        e.Handled = true;
-        if (e.IsUserInitiated && WebViewNavigationPolicy.Classify(e.Uri) == WebViewNavigationTarget.External)
-            OpenExternalUri(e.Uri);
-    }
-
-    private void OnNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
-    {
-#if DEBUG
-        // Keep dev-server navigations (including HMR full reloads) inside the
-        // WebView when the loopback dev server was explicitly configured.
-        if (_debugDevServerOrigin != null
-            && Uri.TryCreate(e.Uri, UriKind.Absolute, out var navigationUri)
-            && string.Equals(navigationUri.GetLeftPart(UriPartial.Authority), _debugDevServerOrigin, StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-#endif
-        var target = WebViewNavigationPolicy.Classify(e.Uri);
-        if (target == WebViewNavigationTarget.Internal)
-            return;
-
-        e.Cancel = true;
-        if (target == WebViewNavigationTarget.External && e.IsUserInitiated)
-            OpenExternalUri(e.Uri);
-    }
-
-    private static void OnPermissionRequested(object? sender, CoreWebView2PermissionRequestedEventArgs e)
-    {
-        if (e.PermissionKind != CoreWebView2PermissionKind.ClipboardRead)
-            return;
-
-        e.State = CoreWebView2PermissionState.Deny;
-        e.SavesInProfile = false;
-        e.Handled = true;
-    }
-
-    private static void OpenExternalUri(string uri)
-    {
-        try
-        {
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = uri,
-                UseShellExecute = true
-            });
-        }
-        catch (Win32Exception ex)
-        {
-            Debug.WriteLine("Unable to open external URI: " + ex.Message);
-        }
-        catch (InvalidOperationException ex)
-        {
-            Debug.WriteLine("Unable to open external URI: " + ex.Message);
-        }
-    }
-
     private void HandlePasteRequest(TerminalPasteRequest request)
     {
         if (!_terminalSessionIds.ContainsKey(request.SessionId))
@@ -402,13 +342,12 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
         _disposed = true;
         _messageDispatcher?.Dispose();
         _messageDispatcher = null;
+        _hostPolicy?.Dispose();
+        _hostPolicy = null;
 
         if (_coreWebView != null)
         {
             _coreWebView.WebMessageReceived -= OnWebMessageReceived;
-            _coreWebView.NewWindowRequested -= OnNewWindowRequested;
-            _coreWebView.NavigationStarting -= OnNavigationStarting;
-            _coreWebView.PermissionRequested -= OnPermissionRequested;
         }
 
         InputReceived = null;

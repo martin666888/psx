@@ -16,11 +16,15 @@ import './css/terminal.css';
 import './css/panes.css';
 import './css/workspace-chrome.css';
 import './css/agent/index.css';
+import './css/runtime-diagnostics.css';
 import { Bridge } from './Bridge.js';
 import { BridgeEventType } from './BridgeMessages.js';
 import { PaneLayoutController } from './PaneLayoutController.js';
+import { installRuntimeDiagnostics } from './RuntimeDiagnostics.js';
 import { TerminalManager } from './TerminalManager.js';
 import { WorkspaceChromeController } from './WorkspaceChromeController.js';
+
+installRuntimeDiagnostics();
 
 (function () {
     // Neutral pane layout root (split-pane Phase 0 seam, always loaded — a

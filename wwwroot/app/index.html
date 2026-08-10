@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" href="data:,">
     <title>PSX Terminal</title>
-  <script type="module" crossorigin src="/app/assets/index-Cp6Vaw1F.js"></script>
-  <link rel="stylesheet" crossorigin href="/app/assets/index-D2zYVCOu.css">
+  <script type="module" crossorigin src="/app/assets/index-C0hQmEdt.js"></script>
+  <link rel="stylesheet" crossorigin href="/app/assets/index-COC0fqbo.css">
 </head>
 <body>
     <div id="workspace-stack" class="agent-ui">
@@ -63,18 +63,5 @@
     </section>
     </template>
 
-    <script>
-        window.onerror = function(msg, src, line, col, err) {
-            var d = document.createElement('pre');
-            d.className = 'agent-native-scroll';
-            d.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#f38ba8;color:#1e1e2e;font-size:12px;padding:8px;z-index:9999;white-space:pre-wrap;max-height:40vh;overflow:auto';
-            d.textContent = '[JS ERROR] ' + msg + '\n  at ' + src + ':' + line + ':' + col + (err ? '\n' + err.stack : '');
-            document.body.appendChild(d);
-            return false;
-        };
-        window.addEventListener('unhandledrejection', function(e) {
-            window.onerror('Unhandled Promise: ' + e.reason, '', 0, 0, e.reason instanceof Error ? e.reason : null);
-        });
-    </script>
 </body>
 </html>

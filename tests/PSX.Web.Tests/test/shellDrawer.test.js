@@ -2,7 +2,12 @@ import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { mountAgentApp, createAgentWorkspace, repositoryRoot } from './agentHarness.js';
+import {
+  mountAgentApp,
+  createAgentWorkspace,
+  flushAgentAnimationFrames,
+  repositoryRoot
+} from './agentHarness.js';
 
 const WS = '11111111-1111-4111-8111-111111111111';
 
@@ -34,6 +39,7 @@ test('responsive: only panes below 520px enter narrow Plan mode', async () => {
   assert.equal(role(panel, 'plan-card').hidden, true);
 
   breakpoint.setViewportWidth(600);
+  flushAgentAnimationFrames();
   assert.equal(document.getElementById('agents').classList.contains('agent-shell-narrow'), false);
   assert.equal(role(panel, 'plan-card').hidden, false, 'the workspace preference restores above 519px');
 });

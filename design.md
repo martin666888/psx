@@ -87,6 +87,8 @@ Every interactive element provides default, hover, active, and disabled states. 
 
 - **Buttons have one component contract.** Agent React surfaces use the shadcn `Button` primitive and its named variants; component files may add layout geometry but must not recreate hover/active/disabled skins. Remaining non-React shell controls use their local semantic selectors until their owning surface migrates.
 - The visible workspace, create, and Theme menus are WebView surfaces and use the active CSS theme tokens. The hidden WPF chrome remains compatibility-only and must not reappear as a parallel navigation surface.
+- Native WebView context menus are editing surfaces, not browser chrome. Editable fields retain the localized undo/cut/copy/paste/select-all family, selected text retains copy/select-all, and ordinary page/image/link targets expose no browser menu. Page export, print, source inspection, reload and browser-owned downloads are never available from the workbench.
+- An uncaught shell error may show one compact, dismissible, token-based notice with recovery wording. It never prints raw JavaScript stacks, resource URLs, workspace paths or conversation content into the workbench; Chromium's two known ResizeObserver delivery warnings are non-fatal and remain invisible to users.
 - Assistant responses are not cards. User prompts use one low-contrast bounded surface and never form left/right chat bubbles.
 - Tool activity is one disclosure region containing a flat divided list. Each row includes an explicit state label; no colored side rail.
 - Thinking is a single disclosure row. Completed thinking closes by default.

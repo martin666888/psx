@@ -15,12 +15,12 @@ typecheck、lint、Vitest、前端构建/校验或 `tools/test.ps1`。C# 测试�
 
 | 层级 | 内容 | 最低发现数 |
 |---|---|---:|
-| Unit | 纯逻辑、解析、状态与架构约束 | 359 |
+| Unit | 纯逻辑、解析、状态与架构约束 | 363 |
 | Integration | Fake ACP/npm、持久化、Runtime 与进程边界 | 112 |
 | Desktop | WPF/ConPTY 桌面探针 | 2 |
-| Fast | Unit + Integration | 471 |
-| Full | 全部 C# 测试 | 473 |
-| Web | Vitest/jsdom 契约 | 287 |
+| Fast | Unit + Integration | 475 |
+| Full | 全部 C# 测试 | 477 |
+| Web | Vitest/jsdom 契约 | 292 |
 
 数字来自 Microsoft Testing Platform TRX 和 Vitest JSON reporter；C# 数量包含
 `DataRow` 展开结果，不是源码中的 `[TestMethod]` 个数。只有明确删除测试时
@@ -150,6 +150,12 @@ npmmirror advisories 不可用或返回 404 也不能视为审计通过。
 4. 真实点击 Runtime Update，验证取消/超时返回前进程已退出、目录可立即操作，
    重启后只在本地 promote 已 staged 目录；启动本身不得触网。
 5. 验证断网、登录过期、额度不足和 Provider 异常时的用户文案与恢复路径。
+6. 在 Windows 10 和 Windows 11 上分别验证 WebView 右键策略：输入框保留撤销、
+   剪切、复制、粘贴和全选，选中文本只保留复制类操作，页面空白处没有浏览器
+   菜单，且不存在“网页另存为”、打印、查看源代码或浏览器下载入口。
+7. 调整窗口、History 和 Pane 宽度并持续接收流式消息，确认 ResizeObserver 的
+   非致命交付通知不会形成用户错误条；人为触发的真实未捕获错误只出现一条脱敏、
+   可关闭的提示，不展示堆栈、路径或会话内容。
 
 只有未使用 `-SkipDependencyAudit` 的 Full、人工查看过的视觉差异，以及上述
 真实 Terminal + Agent 验收共同完成，才能作为发布证据。

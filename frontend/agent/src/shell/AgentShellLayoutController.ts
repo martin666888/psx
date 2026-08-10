@@ -43,10 +43,11 @@ export class AgentShellLayoutController {
   private readonly container: HTMLElement;
   private readonly host: AgentShellLayoutHost;
   private resizeObserver: ResizeObserver | null = null;
+  private resizeFrame: number | null = null;
   private narrow = false;
   private historyReadingConstrained = false;
   private readonly cleanup: Array<() => void> = [];
-  private readonly onResize = (): void => this.applyMode();
+  private readonly onResize = (): void => this.scheduleApplyMode();
 
   constructor(container: HTMLElement, host: AgentShellLayoutHost) {
     this.container = container;
@@ -77,7 +78,27 @@ export class AgentShellLayoutController {
   dispose(): void {
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
+    if (this.resizeFrame !== null) {
+      window.cancelAnimationFrame(this.resizeFrame);
+      this.resizeFrame = null;
+    }
     for (const off of this.cleanup.splice(0)) off();
+  }
+
+  private scheduleApplyMode(): void {
+    if (this.resizeFrame !== null) return;
+    if (typeof window.requestAnimationFrame !== 'function') {
+      this.applyMode();
+      return;
+    }
+
+    // ResizeObserver callbacks only read/schedule. Class changes happen in the
+    // following frame so they cannot resize the observed pane during the same
+    // delivery cycle and trigger Chromium's undelivered-notification warning.
+    this.resizeFrame = window.requestAnimationFrame(() => {
+      this.resizeFrame = null;
+      this.applyMode();
+    });
   }
 
   private applyMode(): void {
