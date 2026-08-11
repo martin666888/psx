@@ -121,6 +121,9 @@ test('source inspection keeps Mermaid and Shiki requests independent', () => {
     math: false,
     mermaid: true
   });
+  assert.equal(inspectMarkdownSource('Width is $w_i$.').math, true);
+  assert.equal(inspectMarkdownSource('Price is $5.').math, false);
+  assert.equal(inspectMarkdownSource('Escaped \\$w_i\\$ stays literal.').math, false);
 });
 
 test('renders GFM tables, escaped pipes, strikethrough, footnotes and tilde fences', async () => {
@@ -241,9 +244,9 @@ test('Mermaid security configuration is fixed outside document control', () => {
   assert.equal(dark.config.theme, 'dark');
 });
 
-test('KaTeX renders double-dollar math while currency remains ordinary text', async () => {
+test('KaTeX renders single-dollar inline and double-dollar block math while currency remains text', async () => {
   const host = await renderMarkdown(
-    'Price is $5.\n\n$$\nx^2 + y^2 = z^2\n$$',
+    'Price is $5.\n\nWidth is $w_i$.\n\n$$\nx^2 + y^2 = z^2\n$$',
     'static',
     () => {
       globalThis.IntersectionObserver = class {
@@ -261,8 +264,9 @@ test('KaTeX renders double-dollar math while currency remains ordinary text', as
     await act(async () => new Promise((resolve) => setTimeout(resolve, 10)));
   }
   assert.match(host.textContent, /Price is \$5\./);
-  assert.ok(host.querySelector('.katex'));
-  assert.ok(host.querySelector('math'));
+  assert.equal(host.querySelectorAll('.katex').length, 2);
+  assert.equal(host.querySelectorAll('.katex-display').length, 1);
+  assert.equal(host.querySelectorAll('math').length, 2);
 });
 
 test('download controls stay absent for code, tables and Mermaid placeholders', async () => {

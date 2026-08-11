@@ -5,6 +5,7 @@ export interface RequiredMarkdownPlugins {
 }
 
 const FENCE_LINE = /^[ \t]{0,3}(`{3,}|~{3,})([^\n]*)$/gm;
+const INLINE_MATH = /(^|[^\\])\$(?!\$|\s)(?:\\.|[^$\n\\])+\$(?!\$)/m;
 
 export function inspectMarkdownSource(source: string): RequiredMarkdownPlugins {
   let code = false;
@@ -30,7 +31,7 @@ export function inspectMarkdownSource(source: string): RequiredMarkdownPlugins {
   }
   return {
     code,
-    math: source.includes('$$'),
+    math: source.includes('$$') || INLINE_MATH.test(source),
     mermaid
   };
 }

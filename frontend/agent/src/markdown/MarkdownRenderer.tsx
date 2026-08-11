@@ -115,6 +115,7 @@ export function MarkdownRenderer({ source, mode, surface, className }: MarkdownC
           mermaid: { copy: true, download: false, fullscreen: true, panZoom: true }
         }}
         isAnimating={mode === 'streaming'}
+        key={heavyPlugins.math ? 'math-ready' : 'math-pending'}
         lineNumbers
         linkSafety={{ enabled: false }}
         mermaid={mermaid}
