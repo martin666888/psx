@@ -140,23 +140,30 @@
     accent-color: var(--primary);
 }
 
-.agent-message-body [data-streamdown="table-wrapper"] {
+.agent-message-body :is(
+    [data-streamdown="code-block"],
+    [data-streamdown="table-wrapper"],
+    [data-streamdown="mermaid-block"]
+) {
+    --psx-markdown-block-inset: 6px;
+    --psx-markdown-block-header-height: 28px;
+    --psx-markdown-block-gap: 4px;
     max-width: 100%;
     margin: 10px 0 14px;
-}
-
-.agent-message-body [data-streamdown="code-block"] {
-    max-width: 100%;
-    margin: 10px 0 14px;
-    gap: 4px;
-    padding: 6px;
+    gap: var(--psx-markdown-block-gap);
+    padding: var(--psx-markdown-block-inset);
     border-color: var(--border);
     border-radius: var(--radius);
     background: var(--muted);
 }
 
-.agent-message-body [data-streamdown="code-block-header"] {
-    height: 28px;
+.agent-message-body :is(
+    [data-streamdown="code-block-header"],
+    [data-streamdown="table-wrapper"] > div:first-child,
+    [data-streamdown="mermaid-block"] > div:first-child
+) {
+    height: var(--psx-markdown-block-header-height);
+    min-height: var(--psx-markdown-block-header-height);
 }
 
 .agent-message-body [data-streamdown="code-block-body"] {
@@ -177,19 +184,58 @@
     margin-right: 10px;
 }
 
-.agent-message-body [data-streamdown="code-block-actions"] {
+.agent-message-body :is(
+    [data-streamdown="code-block-actions"],
+    [data-streamdown="mermaid-block-actions"],
+    [data-streamdown="table-wrapper"] > div:first-child
+) {
     width: 100%;
-    justify-content: space-between;
+    height: var(--psx-markdown-block-header-height);
+    min-height: var(--psx-markdown-block-header-height);
     padding: 0 2px;
     border: 0;
     background: transparent;
     box-shadow: none;
 }
 
-.agent-message-body [data-streamdown="code-block-copy-button"] {
+.agent-message-body [data-streamdown="code-block-actions"] {
+    justify-content: space-between;
+}
+
+.agent-message-body :is(
+    [data-streamdown="code-block"],
+    [data-streamdown="mermaid-block"]
+) > div:has(> :is(
+    [data-streamdown="code-block-actions"],
+    [data-streamdown="mermaid-block-actions"]
+)) {
+    top: var(--psx-markdown-block-inset);
+    height: var(--psx-markdown-block-header-height);
+    margin-top: calc(
+        0px - var(--psx-markdown-block-header-height) - var(--psx-markdown-block-gap)
+    );
+}
+
+.agent-message-body [data-streamdown="table-wrapper"] > div:first-child {
+    justify-content: space-between;
+}
+
+.agent-message-body [data-streamdown="table-wrapper"] > div:first-child::before {
+    color: var(--muted-foreground);
+    content: "table";
+    font-family: var(--agent-font-mono);
+    font-size: 12px;
+    line-height: var(--psx-markdown-block-header-height);
+}
+
+.agent-message-body :is(
+    [data-streamdown="code-block-actions"],
+    [data-streamdown="mermaid-block-actions"]
+) button,
+.agent-message-body [data-streamdown="table-wrapper"] > div:first-child > div > button {
     display: inline-flex;
-    width: 28px;
-    height: 28px;
+    width: var(--psx-markdown-block-header-height);
+    height: var(--psx-markdown-block-header-height);
     align-items: center;
     justify-content: center;
     padding: 0;
@@ -198,11 +244,19 @@
     background: transparent;
 }
 
-.agent-message-body [data-streamdown="code-block-copy-button"]:hover {
+.agent-message-body :is(
+    [data-streamdown="code-block-actions"],
+    [data-streamdown="mermaid-block-actions"]
+) button:hover,
+.agent-message-body [data-streamdown="table-wrapper"] > div:first-child > div > button:hover {
     background: var(--background);
 }
 
-.agent-message-body [data-streamdown="code-block-copy-button"]:focus-visible {
+.agent-message-body :is(
+    [data-streamdown="code-block-actions"],
+    [data-streamdown="mermaid-block-actions"]
+) button:focus-visible,
+.agent-message-body [data-streamdown="table-wrapper"] > div:first-child > div > button:focus-visible {
     outline: 1px solid var(--ring);
     outline-offset: 1px;
 }
@@ -218,14 +272,13 @@
     color: var(--muted-foreground);
     font-family: var(--agent-font-mono);
     font-size: 12px;
-    line-height: 28px;
+    line-height: var(--psx-markdown-block-header-height);
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
 .agent-message-body [data-streamdown="mermaid-block"] {
     min-height: 200px;
-    max-width: 100%;
 }
 
 .agent-message-body .katex-display {

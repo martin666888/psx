@@ -309,7 +309,7 @@ public static void Run() {}
   assert.equal(unsafeHost.querySelector('img'), null);
 });
 
-test('markdown.css restores list markers against Tailwind Preflight', async () => {
+test('markdown.css restores list markers and unifies block chrome', async () => {
   const { repositoryRoot } = await import('./agentHarness.js');
   const fs = await import('node:fs');
   const path = await import('node:path');
@@ -327,10 +327,28 @@ test('markdown.css restores list markers against Tailwind Preflight', async () =
     <ul data-streamdown="unordered-list"><li>u</li></ul>
     <ol data-streamdown="ordered-list"><li>o</li></ol>
     <div data-streamdown="code-block">
-      <div data-streamdown="code-block-actions">
-        <button data-streamdown="code-block-copy-button"></button>
+      <div data-streamdown="code-block-header"></div>
+      <div class="sticky-actions">
+        <div data-streamdown="code-block-actions">
+          <span data-psx-code-label>csharp</span>
+          <button data-streamdown="code-block-copy-button"></button>
+        </div>
       </div>
       <div data-streamdown="code-block-body"><pre><code><span>line</span></code></pre></div>
+    </div>
+    <div data-streamdown="table-wrapper">
+      <div><div><button title="Copy table"></button></div></div>
+      <div><table><tbody><tr><td>cell</td></tr></tbody></table></div>
+    </div>
+    <div data-streamdown="mermaid-block">
+      <div><span>mermaid</span></div>
+      <div class="sticky-actions">
+        <div data-streamdown="mermaid-block-actions">
+          <button data-streamdown="code-block-copy-button"></button>
+          <button title="View fullscreen"></button>
+        </div>
+      </div>
+      <div>diagram</div>
     </div>`;
   document.body.appendChild(host);
   const ul = host.querySelector('ul');
@@ -341,6 +359,43 @@ test('markdown.css restores list markers against Tailwind Preflight', async () =
   assert.equal(window.getComputedStyle(ol).marginLeft, '0px');
   assert.equal(window.getComputedStyle(host.querySelector('[data-streamdown="code-block-body"]')).paddingTop, '8px');
   assert.equal(window.getComputedStyle(host.querySelector('[data-streamdown="code-block"] pre')).paddingTop, '0px');
-  assert.equal(window.getComputedStyle(host.querySelector('[data-streamdown="code-block-actions"]')).borderTopWidth, '0px');
-  assert.equal(window.getComputedStyle(host.querySelector('[data-streamdown="code-block-copy-button"]')).borderTopWidth, '0px');
+
+  const headers = [
+    host.querySelector('[data-streamdown="code-block-header"]'),
+    host.querySelector('[data-streamdown="table-wrapper"] > div:first-child'),
+    host.querySelector('[data-streamdown="mermaid-block"] > div:first-child')
+  ];
+  const headerStyles = headers.map((header) => window.getComputedStyle(header));
+  assert.equal(new Set(headerStyles.map((style) => style.height)).size, 1);
+  assert.equal(new Set(headerStyles.map((style) => style.minHeight)).size, 1);
+  assert.equal(
+    window.getComputedStyle(host.querySelector('[data-streamdown="code-block"]'))
+      .getPropertyValue('--psx-markdown-block-header-height').trim(),
+    '28px'
+  );
+
+  const actionGroups = [
+    host.querySelector('[data-streamdown="code-block-actions"]'),
+    host.querySelector('[data-streamdown="table-wrapper"] > div:first-child'),
+    host.querySelector('[data-streamdown="mermaid-block-actions"]')
+  ];
+  assert.deepEqual(
+    actionGroups.map((group) => window.getComputedStyle(group).borderTopWidth),
+    ['0px', '0px', '0px']
+  );
+  const buttons = [
+    host.querySelector('[data-streamdown="code-block-actions"] button'),
+    host.querySelector('[data-streamdown="table-wrapper"] > div:first-child > div > button'),
+    host.querySelector('[data-streamdown="mermaid-block-actions"] button')
+  ];
+  const buttonStyles = buttons.map((button) => window.getComputedStyle(button));
+  assert.equal(new Set(buttonStyles.map((style) => style.width)).size, 1);
+  assert.equal(new Set(buttonStyles.map((style) => style.height)).size, 1);
+  assert.deepEqual(buttonStyles.map((style) => style.borderTopWidth), ['0px', '0px', '0px']);
+
+  const stickyActions = [...host.querySelectorAll('.sticky-actions')].map((action) =>
+    window.getComputedStyle(action)
+  );
+  assert.equal(new Set(stickyActions.map((style) => style.top)).size, 1);
+  assert.equal(new Set(stickyActions.map((style) => style.marginTop)).size, 1);
 });
