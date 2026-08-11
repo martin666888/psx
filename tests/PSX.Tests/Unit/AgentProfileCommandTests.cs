@@ -153,6 +153,25 @@ public sealed class AgentProfileCommandTests
     }
 
     [TestMethod]
+    public async Task ProfileSetAvatar_EncodedOversizeIsRejectedBeforeMutation()
+    {
+        var (coordinator, bridge, scope) = CreateCoordinator(
+            nameof(ProfileSetAvatar_EncodedOversizeIsRejectedBeforeMutation));
+        using (scope)
+        {
+            _ = await coordinator.CreateAsync("test");
+            var encoded = Convert.ToBase64String(new byte[BridgeProtocolLimits.AvatarBytes + 1]);
+
+            bridge.RaiseCommand("profile_set_avatar", requestId: "av-large", value: encoded);
+
+            var reply = await bridge.WaitForEventAsync(
+                "agent_profile", message => message.GetProperty("requestId").GetString() == "av-large");
+            StringAssert.Contains(reply.GetProperty("error").GetString()!, "512 KB");
+            Assert.AreEqual(JsonValueKind.Null, reply.GetProperty("avatarDataUrl").ValueKind);
+        }
+    }
+
+    [TestMethod]
     public async Task WorkspaceScopedGlobalOnlyCommands_AreIgnoredWithoutSideEffects()
     {
         var (coordinator, bridge, scope) = CreateCoordinator(

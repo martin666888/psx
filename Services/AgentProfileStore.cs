@@ -30,7 +30,7 @@ public sealed record AgentProfileUpdateResult(AgentProfile Profile, string? Erro
 public sealed class AgentProfileStore
 {
     public const int MaxDisplayNameLength = 32;
-    public const int MaxAvatarBytes = 512 * 1024;
+    public const int MaxAvatarBytes = BridgeProtocolLimits.AvatarBytes;
 
     private static readonly byte[] PngSignature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 

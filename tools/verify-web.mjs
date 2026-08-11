@@ -4,6 +4,7 @@
 // Usage: node tools/verify-web.mjs
 
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import {
   repoRoot,
   committedAppDir,
@@ -13,6 +14,13 @@ import {
 } from './web-build-lib.mjs';
 
 const scratchDir = path.join(repoRoot, 'TestResults', 'web', 'vite-out-verify');
+
+const generated = spawnSync(
+  process.execPath,
+  [path.join(repoRoot, 'tools', 'generate-bridge-limits.mjs'), '--check'],
+  { cwd: repoRoot, stdio: 'inherit' }
+);
+if (generated.status !== 0) process.exit(generated.status ?? 1);
 
 runViteBuild(scratchDir, 'verify:web');
 const files = validateOutput(scratchDir, 'verify:web');

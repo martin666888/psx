@@ -264,33 +264,36 @@ public sealed class AgentThreadStore : IAgentThreadStore
 
     public AgentAttachment SaveAttachment(string threadId, string fileName, string mimeType, byte[] data)
     {
-        EnsureDirectories();
-        var attachmentId = Guid.NewGuid().ToString("N");
-        var safeName = string.IsNullOrWhiteSpace(fileName) ? "image" : Path.GetFileName(fileName);
-        var storedFileName = attachmentId + ExtensionForMimeType(mimeType);
-        var threadDirectory = GetAttachmentThreadDirectory(threadId);
-        Directory.CreateDirectory(threadDirectory);
-
-        var filePath = Path.Combine(threadDirectory, storedFileName);
-        File.WriteAllBytes(filePath, data);
-
-        var attachment = new AgentAttachment
+        lock (FileIoLock)
         {
-            Id = attachmentId,
-            FileName = safeName,
-            MimeType = mimeType,
-            Size = data.LongLength,
-            Path = filePath,
-            Url = BuildAttachmentUrl(threadId, storedFileName),
-            Uri = new Uri(filePath).AbsoluteUri,
-            CreatedAt = DateTimeOffset.Now
-        };
+            EnsureDirectories();
+            var attachmentId = Guid.NewGuid().ToString("N");
+            var safeName = string.IsNullOrWhiteSpace(fileName) ? "image" : Path.GetFileName(fileName);
+            var storedFileName = attachmentId + ExtensionForMimeType(mimeType);
+            var threadDirectory = GetAttachmentThreadDirectory(threadId);
+            Directory.CreateDirectory(threadDirectory);
 
-        WriteTextWithRetryAtomic(
-            GetAttachmentMetadataPath(threadId, attachmentId),
-            JsonSerializer.Serialize(attachment, JsonOptions),
-            "PSX agent attachment metadata");
-        return attachment;
+            var filePath = Path.Combine(threadDirectory, storedFileName);
+            File.WriteAllBytes(filePath, data);
+
+            var attachment = new AgentAttachment
+            {
+                Id = attachmentId,
+                FileName = safeName,
+                MimeType = mimeType,
+                Size = data.LongLength,
+                Path = filePath,
+                Url = BuildAttachmentUrl(threadId, storedFileName),
+                Uri = new Uri(filePath).AbsoluteUri,
+                CreatedAt = DateTimeOffset.Now
+            };
+
+            WriteTextWithRetryAtomic(
+                GetAttachmentMetadataPath(threadId, attachmentId),
+                JsonSerializer.Serialize(attachment, JsonOptions),
+                "PSX agent attachment metadata");
+            return attachment;
+        }
     }
 
     public AgentAttachment? LoadAttachment(string threadId, string attachmentId)
@@ -324,12 +327,15 @@ public sealed class AgentThreadStore : IAgentThreadStore
 
     public void DeleteThreadAttachments(string threadId)
     {
-        if (string.IsNullOrWhiteSpace(threadId))
-            return;
+        lock (FileIoLock)
+        {
+            if (string.IsNullOrWhiteSpace(threadId))
+                return;
 
-        var directory = GetAttachmentThreadDirectory(threadId);
-        if (Directory.Exists(directory))
-            Directory.Delete(directory, recursive: true);
+            var directory = GetAttachmentThreadDirectory(threadId);
+            if (Directory.Exists(directory))
+                Directory.Delete(directory, recursive: true);
+        }
     }
 
     private void UpsertIndex(AgentThread thread)

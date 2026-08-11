@@ -46,6 +46,7 @@ public partial class App : Application
         services.AddSingleton<ITabManagementService, TabManagementService>();
         services.AddSingleton<IAgentBridgeService, AgentBridgeService>();
         services.AddSingleton<IAgentThreadStore, AgentThreadStore>();
+        services.AddSingleton<AgentThreadPersistenceCoordinator>();
         services.AddSingleton<IAgentHistoryCatalog, AgentHistoryCatalog>();
         // Local user profile (History dock footer / Usage panel). Plain user
         // data beside the thread store — never part of psx.ini.

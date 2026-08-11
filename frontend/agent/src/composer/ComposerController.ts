@@ -19,6 +19,7 @@
 // seam so the thread keeps a single writer.
 
 import type { AgentBridgePort } from '../contracts/bridge-port.js';
+import { BridgeProtocolLimits } from '../contracts/bridgeProtocolLimits.generated.js';
 import type { FeatureController } from '../contracts/feature-controller.js';
 import type { AgentWorkspaceEvent, RawHostMessage } from '../contracts/host-events.js';
 import type {
@@ -326,6 +327,10 @@ export class ComposerController implements FeatureController {
     if (this.isBusy) {
       this.bridge()?.sendAgentCommand('stop');
       throw new Error('busy');
+    }
+    if (text.length > BridgeProtocolLimits.agentPromptTextCharacters) {
+      this.host.appendSystemMessage(this.workspaceId, 'Messages must be 1MB or smaller.');
+      throw new Error('message_too_large');
     }
 
     const attachmentIds = this.pendingAttachmentIds();

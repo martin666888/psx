@@ -3,6 +3,7 @@ import {
   usePromptInputAttachments,
   type FileUIPart
 } from '../components/ai-elements/prompt-input.js';
+import { BridgeProtocolLimits } from '../contracts/bridgeProtocolLimits.generated.js';
 
 export interface AttachmentSnapshotItem extends FileUIPart {
   id: string;
@@ -44,7 +45,6 @@ const ALLOWED_IMAGE_TYPES = new Set([
   'image/webp',
   'image/gif'
 ]);
-const MAX_TOTAL_SIZE = 50 * 1024 * 1024;
 
 /**
  * Adapts PromptInput's local attachment context to the controller upload
@@ -148,7 +148,7 @@ export function AttachmentBridge(props: AttachmentBridgeProps): JSX.Element | nu
 
         const currentTotal = Array.from(acceptedSizesRef.current.values())
           .reduce((sum, size) => sum + size, 0);
-        if (currentTotal + blob.size > MAX_TOTAL_SIZE) {
+        if (currentTotal + blob.size > BridgeProtocolLimits.promptImageBytes) {
           callbacksRef.current.onError('Images in one message must total 50MB or less.');
           attachments.remove(item.id);
           return null;

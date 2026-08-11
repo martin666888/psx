@@ -53,6 +53,8 @@ function difference(a, b) {
 // the union of values and the name -> value map (used to resolve main.js case
 // labels) come straight from BridgeMessages.js.
 const bridgeMessagesSource = read('frontend/webview/src/BridgeMessages.js');
+const bridgeLimits = JSON.parse(read('contracts/bridge-protocol-limits.json'));
+const bridgeFields = JSON.parse(read('contracts/bridge-send-fields.json'));
 
 function readFrozenTable(name) {
   const body = new RegExp(`const ${name} = Object\\.freeze\\(\\{([\\s\\S]*?)\\}\\)`).exec(bridgeMessagesSource);
@@ -140,6 +142,39 @@ const agentDispatchTypes = matchAll(hostEventsSource, /new Set(?:<[^>]*>)?\(\[([
 const frontendHandled = new Set([...mainDispatchTypes, ...agentDispatchTypes]);
 
 describe('Bridge message type contract (C# <-> JS drift gate)', () => {
+  it('keeps the neutral limits source and generated C#/TypeScript constants in sync', () => {
+    const csharp = read('Services/BridgeProtocolLimits.g.cs');
+    const typescript = read('frontend/agent/src/contracts/bridgeProtocolLimits.generated.ts');
+    for (const [key, value] of Object.entries(bridgeLimits)) {
+      if (key === 'schemaVersion') continue;
+      const csharpName = key[0].toUpperCase() + key.slice(1);
+      assert.match(csharp, new RegExp(`const int ${csharpName} = ${value};`));
+      assert.match(typescript, new RegExp(`${key}: ${value}(?:,|\\n)`));
+    }
+  });
+
+  it('checks both inbound envelope gates before either JSON parser runs', () => {
+    const agentGuard = parserSource.indexOf('json.Length > BridgeProtocolLimits.AgentWireEnvelopeCharacters');
+    const terminalGuard = parserSource.indexOf('json.Length > BridgeProtocolLimits.TerminalWireEnvelopeCharacters');
+    const agentParse = parserSource.indexOf('JsonDocument.Parse(json)');
+    const terminalParse = parserSource.indexOf('JsonSerializer.Deserialize<TerminalMessage>(json)');
+    assert.ok(agentGuard >= 0 && agentGuard < agentParse, 'Agent envelope gate must precede JsonDocument.Parse');
+    assert.ok(terminalGuard >= 0 && terminalGuard < terminalParse, 'Terminal envelope gate must precede deserialize');
+  });
+
+  it('keeps the send-field fixture aligned with every declared producer and parser', () => {
+    assert.equal(bridgeFields.schemaVersion, 1);
+    assert.deepEqual(Object.keys(bridgeFields.messages).sort(), [...declaredSend].sort());
+    const bridgeProducer = read('frontend/webview/src/Bridge.js');
+    for (const [type, shape] of Object.entries(bridgeFields.messages)) {
+      assert.ok(shape.required && shape.optional, `${type} must declare required and optional fields`);
+      for (const [field, fieldType] of Object.entries({ ...shape.required, ...shape.optional })) {
+        assert.equal(typeof fieldType, 'string', `${type}.${field} must declare its wire type`);
+        assert.match(bridgeProducer, new RegExp(`\\b${field}\\b`, 'i'), `Bridge.js does not produce field ${type}.${field}`);
+        assert.match(parserSource, new RegExp(`(?:\\b${field}\\b|"${field}")`, 'i'), `C# parser does not consume field ${type}.${field}`);
+      }
+    }
+  });
   it('extracts a non-trivial set from each real source', () => {
     // Guards against a regex/path regression silently comparing empty sets.
     assert.ok(declaredSend.size >= 10, `BridgeSendType set unexpectedly small (${declaredSend.size})`);

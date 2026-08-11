@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type JSX, type RefObject } from 'react';
 import { SlidersHorizontalIcon } from 'lucide-react';
 import { AnnounceContext } from '../ui/announce.js';
+import { BridgeProtocolLimits } from '../contracts/bridgeProtocolLimits.generated.js';
 import {
   AttachmentStrip,
   CommandHint,
@@ -482,8 +483,8 @@ export function ComposerView(props: ComposerViewProps): JSX.Element {
           accept="image/*"
           convertBlobUrls={false}
           multiple
-          maxFiles={5}
-          maxFileSize={20 * 1024 * 1024}
+          maxFiles={BridgeProtocolLimits.promptImageCount}
+          maxFileSize={BridgeProtocolLimits.imageBytes}
           className="w-full [&>[data-slot=input-group]]:contents"
           onError={(error) => props.attachmentBridge.onError(error.message)}
           onSubmit={async (message) => {

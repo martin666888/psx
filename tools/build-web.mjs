@@ -4,6 +4,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import {
   repoRoot,
   committedAppDir,
@@ -12,6 +13,12 @@ import {
 } from './web-build-lib.mjs';
 
 const stagingDir = path.join(repoRoot, 'TestResults', 'web', 'vite-out-build');
+
+const generate = spawnSync(process.execPath, [path.join(repoRoot, 'tools', 'generate-bridge-limits.mjs')], {
+  cwd: repoRoot,
+  stdio: 'inherit'
+});
+if (generate.status !== 0) process.exit(generate.status ?? 1);
 
 runViteBuild(stagingDir, 'build:web');
 const files = validateOutput(stagingDir, 'build:web');

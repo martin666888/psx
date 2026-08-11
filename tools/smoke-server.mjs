@@ -26,7 +26,6 @@ const MIME = {
 };
 
 const REACT_SMOKE_BOOTSTRAP = String.raw`
-<script>
 (() => {
   const result = { errors: [], warnings: [], unhandled: [], checks: {} };
   const text = (value) => value instanceof Error ? value.message : String(value ?? '');
@@ -252,13 +251,21 @@ const REACT_SMOKE_BOOTSTRAP = String.raw`
     report.textContent = JSON.stringify(result);
     document.body.appendChild(report);
   }, { once: true });
-})();
-</script>`;
+})();`;
+
+const REACT_SMOKE_SCRIPT_PATH = 'app/react-smoke-bootstrap.js';
 
 const server = http.createServer((req, res) => {
   const requestUrl = new URL(req.url, 'http://localhost');
   const urlPath = decodeURIComponent(requestUrl.pathname);
   const relative = urlPath === '/' ? 'app/index.html' : urlPath.replace(/^\/+/, '');
+  if (relative === REACT_SMOKE_SCRIPT_PATH) {
+    res.writeHead(200, {
+      'content-type': MIME['.js'],
+      'cache-control': 'no-store'
+    }).end(REACT_SMOKE_BOOTSTRAP);
+    return;
+  }
   const file = path.join(rootDir, relative);
   if (!file.startsWith(rootDir)) {
     res.writeHead(403).end();
@@ -272,7 +279,8 @@ const server = http.createServer((req, res) => {
     const ext = path.extname(file).toLowerCase();
     let body = data;
     if (relative === 'app/index.html' && requestUrl.searchParams.get('smoke') === 'react') {
-      const html = data.toString('utf8').replace('</head>', REACT_SMOKE_BOOTSTRAP + '\n</head>');
+      const smokeScript = '<script src="/app/react-smoke-bootstrap.js"></script>';
+      const html = data.toString('utf8').replace('</head>', smokeScript + '\n</head>');
       body = Buffer.from(html);
     }
     res.writeHead(200, { 'content-type': MIME[ext] || 'application/octet-stream' }).end(body);

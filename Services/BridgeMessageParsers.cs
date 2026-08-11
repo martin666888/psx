@@ -23,6 +23,8 @@ internal static class AgentBridgeMessageParser
         message = null;
         if (string.IsNullOrWhiteSpace(json))
             return false;
+        if (json.Length > BridgeProtocolLimits.AgentWireEnvelopeCharacters)
+            return false;
 
         try
         {
@@ -57,6 +59,11 @@ internal static class AgentBridgeMessageParser
                 case "agent_submit":
                     var text = GetString(root, "text");
                     var attachments = GetStringArray(root, "attachments");
+                    if (text.Length > BridgeProtocolLimits.AgentPromptTextCharacters
+                        || attachments.Count > BridgeProtocolLimits.PromptImageCount)
+                    {
+                        return false;
+                    }
                     if (string.IsNullOrWhiteSpace(text) && attachments.Count == 0)
                         return false;
                     message = new AgentBridgeMessage(
@@ -70,6 +77,15 @@ internal static class AgentBridgeMessageParser
                     return true;
 
                 case "agent_upload_attachment":
+                    var size = GetLong(root, "size");
+                    var dataBase64 = GetString(root, "dataBase64");
+                    if (size > BridgeProtocolLimits.ImageBytes
+                        || BridgePayloadGuard.ExceedsBase64DecodedLimit(
+                            dataBase64,
+                            BridgeProtocolLimits.ImageBytes))
+                    {
+                        return false;
+                    }
                     message = new AgentBridgeMessage(
                         AgentBridgeMessageKind.AttachmentUpload,
                         AttachmentUpload: new AgentAttachmentUploadEventArgs
@@ -78,8 +94,8 @@ internal static class AgentBridgeMessageParser
                             ClientId = GetString(root, "clientId"),
                             FileName = GetString(root, "fileName"),
                             MimeType = GetString(root, "mimeType"),
-                            Size = GetLong(root, "size"),
-                            DataBase64 = GetString(root, "dataBase64")
+                            Size = size,
+                            DataBase64 = dataBase64
                         });
                     return true;
 
@@ -178,6 +194,8 @@ internal static class TerminalBridgeMessageParser
         message = null;
         if (string.IsNullOrWhiteSpace(json))
             return false;
+        if (json.Length > BridgeProtocolLimits.TerminalWireEnvelopeCharacters)
+            return false;
 
         TerminalMessage? source;
         try
@@ -195,14 +213,23 @@ internal static class TerminalBridgeMessageParser
         switch (source.Type)
         {
             case "input" when source.Data != null && Guid.TryParse(source.SessionId, out var inputId):
+                if (BridgePayloadGuard.ExceedsBase64DecodedLimit(
+                    source.Data,
+                    BridgeProtocolLimits.TerminalInputBytes))
+                {
+                    return false;
+                }
                 try
                 {
+                    var input = Convert.FromBase64String(source.Data);
+                    if (input.Length > BridgeProtocolLimits.TerminalInputBytes)
+                        return false;
                     message = new TerminalBridgeMessage(
                         TerminalBridgeMessageKind.Input,
                         Input: new TerminalInputEventArgs
                         {
                             SessionId = inputId,
-                            Data = Convert.FromBase64String(source.Data)
+                            Data = input
                         });
                     return true;
                 }

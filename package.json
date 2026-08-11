@@ -6,6 +6,7 @@
     "tests/PSX.Web.Tests"
   ],
   "scripts": {
+    "generate:bridge-limits": "node tools/generate-bridge-limits.mjs",
     "dev:web": "vite --config frontend/webview/vite.config.ts",
     "build:web": "node tools/build-web.mjs",
     "verify:web": "node tools/verify-web.mjs",

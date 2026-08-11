@@ -442,6 +442,156 @@ public sealed class AgentWorkspaceCoordinatorTests
 public sealed class WorkspaceManagerTests
 {
     [TestMethod]
+    public async Task AgentLifecycle_ProjectsCoordinatorEventsAndForwardsActivationAndClose()
+    {
+        var terminals = new RecordingTabManagementService();
+        using var agents = new StubAgentWorkspaceCoordinator();
+        var bridge = new RecordingAgentBridgeService();
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService());
+        var workspace = CreateAgentWorkspace(Guid.NewGuid(), AgentWorkspaceState.Idle);
+
+        agents.RaiseCreated(workspace);
+
+        Assert.AreSame(workspace, manager.Workspaces.Single());
+
+        await manager.ActivateAsync(workspace.WorkspaceId);
+        manager.BeginShutdown();
+        await manager.CloseAsync(workspace.WorkspaceId, WorkspaceCloseReason.ThreadDeleted);
+
+        CollectionAssert.AreEqual(new[] { workspace.WorkspaceId }, agents.ActivatedWorkspaceIds);
+        Assert.AreEqual((workspace.WorkspaceId, WorkspaceCloseReason.ThreadDeleted), agents.ClosedWorkspaces.Single());
+
+        agents.RaiseClosed(workspace.WorkspaceId);
+
+        Assert.IsEmpty(manager.Workspaces);
+    }
+
+    [TestMethod]
+    public async Task AgentPermissionWhileUnfocused_RequestsAttentionAndPublishesCatalogBadge()
+    {
+        var terminals = new RecordingTabManagementService();
+        using var agents = new StubAgentWorkspaceCoordinator();
+        var bridge = new RecordingAgentBridgeService();
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService());
+        var first = CreateAgentWorkspace(Guid.NewGuid(), AgentWorkspaceState.Idle);
+        var second = CreateAgentWorkspace(Guid.NewGuid(), AgentWorkspaceState.Idle);
+        var notifications = new List<Guid>();
+        manager.AttentionNotificationRequested += (_, workspaceId) => notifications.Add(workspaceId);
+        agents.RaiseCreated(first);
+        await manager.ActivateAsync(first.WorkspaceId);
+        agents.RaiseCreated(second);
+        await manager.ActivateAsync(second.WorkspaceId);
+
+        agents.RaiseChanged(CreateAgentWorkspace(first.WorkspaceId, AgentWorkspaceState.WaitingForPermission));
+
+        Assert.IsTrue(manager.IsAttentionNeeded(first.WorkspaceId));
+        CollectionAssert.AreEqual(new[] { first.WorkspaceId }, notifications);
+        var catalog = LastBridgeEvent(bridge, "workspace_catalog");
+        var projected = catalog.GetProperty("workspaces").EnumerateArray()
+            .Single(item => item.GetProperty("workspaceId").GetGuid() == first.WorkspaceId);
+        Assert.AreEqual("permission", projected.GetProperty("attentionKind").GetString());
+    }
+
+    [TestMethod]
+    public async Task AgentCompletedThenFocused_ClearsAttentionAndRebroadcastsCatalog()
+    {
+        var terminals = new RecordingTabManagementService();
+        using var agents = new StubAgentWorkspaceCoordinator();
+        var bridge = new RecordingAgentBridgeService();
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService());
+        var first = CreateAgentWorkspace(Guid.NewGuid(), AgentWorkspaceState.Idle);
+        var second = CreateAgentWorkspace(Guid.NewGuid(), AgentWorkspaceState.Idle);
+        agents.RaiseCreated(first);
+        await manager.ActivateAsync(first.WorkspaceId);
+        agents.RaiseCreated(second);
+        await manager.ActivateAsync(second.WorkspaceId);
+
+        agents.RaiseChanged(CreateAgentWorkspace(first.WorkspaceId, AgentWorkspaceState.Running));
+        agents.RaiseChanged(CreateAgentWorkspace(first.WorkspaceId, AgentWorkspaceState.Idle));
+
+        Assert.IsTrue(manager.IsAttentionNeeded(first.WorkspaceId));
+        var completedCatalog = LastBridgeEvent(bridge, "workspace_catalog");
+        var completed = completedCatalog.GetProperty("workspaces").EnumerateArray()
+            .Single(item => item.GetProperty("workspaceId").GetGuid() == first.WorkspaceId);
+        Assert.AreEqual("completed", completed.GetProperty("attentionKind").GetString());
+
+        await manager.ActivateAsync(first.WorkspaceId);
+
+        Assert.IsFalse(manager.IsAttentionNeeded(first.WorkspaceId));
+        var focusedCatalog = LastBridgeEvent(bridge, "workspace_catalog");
+        var focused = focusedCatalog.GetProperty("workspaces").EnumerateArray()
+            .Single(item => item.GetProperty("workspaceId").GetGuid() == first.WorkspaceId);
+        Assert.AreEqual(System.Text.Json.JsonValueKind.Null, focused.GetProperty("attentionKind").ValueKind);
+    }
+
+    [TestMethod]
+    public async Task SharedWorktreeConflict_NotifiesOnlyWhenConflictEdgeForms()
+    {
+        using var workspace = TestWorkspace.Create(nameof(SharedWorktreeConflict_NotifiesOnlyWhenConflictEdgeForms));
+        Directory.CreateDirectory(Path.Combine(workspace.Path, ".git"));
+        var terminals = new RecordingTabManagementService();
+        using var agents = new StubAgentWorkspaceCoordinator();
+        var bridge = new RecordingAgentBridgeService();
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService());
+        var first = CreateAgentWorkspace(Guid.NewGuid(), AgentWorkspaceState.Idle, workspace.Path);
+        var second = CreateAgentWorkspace(Guid.NewGuid(), AgentWorkspaceState.Idle, workspace.Path);
+        agents.RaiseCreated(first);
+        await manager.ActivateAsync(first.WorkspaceId);
+        agents.RaiseCreated(second);
+        await manager.ActivateAsync(second.WorkspaceId);
+
+        manager.SplitWorkspaceToNewPane(second.WorkspaceId);
+        manager.FocusPane(manager.LayoutSnapshot.Columns[0].ColumnId);
+
+        Assert.HasCount(1, BridgeEvents(bridge, "workspace_notice"));
+
+        agents.RaiseClosed(second.WorkspaceId);
+        agents.RaiseCreated(second);
+        await manager.ActivateAsync(second.WorkspaceId);
+        manager.SplitWorkspaceToNewPane(second.WorkspaceId);
+
+        Assert.HasCount(2, BridgeEvents(bridge, "workspace_notice"));
+    }
+
+    [TestMethod]
+    public async Task RejectedPaneRatioCommit_BumpsRevisionAndRebroadcastsTruth()
+    {
+        var terminals = new RecordingTabManagementService();
+        using var agents = new StubAgentWorkspaceCoordinator();
+        var bridge = new RecordingAgentBridgeService();
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService());
+        _ = await manager.CreateTerminalAsync();
+        var second = (await manager.CreateTerminalAsync())!.Value;
+        manager.SplitWorkspaceToNewPane(second);
+        var layoutRevision = LastBridgeEvent(bridge, "workspace_layout").GetProperty("revision").GetInt64();
+        var catalogRevision = LastBridgeEvent(bridge, "workspace_catalog").GetProperty("revision").GetInt64();
+
+        terminals.RaisePaneRatios(layoutRevision - 1, new Dictionary<string, double>());
+
+        Assert.IsGreaterThan(layoutRevision, LastBridgeEvent(bridge, "workspace_layout").GetProperty("revision").GetInt64());
+        Assert.IsGreaterThan(catalogRevision, LastBridgeEvent(bridge, "workspace_catalog").GetProperty("revision").GetInt64());
+    }
+
+    [TestMethod]
+    public async Task TerminalTitleChange_AdvancesCatalogWithoutPublishingLayout()
+    {
+        var terminals = new RecordingTabManagementService();
+        using var agents = new StubAgentWorkspaceCoordinator();
+        var bridge = new RecordingAgentBridgeService();
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService());
+        var workspaceId = (await manager.CreateTerminalAsync())!.Value;
+        var layoutEvents = BridgeEvents(bridge, "workspace_layout").Count;
+        var catalogRevision = LastBridgeEvent(bridge, "workspace_catalog").GetProperty("revision").GetInt64();
+
+        terminals.RaiseTitle(workspaceId, "Renamed");
+
+        Assert.HasCount(layoutEvents, BridgeEvents(bridge, "workspace_layout"));
+        var catalog = LastBridgeEvent(bridge, "workspace_catalog");
+        Assert.IsGreaterThan(catalogRevision, catalog.GetProperty("revision").GetInt64());
+        Assert.AreEqual("Renamed", catalog.GetProperty("workspaces")[0].GetProperty("title").GetString());
+    }
+
+    [TestMethod]
     public async Task CloseAsync_LastWorkspace_CreatesDefaultTerminalUnlessShuttingDown()
     {
         var terminals = new RecordingTabManagementService();
@@ -478,6 +628,32 @@ public sealed class WorkspaceManagerTests
         // workspace no longer clears any Agent runtime projection.
         Assert.AreEqual(1, terminals.CreateCount);
     }
+
+    private static WorkspaceDescriptor CreateAgentWorkspace(
+        Guid workspaceId,
+        AgentWorkspaceState state,
+        string? workingDirectory = null) => new()
+        {
+            WorkspaceId = workspaceId,
+            Kind = WorkspaceKind.Agent,
+            Title = "Agent",
+            IconKey = "agent",
+            AgentState = state,
+            ProviderKey = "test",
+            ProviderName = "Test Agent",
+            ThreadId = $"thread-{workspaceId:N}",
+            WorkingDirectory = workingDirectory
+        };
+
+    private static IReadOnlyList<System.Text.Json.JsonElement> BridgeEvents(
+        RecordingAgentBridgeService bridge,
+        string type) => bridge.Events
+            .Where(item => item.GetProperty("type").GetString() == type)
+            .ToArray();
+
+    private static System.Text.Json.JsonElement LastBridgeEvent(
+        RecordingAgentBridgeService bridge,
+        string type) => BridgeEvents(bridge, type).Last();
 }
 
 [TestClass]
@@ -575,11 +751,12 @@ internal sealed class CountingRuntime(string root) : IAcpAgentRuntime
 internal sealed class RecordingTabManagementService : ITabManagementService
 {
     public int CreateCount { get; private set; }
+    public List<Guid> SwitchedTabIds { get; } = [];
     public event EventHandler<TabCreatedEventArgs>? TabCreated;
     public event EventHandler<TabClosedEventArgs>? TabClosed;
-    public event EventHandler<TabTitleChangedEventArgs>? TabTitleChanged { add { } remove { } }
+    public event EventHandler<TabTitleChangedEventArgs>? TabTitleChanged;
     public event EventHandler<string>? PaneFocusRequested { add { } remove { } }
-    public event EventHandler<PaneRatiosEventArgs>? PaneRatiosRequested { add { } remove { } }
+    public event EventHandler<PaneRatiosEventArgs>? PaneRatiosRequested;
     public event EventHandler<PaneMoveEventArgs>? PaneMoveRequested { add { } remove { } }
     public event EventHandler<WorkspaceLayoutIntentEventArgs>? WorkspaceLayoutIntentRequested { add { } remove { } }
     public event EventHandler<WorkspaceCreateEventArgs>? WorkspaceCreateRequested { add { } remove { } }
@@ -598,27 +775,54 @@ internal sealed class RecordingTabManagementService : ITabManagementService
         return Task.CompletedTask;
     }
 
-    public Task SwitchTabAsync(Guid sessionId) => Task.CompletedTask;
+    public Task SwitchTabAsync(Guid sessionId)
+    {
+        SwitchedTabIds.Add(sessionId);
+        return Task.CompletedTask;
+    }
     public Task ResizeTabAsync(Guid sessionId, int cols, int rows) => Task.CompletedTask;
     public TerminalSession? GetSession(Guid sessionId) => null;
     public Task ShutdownAsync(TimeSpan? timeout = null) => Task.CompletedTask;
+    public void RaiseTitle(Guid sessionId, string title) =>
+        TabTitleChanged?.Invoke(this, new TabTitleChangedEventArgs { SessionId = sessionId, Title = title });
+    public void RaisePaneRatios(long baseRevision, IReadOnlyDictionary<string, double> ratios) =>
+        PaneRatiosRequested?.Invoke(this, new PaneRatiosEventArgs { BaseRevision = baseRevision, Ratios = ratios });
 }
 
 internal sealed class StubAgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
 {
-    public IReadOnlyList<WorkspaceDescriptor> Workspaces => Array.Empty<WorkspaceDescriptor>();
-    public IReadOnlyList<AgentProviderCatalogItem> ProviderCatalog => Array.Empty<AgentProviderCatalogItem>();
-    public event EventHandler<AgentWorkspaceEventArgs>? WorkspaceCreated { add { } remove { } }
-    public event EventHandler<AgentWorkspaceEventArgs>? WorkspaceChanged { add { } remove { } }
-    public event EventHandler<AgentWorkspaceClosedEventArgs>? WorkspaceClosed { add { } remove { } }
-    public event EventHandler<Guid>? WorkspaceActivationRequested { add { } remove { } }
+    public IReadOnlyList<WorkspaceDescriptor> Workspaces => [];
+    public IReadOnlyList<AgentProviderCatalogItem> ProviderCatalog =>
+        [new("test", "Test Agent", "Test Agent", true)];
+    public List<Guid> ActivatedWorkspaceIds { get; } = [];
+    public List<(Guid WorkspaceId, WorkspaceCloseReason Reason)> ClosedWorkspaces { get; } = [];
+    public event EventHandler<AgentWorkspaceEventArgs>? WorkspaceCreated;
+    public event EventHandler<AgentWorkspaceEventArgs>? WorkspaceChanged;
+    public event EventHandler<AgentWorkspaceClosedEventArgs>? WorkspaceClosed;
+    public event EventHandler<Guid>? WorkspaceActivationRequested;
     public Task<Guid?> CreateAsync(string providerKey, string? workingDirectory = null) => Task.FromResult<Guid?>(null);
     public Task<Guid?> OpenThreadAsync(string threadId) => Task.FromResult<Guid?>(null);
-    public Task ActivateAsync(Guid workspaceId) => Task.CompletedTask;
-    public Task CloseAsync(Guid workspaceId, WorkspaceCloseReason reason) => Task.CompletedTask;
+    public Task ActivateAsync(Guid workspaceId)
+    {
+        ActivatedWorkspaceIds.Add(workspaceId);
+        return Task.CompletedTask;
+    }
+    public Task CloseAsync(Guid workspaceId, WorkspaceCloseReason reason)
+    {
+        ClosedWorkspaces.Add((workspaceId, reason));
+        return Task.CompletedTask;
+    }
     public Task ShutdownAsync() => Task.CompletedTask;
     public Guid? FindOpenThread(string threadId) => null;
     public Task PublishStateAsync() => Task.CompletedTask;
+    public void RaiseCreated(WorkspaceDescriptor workspace) =>
+        WorkspaceCreated?.Invoke(this, new AgentWorkspaceEventArgs { Workspace = workspace });
+    public void RaiseChanged(WorkspaceDescriptor workspace) =>
+        WorkspaceChanged?.Invoke(this, new AgentWorkspaceEventArgs { Workspace = workspace });
+    public void RaiseClosed(Guid workspaceId) =>
+        WorkspaceClosed?.Invoke(this, new AgentWorkspaceClosedEventArgs { WorkspaceId = workspaceId });
+    public void RequestActivation(Guid workspaceId) =>
+        WorkspaceActivationRequested?.Invoke(this, workspaceId);
     public void Dispose() { }
 }
 

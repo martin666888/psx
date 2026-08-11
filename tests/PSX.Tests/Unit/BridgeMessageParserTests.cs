@@ -83,6 +83,29 @@ public sealed class AgentBridgeMessageParserTests
     }
 
     [TestMethod]
+    public void TryParse_SubmitOverTextOrAttachmentLimit_IsRejected()
+    {
+        var oversizedText = new string('x', BridgeProtocolLimits.AgentPromptTextCharacters + 1);
+        Assert.IsFalse(AgentBridgeMessageParser.TryParse(
+            $$"""{"type":"agent_submit","workspaceId":"{{WorkspaceId}}","text":"{{oversizedText}}","attachments":[]}""",
+            out _));
+
+        Assert.IsFalse(AgentBridgeMessageParser.TryParse(
+            $$"""{"type":"agent_submit","workspaceId":"{{WorkspaceId}}","text":"hello","attachments":["1","2","3","4","5","6"]}""",
+            out _));
+    }
+
+    [TestMethod]
+    public void TryParse_AttachmentUploadRejectsEncodedPayloadWhoseDecodedSizeExceedsLimit()
+    {
+        var encoded = Convert.ToBase64String(new byte[BridgeProtocolLimits.ImageBytes + 1]);
+
+        Assert.IsFalse(AgentBridgeMessageParser.TryParse(
+            $$"""{"type":"agent_upload_attachment","workspaceId":"{{WorkspaceId}}","clientId":"client","fileName":"a.png","mimeType":"image/png","size":{{BridgeProtocolLimits.ImageBytes + 1}},"dataBase64":"{{encoded}}"}""",
+            out _));
+    }
+
+    [TestMethod]
     public void TryParse_GlobalCommand_DoesNotRequireWorkspaceId()
     {
         Assert.IsTrue(AgentBridgeMessageParser.TryParse(
@@ -144,6 +167,21 @@ public sealed class TerminalBridgeMessageParserTests
         Assert.AreEqual(TerminalBridgeMessageKind.Input, message!.Kind);
         Assert.AreEqual(SessionId, message.Input!.SessionId);
         Assert.AreEqual("dir\r", Encoding.UTF8.GetString(message.Input.Data));
+    }
+
+    [TestMethod]
+    public void TryParse_InputAtLimitIsAcceptedAndOneByteOverIsRejectedBeforeDecode()
+    {
+        var atLimit = Convert.ToBase64String(new byte[BridgeProtocolLimits.TerminalInputBytes]);
+        var overLimit = Convert.ToBase64String(new byte[BridgeProtocolLimits.TerminalInputBytes + 1]);
+
+        Assert.IsTrue(TerminalBridgeMessageParser.TryParse(
+            $$"""{"type":"input","sessionId":"{{SessionId}}","data":"{{atLimit}}"}""",
+            out var accepted));
+        Assert.HasCount(BridgeProtocolLimits.TerminalInputBytes, accepted!.Input!.Data);
+        Assert.IsFalse(TerminalBridgeMessageParser.TryParse(
+            $$"""{"type":"input","sessionId":"{{SessionId}}","data":"{{overLimit}}"}""",
+            out _));
     }
 
     [TestMethod]

@@ -74,6 +74,8 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
     private readonly AgentProfileStore _profileStore;
     private readonly AgentUsageService _usageService;
     private readonly AgentConfigService _configService;
+    private readonly AgentThreadPersistenceCoordinator _persistence;
+    private readonly bool _ownsPersistence;
     private readonly CancellationTokenSource _shutdownCts = new();
     private readonly SemaphoreSlim _creationLock = new(1, 1);
     private readonly ConcurrentDictionary<Guid, Entry> _entries = new();
@@ -97,7 +99,8 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
         IAgentHistoryCatalog historyCatalog,
         AgentProfileStore? profileStore = null,
         AgentUsageService? usageService = null,
-        AgentConfigService? configService = null)
+        AgentConfigService? configService = null,
+        AgentThreadPersistenceCoordinator? persistence = null)
     {
         _rootBridge = rootBridge;
         _threadStore = threadStore;
@@ -111,6 +114,8 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
             ?? new AgentProfileStore(Path.Combine(threadStore.RootDirectory, "profile"));
         _usageService = usageService ?? new AgentUsageService(threadStore, providerRegistry);
         _configService = configService ?? new AgentConfigService(providerRegistry);
+        _ownsPersistence = persistence == null;
+        _persistence = persistence ?? new AgentThreadPersistenceCoordinator(threadStore);
 
         _threadStore.DeleteEmptyDrafts();
 
@@ -345,7 +350,7 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
         }
 
         if (entry.Session.IsDraft && !string.IsNullOrWhiteSpace(entry.Descriptor.ThreadId))
-            _threadStore.DeleteThread(entry.Descriptor.ThreadId);
+            _persistence.DeleteThread(entry.Descriptor.ThreadId);
 
         _historyCatalog.Invalidate();
 
@@ -709,6 +714,15 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
 
                 case "profile_set_avatar":
                     {
+                        if (BridgePayloadGuard.ExceedsBase64DecodedLimit(
+                            args.Value,
+                            BridgeProtocolLimits.AvatarBytes))
+                        {
+                            SendProfileEvent(
+                                requester, _profileStore.GetProfile(), args.RequestId,
+                                $"Avatar exceeds the {BridgeProtocolLimits.AvatarBytes / 1024} KB limit.");
+                            return;
+                        }
                         byte[] avatar;
                         try
                         {
@@ -719,6 +733,14 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
                             SendProfileEvent(
                                 requester, _profileStore.GetProfile(), args.RequestId,
                                 "Avatar upload was not valid base64 image data.");
+                            return;
+                        }
+
+                        if (avatar.Length > BridgeProtocolLimits.AvatarBytes)
+                        {
+                            SendProfileEvent(
+                                requester, _profileStore.GetProfile(), args.RequestId,
+                                $"Avatar exceeds the {BridgeProtocolLimits.AvatarBytes / 1024} KB limit.");
                             return;
                         }
 
@@ -1023,5 +1045,7 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
         // MainWindow awaits ShutdownAsync before disposing services. This
         // synchronous fallback is for non-UI owners and completed shutdowns.
         ShutdownAsync().GetAwaiter().GetResult();
+        if (_ownsPersistence)
+            _persistence.Dispose();
     }
 }

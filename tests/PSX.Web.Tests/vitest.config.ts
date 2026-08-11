@@ -38,6 +38,7 @@ export default defineConfig({
     setupFiles: ['test/vitest.setup.js'],
     reporters: [
       'default',
+      path.join(here, 'test', 'progressReporter.js'),
       ['json', {
         outputFile: path.join(repoRoot, 'TestResults', 'web', 'test-summary.json')
       }]

@@ -24,7 +24,7 @@ public interface IAgentWorkspaceFactory
         Func<JsonObject, bool> beforeEvent);
 }
 
-public sealed class AgentWorkspaceFactory : IAgentWorkspaceFactory
+public sealed class AgentWorkspaceFactory : IAgentWorkspaceFactory, IDisposable
 {
     private readonly IAgentBridgeService _rootBridge;
     private readonly ITabManagementService _tabManagementService;
@@ -33,6 +33,8 @@ public sealed class AgentWorkspaceFactory : IAgentWorkspaceFactory
     private readonly IAgentDirectoryPicker _directoryPicker;
     private readonly IAgentProviderRegistry _providerRegistry;
     private readonly IAgentRuntimeCoordinator _runtimeCoordinator;
+    private readonly AgentThreadPersistenceCoordinator _persistence;
+    private readonly bool _ownsPersistence;
 
     public AgentWorkspaceFactory(
         IAgentBridgeService rootBridge,
@@ -41,7 +43,8 @@ public sealed class AgentWorkspaceFactory : IAgentWorkspaceFactory
         IAgentThreadStore threadStore,
         IAgentDirectoryPicker directoryPicker,
         IAgentProviderRegistry providerRegistry,
-        IAgentRuntimeCoordinator runtimeCoordinator)
+        IAgentRuntimeCoordinator runtimeCoordinator,
+        AgentThreadPersistenceCoordinator? persistence = null)
     {
         _rootBridge = rootBridge;
         _tabManagementService = tabManagementService;
@@ -50,6 +53,8 @@ public sealed class AgentWorkspaceFactory : IAgentWorkspaceFactory
         _directoryPicker = directoryPicker;
         _providerRegistry = providerRegistry;
         _runtimeCoordinator = runtimeCoordinator;
+        _ownsPersistence = persistence == null;
+        _persistence = persistence ?? new AgentThreadPersistenceCoordinator(threadStore);
     }
 
     public AgentWorkspaceSessionHandle Create(
@@ -78,12 +83,19 @@ public sealed class AgentWorkspaceFactory : IAgentWorkspaceFactory
                 _providerRegistry,
                 provider,
                 thread,
-                _runtimeCoordinator);
+                _runtimeCoordinator,
+                _persistence);
 
         return new AgentWorkspaceSessionHandle
         {
             Session = session,
             EventSink = eventSink
         };
+    }
+
+    public void Dispose()
+    {
+        if (_ownsPersistence)
+            _persistence.Dispose();
     }
 }

@@ -9,8 +9,6 @@ namespace PSX.Services;
 
 public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 {
-    private const long MaxImageBytes = 20L * 1024 * 1024;
-    private const long MaxPromptImageBytes = 50L * 1024 * 1024;
     private const int MaxPromptImages = 5;
     private static readonly HashSet<string> SupportedImageMimeTypes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -89,6 +87,8 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     private readonly ITabManagementService _tabManagementService;
     private readonly ITerminalBridgeService _terminalBridgeService;
     private readonly IAgentThreadStore _threadStore;
+    private readonly AgentThreadPersistenceCoordinator _persistence;
+    private readonly bool _ownsPersistence;
     private readonly IAgentDirectoryPicker _directoryPicker;
     private readonly IAgentProviderRegistry _providerRegistry;
     private readonly IAcpAgentProvider _provider;
@@ -111,12 +111,21 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     private string _workingDirectory = "";
     private string? _acpSessionId;
     private string? _adapterVersion;
-    private string _status = "ready";
+    private readonly AcpSessionStateMachine _sessionState = new();
+    private string _status
+    {
+        get => _sessionState.WireStatus;
+        set => _sessionState.TransitionToWire(value);
+    }
     private string? _currentRunId;
     private IReadOnlyList<AcpMode> _modes = Array.Empty<AcpMode>();
     private IReadOnlyList<AcpConfigOption> _configOptions = Array.Empty<AcpConfigOption>();
     private string? _currentModeId;
-    private bool _isRunning;
+    private bool _isRunning
+    {
+        get => _sessionState.IsRunning;
+        set => _sessionState.IsRunning = value;
+    }
     private SessionRestoreMode _restoreMode;
     private bool _supportsImage = true;
     private bool _supportsSessionResume;
@@ -168,7 +177,8 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         IAgentProviderRegistry providerRegistry,
         IAcpAgentProvider provider,
         AgentThread initialThread,
-        IAgentRuntimeCoordinator runtimeCoordinator)
+        IAgentRuntimeCoordinator runtimeCoordinator,
+        AgentThreadPersistenceCoordinator? persistence = null)
     {
         if (workspaceId == Guid.Empty)
             throw new ArgumentException("Agent Workspace ID must not be empty.", nameof(workspaceId));
@@ -178,6 +188,8 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         _tabManagementService = tabManagementService;
         _terminalBridgeService = terminalBridgeService;
         _threadStore = threadStore;
+        _ownsPersistence = persistence == null;
+        _persistence = persistence ?? new AgentThreadPersistenceCoordinator(threadStore);
         _directoryPicker = directoryPicker;
         _providerRegistry = providerRegistry;
         _provider = provider;
@@ -484,7 +496,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             lock (_sessionMutationSync)
             {
                 if (ThinkingMessageNormalizer.Normalize(_currentThread.Messages))
-                    _threadStore.SaveThread(_currentThread);
+                    _persistence.SaveCritical(_currentThread);
             }
             ApplyThread(_currentThread);
             await SendAgentCommandsUnavailableAsync().ConfigureAwait(false);
@@ -624,7 +636,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             }
         }
 
-        _threadStore.DeleteThread(threadId);
+        _persistence.DeleteThread(threadId);
         await _bridgeService.SendEventAsync(new { type = "command_result", text = "Deleted thread." }).ConfigureAwait(false);
         await _bridgeService.SendEventAsync(new { type = "agent_workspace_close_requested" }).ConfigureAwait(false);
     }
@@ -1172,7 +1184,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             if (!SupportedImageMimeTypes.Contains(e.MimeType))
                 throw new InvalidOperationException("Only PNG, JPEG, WebP, and GIF images are supported.");
 
-            if (e.Size <= 0 || e.Size > MaxImageBytes)
+            if (e.Size <= 0 || e.Size > BridgeProtocolLimits.ImageBytes)
                 throw new InvalidOperationException("Each image must be 20MB or smaller.");
 
             byte[] data;
@@ -1188,7 +1200,11 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             if (data.LongLength != e.Size)
                 throw new InvalidOperationException("Image upload size did not match the file metadata.");
 
-            var attachment = _threadStore.SaveAttachment(_currentThread.ThreadId, e.FileName, e.MimeType, data);
+            var attachment = _persistence.SaveAttachment(
+                _currentThread.ThreadId,
+                e.FileName,
+                e.MimeType,
+                data);
             await _bridgeService.SendEventAsync(new
             {
                 type = "agent_attachment_uploaded",
@@ -2383,7 +2399,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         {
             _currentThread.Title = title.GetString() ?? _currentThread.Title;
             if (persist)
-                SaveCurrentThreadCore();
+                QueueCheckpointCurrentThreadCore();
         }
     }
 
@@ -2792,7 +2808,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             }
 
             if (persist)
-                SaveCurrentThreadCore();
+                QueueCheckpointCurrentThreadCore();
             contextWindowTokens = _currentThread.ContextWindowTokens;
             contextCostAmount = _currentThread.ContextCostAmount;
             contextCostCurrency = _currentThread.ContextCostCurrency;
@@ -3010,7 +3026,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         lock (_sessionMutationSync)
         {
             UpsertPlanMessage(_currentThread.Messages, runId, entries, text);
-            SaveCurrentThreadCore();
+            QueueCheckpointCurrentThreadCore();
         }
 
         await _bridgeService.SendEventAsync(new
@@ -3149,6 +3165,18 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     private void SaveCurrentThreadCore()
     {
+        ApplyPersistenceMetadata();
+        _persistence.SaveCritical(_currentThread);
+    }
+
+    private void QueueCheckpointCurrentThreadCore()
+    {
+        ApplyPersistenceMetadata();
+        _persistence.QueueCheckpoint(_currentThread);
+    }
+
+    private void ApplyPersistenceMetadata()
+    {
         if (IsBoundProviderThread(_currentThread))
         {
             _currentThread.Cwd = _workingDirectory;
@@ -3157,7 +3185,6 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             _currentThread.ModeId = _currentModeId;
             _currentThread.AdapterVersion = _adapterVersion;
         }
-        _threadStore.SaveThread(_currentThread);
     }
 
     private Task SendRunFailedAsync(string text, string? runId = null)
@@ -3188,7 +3215,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         lock (_sessionMutationSync)
         {
             if (DocumentDecisionSnapshotMerger.InterruptPending(thread))
-                _threadStore.SaveThread(thread);
+                _persistence.SaveCritical(thread);
 
             ClearAvailableAgentCommands();
             EnsureImageContextFlag(thread);
@@ -3214,7 +3241,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             return;
 
         thread.ContainsImages = true;
-        _threadStore.SaveThread(thread);
+        _persistence.SaveCritical(thread);
     }
 
     private static bool IsEmptyAgentDraft(AgentThread thread)
@@ -3257,7 +3284,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             throw new InvalidOperationException("One or more image attachments were not found. Remove them and try again.");
 
         var totalBytes = attachments.Sum(attachment => attachment.Size);
-        if (totalBytes > MaxPromptImageBytes)
+        if (totalBytes > BridgeProtocolLimits.PromptImageBytes)
             throw new InvalidOperationException("Images in a single message must total 50MB or less.");
 
         return attachments;
@@ -3827,6 +3854,8 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         }
         catch { }
 
+        try { _persistence.FlushThreadAsync(ThreadId).GetAwaiter().GetResult(); } catch { }
+
         var lockTaken = _transportLifecycle.TryEnter(TransportResetLockBudget);
         try
         {
@@ -3853,5 +3882,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
         _transportLifecycle.Dispose();
         _serviceLifetimeCts.Dispose();
+        if (_ownsPersistence)
+            _persistence.Dispose();
     }
 }
