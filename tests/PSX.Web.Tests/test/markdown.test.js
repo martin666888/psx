@@ -289,6 +289,26 @@ graph TD
   assert.equal(host.querySelector('[data-streamdown="mermaid-download-button"]'), null);
 });
 
+test('code fences show safe title metadata through the shared Streamdown code block', async () => {
+  const host = await renderMarkdown(`
+\`\`\`csharp title="Services/AutomationSupport.cs"
+public static void Run() {}
+\`\`\`
+`);
+  const label = host.querySelector('[data-psx-code-label]');
+  assert.equal(label?.textContent, 'Services/AutomationSupport.cs');
+  assert.ok(host.querySelector('[data-streamdown="code-block-copy-button"]'));
+  assert.equal(host.querySelector('[data-streamdown="code-block-download-button"]'), null);
+
+  const unsafeHost = await renderMarkdown(`
+\`\`\`csharp filename="<img src=x>"
+public static void Run() {}
+\`\`\`
+`);
+  assert.equal(unsafeHost.querySelector('[data-psx-code-label]')?.textContent, '<img src=x>');
+  assert.equal(unsafeHost.querySelector('img'), null);
+});
+
 test('markdown.css restores list markers against Tailwind Preflight', async () => {
   const { repositoryRoot } = await import('./agentHarness.js');
   const fs = await import('node:fs');
@@ -303,7 +323,15 @@ test('markdown.css restores list markers against Tailwind Preflight', async () =
   document.head.appendChild(style);
   const host = document.createElement('div');
   host.className = 'agent-message-body';
-  host.innerHTML = '<ul data-streamdown="unordered-list"><li>u</li></ul><ol data-streamdown="ordered-list"><li>o</li></ol>';
+  host.innerHTML = `
+    <ul data-streamdown="unordered-list"><li>u</li></ul>
+    <ol data-streamdown="ordered-list"><li>o</li></ol>
+    <div data-streamdown="code-block">
+      <div data-streamdown="code-block-actions">
+        <button data-streamdown="code-block-copy-button"></button>
+      </div>
+      <div data-streamdown="code-block-body"><pre><code><span>line</span></code></pre></div>
+    </div>`;
   document.body.appendChild(host);
   const ul = host.querySelector('ul');
   const ol = host.querySelector('ol');
@@ -311,4 +339,8 @@ test('markdown.css restores list markers against Tailwind Preflight', async () =
   assert.equal(window.getComputedStyle(ol).listStyleType, 'decimal');
   assert.equal(window.getComputedStyle(ul).paddingLeft, '22px');
   assert.equal(window.getComputedStyle(ol).marginLeft, '0px');
+  assert.equal(window.getComputedStyle(host.querySelector('[data-streamdown="code-block-body"]')).paddingTop, '8px');
+  assert.equal(window.getComputedStyle(host.querySelector('[data-streamdown="code-block"] pre')).paddingTop, '0px');
+  assert.equal(window.getComputedStyle(host.querySelector('[data-streamdown="code-block-actions"]')).borderTopWidth, '0px');
+  assert.equal(window.getComputedStyle(host.querySelector('[data-streamdown="code-block-copy-button"]')).borderTopWidth, '0px');
 });

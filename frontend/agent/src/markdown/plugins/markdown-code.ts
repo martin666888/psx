@@ -1,4 +1,5 @@
 import type { CodeHighlighterPlugin, HighlightResult } from '@streamdown/code';
+import { normalizeCodeLanguage, supportedCodeLanguages } from '../codeLanguages.js';
 
 interface HighlightResponse {
   id: number;
@@ -6,18 +7,7 @@ interface HighlightResponse {
   result?: HighlightResult;
 }
 
-const aliases = new Map<string, string>([
-  ['bash', 'shellscript'], ['sh', 'shellscript'], ['shell', 'shellscript'],
-  ['js', 'javascript'], ['mjs', 'javascript'], ['cjs', 'javascript'],
-  ['ts', 'typescript'], ['py', 'python'], ['cs', 'csharp'],
-  ['ps1', 'powershell'], ['pwsh', 'powershell'], ['yml', 'yaml'],
-  ['md', 'markdown'], ['htm', 'html'], ['dockerfile', 'docker']
-]);
-const supported = new Set([
-  'c', 'cpp', 'csharp', 'css', 'diff', 'docker', 'go', 'html', 'java',
-  'javascript', 'json', 'jsx', 'markdown', 'powershell', 'python', 'rust',
-  'shellscript', 'sql', 'tsx', 'typescript', 'xml', 'yaml'
-]);
+const supported = new Set<string>(supportedCodeLanguages);
 const themes = ['github-light', 'github-dark'] as const;
 const resultCache = new Map<string, HighlightResult>();
 const callbacksByKey = new Map<string, Set<(result: HighlightResult) => void>>();
@@ -28,11 +18,6 @@ const WORKER_IDLE_MS = 30_000;
 let worker: Worker | null = null;
 let nextRequestId = 1;
 let idleTimer = 0;
-
-function normalizeLanguage(language: string): string {
-  const normalized = language.trim().toLowerCase();
-  return aliases.get(normalized) ?? normalized;
-}
 
 function cacheKey(code: string, language: string): string {
   return `${language}\0${code}`;
@@ -97,7 +82,7 @@ export const codePlugin: CodeHighlighterPlugin = {
   name: 'shiki',
   type: 'code-highlighter',
   supportsLanguage(language) {
-    return supported.has(normalizeLanguage(language));
+    return supported.has(normalizeCodeLanguage(language));
   },
   getSupportedLanguages() {
     return Array.from(supported) as ReturnType<CodeHighlighterPlugin['getSupportedLanguages']>;
@@ -106,7 +91,7 @@ export const codePlugin: CodeHighlighterPlugin = {
     return [...themes];
   },
   highlight({ code, language }, callback) {
-    const normalized = normalizeLanguage(language);
+    const normalized = normalizeCodeLanguage(language);
     if (!supported.has(normalized)) return null;
     const key = cacheKey(code, normalized);
     const cached = resultCache.get(key);

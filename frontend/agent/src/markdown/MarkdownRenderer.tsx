@@ -7,8 +7,15 @@ import {
   type JSX,
   type RefObject
 } from 'react';
-import { Streamdown, type PluginConfig } from 'streamdown';
+import {
+  CodeBlock,
+  CodeBlockCopyButton,
+  Streamdown,
+  type CustomRendererProps,
+  type PluginConfig
+} from 'streamdown';
 import { cn } from '../lib/utils.js';
+import { codeRendererLanguages } from './codeLanguages.js';
 import type { MarkdownContentProps, MarkdownRenderMode } from './MarkdownContent.js';
 import {
   loadCodePlugin,
@@ -23,6 +30,47 @@ import {
   psxUrlTransform
 } from './security.js';
 import { inspectMarkdownSource, type RequiredMarkdownPlugins } from './sourceInspection.js';
+
+const CODE_FILENAME_META = /(?:^|\s)(?:filename|title)=(?:"([^"]*)"|'([^']*)'|([^\s]+))/i;
+const CODE_START_LINE_META = /(?:^|\s)startLine=(\d+)/;
+const MAX_CODE_FILENAME_CHARACTERS = 260;
+
+function readCodeFilename(meta?: string): string {
+  const match = meta?.match(CODE_FILENAME_META);
+  return Array.from(match?.[1] ?? match?.[2] ?? match?.[3] ?? '')
+    .filter((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return codePoint > 0x1f && (codePoint < 0x7f || codePoint > 0x9f);
+    })
+    .join('')
+    .trim()
+    .slice(0, MAX_CODE_FILENAME_CHARACTERS);
+}
+
+function PsxCodeBlock({ code, isIncomplete, language, meta }: CustomRendererProps): JSX.Element {
+  const filename = readCodeFilename(meta);
+  const startLineMatch = meta?.match(CODE_START_LINE_META);
+  const startLine = startLineMatch ? Number.parseInt(startLineMatch[1], 10) : undefined;
+  return (
+    <CodeBlock
+      code={code}
+      isIncomplete={isIncomplete}
+      language={language}
+      lineNumbers={!/\bnoLineNumbers\b/.test(meta ?? '')}
+      startLine={startLine && startLine >= 1 ? startLine : undefined}
+    >
+      <span data-psx-code-label title={filename || language}>
+        {filename || language}
+      </span>
+      <CodeBlockCopyButton />
+    </CodeBlock>
+  );
+}
+
+const psxCodeRenderers = [{
+  component: PsxCodeBlock,
+  language: codeRendererLanguages
+}];
 
 function useNearViewport(mode: MarkdownRenderMode, required: RequiredMarkdownPlugins) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -96,7 +144,10 @@ export function MarkdownRenderer({ source, mode, surface, className }: MarkdownC
     };
   }, [nearViewport, required.code, required.math, required.mermaid]);
 
-  const plugins = useMemo<PluginConfig>(() => ({ cjk, ...heavyPlugins }), [heavyPlugins]);
+  const plugins = useMemo<PluginConfig>(
+    () => ({ cjk, renderers: psxCodeRenderers, ...heavyPlugins }),
+    [heavyPlugins]
+  );
   const mermaid = useMemo(() => createPsxMermaidOptions(dark), [dark]);
 
   return (
