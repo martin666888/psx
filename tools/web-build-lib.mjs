@@ -2,7 +2,8 @@
 //
 // Contract (campaign plan CP1b):
 // - the Vite output is validated for: manifest presence, the main entry, the
-//   expected dynamic chunks (agent entry, react-vendor, markdown), forbidden
+//   expected dynamic chunks (agent entry, react-vendor, Markdown core and
+//   optional renderers), forbidden
 //   files (node_modules/.ts/.map/dev-server/Component Lab/fixtures), and a
 //   single bundled React instance;
 // - build:web atomically replaces wwwroot/app only after validation;
@@ -75,14 +76,96 @@ export function validateOutput(outDir, label) {
         problems.push(`manifest references a missing file: ${key} -> ${entry.file}`);
       }
     }
+
+    const findChunk = (name) => Object.entries(manifest).find(([, entry]) =>
+      entry.file.startsWith(`assets/${name}-`) && entry.file.endsWith('.js'));
+    const staticClosure = (startKey) => {
+      const visited = new Set();
+      const visit = (key) => {
+        if (!key || visited.has(key)) return;
+        visited.add(key);
+        for (const dependency of manifest[key]?.imports || []) visit(dependency);
+      };
+      visit(startKey);
+      return visited;
+    };
+    const markdownCore = findChunk('markdown-core');
+    if (!markdownCore) {
+      problems.push('manifest is missing markdown-core');
+    } else {
+      const coreGraphFiles = [...staticClosure(markdownCore[0])]
+        .map((key) => manifest[key]?.file || '');
+      for (const heavy of ['markdown-code', 'markdown-math', 'markdown-mermaid']) {
+        const chunk = findChunk(heavy);
+        if (!chunk) {
+          problems.push(`manifest is missing ${heavy}`);
+        } else if (!chunk[1].isDynamicEntry) {
+          problems.push(`${heavy} is not a dynamic entry`);
+        }
+        if (coreGraphFiles.some((file) => file.startsWith(`assets/${heavy}-`))) {
+          problems.push(`${heavy} leaked into the static markdown-core import graph`);
+        }
+      }
+      if (coreGraphFiles.some((file) => file.startsWith('assets/markdown-katex-'))) {
+        problems.push('markdown-katex leaked into the static markdown-core import graph');
+      }
+    }
+
+    const mainEntry = Object.entries(manifest).find(([key, entry]) =>
+      key.endsWith('index.html') && entry.isEntry);
+    const workerEntry = Object.entries(manifest).find(([, entry]) =>
+      entry.file === 'assets/shiki-worker.js' && entry.isEntry);
+    if (!workerEntry) {
+      problems.push('manifest is missing the Shiki worker entry');
+    } else {
+      const workerFiles = [...staticClosure(workerEntry[0])]
+        .map((key) => manifest[key]?.file || '');
+      if (workerFiles.some((file) => /react-vendor|markdown-(?:core|code|math|mermaid)/.test(file))) {
+        problems.push('Shiki worker statically imports React or a Markdown renderer chunk');
+      }
+    }
+    if (mainEntry) {
+      const mainFiles = [...staticClosure(mainEntry[0])]
+        .map((key) => manifest[key]?.file || '');
+      if (mainFiles.includes('assets/shiki-worker.js')) {
+        problems.push('Shiki worker leaked into the application initial import graph');
+      }
+      if (mainFiles.some((file) => file.startsWith('assets/markdown-core-'))) {
+        problems.push('Markdown core leaked into the terminal-only initial import graph');
+      }
+    }
+    if (agentChunk) {
+      const agentFiles = [...staticClosure(agentChunk[0])]
+        .map((key) => manifest[key]?.file || '');
+      if (agentFiles.some((file) => file.startsWith('assets/markdown-core-'))) {
+        problems.push('Markdown core leaked into the empty Agent shell import graph');
+      }
+    }
   }
 
   const assetFiles = files.filter((file) => file.startsWith('assets/'));
+  if (!assetFiles.includes('assets/shiki-worker.js')) {
+    problems.push('missing fixed local Shiki worker entry');
+  }
   if (!assetFiles.some((file) => /react-vendor-[-\w]+\.js$/.test(file))) {
     problems.push('missing react-vendor chunk');
   }
-  if (!assetFiles.some((file) => /markdown-[-\w]+\.js$/.test(file))) {
-    problems.push('missing markdown chunk');
+  for (const chunk of ['markdown-core', 'markdown-code', 'markdown-math', 'markdown-mermaid']) {
+    if (!assetFiles.some((file) => new RegExp(`${chunk}-[-\\w]+\\.js$`).test(file))) {
+      problems.push(`missing ${chunk} chunk`);
+    }
+  }
+  if (!assetFiles.some((file) => /markdown-katex-[-\w]+\.js$/.test(file))) {
+    problems.push('missing markdown-katex shared chunk');
+  }
+  const katexFonts = assetFiles.filter((file) => /\/KaTeX_[^/]+\.(?:woff2?|ttf)$/.test(file));
+  if (katexFonts.length === 0) problems.push('missing local KaTeX font assets');
+  const legacyKatexFonts = katexFonts.filter((file) => !file.endsWith('.woff2'));
+  if (legacyKatexFonts.length > 0) {
+    problems.push(`KaTeX emitted redundant non-WOFF2 fonts: ${legacyKatexFonts.join(', ')}`);
+  }
+  if (assetFiles.length > 200) {
+    problems.push(`asset count ${assetFiles.length} exceeds the Markdown packaging ceiling of 200`);
   }
 
   // 2) forbidden files
@@ -103,6 +186,9 @@ export function validateOutput(outDir, label) {
     ? fs.readFileSync(path.join(outDir, 'index.html'), 'utf8')
     : '';
   if (html.includes('/@vite/client')) problems.push('index.html references the dev server client');
+  if (/(?:'|")(?:unsafe-eval|wasm-unsafe-eval)(?:'|")/.test(html)) {
+    problems.push('production CSP enables eval for Markdown rendering');
+  }
 
   // 3) single React instance: the minified React runtime banner must appear in
   // exactly one emitted chunk (react + react-dom share the react-vendor chunk).

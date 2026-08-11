@@ -18,17 +18,16 @@
   `https://registry.ai-sdk.dev/{name}.json` (conversation, message, reasoning,
   tool, prompt-input, loader, task, shimmer).
 - License: Apache-2.0 (`licenses/ai-elements/LICENSE`).
-- Local modifications (campaign plan fixed mappings — PSX ships no Next.js,
-  AI SDK, Streamdown, motion, nanoid or Shiki):
+- Local modifications (PSX ships no Next.js, AI SDK, motion or nanoid):
   - `message.tsx`: MessageBranch* family removed (no branching requirement);
-    Streamdown-based MessageResponse removed (CP4 adds PsxMessageResponse over
-    the existing sanitized `renderMarkdown()` HTML pipeline); `ai` types
-    (UIMessage/FileUIPart) replaced with local equivalents.
+    the upstream MessageResponse is replaced by PsxMessageResponse, which
+    delegates to PSX's `MarkdownContent` security/performance wrapper; `ai`
+    types (UIMessage/FileUIPart) are replaced with local equivalents.
   - `reasoning.tsx`: ReasoningContent renders ReactNode children instead of
     Streamdown.
   - `tool.tsx`: `ai` ToolUIPart types replaced with a local ToolState union;
-    AI Elements CodeBlock (Shiki) replaced with plain `pre > code` (the PSX
-    fenced-code HTML pipeline styles it); CP4 adds optional `badge` (PSX
+    raw tool output remains plain `pre > code`; Markdown fenced code uses the
+    separately loaded Streamdown/Shiki path. CP4 adds optional `badge` (PSX
     ACP tool-state wording) and `titleClassName` (semantic anchor classes)
     props to ToolHeader.
   - `prompt-input.tsx`: `ai` types (ChatStatus/FileUIPart) declared locally;
@@ -41,3 +40,18 @@
   - `conversation.tsx`, `loader.tsx`, `task.tsx`: unchanged.
 - Not installed (no matching requirement): branch, citation/inline-citation,
   web-preview, image, code-block, and the remaining registry items.
+
+## Streamdown renderer — `frontend/agent/src/markdown/`
+
+- Source: Vercel Streamdown 2.5.0 with the official CJK 1.0.3, code 1.1.1,
+  math 1.0.2 and Mermaid 1.0.2 plugins.
+- Fenced-code highlighting runs in a local, idle-terminated Shiki Worker; the
+  main Agent graph and ordinary Markdown path do not import Shiki.
+- License: Apache-2.0 (`licenses/streamdown/LICENSE`). Shiki, KaTeX and
+  Mermaid retain their MIT licenses under `licenses/`.
+- Decision reversal: the CP2 import intentionally omitted Streamdown and
+  Shiki while PSX still used its byte-compatible legacy HTML renderer. The
+  Markdown upgrade replaces that renderer to gain CommonMark/GFM compliance,
+  incomplete-stream repair, CJK, math and diagrams. PSX does not use the
+  upstream MessageResponse directly: `MarkdownContent` enforces URL/image
+  hardening, controls, source limits, local assets and lazy plugin loading.

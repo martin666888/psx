@@ -9,11 +9,17 @@
  * against the nearest .agent-ui scope.
  */
 @import "tailwindcss";
+@import "streamdown/styles.css";
 
 /* The Agent React sources live OUTSIDE the Vite root (frontend/webview), so
    Tailwind's automatic content detection misses them; register them
    explicitly or every utility class used by agent/src silently vanishes. */
 @source "../../../agent/src";
+@source "../../../../node_modules/streamdown/dist/*.js";
+@source "../../../../node_modules/@streamdown/cjk/dist/*.js";
+@source "../../../../node_modules/@streamdown/code/dist/*.js";
+@source "../../../../node_modules/@streamdown/math/dist/*.js";
+@source "../../../../node_modules/@streamdown/mermaid/dist/*.js";
 
 /* ---- xterm compatibility overrides under global Preflight (CP0) ----
    1) Preflight's `img,video,canvas { max-width:100% }` must not clamp the

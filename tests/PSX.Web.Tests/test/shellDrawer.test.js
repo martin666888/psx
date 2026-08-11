@@ -30,6 +30,14 @@ async function toolbarReady(panel) {
   assert.ok(role(panel, 'plan-toggle'), 'workspace toolbar island did not mount');
 }
 
+async function historyReady() {
+  for (let i = 0; i < 100 && (!dock() || !historyTrigger()); i++) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  assert.ok(dock(), 'global History dock did not mount');
+  assert.ok(historyTrigger(), 'global History trigger did not mount');
+}
+
 test('responsive: only panes below 520px enter narrow Plan mode', async () => {
   const { app, breakpoint, panelFor } = await mountAgentApp({ wide: false });
   createAgentWorkspace(app, WS);
@@ -50,6 +58,7 @@ test('responsive: global History remains a dock and can coexist with narrow Plan
   app.handle({ type: 'workspace_activated', workspaceId: WS, kind: 'agent' });
   const panel = panelFor(WS);
   await toolbarReady(panel);
+  await historyReady();
 
   if (dock().hidden) historyTrigger().click();
   assert.equal(dock().hidden, false);

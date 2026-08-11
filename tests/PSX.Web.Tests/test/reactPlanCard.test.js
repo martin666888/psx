@@ -62,7 +62,8 @@ test('plan entries, document mode and empty state render in place', async () => 
   // through the safe Markdown pipeline instead of a raw <pre> dump.
   await settle(
     app,
-    () => !!host.querySelector('.agent-plan-document'),
+    () => !!host.querySelector('.agent-plan-document h2')
+      && !!host.querySelector('.agent-plan-document strong'),
     () => app.handle(event([], { text: '## Approach\n\nRefactor first, then **test**.' }))
   );
   const document_ = host.querySelector('.agent-plan-document');

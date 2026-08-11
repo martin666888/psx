@@ -73,6 +73,8 @@ describe('lazy React-island loading guard', () => {
     'timeline/timelineIsland.ts',
     'timeline/TimelineView.tsx',
     'timeline/TimelineDecisions.tsx',
+    'markdown/MarkdownContent.tsx',
+    'markdown/MarkdownRenderer.tsx',
     'core/reactIsland.tsx',
     'core/AgentAppRoot.tsx',
     'ui/announce.ts'

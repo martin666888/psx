@@ -72,6 +72,9 @@ async function renderEvents(events, callbackOverrides = {}) {
         callbacks
       });
     });
+    for (let attempt = 0; attempt < 30 && host.querySelector('[data-streamdown="loading"]'); attempt += 1) {
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+    }
   };
   await render();
   return {
@@ -215,9 +218,13 @@ test('document permissions render Markdown, preserve explicit technical details 
   });
   const card = view.host.querySelector('.agent-document-permission');
   assert.ok(card);
-  assert.match(card.querySelector('.agent-mode-transition-document').innerHTML, /<h1>Plan<\/h1>/);
-  assert.match(card.querySelector('.agent-mode-transition-document').innerHTML, /<ul>/);
-  assert.match(card.querySelector('.agent-mode-transition-document').innerHTML, /<pre><code/);
+  const document = card.querySelector('.agent-mode-transition-document');
+  assert.equal(document.querySelector('h1').textContent, 'Plan');
+  assert.deepEqual(
+    [...document.querySelectorAll('ul > li')].map((item) => item.textContent),
+    ['Review', 'Implement']
+  );
+  assert.match(document.querySelector('pre code').textContent, /const safe = true/);
   assert.match(card.textContent, /Document details/);
   assert.match(card.textContent, /Technical details/);
   assert.doesNotMatch(card.textContent, /toolCallId/);

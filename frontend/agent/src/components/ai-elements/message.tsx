@@ -1,11 +1,9 @@
 "use client";
 
 // PSX local modifications (CP2):
-// - Upstream MessageResponse renders through Streamdown; PSX ships neither
-//   Streamdown nor the AI SDK. Markdown rendering stays on the existing
-//   sanitized renderMarkdown() HTML pipeline — CP4 adds PsxMessageResponse
-//   (dangerouslySetInnerHTML wrapper) as the counterpart, so MessageResponse
-//   is removed here.
+// - PSX ships no AI SDK. PsxMessageResponse delegates to the PSX-owned
+//   MarkdownContent security/performance wrapper instead of using the
+//   upstream component directly.
 // - The MessageBranch* family is removed: PSX has no branching requirement
 //   (campaign plan: components without a matching requirement are not
 //   installed). This also drops the button-group dependency.
@@ -22,10 +20,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { renderMarkdownMemoized } from "@/core/markdown.js";
+import { MarkdownContent, type MarkdownRenderMode } from "@/markdown/MarkdownContent.js";
 import { PaperclipIcon, XIcon } from "lucide-react";
 import type { ComponentProps, HTMLAttributes } from "react";
-import { useMemo } from "react";
 
 /** Local replacement for the AI SDK UIMessage["role"]. */
 export type MessageRole = "system" | "user" | "assistant";
@@ -73,29 +70,23 @@ export const MessageContent = ({
 );
 
 export type PsxMessageResponseProps = Omit<ComponentProps<"div">, "children"> & {
-  /** Raw markdown; rendered through the existing sanitized pipeline. */
+  /** Raw markdown; rendered through the shared PSX security boundary. */
   markdown: string;
+  mode: MarkdownRenderMode;
 };
 
-/** PSX counterpart of the upstream Streamdown MessageResponse: the sanitized
- * renderMarkdown() HTML pipeline (sanitize/safeHref/fenced `pre > code`
- * untouched) inside the AI Elements message layout. The markdown string is
- * memoized on its value only: timeline items are mutated in place, so the
- * component must stay unmemoized, but unchanged messages must never re-parse. */
+/** Keeps AI Elements layout separate from PSX's Markdown security and loading
+ * policy. MarkdownContent owns sanitization, controls and heavy plugins. */
 export const PsxMessageResponse = ({
   className,
   markdown,
+  mode,
   ...props
-}: PsxMessageResponseProps) => {
-  const html = useMemo(() => renderMarkdownMemoized(markdown), [markdown]);
-  return (
-    <div
-      className={cn("size-full", className)}
-      dangerouslySetInnerHTML={{ __html: html }}
-      {...props}
-    />
-  );
-};
+}: PsxMessageResponseProps) => (
+  <div className={cn("size-full", className)} {...props}>
+    <MarkdownContent mode={mode} source={markdown} surface="message" />
+  </div>
+);
 
 export type MessageActionsProps = ComponentProps<"div">;
 

@@ -21,6 +21,16 @@ The portable release redistributes:
 - Vercel AI Elements component sources — Apache-2.0; see
   `licenses/ai-elements/LICENSE`. Vendored with documented local modifications
   under `frontend/agent/src/components/ai-elements/` (same SOURCES.md).
+- Vercel Streamdown and its CJK, code, math and Mermaid plugins — Apache-2.0;
+  see `licenses/streamdown/LICENSE`. They are bundled only into Agent Vite
+  chunks and run behind the PSX-owned sanitization and loading policy.
+- Shiki — MIT; see `licenses/shiki/LICENSE`. It is loaded on demand for fenced
+  code through a local, idle-terminated Worker. The production document CSP
+  remains unchanged and does not allow `unsafe-eval` or `wasm-unsafe-eval`.
+- KaTeX — MIT; see `licenses/katex/LICENSE`. Its CSS and fonts ship as local
+  Vite assets for mathematical notation.
+- Mermaid — MIT; see `licenses/mermaid/LICENSE`. It is loaded on demand for
+  fenced diagrams and always uses strict security.
 - Radix UI — MIT; see `licenses/radix-ui/LICENSE`.
 - Lucide icons — ISC; see `licenses/lucide/LICENSE`.
 - Lobe Icons static SVG brand marks — MIT; see `licenses/lobe-icons/LICENSE`.

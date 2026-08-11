@@ -10,7 +10,8 @@ import {
   type ElicitationOption,
   type ElicitationProperty
 } from '../core/elicitation.js';
-import { renderMarkdown, safeHref } from '../core/markdown.js';
+import { MarkdownContent } from '../markdown/MarkdownContent.js';
+import { normalizePsxHref } from '../markdown/security.js';
 import { DecisionOptionPills } from '../decisions/DecisionOptionPills.js';
 import type { DecisionItem, DecisionOptionVM } from './timelineViewModel.js';
 import { CopyButton, useProjectionOpen } from './TimelineView.js';
@@ -186,10 +187,12 @@ function DocumentDecisionCard({
         {/* forceMount keeps the collapsed proposal in the DOM (old <details>
             semantics) for text search and replay tooling. */}
         <CollapsibleContent forceMount className="data-[state=closed]:hidden">
-        <div
+        <MarkdownContent
           className="agent-mode-transition-document agent-message-body border-t px-4 pt-3 pb-4"
-          dangerouslySetInnerHTML={{ __html: renderMarkdown(item.text) }}
-        ></div>
+          mode="static"
+          source={item.text}
+          surface="decision"
+        />
         <div className="agent-message-actions agent-mode-transition-document-actions m-0 px-4 pb-3">
           <CopyButton getText={() => item.text} copyText={callbacks.copyText} />
         </div>
@@ -446,7 +449,7 @@ function ElicitationCard({
     callbacks.onElicitationAction(item, JSON.stringify({ action: 'accept', content }), 'Response sent.');
   };
 
-  const safeUrl = url ? safeHref(url) : '';
+  const safeUrl = url ? normalizePsxHref(url) : '';
   // legacy contract shared with PermissionQuestionCard: a local answer folds
   // the card (projection sets collapsed); external cancel leaves the toggle.
   const [open, setOpen] = useProjectionOpen(!item.collapsed);

@@ -1,10 +1,8 @@
 "use client";
 
 // PSX local modifications (CP2):
-// - Upstream renders ReasoningContent through Streamdown; PSX renders through
-//   its existing sanitized renderMarkdown() HTML pipeline instead, so
-//   ReasoningContent accepts ReactNode children (the CP4 wiring passes the
-//   PsxMessageResponse-style output). Streamdown is not shipped.
+// - ReasoningContent accepts ReactNode children so Timeline decides which
+//   raw thinking/tool content bypasses MarkdownContent.
 // - Everything else (controllable open state, duration tracking, auto-close)
 //   is unchanged from upstream.
 

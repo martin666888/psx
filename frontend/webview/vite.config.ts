@@ -38,6 +38,21 @@ function cspPlugin(development: boolean) {
   };
 }
 
+function katexWoff2OnlyPlugin() {
+  return {
+    name: 'psx-katex-woff2-only',
+    enforce: 'pre' as const,
+    transform(source: string, id: string) {
+      const normalized = id.split('\\').join('/').split('?')[0];
+      if (!normalized.endsWith('/katex/dist/katex.min.css')) return null;
+      return source.replace(
+        /,url\(fonts\/([^)]+)\.woff\) format\("woff"\),url\(fonts\/\1\.ttf\) format\("truetype"\)/g,
+        ''
+      );
+    }
+  };
+}
+
 // Production WebView contract (AGENTS.md + campaign plan):
 // - served from the psx.local virtual host under /app/ (offline, no CDN)
 // - target es2022, no sourcemaps, hashed file names, committed output
@@ -49,7 +64,7 @@ export default defineConfig(({ command }) => ({
   // from the repo root; the build tooling sets cwd itself).
   root: here,
   base: '/app/',
-  plugins: [cspPlugin(command === 'serve'), react(), tailwindcss()],
+  plugins: [cspPlugin(command === 'serve'), katexWoff2OnlyPlugin(), react(), tailwindcss()],
   // frontend/agent has no local tsconfig (typecheck:web owns types via this
   // package's tsconfig.json), so pin the automatic JSX runtime for the agent
   // .tsx sources instead of relying on esbuild's tsconfig discovery.
@@ -64,9 +79,22 @@ export default defineConfig(({ command }) => ({
     outDir: process.env.PSX_WEB_OUT_DIR || path.resolve(here, 'dist'),
     emptyOutDir: true,
     rollupOptions: {
+      input: {
+        main: path.resolve(here, 'index.html'),
+        'shiki-worker': path.resolve(agentSrc, 'markdown', 'plugins', 'shiki.worker.ts')
+      },
       output: {
+        onlyExplicitManualChunks: true,
+        entryFileNames(chunk) {
+          return chunk.name === 'shiki-worker'
+            ? 'assets/shiki-worker.js'
+            : 'assets/[name]-[hash].js';
+        },
         manualChunks(id: string): string | undefined {
           const normalized = id.split('\\').join('/');
+          if (normalized.endsWith('/frontend/agent/src/markdown/plugins/shiki.worker.ts')) {
+            return undefined;
+          }
           if (
             normalized.includes('node_modules/react/')
             || normalized.includes('node_modules/react-dom/')
@@ -74,8 +102,33 @@ export default defineConfig(({ command }) => ({
           ) {
             return 'react-vendor';
           }
-          if (normalized.includes('/frontend/agent/src/core/markdown')) {
-            return 'markdown';
+          if (
+            normalized.includes('/frontend/agent/src/markdown/plugins/markdown-mermaid')
+            || normalized.includes('/node_modules/@streamdown/mermaid/')
+          ) {
+            return 'markdown-mermaid';
+          }
+          if (
+            normalized.includes('/frontend/agent/src/markdown/plugins/markdown-code')
+            || normalized.includes('/node_modules/@streamdown/code/')
+          ) {
+            return 'markdown-code';
+          }
+          if (
+            normalized.includes('/frontend/agent/src/markdown/plugins/markdown-math')
+            || normalized.includes('/node_modules/@streamdown/math/')
+          ) {
+            return 'markdown-math';
+          }
+          if (normalized.includes('/node_modules/katex/')) {
+            return 'markdown-katex';
+          }
+          if (
+            normalized.includes('/frontend/agent/src/markdown/')
+            || normalized.includes('/node_modules/streamdown/')
+            || normalized.includes('/node_modules/@streamdown/cjk/')
+          ) {
+            return 'markdown-core';
           }
           return undefined;
         }

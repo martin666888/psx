@@ -2,79 +2,15 @@ import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { appModule } from './agentHarness.js';
 
-// The pure core/ modules own the Agent's data shaping (markdown, plan,
+// The pure core/ modules own the Agent's data shaping (plan,
 // commands, elicitation). The legacy AgentThreadManager they were extracted
 // from is gone, so these assertions pin the extracted output directly rather
 // than comparing against a live oracle. They must stay byte-faithful: the same
 // input always produces the same HTML/records the shipped app renders.
 
-const markdown = await appModule('core/markdown.js');
 const plan = await appModule('core/plan.js');
 const commands = await appModule('core/commands.js');
 const elicitation = await appModule('core/elicitation.js');
-
-// --- markdown --------------------------------------------------------------
-
-test('markdown: renderMarkdown shapes headings, inline styles and code', () => {
-  assert.equal(
-    markdown.renderMarkdown('# Heading\n\nParagraph with **bold**, *italic* and `code`.'),
-    '<h1>Heading</h1><p>Paragraph with <strong>bold</strong>, <em>italic</em> and <code>code</code>.</p>'
-  );
-  assert.equal(markdown.renderMarkdown('Line one\nline two'), '<p>Line one<br>line two</p>');
-  assert.equal(markdown.renderMarkdown('- a\n- b\n- c'), '<ul><li>a</li><li>b</li><li>c</li></ul>');
-  assert.equal(markdown.renderMarkdown('1. first\n2. second'), '<ol><li>first</li><li>second</li></ol>');
-  assert.equal(markdown.renderMarkdown('> a quote'), '<blockquote>a quote</blockquote>');
-  assert.equal(markdown.renderMarkdown('---'), '<hr>');
-  assert.equal(
-    markdown.renderMarkdown('mode_transition then switch_mode'),
-    '<p>mode_transition then switch_mode</p>'
-  );
-  assert.equal(
-    markdown.renderMarkdown('mode__transition then switch__mode'),
-    '<p>mode__transition then switch__mode</p>'
-  );
-  assert.equal(markdown.renderMarkdown('_斜体_ and *斜体*'), '<p><em>斜体</em> and <em>斜体</em></p>');
-});
-
-test('markdown: renderMarkdown builds tables and fenced code blocks', () => {
-  assert.equal(
-    markdown.renderMarkdown('| A | B |\n| --- | --- |\n| 1 | 2 |'),
-    '<div class="agent-table-scroll agent-native-scroll"><table><thead><tr><th>A</th><th>B</th></tr></thead>' +
-      '<tbody><tr><td>1</td><td>2</td></tr></tbody></table></div>'
-  );
-  assert.equal(
-    markdown.renderMarkdown('```js\nconst x = 1;\nconsole.log(x);\n```'),
-    '<pre><code>const x = 1;\nconsole.log(x);</code></pre>'
-  );
-  assert.equal(
-    markdown.renderMarkdown('Trailing text after code ```inline?``` end'),
-    '<p>Trailing text after code</p><pre><code>inline?</code></pre><p>end</p>'
-  );
-});
-
-test('markdown: renderMarkdown keeps unsafe links and script tags inert', () => {
-  assert.equal(
-    markdown.renderMarkdown('A [link](https://example.com) and a [bad](javascript:alert(1)) one.'),
-    '<p>A <a href="https://example.com/" target="_blank" rel="noreferrer">link</a> and a bad) one.</p>'
-  );
-  assert.equal(
-    markdown.renderMarkdown('Mix <b>safe</b> and <script>unsafe</script> tags & ampersand'),
-    '<p>Mix <b>safe</b> and &lt;script&gt;unsafe&lt;/script&gt; tags &amp; ampersand</p>'
-  );
-});
-
-test('markdown: escapeHtml and safeHref sanitize their inputs', () => {
-  assert.equal(markdown.escapeHtml('<a>&"\''), '&lt;a&gt;&amp;&quot;&#039;');
-  assert.equal(markdown.escapeHtml('plain'), 'plain');
-  assert.equal(markdown.escapeHtml(''), '');
-
-  assert.equal(markdown.safeHref('https://example.com/x'), 'https://example.com/x');
-  assert.equal(markdown.safeHref('http://h'), 'http://h/');
-  assert.equal(markdown.safeHref('mailto:a@b.com'), 'mailto:a@b.com');
-  assert.equal(markdown.safeHref('javascript:evil'), '');
-  assert.equal(markdown.safeHref('ftp://x'), '');
-  assert.equal(markdown.safeHref('https://user:pass@h/'), '');
-});
 
 // --- plan ------------------------------------------------------------------
 

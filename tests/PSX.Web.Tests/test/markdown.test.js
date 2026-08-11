@@ -1,115 +1,292 @@
-import { test } from 'vitest';
+import { afterEach, beforeEach, test } from 'vitest';
 import assert from 'node:assert/strict';
-import { appModule } from './agentHarness.js';
+import { act, createElement } from 'react';
+import { createRoot } from 'react-dom/client';
+import {
+  appModule,
+  installAgentRuntime,
+  registerAgentCleanup
+} from './agentHarness.js';
 
-// The markdown renderer is a pure core/ module (no DOM). Assert its output
-// directly instead of driving it through a manager instance.
-const { renderMarkdown } = await appModule('core/markdown.js');
+const {
+  MarkdownContent,
+  inspectMarkdownSource
+} = await appModule('markdown/MarkdownContent.js');
+const {
+  createPsxMermaidOptions,
+  markdownLimits,
+  normalizePsxHref,
+  normalizePsxImageSource
+} = await appModule('markdown/security.js');
+const { readMarkdownPluginLoadState } = await appModule('markdown/pluginLoader.js');
 
-test('renders headings, lists, tables and fenced code', () => {
-  const html = renderMarkdown(`
-# Plan
+beforeEach(() => {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+});
 
-- first
-- second
+afterEach(() => {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = false;
+});
 
-| File | State |
-| --- | --- |
-| a.cs | changed |
+async function renderMarkdown(source, mode = 'static', configureRuntime) {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = false;
+  installAgentRuntime();
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  if (configureRuntime) {
+    configureRuntime();
+  } else {
+    globalThis.IntersectionObserver = class {
+      observe() {}
+      disconnect() {}
+    };
+  }
+  const host = document.createElement('div');
+  host.className = 'agent-ui agent-message-body';
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  registerAgentCleanup(() => root.unmount());
+  await act(async () => {
+    root.render(createElement(MarkdownContent, { source, mode, surface: 'message' }));
+    await Promise.resolve();
+  });
+  for (let attempt = 0; attempt < 30 && host.querySelector('[data-streamdown="loading"]'); attempt += 1) {
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  }
+  return host;
+}
 
-\`\`\`csharp
-Console.WriteLine("ok");
+test('renders semantic GFM lists with starts, nesting, loose items and tasks', async () => {
+  const host = await renderMarkdown(`
+3. third
+4. fourth
+   - nested
+
+6. loose paragraph
+
+   continuation
+
+- [x] done
+- [ ] pending
+`);
+  const ordered = host.querySelector('ol');
+  assert.equal(ordered.start, 3);
+  assert.deepEqual([...ordered.children].map((item) => item.tagName), ['LI', 'LI', 'LI']);
+  assert.equal(ordered.querySelector('ul li').textContent.trim(), 'nested');
+  assert.match(ordered.children[2].textContent, /loose paragraph\s+continuation/);
+  const tasks = [...host.querySelectorAll('input[type="checkbox"]')];
+  assert.equal(tasks.length, 2);
+  assert.equal(tasks[0].checked, true);
+  assert.ok(tasks.every((input) => input.disabled));
+});
+
+test('blank-separated ordered items remain one list instead of restarting at one', async () => {
+  const host = await renderMarkdown('1. first\n\n1. second\n\n1. third');
+  const lists = [...host.querySelectorAll('ol')];
+  assert.equal(lists.length, 1);
+  assert.equal(lists[0].children.length, 3);
+  assert.equal(lists[0].start, 1);
+});
+
+test('completed offscreen code does not request Shiki until the 800px observer gate opens', async () => {
+  let observerCallback = null;
+  class TestIntersectionObserver {
+    constructor(callback, options) {
+      observerCallback = callback;
+      assert.equal(options.rootMargin, '800px 0px');
+    }
+    observe() {}
+    disconnect() {}
+  }
+  const host = await renderMarkdown('```ts\nconst value = 1;\n```', 'static', () => {
+    globalThis.IntersectionObserver = TestIntersectionObserver;
+  });
+  assert.equal(readMarkdownPluginLoadState().code, false);
+  assert.match(host.textContent, /const value = 1/);
+  await act(async () => {
+    observerCallback([{ isIntersecting: true }]);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+  assert.equal(readMarkdownPluginLoadState().code, true);
+  delete globalThis.IntersectionObserver;
+});
+
+test('source inspection keeps Mermaid and Shiki requests independent', () => {
+  assert.deepEqual(inspectMarkdownSource('```mermaid\ngraph TD\nA --> B\n```'), {
+    code: false,
+    math: false,
+    mermaid: true
+  });
+  assert.deepEqual(inspectMarkdownSource('```mermaid\ngraph TD\n```\n\n```ts\nconst x = 1\n```'), {
+    code: true,
+    math: false,
+    mermaid: true
+  });
+});
+
+test('renders GFM tables, escaped pipes, strikethrough, footnotes and tilde fences', async () => {
+  const host = await renderMarkdown(`
+| Name | Value |
+| :--- | ---: |
+| pipe | a\\|b |
+
+~~removed~~ and note[^1].
+
+[^1]: Footnote text.
+
+~~~text
+plain code
+~~~
+`);
+  assert.equal(host.querySelector('tbody td:nth-child(2)').textContent.trim(), 'a|b');
+  assert.equal(host.querySelector('del').textContent, 'removed');
+  assert.match(host.querySelector('[data-footnotes]').textContent, /Footnote text/);
+  assert.match(host.querySelector('[data-streamdown="code-block"]').textContent, /plain code/);
+});
+
+test('locks CommonMark and CJK emphasis semantics after retiring the custom parser', async () => {
+  const host = await renderMarkdown(
+    'snake_case mode_transition mode__transition a**b 中文*强调*，以及 _合法斜体_。'
+  );
+  assert.match(host.textContent, /snake_case mode_transition mode__transition a\*\*b/);
+  assert.deepEqual([...host.querySelectorAll('em')].map((node) => node.textContent), ['强调', '合法斜体']);
+});
+
+test('normalizes links with the PSX absolute URL policy', () => {
+  assert.equal(normalizePsxHref('https://example.com/x'), 'https://example.com/x');
+  assert.equal(normalizePsxHref('http://host/path'), 'http://host/path');
+  assert.equal(normalizePsxHref('mailto:a@b.com'), 'mailto:a@b.com');
+  assert.equal(normalizePsxHref('#user-content-fn-1'), '#user-content-fn-1');
+  assert.equal(normalizePsxHref('javascript:evil'), '');
+  assert.equal(normalizePsxHref('https://user:pass@example.com/'), '');
+  assert.equal(normalizePsxHref('https://example.com:443/'), '');
+  assert.equal(normalizePsxHref('https://127.0.0.1/path'), '');
+  assert.equal(normalizePsxHref('/relative/path'), '');
+});
+
+test('renders blocked links as text and never leaves an unsafe href', async () => {
+  const host = await renderMarkdown(
+    '[safe](https://example.com) [bad](javascript:alert(1)) [port](https://example.com:8443)'
+  );
+  assert.equal(host.querySelectorAll('a').length, 1);
+  assert.equal(host.querySelector('a').href, 'https://example.com/');
+  assert.doesNotMatch(host.innerHTML, /javascript:|8443/);
+  assert.match(host.textContent, /safe bad port/);
+});
+
+test('allows only attachment-host Markdown images and exposes no download control', async () => {
+  assert.equal(
+    normalizePsxImageSource('https://psx-attachments.local/thread/image.png'),
+    'https://psx-attachments.local/thread/image.png'
+  );
+  assert.equal(normalizePsxImageSource('https://example.com/image.png'), '');
+  assert.equal(normalizePsxImageSource('data:image/png;base64,AA=='), '');
+  assert.equal(normalizePsxImageSource('file:///C:/secret.png'), '');
+
+  const host = await renderMarkdown(
+    '![allowed](https://psx-attachments.local/thread/image.png) ![remote](https://example.com/x.png)'
+  );
+  const images = [...host.querySelectorAll('img')];
+  assert.equal(images.length, 1);
+  assert.equal(images[0].getAttribute('src'), 'https://psx-attachments.local/thread/image.png');
+  assert.match(host.textContent, /remote/);
+  assert.equal(host.querySelector('[download]'), null);
+});
+
+test('keeps unsafe raw HTML inert while preserving the attribute-free safe tag list', async () => {
+  const host = await renderMarkdown(
+    '<script>alert(1)</script>\n\n<img src=x onerror=alert(1)>\n\n<details open>Blocked attributes</details>\n\n<details><summary>Read</summary><b>Safe</b></details>'
+  );
+  assert.equal(host.querySelector('script'), null);
+  assert.equal(host.querySelector('img'), null);
+  assert.equal(host.querySelectorAll('details').length, 1, 'only the attribute-free details tag is parsed');
+  assert.equal(host.querySelector('summary').textContent, 'Read');
+  assert.equal(host.querySelector('b').textContent, 'Safe');
+  assert.match(host.textContent, /<script>alert\(1\)<\/script>/);
+  assert.match(host.textContent, /<img src=x onerror=alert\(1\)>/);
+  assert.match(host.textContent, /<details open>Blocked attributes/);
+});
+
+test('streaming mode tolerates every prefix and converges to static DOM semantics', async () => {
+  const source = '# Plan\n\n- one\n- two\n\n**bold** [link](https://example.com)\n\n```ts\nconst x = 1;\n```';
+  for (let end = 1; end <= source.length; end += 9) {
+    const host = await renderMarkdown(source.slice(0, end), 'streaming');
+    assert.ok(host.querySelector('[data-markdown-mode="streaming"]'));
+  }
+  const streaming = await renderMarkdown(source, 'streaming');
+  const streamingLists = streaming.querySelectorAll('li').length;
+  const streamingStrong = streaming.querySelectorAll('strong').length;
+  const streamingCode = streaming.querySelector('code')?.textContent;
+  const streamingHeadings = streaming.querySelectorAll('h1').length;
+  const staticHost = await renderMarkdown(source, 'static');
+  assert.equal(streamingLists, staticHost.querySelectorAll('li').length);
+  assert.equal(streamingStrong, staticHost.querySelectorAll('strong').length);
+  assert.equal(streamingCode, staticHost.querySelector('code')?.textContent);
+  assert.equal(streamingHeadings, staticHost.querySelectorAll('h1').length);
+});
+
+test('advanced source limits are fixed security contracts', () => {
+  assert.deepEqual(markdownLimits, {
+    mathSourceCharacters: 16 * 1024,
+    mermaidSourceCharacters: 32 * 1024
+  });
+});
+
+test('Mermaid security configuration is fixed outside document control', () => {
+  const light = createPsxMermaidOptions(false);
+  const dark = createPsxMermaidOptions(true);
+  assert.equal(light.config.securityLevel, 'strict');
+  assert.equal(light.config.startOnLoad, false);
+  assert.equal(light.config.suppressErrorRendering, true);
+  assert.equal(light.config.theme, 'neutral');
+  assert.equal(dark.config.theme, 'dark');
+});
+
+test('KaTeX renders double-dollar math while currency remains ordinary text', async () => {
+  const host = await renderMarkdown(
+    'Price is $5.\n\n$$\nx^2 + y^2 = z^2\n$$',
+    'static',
+    () => {
+      globalThis.IntersectionObserver = class {
+        constructor(callback) {
+          this.callback = callback;
+        }
+        observe(target) {
+          this.callback([{ target, isIntersecting: true }]);
+        }
+        disconnect() {}
+      };
+    }
+  );
+  for (let attempt = 0; attempt < 30 && !host.querySelector('.katex'); attempt += 1) {
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 10)));
+  }
+  assert.match(host.textContent, /Price is \$5\./);
+  assert.ok(host.querySelector('.katex'));
+  assert.ok(host.querySelector('math'));
+});
+
+test('download controls stay absent for code, tables and Mermaid placeholders', async () => {
+  const host = await renderMarkdown(`
+| A |
+| - |
+| B |
+
+\`\`\`js
+const value = 1;
+\`\`\`
+
+\`\`\`mermaid
+graph TD
+  A --> B
 \`\`\`
 `);
-
-  assert.match(html, /<h1>Plan<\/h1>/);
-  assert.match(html, /<ul><li>first<\/li><li>second<\/li><\/ul>/);
-  assert.match(html, /<table>/);
-  assert.match(html, /<pre><code>Console\.WriteLine\(&quot;ok&quot;\);<\/code><\/pre>/);
+  assert.equal(host.querySelector('[data-streamdown="code-block-download-button"]'), null);
+  assert.equal(host.querySelector('[data-streamdown="table-download-button"]'), null);
+  assert.equal(host.querySelector('[data-streamdown="mermaid-download-button"]'), null);
 });
 
-test('allows only safe link schemes', () => {
-  const html = renderMarkdown('[safe](https://example.com) [mail](mailto:test@example.com) [bad](javascript:alert(1)) [port](https://example.com:8443)');
-
-  assert.match(html, /href="https:\/\/example\.com\/"/);
-  assert.match(html, /href="mailto:test@example\.com"/);
-  assert.doesNotMatch(html, /javascript:/);
-  assert.doesNotMatch(html, /8443/);
-});
-
-test('emphasis delimiters do not pair inside identifiers', () => {
-  const cross = renderMarkdown('mode_transition then switch_mode');
-  assert.doesNotMatch(cross, /<em>/);
-  assert.match(cross, /mode_transition then switch_mode/);
-
-  assert.doesNotMatch(renderMarkdown('snake_case'), /<em>/);
-  assert.doesNotMatch(renderMarkdown('中文_标识符'), /<em>/);
-  assert.doesNotMatch(renderMarkdown('path/to_file_name.ts --flag_value'), /<em>/);
-
-  assert.match(renderMarkdown('_合法斜体_'), /<em>合法斜体<\/em>/);
-  assert.match(renderMarkdown('*合法斜体*'), /<em>合法斜体<\/em>/);
-  assert.match(renderMarkdown('__粗体__'), /<strong>粗体<\/strong>/);
-  assert.match(renderMarkdown('**粗体**'), /<strong>粗体<\/strong>/);
-
-  const boldCross = renderMarkdown('mode__transition then switch__mode');
-  assert.doesNotMatch(boldCross, /<strong>/);
-  assert.match(boldCross, /mode__transition then switch__mode/);
-  assert.doesNotMatch(renderMarkdown('a**b then c**d'), /<strong>/);
-
-  const code = renderMarkdown('use `mode_transition` and `*stars*`');
-  assert.match(code, /<code>mode_transition<\/code>/);
-  assert.match(code, /<code>\*stars\*<\/code>/);
-  assert.doesNotMatch(code, /<em>/);
-});
-
-test('escapes scripts, event handlers and attributes while preserving the small safe tag list', () => {
-  const html = renderMarkdown('<script>alert(1)</script> <img src=x onerror=alert(1)> <details open><summary>Read</summary><b>Safe</b></details>');
-
-  assert.doesNotMatch(html, /<script>/);
-  assert.doesNotMatch(html, /<img/);
-  assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
-  assert.match(html, /<summary>Read<\/summary>/);
-  assert.match(html, /<b>Safe<\/b>/);
-  assert.doesNotMatch(html, /<details open>/);
-});
-
-test('memoized renderer is byte-identical to renderMarkdown (incl. streaming prefixes)', async () => {
-  const { renderMarkdownMemoized } = await appModule('core/markdown.js');
-  const documents = [
-    '',
-    'plain paragraph',
-    '# Title\n\nintro text\n\n## Sub\n\nmore',
-    '- a\n- b\n- c\n\n1. one\n2. two\n\n- mixed after ol',
-    '> quote line\n\n---\n\n***',
-    '| File | State |\n| --- | --- |\n| a.cs | changed |\n| b.cs | added |',
-    'para\n\n| H |\n| --- |\n| x |\n\ntail',
-    'before\n\n```csharp\nvar x = 1;\n// comment\n```\n\nafter',
-    '```\nno lang fence\n```',
-    'text with `inline code` and **bold** and [link](https://example.com)',
-    'paragraph with a > not-a-quote\n\n> real quote',
-    '1) alt ordered\n2) style',
-    'line one\nline two same paragraph',
-    'ends mid-word strea'
-  ];
-  for (const doc of documents) {
-    assert.equal(renderMarkdownMemoized(doc), renderMarkdown(doc), `mismatch for: ${JSON.stringify(doc.slice(0, 40))}`);
-  }
-  // Streaming simulation: every prefix of a growing document must also match.
-  const stream = '# Plan\n\nintro\n\n- a\n- b\n\n```ts\nconst x = 1;\n```\n\ntail paragraph grows';
-  for (let end = 1; end <= stream.length; end += 7) {
-    const prefix = stream.slice(0, end);
-    assert.equal(renderMarkdownMemoized(prefix), renderMarkdown(prefix), `mismatch at prefix ${end}`);
-  }
-  // Cache reuse must never change results on repeat calls.
-  for (const doc of documents) {
-    assert.equal(renderMarkdownMemoized(doc), renderMarkdown(doc), `repeat mismatch: ${JSON.stringify(doc.slice(0, 40))}`);
-  }
-});
-
-// Tailwind Preflight clears list markers globally; markdown.css must restore
-// them on .agent-message-body or assistant lists look like indented plain text.
-test('markdown.css restores list markers against Preflight list-style:none', async () => {
-  const { installAgentRuntime, repositoryRoot } = await import('./agentHarness.js');
+test('markdown.css restores list markers against Tailwind Preflight', async () => {
+  const { repositoryRoot } = await import('./agentHarness.js');
   const fs = await import('node:fs');
   const path = await import('node:path');
   installAgentRuntime();
@@ -122,13 +299,12 @@ test('markdown.css restores list markers against Preflight list-style:none', asy
   document.head.appendChild(style);
   const host = document.createElement('div');
   host.className = 'agent-message-body';
-  host.innerHTML = '<ul><li>u</li></ul><ol><li>o</li></ol>';
+  host.innerHTML = '<ul data-streamdown="unordered-list"><li>u</li></ul><ol data-streamdown="ordered-list"><li>o</li></ol>';
   document.body.appendChild(host);
   const ul = host.querySelector('ul');
   const ol = host.querySelector('ol');
   assert.equal(window.getComputedStyle(ul).listStyleType, 'disc');
   assert.equal(window.getComputedStyle(ol).listStyleType, 'decimal');
-  // Indent lives on padding so outside markers stay inside overflow-hidden parents.
   assert.equal(window.getComputedStyle(ul).paddingLeft, '22px');
   assert.equal(window.getComputedStyle(ol).marginLeft, '0px');
 });

@@ -14,7 +14,7 @@
 import type { JSX } from 'react';
 import type { WorkspacePlanState } from '../contracts/workspace-state.js';
 import { planStatusClass, planStatusLabel } from '../core/plan.js';
-import { renderMarkdown } from '../core/markdown.js';
+import { MarkdownContent } from '../markdown/MarkdownContent.js';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card.js';
 import { ScrollArea } from '../components/ui/scroll-area.js';
 import { TaskItem } from '../components/ai-elements/task.js';
@@ -44,10 +44,12 @@ function PlanBody({ plan }: PlanCardProps): JSX.Element {
     // document — render it through the shared safe Markdown pipeline
     // instead of dumping preformatted text.
     return (
-      <div
+      <MarkdownContent
         className="agent-plan-document agent-message-body px-3 pb-3 text-[13px] leading-normal"
-        dangerouslySetInnerHTML={{ __html: renderMarkdown(plan.fallbackText || 'No plan items.') }}
-      ></div>
+        mode="static"
+        source={plan.fallbackText || 'No plan items.'}
+        surface="plan"
+      />
     );
   }
   return (

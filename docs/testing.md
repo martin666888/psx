@@ -18,9 +18,9 @@ typecheck、lint、Vitest、前端构建/校验或 `tools/test.ps1`。C# 测试�
 | Unit | 纯逻辑、解析、状态与架构约束 | 363 |
 | Integration | Fake ACP/npm、持久化、Runtime 与进程边界 | 112 |
 | Desktop | WPF/ConPTY 桌面探针 | 2 |
-| Fast | Unit + Integration | 475 |
-| Full | 全部 C# 测试 | 477 |
-| Web | Vitest/jsdom 契约 | 292 |
+| Fast | Unit + Integration | 501 |
+| Full | 全部 C# 测试 | 503 |
+| Web | Vitest/jsdom 契约 | 306 |
 
 数字来自 Microsoft Testing Platform TRX 和 Vitest JSON reporter；C# 数量包含
 `DataRow` 展开结果，不是源码中的 `[TestMethod]` 个数。只有明确删除测试时
@@ -56,7 +56,7 @@ Fast 严格按以下顺序运行：
 ```
 
 Full 在 Fast 能力上加入 Desktop、便携 ZIP 构建与浏览器 smoke、锁版本
-Chromium 的视觉/axe 门禁，以及 NuGet/npm 官方源依赖审计。Full 必须使用
+Chromium 的视觉/axe 与 Markdown 长对话性能门禁，以及 NuGet/npm 官方源依赖审计。Full 必须使用
 Node 22；脚本会优先使用 `TestResults/node22/` 或发布 staging 中的便携 Node，
 不会误用 PATH 上的其他主版本。
 
@@ -121,6 +121,15 @@ npm.cmd run update:visual
 基线位于 `tests/PSX.Web.Tests/visual-baselines/windows-chromium/`。差异超过总
 像素 0.15% 失败；actual、expected diff 和 axe 报告位于
 `TestResults/visual/`。普通 `test:visual` 永远不会自动接受差异。
+
+Markdown 性能场景固定为 500 turn、约 1 MiB Markdown、20 个代码块、20 个公式、
+5 个 Mermaid 图和 240 次流式增量。它验证末条可见时间、离屏重型资源、P95 帧时
+与掉帧率，并将机器可读结果写入
+`TestResults/visual/markdown-performance.json`。可单独运行：
+
+```powershell
+npm.cmd run test:markdown-performance
+```
 
 ## 依赖审计
 

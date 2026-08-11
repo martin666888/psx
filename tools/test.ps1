@@ -31,7 +31,7 @@ $minimumTests = @{
     Desktop = 2
     Fast = 501
     Full = 503
-    Frontend = 300
+    Frontend = 306
 }
 
 function Invoke-Checked {
@@ -388,6 +388,9 @@ try {
         }
         Invoke-Checked "Run Full visual and accessibility checks" {
             & $toolchain.NodePath (Join-Path $repoRoot "tools\screenshot-baseline.mjs")
+        }
+        Invoke-Checked "Run locked-Chromium Markdown performance checks" {
+            & $toolchain.NodePath (Join-Path $repoRoot "tools\markdown-performance.mjs")
         }
         if ($SkipDependencyAudit) {
             Write-Warning "Full diagnostics passed, release gate incomplete: dependency audit was skipped."

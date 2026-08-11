@@ -44,10 +44,11 @@ export default defineConfig({
       }]
     ],
     // Each file needs a fresh module graph because Agent modules capture the
-    // active jsdom/React root. A single isolated worker thread preserves that
-    // boundary without retaining one child process per file under V8 coverage.
+    // active jsdom/React root. Keep exactly one forked worker: this preserves
+    // file isolation and prevents Vitest's transform server plus the test
+    // runtime from sharing one process-level commit limit.
     isolate: true,
-    pool: 'threads',
+    pool: 'forks',
     fileParallelism: false,
     maxWorkers: 1,
     // tools/run-guarded-vitest.ps1 places the entire runner under hard

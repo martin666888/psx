@@ -503,6 +503,7 @@ function UserMessageBody({
           ref={content}
           className="agent-message-content"
           markdown={cleanUserText(item.raw)}
+          mode="static"
         />
       </MessageContent>
       {toggle}
@@ -555,7 +556,7 @@ const MessageRow = function MessageRow({
         <UserMessageBody item={item} callbacks={callbacks} />
       ) : (
         <MessageContent className="agent-message-body w-full" data-raw={item.raw}>
-          <PsxMessageResponse markdown={item.raw} />
+          <PsxMessageResponse markdown={item.raw} mode={item.finalized ? 'static' : 'streaming'} />
         </MessageContent>
       )}
       {showActions ? (

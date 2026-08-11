@@ -239,6 +239,29 @@ const REACT_SMOKE_BOOTSTRAP = String.raw`
       resources.some((name) => /\/app\/assets\/react-vendor-[-\w]+\.js(?:$|\?)/.test(name));
     result.checks.agentChunkLoaded =
       resources.some((name) => /\/app\/assets\/entry-[-\w]+\.js(?:$|\?)/.test(name));
+    result.checks.markdownCoreLoaded =
+      resources.some((name) => /\/app\/assets\/markdown-core-[-\w]+\.js(?:$|\?)/.test(name));
+    result.checks.heavyMarkdownChunksDeferred =
+      !resources.some((name) => /\/app\/assets\/markdown-(?:code|math|mermaid|katex)-[-\w]+\.(?:js|css)(?:$|\?)/.test(name));
+
+    emit({ type: 'user_message', workspaceId, text: 'Highlight this local JavaScript sample.' });
+    emit({
+      type: 'assistant_delta',
+      workspaceId,
+      text: '\n\n' + String.fromCharCode(96).repeat(3)
+        + 'js\nconst psxMarkdownWorker = true;\n'
+        + String.fromCharCode(96).repeat(3)
+    });
+    emit({ type: 'run_finished', workspaceId });
+    result.checks.shikiWorkerHighlighted = await waitFor(() =>
+      !!panel?.querySelector('[data-streamdown="code-block-body"] [style*="--sdm-c"]'),
+      10000
+    );
+    const resourcesAfterCode = performance.getEntriesByType('resource').map((entry) => entry.name);
+    result.checks.markdownCodeChunkLoaded =
+      resourcesAfterCode.some((name) => /\/app\/assets\/markdown-code-[-\w]+\.js(?:$|\?)/.test(name));
+    result.checks.localShikiWorkerLoaded =
+      resourcesAfterCode.some((name) => /\/app\/assets\/shiki-worker\.js(?:$|\?)/.test(name));
 
     const passed =
       Object.values(result.checks).every((value) => value === true)
