@@ -10,6 +10,7 @@
 // - verify:web never mutates the committed output.
 
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -20,7 +21,80 @@ export const repoRoot = path.resolve(here, '..');
 export const webviewRoot = path.join(repoRoot, 'frontend', 'webview');
 export const committedAppDir = path.join(repoRoot, 'wwwroot', 'app');
 
+const agentUiFontFamily = 'Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI, Segoe UI Emoji, sans-serif';
+const mapleMonoFontFamily = 'PSX Maple Mono, Segoe UI Emoji, Microsoft YaHei UI, monospace';
+const mapleMonoFiles = new Map([
+  ['wwwroot/vendor/fonts/maple-mono/MapleMonoNormal-CN-Regular.ttf', 'E42D081EAECBDA6A043079EAAAF43EA20BD8805666BC06E1FE4DC663C462AD7F'],
+  ['wwwroot/vendor/fonts/maple-mono/MapleMonoNormal-CN-SemiBold.ttf', 'F72D4475C7AC435C7C363E0CB35100A18E4A5BB14787F17F7BBC64823B904066'],
+  ['licenses/maple-mono/LICENSE.txt', 'EB2D28D2E565A0757E3D64E34EBB452E75A0CAD87C0AB3FAF4E08BA7596DE902']
+]);
+
 const require = createRequire(import.meta.url);
+
+function sha256File(file) {
+  const hash = createHash('sha256');
+  const descriptor = fs.openSync(file, 'r');
+  const buffer = Buffer.allocUnsafe(1024 * 1024);
+  try {
+    let bytesRead;
+    do {
+      bytesRead = fs.readSync(descriptor, buffer, 0, buffer.length, null);
+      if (bytesRead > 0) hash.update(buffer.subarray(0, bytesRead));
+    } while (bytesRead > 0);
+  } finally {
+    fs.closeSync(descriptor);
+  }
+  return hash.digest('hex').toUpperCase();
+}
+
+export function validateBundledAgentFonts(label) {
+  const problems = [];
+  for (const [relative, expectedHash] of mapleMonoFiles) {
+    const absolute = path.join(repoRoot, ...relative.split('/'));
+    if (!fs.existsSync(absolute)) {
+      problems.push(`missing bundled font resource: ${relative}`);
+    } else if (sha256File(absolute) !== expectedHash) {
+      problems.push(`bundled font resource hash mismatch: ${relative}`);
+    }
+  }
+
+  const tokenCss = fs.readFileSync(path.join(webviewRoot, 'src', 'css', 'agent', 'tokens.css'), 'utf8');
+  for (const expected of [
+    'MapleMonoNormal-CN-Regular.ttf',
+    'MapleMonoNormal-CN-SemiBold.ttf',
+    'font-weight: 400',
+    'font-weight: 600',
+    'font-synthesis: style',
+    '[data-agent-font-surface]'
+  ]) {
+    if (!tokenCss.includes(expected)) problems.push(`Agent font CSS is missing: ${expected}`);
+  }
+
+  for (const relative of ['src/css/workspace-chrome.css', 'src/css/runtime-diagnostics.css']) {
+    const source = fs.readFileSync(path.join(webviewRoot, ...relative.split('/')), 'utf8');
+    if (source.includes('var(--agent-font-ui)') || source.includes('var(--agent-font-mono)')) {
+      problems.push(`${relative} still consumes an Agent font token`);
+    }
+    if (!source.includes('var(--workspace-font-ui)')) {
+      problems.push(`${relative} does not consume the workspace font token`);
+    }
+  }
+
+  const presetFiles = fs.readdirSync(path.join(repoRoot, 'theme-presets'))
+    .filter((name) => name.endsWith('.ini'))
+    .map((name) => `theme-presets/${name}`);
+  for (const relative of ['psx.ini', ...presetFiles]) {
+    const source = fs.readFileSync(path.join(repoRoot, ...relative.split('/')), 'utf8');
+    if (!source.includes(`fontFamily=${agentUiFontFamily}`)
+        || !source.includes(`monoFontFamily=${mapleMonoFontFamily}`)) {
+      problems.push(`${relative} does not contain the complete proportional UI and bundled mono font stacks`);
+    }
+  }
+
+  if (problems.length > 0) {
+    throw new Error(`[${label}] bundled Agent font validation failed:\n  - ${problems.join('\n  - ')}`);
+  }
+}
 
 export function runViteBuild(outDir, label) {
   fs.rmSync(outDir, { recursive: true, force: true });
@@ -144,6 +218,24 @@ export function validateOutput(outDir, label) {
   }
 
   const assetFiles = files.filter((file) => file.startsWith('assets/'));
+  const emittedCss = assetFiles
+    .filter((file) => file.endsWith('.css'))
+    .map((file) => fs.readFileSync(path.join(outDir, file), 'utf8'))
+    .join('\n');
+  for (const expected of [
+    '--default-font-family:var(--psx-font-sans)',
+    '--default-mono-font-family:var(--psx-font-mono)',
+    '.font-sans{font-family:var(--psx-font-sans)}',
+    '.font-mono{font-family:var(--psx-font-mono)}'
+  ]) {
+    if (!emittedCss.includes(expected)) problems.push(`scoped font output is missing: ${expected}`);
+  }
+  for (const forbidden of [
+    '--default-font-family:var(--agent-font-ui)',
+    '--default-mono-font-family:var(--agent-font-mono)'
+  ]) {
+    if (emittedCss.includes(forbidden)) problems.push(`Agent font leaked into global Preflight: ${forbidden}`);
+  }
   if (!assetFiles.includes('assets/shiki-worker.js')) {
     problems.push('missing fixed local Shiki worker entry');
   }

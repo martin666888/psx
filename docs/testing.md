@@ -4,7 +4,9 @@ PSX 的门禁以本地可复现为第一原则。所有验证必须串行执行�
 typecheck、lint、Vitest、前端构建/校验或 `tools/test.ps1`。C# 测试通过
 `[assembly: DoNotParallelize]` 禁止并行，Vitest 固定
 `fileParallelism: false`、`maxWorkers: 1`，因为 jsdom/React Harness 会修改
-进程级浏览器全局。中断 Web 测试后，重试前先确认没有测试所属的 `node`
+进程级浏览器全局。完整 Web 门禁通过 `tools/run-web-tests.ps1` 让每个测试文件
+在独立的受限进程树中串行执行，前一个进程退出后才启动下一个，并由 Vitest
+官方 blob reporter 合并测试与覆盖率报告。中断 Web 测试后，重试前先确认没有测试所属的 `node`
 进程残留。
 
 自动化测试不会登录真实 Provider、消耗模型额度或读取
@@ -15,12 +17,12 @@ typecheck、lint、Vitest、前端构建/校验或 `tools/test.ps1`。C# 测试�
 
 | 层级 | 内容 | 最低发现数 |
 |---|---|---:|
-| Unit | 纯逻辑、解析、状态与架构约束 | 363 |
+| Unit | 纯逻辑、解析、状态与架构约束 | 390 |
 | Integration | Fake ACP/npm、持久化、Runtime 与进程边界 | 112 |
 | Desktop | WPF/ConPTY 桌面探针 | 2 |
-| Fast | Unit + Integration | 501 |
-| Full | 全部 C# 测试 | 503 |
-| Web | Vitest/jsdom 契约 | 306 |
+| Fast | Unit + Integration | 502 |
+| Full | 全部 C# 测试 | 504 |
+| Web | Vitest/jsdom 契约 | 317 |
 
 数字来自 Microsoft Testing Platform TRX 和 Vitest JSON reporter；C# 数量包含
 `DataRow` 展开结果，不是源码中的 `[TestMethod]` 个数。只有明确删除测试时

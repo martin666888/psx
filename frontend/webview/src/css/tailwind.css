@@ -2,11 +2,11 @@
  *
  * Global Preflight is intentional (CP0 probe: xterm passes all checks with
  * the two overrides below; no scoped mini-preflight needed). shadcn design
- * tokens are scoped to .agent-ui — the Theme Adapter maps the existing
- * appearance_settings payload onto these variables at runtime, so nothing
- * outside the Agent UI changes appearance. @theme inline exposes them as
- * Tailwind utility colors (bg-background, text-foreground, ...) resolved
- * against the nearest .agent-ui scope.
+ * color tokens are scoped to .agent-ui — the Theme Adapter maps the existing
+ * appearance_settings payload onto these variables at runtime. Typography is
+ * narrower: [data-agent-font-surface] owns Agent fonts because .agent-ui also
+ * wraps Terminal and global chrome. @theme inline exposes both token families
+ * as Tailwind utilities resolved against the nearest owning scope.
  */
 @import "tailwindcss";
 @import "streamdown/styles.css";
@@ -105,6 +105,11 @@
 }
 
 @theme inline {
+  /* These indirection tokens default to workspace fonts and are overridden
+     only by [data-agent-font-surface]. Do not point Tailwind's font tokens at
+     --agent-font-* directly: they also become global Preflight defaults. */
+  --font-sans: var(--psx-font-sans);
+  --font-mono: var(--psx-font-mono);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);

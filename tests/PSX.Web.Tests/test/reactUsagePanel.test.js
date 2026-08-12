@@ -9,13 +9,15 @@ import { afterEach, beforeEach, test } from 'vitest';
 import assert from 'node:assert/strict';
 import { act } from 'react';
 import {
-  installAgentRuntime,
-  installBreakpoint,
-  agentTemplateMarkup,
-  createAgentWorkspace,
-  registerAgentCleanup,
-  appModule
-} from './agentHarness.js';
+  completeness,
+  dailyTokens,
+  fixture,
+  openPanelWith,
+  providerReport,
+  report,
+  settle,
+  usageCommands
+} from './usagePanelFixture.js';
 
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -24,105 +26,6 @@ afterEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = false;
 });
 
-const WS = '88888888-8888-4888-8888-888888888888';
-
-const dailyTokens = (entries = {}) =>
-  Array.from({ length: 365 }, (_, index) => entries[index] ?? 0);
-
-const completeness = (overrides = {}) => ({
-  status: 'available',
-  reasons: [],
-  expectedSessions: 1,
-  matchedSessions: 1,
-  skippedFiles: 0,
-  badLines: 0,
-  untrackedThreads: 0,
-  ...overrides
-});
-
-const providerReport = (overrides = {}) => ({
-  providerKey: 'acp-claude',
-  displayName: 'Claude Code',
-  iconKey: 'claude',
-  dailyTokens: dailyTokens({ 0: 1, 1: 2, 364: 3 }),
-  today: { totalTokens: 200 },
-  last7Days: { totalTokens: 1500 },
-  last30Days: { totalTokens: 3290258 },
-  completeness: completeness(),
-  ...overrides
-});
-
-const report = (overrides = {}) => ({
-  heatmapStartDate: '2026-01-01',
-  dailyTokens: dailyTokens({ 0: 1, 1: 2, 364: 3 }),
-  today: { totalTokens: 200 },
-  last7Days: { totalTokens: 1500 },
-  last30Days: { totalTokens: 3290258 },
-  providers: [providerReport()],
-  ...overrides
-});
-
-async function fixture({ withWorkspace = true } = {}) {
-  const runtime = installAgentRuntime();
-  await appModule('history/historyIsland.js');
-  await appModule('usage/usageIsland.js');
-  installBreakpoint(true);
-  document.body.innerHTML = `<div id="agents"></div>${agentTemplateMarkup()}`;
-  window.localStorage.setItem('psx.agent.historyDockOpen', '1');
-  const { createAgentApp } = await appModule('entry.js');
-  const app = createAgentApp({
-    terminalManager: { setViewVisible() {} },
-    container: document.getElementById('agents'),
-    template: document.getElementById('agent-workspace-template')
-  });
-  registerAgentCleanup(() => app.dispose());
-  if (withWorkspace) createAgentWorkspace(app, WS);
-  const footer = () => document.querySelector('[data-role="history-profile"]');
-  for (let index = 0; index < 100 && !footer(); index++) {
-    await act(async () => new Promise((resolve) => setTimeout(resolve, 5)));
-  }
-  assert.ok(footer(), 'history dock footer did not mount');
-  return { app, posted: runtime.postedMessages, footer };
-}
-
-async function settle(run, predicate, what = 'usage island') {
-  await act(async () => {
-    run();
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  });
-  for (let index = 0; index < 50 && !predicate(); index++) {
-    await act(async () => new Promise((resolve) => setTimeout(resolve, 5)));
-  }
-  assert.ok(predicate(), what + ' did not settle');
-}
-
-function usageCommands(posted) {
-  return posted.filter(
-    (message) => message.type === 'agent_global_command' && message.command === 'usage_report'
-  );
-}
-
-async function openPanelWith(rig, payload) {
-  await settle(
-    () => rig.footer().click(),
-    () => usageCommands(rig.posted).length > 0,
-    'usage_report command'
-  );
-  const request = usageCommands(rig.posted).at(-1);
-  assert.equal(request.value, 'cached');
-  await settle(
-    () =>
-      rig.app.handle({
-        type: 'agent_usage_report',
-        requestId: request.requestId,
-        generatedAt: '2026-07-20T10:00:00Z',
-        timezone: 'Asia/Shanghai',
-        ...payload
-      }),
-    () => document.querySelector('[data-role="usage-overview"], [data-role="usage-error"]')
-  );
-  return request;
-}
 
 test('footer: terminal-only startup fetches the saved profile and renders its avatar fallback', async () => {
   const rig = await fixture({ withWorkspace: false });

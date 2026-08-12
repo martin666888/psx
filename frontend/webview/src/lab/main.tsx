@@ -106,7 +106,7 @@ function Lab() {
   return (
     <div className="mx-auto max-w-3xl space-y-10 bg-background p-8 text-foreground">
       <header className="flex items-center justify-between">
-        <h1 className="font-bold text-2xl">PSX Component Lab (Debug)</h1>
+        <h1 className="font-semibold text-2xl">PSX Component Lab (Debug)</h1>
         <Button onClick={toggleTheme} variant="outline">
           {themed ? 'Reset to defaults' : 'Apply Vercel Dark via Theme Adapter'}
         </Button>
@@ -221,6 +221,7 @@ function Lab() {
 const host = document.getElementById('lab-root');
 if (host) {
   host.classList.add('agent-ui');
+  host.dataset.agentFontSurface = '';
   createRoot(host).render(
     <StrictMode>
       <Lab />

@@ -26,12 +26,12 @@ $webSummaryPath = Join-Path $webResults "test-summary.json"
 $frontendToolchain = $null
 
 $minimumTests = @{
-    Unit = 389
+    Unit = 390
     Integration = 112
     Desktop = 2
-    Fast = 501
-    Full = 503
-    Frontend = 306
+    Fast = 502
+    Full = 504
+    Frontend = 317
 }
 
 function Invoke-Checked {
@@ -285,14 +285,14 @@ function Invoke-FrontendTests {
         Invoke-Npm run verify:web --prefix $repoRoot
     }
     Invoke-Checked "Run frontend tests with production-code coverage" {
-        # V8 coverage retains the instrumented module graph until reporting.
-        # Keep the run hard-bounded, but give that single Node process enough
-        # headroom to finish instead of failing near the default 2 GiB cap.
+        # V8 coverage retains each instrumented module graph until that test
+        # process exits. Run every file in its own guarded process tree, then
+        # let Vitest merge the official blob/coverage reports sequentially.
         Remove-Item -LiteralPath $webSummaryPath -Force -ErrorAction SilentlyContinue
         $toolchain = Get-FrontendToolchain
         powershell -ExecutionPolicy Bypass -File (
-            Join-Path $repoRoot "tools\run-guarded-vitest.ps1"
-        ) -NodePath $toolchain.NodePath -ProcessMemoryLimitMB 2560 -JobMemoryLimitMB 3072 --coverage
+            Join-Path $repoRoot "tools\run-web-tests.ps1"
+        ) -NodePath $toolchain.NodePath -Coverage
     }
     Assert-WebResults
 }

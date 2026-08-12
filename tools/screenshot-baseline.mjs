@@ -597,8 +597,25 @@ const SCENES = [
     events: terminalOnlyEvents,
     ready: '.workspace-tab',
     async stage(page) {
+      await page.evaluate(async () => {
+        const probe = document.createElement('code');
+        probe.className = 'font-mono';
+        probe.textContent = 'terminal mono probe';
+        probe.style.cssText = 'position:fixed;left:-10000px;top:0;';
+        document.body.appendChild(probe);
+        await document.fonts.ready;
+      });
+      const terminalFontRequests = await page.evaluate(() =>
+        performance.getEntriesByType('resource')
+          .map((entry) => entry.name)
+          .filter((name) => name.includes('/vendor/fonts/maple-mono/'))
+      );
+      if (terminalFontRequests.length !== 0) {
+        throw new Error(`Terminal-only startup loaded Agent fonts: ${terminalFontRequests.join(', ')}`);
+      }
       await page.locator('[data-role="history-toggle"]').click();
       await page.waitForSelector('.agent-history-item');
+      await page.evaluate(() => document.fonts.ready);
       await page.waitForFunction(() => {
         const dock = document.querySelector('[data-role="history-dock"]')?.getBoundingClientRect();
         const paneRoot = document.querySelector('#workspace-panes')?.getBoundingClientRect();
@@ -607,17 +624,46 @@ const SCENES = [
       await page.waitForFunction(() =>
         document.querySelector('[data-role="history-profile"]')?.textContent?.includes('Minghai')
       );
+      const historyFontRequests = await page.evaluate(() =>
+        performance.getEntriesByType('resource')
+          .map((entry) => entry.name)
+          .filter((name) => name.includes('/vendor/fonts/maple-mono/'))
+      );
+      if (historyFontRequests.length !== 0) {
+        throw new Error(`Natural-language History loaded mono fonts: ${historyFontRequests.join(', ')}`);
+      }
+      await page.evaluate(async () => {
+        const probe = document.createElement('div');
+        probe.dataset.agentFontSurface = '';
+        probe.style.cssText = 'position:fixed;left:-10000px;top:0;';
+        probe.innerHTML = '<code class="font-mono" style="font-weight:400">mono regular</code><code class="font-mono" style="font-weight:600">mono semibold</code>';
+        document.body.appendChild(probe);
+        await Promise.all([
+          document.fonts.load('400 16px "PSX Maple Mono"'),
+          document.fonts.load('600 16px "PSX Maple Mono"'),
+          document.fonts.ready
+        ]);
+      });
     },
     async verify(page) {
       const probe = await page.evaluate(() => ({
         profile: document.querySelector('[data-role="history-profile"]')?.textContent || '',
         icons: [...document.querySelectorAll('.agent-history-provider-icon svg')]
-          .map((icon) => icon.getAttribute('data-icon'))
+          .map((icon) => icon.getAttribute('data-icon')),
+        fontRequests: performance.getEntriesByType('resource')
+          .map((entry) => entry.name)
+          .filter((name) => name.includes('/vendor/fonts/maple-mono/'))
       }));
       if (!probe.profile.includes('Minghai')) throw new Error('saved profile was not loaded');
       for (const expected of ['claude', 'kimi', 'agent']) {
         if (!probe.icons.includes(expected)) {
           throw new Error(`provider icon ${expected} did not render from the catalog: ${probe.icons.join(', ')}`);
+        }
+      }
+      for (const face of ['Regular', 'SemiBold']) {
+        const matches = probe.fontRequests.filter((name) => name.includes(`-${face}.ttf`));
+        if (matches.length !== 1) {
+          throw new Error(`Maple Mono ${face} request count is ${matches.length}, expected 1`);
         }
       }
     }
@@ -783,6 +829,7 @@ const MIME = {
   '.json': 'application/json',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.ttf': 'font/ttf',
   '.woff2': 'font/woff2'
 };
 

@@ -69,7 +69,6 @@
     border-radius: var(--agent-radius-control);
     background: transparent;
     color: var(--agent-text);
-    font-family: var(--agent-font-ui);
     font-size: 15px;
     font-weight: 600;
     cursor: text;
@@ -87,7 +86,6 @@
     border-radius: var(--agent-radius-input);
     background: var(--agent-canvas-surface);
     color: var(--agent-text);
-    font-family: var(--agent-font-ui);
     font-size: 15px;
     font-weight: 600;
 }
@@ -116,7 +114,6 @@
     border-radius: calc(var(--agent-radius-control) - var(--agent-space-1) / 2);
     background: transparent;
     color: var(--agent-text-muted);
-    font-family: var(--agent-font-ui);
     font-size: 12px;
     cursor: pointer;
 }

@@ -57,7 +57,7 @@ export function ModeTransitionPrompt({
     >
       <div className="mb-[var(--agent-space-3)] flex items-start justify-between gap-[var(--agent-space-3)]">
         <div className="min-w-0">
-          <div className="break-words text-[13px] font-bold leading-[1.4]">
+          <div className="break-words text-[13px] font-semibold leading-[1.4]">
             {prompt.title}
           </div>
           <div className="mt-0.5 text-xs leading-[1.4] text-muted-foreground">

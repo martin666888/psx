@@ -49,7 +49,7 @@ public sealed class TerminalOptions
             AgentFontSize = settings.AgentFontSize,
             AgentFontFamily = settings.AgentFontFamily,
             AgentMonoFontFamily = string.IsNullOrWhiteSpace(settings.AgentMonoFontFamily)
-                ? settings.FontFamily
+                ? AppSettings.BundledAgentMonoFontFamily
                 : settings.AgentMonoFontFamily,
             ThemeColors = settings.ThemeColors,
             AgentThemeColors = settings.AgentTheme,

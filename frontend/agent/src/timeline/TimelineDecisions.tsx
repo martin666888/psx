@@ -79,7 +79,7 @@ function PermissionQuestionCard({
             <span className="agent-decision-chevron inline-flex shrink-0 text-muted-foreground" aria-hidden="true">
               <ChevronRightIcon className="size-3 transition-transform group-data-[state=open]/decision:rotate-90" />
             </span>
-            <span className="agent-decision-header-title text-[13px] font-bold">{item.title}</span>
+            <span className="agent-decision-header-title text-[13px] font-semibold">{item.title}</span>
           </div>
           <span className="agent-decision-header-subtitle text-xs text-muted-foreground">{subtitle}</span>
         </div>
@@ -174,7 +174,7 @@ function DocumentDecisionCard({
       data-tool-call-id={item.toolCallId || undefined}
     >
       <header className="agent-mode-transition-header flex items-baseline justify-between gap-3 border-b px-4 py-3">
-        <div className="agent-mode-transition-title min-w-0 break-words text-[13px] font-bold leading-snug">{item.title}</div>
+        <div className="agent-mode-transition-title min-w-0 break-words text-[13px] font-semibold leading-snug">{item.title}</div>
         <span className="agent-mode-transition-header-state shrink-0 text-xs font-semibold text-muted-foreground">
           {pending ? 'Decision required' : item.headerState || 'Interrupted'}
         </span>
@@ -471,7 +471,7 @@ function ElicitationCard({
             aria-hidden="true"
           />
           <InfoIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <div className="agent-decision-title text-[13px] font-bold">{item.title}</div>
+          <div className="agent-decision-title text-[13px] font-semibold">{item.title}</div>
         </div>
         <div className="agent-decision-header-status shrink-0 text-xs text-muted-foreground">
           {disabled ? item.statusText : 'Waiting for input'}

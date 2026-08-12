@@ -37,11 +37,6 @@ import {
   CommandItem,
   CommandList
 } from '../components/ui/command.js';
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle
-} from '../components/ui/dialog.js';
 import { Switch } from '../components/ui/switch.js';
 import {
   PromptInput,
@@ -54,6 +49,10 @@ import {
   AttachmentBridge,
   type AttachmentBridgeProps
 } from './AttachmentBridge.js';
+import {
+  ComposerImagePreview,
+  type ComposerPreviewProps
+} from './ComposerImagePreview.js';
 import {
   ModeTransitionPrompt,
   type ComposerModeTransitionPromptVM
@@ -112,12 +111,6 @@ export interface ComposerCommandMenuProps {
   onHighlight(id: string): void;
   onSelect(id: string): void;
   onDismiss(): void;
-}
-
-export interface ComposerPreviewProps {
-  requestToken: number;
-  closeToken: number;
-  src: string;
 }
 
 export interface ComposerDraftProps {
@@ -315,7 +308,7 @@ function ComposerTextarea(props: {
       value={props.draft}
       disabled={props.draftProps.disabled}
       spellCheck={false}
-      className="agent-native-scroll min-h-[var(--agent-composer-input-min-height)] max-h-[180px] w-full resize-none overflow-y-auto border-0 bg-transparent p-0 font-mono text-sm leading-[1.45] text-foreground shadow-none placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-0"
+      className="agent-native-scroll min-h-[var(--agent-composer-input-min-height)] max-h-[180px] w-full resize-none overflow-y-auto border-0 bg-transparent p-0 font-sans text-sm leading-[1.45] text-foreground shadow-none placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-0"
       aria-autocomplete="list"
       role="combobox"
       aria-haspopup="listbox"
@@ -380,45 +373,6 @@ function ComposerTextarea(props: {
         attachments.add(files);
       }}
     />
-  );
-}
-
-function ComposerImagePreview({ preview }: { preview: ComposerPreviewProps }): JSX.Element {
-  const [open, setOpen] = useState(false);
-  const returnFocusRef = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    if (preview.requestToken > 0 && preview.src) {
-      returnFocusRef.current =
-        document.activeElement instanceof HTMLElement ? document.activeElement : null;
-      setOpen(true);
-    }
-  }, [preview.requestToken, preview.src]);
-
-  useEffect(() => {
-    if (preview.closeToken > 0) setOpen(false);
-  }, [preview.closeToken]);
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent
-        data-role="image-preview"
-        className="max-w-[min(92vw,1200px)] border-0 bg-transparent p-0 shadow-none"
-        onCloseAutoFocus={(event) => {
-          event.preventDefault();
-          const returnTarget = returnFocusRef.current;
-          setTimeout(() => returnTarget?.focus(), 0);
-        }}
-      >
-        <DialogTitle className="sr-only">Image preview</DialogTitle>
-        <img
-          data-role="image-preview-img"
-          src={preview.src || undefined}
-          alt="Image preview"
-          className="max-h-[88vh] w-full rounded-[var(--agent-radius-card)] object-contain shadow-[var(--agent-shadow-dialog)]"
-        />
-      </DialogContent>
-    </Dialog>
   );
 }
 

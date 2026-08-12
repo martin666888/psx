@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type JSX,
   type RefObject
 } from 'react';
@@ -30,6 +31,14 @@ import {
   psxUrlTransform
 } from './security.js';
 import { inspectMarkdownSource, type RequiredMarkdownPlugins } from './sourceInspection.js';
+import {
+  getReducedMotionSnapshot,
+  subscribeReducedMotion
+} from './reducedMotion.js';
+import {
+  isStreamingTextAnimationEnabled,
+  STREAMING_TEXT_ANIMATION
+} from './streamingAnimation.js';
 
 const CODE_FILENAME_META = /(?:^|\s)(?:filename|title)=(?:"([^"]*)"|'([^']*)'|([^\s]+))/i;
 const CODE_START_LINE_META = /(?:^|\s)startLine=(\d+)/;
@@ -125,6 +134,11 @@ export function MarkdownRenderer({ source, mode, surface, className }: MarkdownC
   const required = useMemo(() => inspectMarkdownSource(source), [source]);
   const { containerRef, nearViewport } = useNearViewport(mode, required);
   const dark = useDarkTheme(containerRef);
+  const reducedMotion = useSyncExternalStore(
+    subscribeReducedMotion,
+    getReducedMotionSnapshot,
+    () => false
+  );
   const [heavyPlugins, setHeavyPlugins] = useState<PluginConfig>({});
 
   useEffect(() => {
@@ -149,6 +163,16 @@ export function MarkdownRenderer({ source, mode, surface, className }: MarkdownC
     [heavyPlugins]
   );
   const mermaid = useMemo(() => createPsxMermaidOptions(dark), [dark]);
+  // source.length intentionally measures the complete Markdown source in
+  // UTF-16 code units. Fences, links, tables and heavy blocks count toward
+  // the limit even when Streamdown excludes their rendered nodes from the
+  // character animation.
+  const animationEnabled = isStreamingTextAnimationEnabled(
+    mode,
+    source.length,
+    reducedMotion,
+    !!heavyPlugins.math
+  );
 
   return (
     <div
@@ -158,7 +182,7 @@ export function MarkdownRenderer({ source, mode, surface, className }: MarkdownC
       data-markdown-surface={surface}
     >
       <Streamdown
-        animated={false}
+        animated={animationEnabled ? STREAMING_TEXT_ANIMATION : false}
         components={psxMarkdownComponents}
         controls={{
           code: { copy: true, download: false },
@@ -166,6 +190,10 @@ export function MarkdownRenderer({ source, mode, surface, className }: MarkdownC
           mermaid: { copy: true, download: false, fullscreen: true, panZoom: true }
         }}
         isAnimating={mode === 'streaming'}
+        // Streamdown 2.5 does not reliably reparse already-mounted math when
+        // only plugins changes. Remount its inner renderer once, while the
+        // PSX message/Markdown wrapper remains stable. Animation is disabled
+        // after math becomes ready so the existing prefix cannot replay.
         key={heavyPlugins.math ? 'math-ready' : 'math-pending'}
         lineNumbers
         linkSafety={{ enabled: false }}

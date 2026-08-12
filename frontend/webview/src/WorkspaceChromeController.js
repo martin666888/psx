@@ -307,11 +307,11 @@ export class WorkspaceChromeController {
         if (this.openMenu === 'pane' && this.openTrigger) {
             // The column menu's trigger lives on a tab anywhere across the
             // chrome row: anchor directly under it. The exact left is set after
-            // mount (measured width), right-aligned to the trigger so it never
-            // overflows the window's right edge — a transform would fight the
-            // popover-in animation's translateY.
+            // mount (measured width), left-aligned to the trigger and clamped
+            // only when needed to keep it inside the viewport. A transform
+            // would fight the popover-in animation's translateY.
             const rect = this.openTrigger.getBoundingClientRect();
-            menu.dataset.anchorRight = String(rect.right);
+            menu.dataset.anchorLeft = String(rect.left);
             menu.style.top = `${rect.bottom + 4}px`;
         } else if (this.openTrigger) {
             // Global menus hug the activity rail's right edge (left comes from
@@ -327,11 +327,12 @@ export class WorkspaceChromeController {
         if (this.openMenu === 'pane') this.renderPaneMenu(menu, this.paneMenuWorkspace);
         if (isRefresh) menu.style.animation = 'none';
         this.portalRoot.replaceChildren(menu);
-        if (menu.dataset.anchorRight) {
-            const right = Number(menu.dataset.anchorRight);
-            const left = Math.max(44, right - menu.offsetWidth);
+        if (menu.dataset.anchorLeft) {
+            const anchorLeft = Number(menu.dataset.anchorLeft);
+            const rightmostLeft = Math.max(44, window.innerWidth - menu.offsetWidth - 8);
+            const left = Math.min(Math.max(44, anchorLeft), rightmostLeft);
             menu.style.left = `${left}px`;
-            delete menu.dataset.anchorRight;
+            delete menu.dataset.anchorLeft;
         }
         if (!isRefresh) window.queueMicrotask(() => menu.querySelector('button:not(:disabled)')?.focus());
     }

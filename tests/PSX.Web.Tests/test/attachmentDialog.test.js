@@ -1,66 +1,67 @@
-import { afterEach, test } from 'vitest';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { mountAgentApp, createAgentWorkspace, composerReady } from './agentHarness.js';
-
-globalThis.IS_REACT_ACT_ENVIRONMENT = false;
-const WS = '89898989-8989-4989-8989-898989898989';
-let currentApp = null;
+import { act, createElement } from 'react';
+import { createRoot } from 'react-dom/client';
+import {
+  appModule,
+  flushAgentAnimationFrames,
+  installAgentRuntime
+} from './agentHarness.js';
 
 async function waitFor(predicate, message = 'condition did not settle') {
   for (let attempt = 0; attempt < 100; attempt++) {
     const value = predicate();
     if (value) return value;
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await act(async () => {
+      flushAgentAnimationFrames();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
   }
   assert.fail(message);
 }
 
-afterEach(() => {
-  if (!currentApp) return;
-  const app = currentApp;
-  currentApp = null;
-  app.handle({ type: 'agent_workspace_closed', workspaceId: WS });
-});
-
 test('attachment preview traps focus in Dialog and restores it on close', async () => {
-  const { app, panelFor } = await mountAgentApp();
-  currentApp = app;
-  createAgentWorkspace(app, WS);
-  app.handle({
-    type: 'agent_state',
-    workspaceId: WS,
-    status: 'ready',
-    supportsImage: true,
-    busy: false
-  });
-  const panel = panelFor(WS);
-  await composerReady(panel);
+  installAgentRuntime();
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  const { ComposerImagePreview } = await appModule('composer/ComposerImagePreview.js');
+  const { setPortalContainer } = await appModule('ui/portalContainer.js');
+  const trigger = document.createElement('button');
+  trigger.type = 'button';
+  trigger.textContent = 'Preview image';
+  const portal = document.createElement('div');
+  portal.className = 'agent-ui';
+  const host = document.createElement('div');
+  document.body.append(trigger, portal, host);
+  setPortalContainer(portal);
+  const root = createRoot(host);
 
-  const input = panel.querySelector('[data-role="attachment-input"]');
-  // This test owns Dialog focus semantics, not browser File byte handling
-  // (AttachmentBridge has dedicated real-File tests). A metadata-only file
-  // avoids jsdom retaining an ArrayBuffer while V8 precise coverage is active.
-  const file = {
-    name: 'preview.png',
-    type: 'image/png',
-    size: 7,
-    lastModified: 0
-  };
-  Object.defineProperty(input, 'files', { configurable: true, value: [file] });
-  input.dispatchEvent(new Event('change', { bubbles: true }));
+  try {
+    trigger.focus();
+    await act(async () => {
+      root.render(createElement(ComposerImagePreview, {
+        preview: {
+          requestToken: 1,
+          closeToken: 0,
+          src: 'blob:psx/1'
+        }
+      }));
+      await Promise.resolve();
+    });
 
-  const tile = await waitFor(() =>
-    panel.querySelector('.agent-attachments-strip [role="button"]')
-  );
-  tile.focus();
-  tile.click();
-  const dialog = await waitFor(() =>
-    document.querySelector('[data-role="image-preview"]')
-  );
+    const dialog = await waitFor(() => document.querySelector('[data-role="image-preview"]'));
+    assert.equal(dialog.getAttribute('role'), 'dialog');
+    assert.equal(dialog.querySelector('img').src, 'blob:psx/1');
+    assert.ok(dialog.contains(document.activeElement), 'focus moves inside the open Dialog');
 
-  assert.equal(dialog.getAttribute('role'), 'dialog');
-  assert.match(dialog.querySelector('img').src, /^blob:psx\//);
-  document.querySelector('[data-slot="dialog-close"]').click();
-  await waitFor(() => document.querySelector('[data-role="image-preview"]') === null);
-  assert.equal(document.activeElement, tile);
+    await act(async () => {
+      document.querySelector('[data-slot="dialog-close"]').click();
+      await Promise.resolve();
+    });
+    await waitFor(() => document.querySelector('[data-role="image-preview"]') === null);
+    await waitFor(() => document.activeElement === trigger);
+  } finally {
+    await act(async () => root.unmount());
+    setPortalContainer(null);
+    globalThis.IS_REACT_ACT_ENVIRONMENT = false;
+  }
 });

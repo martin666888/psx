@@ -201,6 +201,7 @@ export function HistoryDockView(props: HistoryDockViewProps): JSX.Element {
     <aside
       className="agent-history-dock"
       data-role="history-dock"
+      data-agent-font-surface=""
       aria-label="Agent history"
       hidden={!props.open}
     >

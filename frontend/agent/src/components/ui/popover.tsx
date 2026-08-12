@@ -28,6 +28,7 @@ function PopoverContent({
     <PopoverPrimitive.Portal container={getPortalContainer()}>
       <PopoverPrimitive.Content
         data-slot="popover-content"
+        data-agent-font-surface=""
         align={align}
         sideOffset={sideOffset}
         className={cn(

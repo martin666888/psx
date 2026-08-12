@@ -78,6 +78,8 @@ $PortableNodeVersion = "v22.23.1"
 $PortableNodeArchive = "node-$PortableNodeVersion-win-x64.zip"
 $PortableNodeUrl = "https://nodejs.org/dist/$PortableNodeVersion/$PortableNodeArchive"
 $PortableNodeExpectedSha = "7df0bc9375723f4a86b3aa1b7cc73342423d9677a8df4538aca31a049e309c29"
+$MapleMonoRegularExpectedSha = "E42D081EAECBDA6A043079EAAAF43EA20BD8805666BC06E1FE4DC663C462AD7F"
+$MapleMonoSemiBoldExpectedSha = "F72D4475C7AC435C7C363E0CB35100A18E4A5BB14787F17F7BBC64823B904066"
 
 # ---- locate repo root ----
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -405,10 +407,13 @@ $requiredFiles = @(
     "licenses\radix-ui\LICENSE",
     "licenses\lucide\LICENSE",
     "licenses\tailwindcss\LICENSE",
+    "licenses\maple-mono\LICENSE.txt",
     "theme-presets\vercel-neutral-dark.ini",
     "theme-presets\vercel-neutral-light.ini",
     "wwwroot\app\index.html",
     "wwwroot\app\.vite\manifest.json",
+    "wwwroot\vendor\fonts\maple-mono\MapleMonoNormal-CN-Regular.ttf",
+    "wwwroot\vendor\fonts\maple-mono\MapleMonoNormal-CN-SemiBold.ttf",
     "tools\node\node.exe",
     "tools\node\LICENSE",
     "tools\node\node_modules\npm\LICENSE",
@@ -438,6 +443,17 @@ foreach ($relativePath in $requiredFiles) {
     $fullPath = Join-Path $StagingDir $relativePath
     if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) {
         throw "Required release file is missing: $relativePath"
+    }
+}
+
+$mapleMonoFiles = @{
+    "wwwroot\vendor\fonts\maple-mono\MapleMonoNormal-CN-Regular.ttf" = $MapleMonoRegularExpectedSha
+    "wwwroot\vendor\fonts\maple-mono\MapleMonoNormal-CN-SemiBold.ttf" = $MapleMonoSemiBoldExpectedSha
+}
+foreach ($entry in $mapleMonoFiles.GetEnumerator()) {
+    $actualHash = (Get-FileHash -LiteralPath (Join-Path $StagingDir $entry.Key) -Algorithm SHA256).Hash
+    if (-not [string]::Equals($actualHash, $entry.Value, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Bundled Maple Mono font hash mismatch: $($entry.Key)"
     }
 }
 

@@ -129,8 +129,8 @@ scrollback=10000
 
 [agent]
 fontSize=14
-fontFamily=Cascadia Code, Segoe UI, Microsoft YaHei UI, Microsoft YaHei, sans-serif
-monoFontFamily=Cascadia Code, Consolas, monospace
+fontFamily=Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI, Segoe UI Emoji, sans-serif
+monoFontFamily=PSX Maple Mono, Segoe UI Emoji, Microsoft YaHei UI, monospace
 
 [shell]
 defaultProfile=powershell
@@ -243,6 +243,11 @@ assembles the seed/bundled runtime inputs described above. Before writing the
 archive it validates the application, Node, npm, frontend, runtime entries, and
 license files. It also rejects any package containing `claude.exe`, installed
 `runtime/*-current` directories, logs, or temporary files.
+
+The portable archive also carries the complete Maple Mono Normal CN Regular
+and SemiBold faces for deterministic Agent code typography. Natural-language
+Agent content uses the proportional Windows UI font stack. The bundled faces
+add about 35.4 MiB unpacked and approximately 16 MiB to the compressed release.
 
 Recommended package name:
 

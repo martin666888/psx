@@ -55,3 +55,17 @@
   incomplete-stream repair, CJK, math and diagrams. PSX does not use the
   upstream MessageResponse directly: `MarkdownContent` enforces URL/image
   hardening, controls, source limits, local assets and lazy plugin loading.
+
+## Maple Mono Normal CN — Agent mono typography
+
+- Source: Maple Mono Normal CN 7.9 release archive
+  `MapleMonoNormal-CN.zip` from
+  `https://github.com/subframe7536/maple-font/releases/tag/v7.9`.
+- Archive SHA-256:
+  `0EE9557B3F4C94564B667A45EE9FB22818F880D87BF170687C7B3D0151C584CB`.
+- Shipped files: unmodified Regular 400 and SemiBold 600 TTF faces under
+  `wwwroot/vendor/fonts/maple-mono/`; CSS exposes them through the local alias
+  `PSX Maple Mono` without renaming the font binaries. PSX uses this face only
+  for code and other monospaced technical content; natural-language Agent UI
+  uses the proportional Windows UI font stack.
+- License: SIL Open Font License 1.1 (`licenses/maple-mono/LICENSE.txt`).

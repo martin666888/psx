@@ -344,7 +344,7 @@ public sealed class SettingsService : ISettingsService
     {
         if (string.IsNullOrWhiteSpace(settings.AgentMonoFontFamily))
         {
-            settings.AgentMonoFontFamily = settings.FontFamily;
+            settings.AgentMonoFontFamily = AppSettings.BundledAgentMonoFontFamily;
         }
     }
 

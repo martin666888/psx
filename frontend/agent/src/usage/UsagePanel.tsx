@@ -447,6 +447,7 @@ export function UsagePanel(props: UsagePanelProps): JSX.Element {
       <DialogContent
         className="agent-usage-panel max-h-[85vh] gap-0 sm:max-w-[640px]"
         data-role="usage-panel"
+        data-agent-font-surface=""
         onCloseAutoFocus={(event) => {
           event.preventDefault();
           props.onRestoreFocus();

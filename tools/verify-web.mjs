@@ -9,6 +9,7 @@ import {
   repoRoot,
   committedAppDir,
   runViteBuild,
+  validateBundledAgentFonts,
   validateOutput,
   compareDirectories
 } from './web-build-lib.mjs';
@@ -23,6 +24,7 @@ const generated = spawnSync(
 if (generated.status !== 0) process.exit(generated.status ?? 1);
 
 runViteBuild(scratchDir, 'verify:web');
+validateBundledAgentFonts('verify:web');
 const files = validateOutput(scratchDir, 'verify:web');
 validateOutput(committedAppDir, 'verify:web(committed)');
 

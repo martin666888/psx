@@ -9,6 +9,7 @@ import {
   repoRoot,
   committedAppDir,
   runViteBuild,
+  validateBundledAgentFonts,
   validateOutput
 } from './web-build-lib.mjs';
 
@@ -21,6 +22,7 @@ const generate = spawnSync(process.execPath, [path.join(repoRoot, 'tools', 'gene
 if (generate.status !== 0) process.exit(generate.status ?? 1);
 
 runViteBuild(stagingDir, 'build:web');
+validateBundledAgentFonts('build:web');
 const files = validateOutput(stagingDir, 'build:web');
 
 // Recoverable replace, mirroring the retired buildAgent.js: promote through a

@@ -19,6 +19,7 @@ const {
   normalizePsxImageSource
 } = await appModule('markdown/security.js');
 const { readMarkdownPluginLoadState } = await appModule('markdown/pluginLoader.js');
+const { isStreamingTextAnimationEnabled } = await appModule('markdown/streamingAnimation.js');
 
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -53,6 +54,83 @@ async function renderMarkdown(source, mode = 'static', configureRuntime) {
     await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
   }
   return host;
+}
+
+async function mountMarkdown(source, mode = 'static', configureRuntime) {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = false;
+  installAgentRuntime();
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  configureRuntime?.();
+  const host = document.createElement('div');
+  host.className = 'agent-ui agent-message-body';
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  registerAgentCleanup(() => root.unmount());
+  const render = async (nextSource, nextMode = mode) => {
+    await act(async () => {
+      root.render(createElement(MarkdownContent, {
+        source: nextSource,
+        mode: nextMode,
+        surface: 'message'
+      }));
+      await Promise.resolve();
+    });
+    for (let attempt = 0; attempt < 30 && host.querySelector('[data-streamdown="loading"]'); attempt += 1) {
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+    }
+  };
+  await render(source, mode);
+  return { host, render };
+}
+
+async function waitForSelector(host, selector, attempts = 30) {
+  for (let attempt = 0; attempt < attempts && !host.querySelector(selector); attempt += 1) {
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  }
+  return host.querySelector(selector);
+}
+
+function installReducedMotion(value = false) {
+  let matches = value;
+  const listeners = new Set();
+  let addCount = 0;
+  let removeCount = 0;
+  const media = '(prefers-reduced-motion: reduce)';
+  const mql = {
+    get matches() {
+      return matches;
+    },
+    media,
+    addEventListener(type, listener) {
+      if (type === 'change') {
+        addCount += 1;
+        listeners.add(listener);
+      }
+    },
+    removeEventListener(type, listener) {
+      if (type === 'change') {
+        removeCount += 1;
+        listeners.delete(listener);
+      }
+    }
+  };
+  window.matchMedia = (query) => {
+    assert.equal(query, media);
+    return mql;
+  };
+  return {
+    get addCount() {
+      return addCount;
+    },
+    get removeCount() {
+      return removeCount;
+    },
+    set(value) {
+      if (matches === value) return;
+      matches = value;
+      for (const listener of listeners) listener({ matches, media });
+    }
+  };
 }
 
 test('renders semantic GFM lists with starts, nesting, loose items and tasks', async () => {
@@ -211,8 +289,11 @@ test('keeps unsafe raw HTML inert while preserving the attribute-free safe tag l
 
 test('streaming mode tolerates every prefix and converges to static DOM semantics', async () => {
   const source = '# Plan\n\n- one\n- two\n\n**bold** [link](https://example.com)\n\n```ts\nconst x = 1;\n```';
+  const { host, render } = await mountMarkdown('', 'streaming', () => {
+    installReducedMotion(true);
+  });
   for (let end = 1; end <= source.length; end += 9) {
-    const host = await renderMarkdown(source.slice(0, end), 'streaming');
+    await render(source.slice(0, end), 'streaming');
     assert.ok(host.querySelector('[data-markdown-mode="streaming"]'));
   }
   const streaming = await renderMarkdown(source, 'streaming');
@@ -225,6 +306,57 @@ test('streaming mode tolerates every prefix and converges to static DOM semantic
   assert.equal(streamingStrong, staticHost.querySelectorAll('strong').length);
   assert.equal(streamingCode, staticHost.querySelector('code')?.textContent);
   assert.equal(streamingHeadings, staticHost.querySelectorAll('h1').length);
+});
+
+test('short streaming text uses the fixed character fade without replaying its prefix', async () => {
+  const { host, render } = await mountMarkdown('\u4e2d\u6587 Ab', 'streaming');
+  await waitForSelector(host, '[data-sd-animate]');
+  const initial = [...host.querySelectorAll('[data-sd-animate]')];
+  assert.equal(initial.length, 4, 'continuous CJK and Latin text are split into non-whitespace characters');
+  assert.ok(initial.every((node) => node.style.getPropertyValue('--sd-animation') === 'sd-fadeIn'));
+  assert.ok(initial.every((node) => node.style.getPropertyValue('--sd-duration') === '120ms'));
+  assert.ok(initial.every((node) => !node.style.getPropertyValue('--sd-delay')));
+
+  await render('\u4e2d\u6587 AbC', 'streaming');
+  await waitForSelector(host, '[data-sd-animate]');
+  const updated = [...host.querySelectorAll('[data-sd-animate]')];
+  assert.ok(updated.length > initial.length);
+  const prefix = updated.slice(0, initial.length);
+  assert.ok(prefix.every((node) => node.style.getPropertyValue('--sd-duration') === '0ms'));
+  assert.ok(updated.slice(initial.length).some((node) => node.style.getPropertyValue('--sd-duration') === '120ms'));
+});
+
+test('streaming animation policy fixes the threshold, modes and large-source fallback', () => {
+  assert.equal(isStreamingTextAnimationEnabled('streaming', 2048, false), true);
+  assert.equal(isStreamingTextAnimationEnabled('streaming', 2049, false), false);
+  assert.equal(isStreamingTextAnimationEnabled('static', 12, false), false);
+  assert.equal(isStreamingTextAnimationEnabled('streaming', 12, true), false);
+  assert.equal(isStreamingTextAnimationEnabled('streaming', 100 * 1024, false), false);
+});
+
+test('math plugin readiness disables streaming animation without rendering KaTeX twice', () => {
+  assert.equal(isStreamingTextAnimationEnabled('streaming', 12, false, true), false);
+});
+
+test('reduced-motion uses one shared media subscription and follows system changes', async () => {
+  installAgentRuntime();
+  const motion = installReducedMotion(false);
+  const {
+    getReducedMotionSnapshot,
+    subscribeReducedMotion
+  } = await appModule('markdown/reducedMotion.js');
+  let notifications = 0;
+  const unsubscribeFirst = subscribeReducedMotion(() => { notifications += 1; });
+  const unsubscribeSecond = subscribeReducedMotion(() => { notifications += 1; });
+  assert.equal(getReducedMotionSnapshot(), false);
+  assert.equal(motion.addCount, 1);
+  motion.set(true);
+  assert.equal(getReducedMotionSnapshot(), true);
+  assert.equal(notifications, 2);
+  unsubscribeFirst();
+  assert.equal(motion.removeCount, 0);
+  unsubscribeSecond();
+  assert.equal(motion.removeCount, 1);
 });
 
 test('advanced source limits are fixed security contracts', () => {

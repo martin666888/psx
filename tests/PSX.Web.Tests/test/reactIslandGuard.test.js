@@ -67,6 +67,7 @@ describe('lazy React-island loading guard', () => {
     'usage/ConfigPanel.tsx',
     'composer/composerIsland.ts',
     'composer/ComposerView.tsx',
+    'composer/ComposerImagePreview.tsx',
     'composer/ComposerBits.tsx',
     'composer/AttachmentBridge.tsx',
     'composer/ModeTransitionPrompt.tsx',

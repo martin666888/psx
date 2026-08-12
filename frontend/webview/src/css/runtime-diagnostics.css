@@ -13,7 +13,7 @@
     border: 1px solid var(--agent-error);
     border-radius: var(--agent-radius-control, 10px);
     box-shadow: var(--agent-shadow-popover, 0 12px 32px rgb(0 0 0 / 18%));
-    font-family: var(--agent-font-ui);
+    font-family: var(--workspace-font-ui);
     font-size: 13px;
     line-height: 1.4;
 }

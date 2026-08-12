@@ -73,7 +73,6 @@
     padding: var(--agent-space-6);
     background: var(--agent-bg);
     color: var(--agent-text);
-    font-family: var(--agent-font-ui);
 }
 
 .agent-load-error[hidden] {
@@ -137,7 +136,6 @@
     background: var(--agent-canvas-surface);
     box-shadow: var(--agent-shadow-canvas);
     color: var(--agent-text);
-    font-family: var(--agent-font-ui);
 }
 
 .agent-panel[hidden] {

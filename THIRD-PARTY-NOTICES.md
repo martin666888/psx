@@ -40,6 +40,11 @@ The portable release redistributes:
   TabBar. Provider names and marks remain trademarks of their
   respective owners.
 - Tailwind CSS — MIT; see `licenses/tailwindcss/LICENSE`.
+- Maple Mono Normal CN 7.9 — SIL Open Font License 1.1; see
+  `licenses/maple-mono/LICENSE.txt`. The unmodified Regular and SemiBold TTF
+  files ship under `wwwroot/vendor/fonts/maple-mono/` for Agent code and other
+  monospaced technical content. This adds approximately 35.4 MiB unpacked (about 16 MiB compressed)
+  to the portable package.
 - ACP seed manifests — the adapter is Apache-2.0; see `licenses/acp/LICENSE`.
 - Qoder CLI seed manifests — Apache-2.0; see `licenses/qoder/LICENSE` and
   `licenses/qoder/THIRD-PARTY-NOTICES.md`. The release ships only

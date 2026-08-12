@@ -66,8 +66,8 @@ scrollback=10000
 
 [agent]
 fontSize=14
-fontFamily=Cascadia Code, Segoe UI, Microsoft YaHei UI, Microsoft YaHei, sans-serif
-monoFontFamily=Cascadia Code, Consolas, monospace
+fontFamily=Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI, Segoe UI Emoji, sans-serif
+monoFontFamily=PSX Maple Mono, Segoe UI Emoji, Microsoft YaHei UI, monospace
 
 [shell]
 defaultProfile=powershell

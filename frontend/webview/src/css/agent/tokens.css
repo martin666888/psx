@@ -1,4 +1,20 @@
 /* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V4 · genre: modern-minimal · macrostructure: Workbench · design-system: design.md · designed-as-app */
+@font-face {
+    font-family: "PSX Maple Mono";
+    src: url("/vendor/fonts/maple-mono/MapleMonoNormal-CN-Regular.ttf") format("truetype");
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "PSX Maple Mono";
+    src: url("/vendor/fonts/maple-mono/MapleMonoNormal-CN-SemiBold.ttf") format("truetype");
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+}
+
 :root {
     /* === 基础色 (来自 [theme]) === */
     --agent-bg: #1d1d1a;
@@ -33,8 +49,16 @@
 
     /* === 字体 === */
     --agent-font-size: 15px;
-    --agent-font-ui: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
-    --agent-font-mono: "Cascadia Code", Consolas, monospace;
+    --workspace-font-ui: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Segoe UI Emoji", sans-serif;
+    --workspace-font-mono: ui-monospace, "Cascadia Mono", "Cascadia Code", Consolas, monospace;
+    --agent-font-ui: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Segoe UI Emoji", sans-serif;
+    --agent-font-mono: "PSX Maple Mono", "Segoe UI Emoji", "Microsoft YaHei UI", monospace;
+    /* Tailwind's font theme variables also drive global Preflight. Keep their
+     * default resolution on workspace fonts; explicit Agent surfaces override
+     * only these indirection tokens, so Terminal-only DOM can never select the
+     * bundled Maple faces by merely containing code/pre/kbd elements. */
+    --psx-font-sans: var(--workspace-font-ui);
+    --psx-font-mono: var(--workspace-font-mono);
     --agent-space-1: 4px;
     --agent-space-2: 8px;
     --agent-space-3: 12px;
@@ -53,6 +77,21 @@
     --agent-duration-state: 160ms;
     --agent-ease-standard: cubic-bezier(0.2, 0, 0, 1);
     --agent-composer-input-min-height: 34px;
+}
+
+/* .agent-ui wraps the whole WebView shell, including Terminal and global
+ * chrome. Font ownership therefore lives on explicit Agent surfaces instead
+ * of inheriting from that structural boundary. */
+[data-agent-font-surface] {
+    font-family: var(--agent-font-ui);
+    font-synthesis: style;
+    --psx-font-sans: var(--agent-font-ui);
+    --psx-font-mono: var(--agent-font-mono);
+}
+
+[data-agent-font-surface] :is(strong, b),
+[data-agent-font-surface] .font-bold {
+    font-weight: 600;
 }
 
 /* Product-level focus policy: keyboard focus is visualized by one uniform

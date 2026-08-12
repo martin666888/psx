@@ -516,7 +516,7 @@ test('global menus anchor to the trigger button top beside the activity rail', a
   chrome.dispose();
 });
 
-test('column menu anchors under its tab trigger, right-aligned to it', async () => {
+test('column menu anchors under its tab trigger, left-aligned to it', async () => {
   installAgentRuntime();
   mountChrome();
   const { WorkspaceChromeController } = await import(controllerUrl);
@@ -545,10 +545,7 @@ test('column menu anchors under its tab trigger, right-aligned to it', async () 
   const menu = document.querySelector('.workspace-popover-pane');
   assert.ok(menu, 'column menu renders');
   assert.equal(menu.style.top, '38px', 'top sits directly under the trigger');
-  // jsdom reports offsetWidth 0: the right-align measurement (trigger right
-  // 732 - width 0) lands exactly on the trigger's right edge; with a real
-  // width the menu's right edge aligns to the trigger, clamped at 44px.
-  assert.equal(menu.style.left, '732px', 'left comes from the post-mount right-align measurement');
+  assert.equal(menu.style.left, '700px', 'menu left edge follows the trigger left edge');
   assert.equal(menu.style.transform, '', 'no transform — it would fight the popover-in animation');
   chrome.dispose();
 });

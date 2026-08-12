@@ -28,6 +28,10 @@ afterEach(async () => {
     await act(async () => {
       disposeActiveAgentRuntime();
     });
+    // Coverage keeps transformed code alive until its report is emitted, but
+    // disposed jsdom/React graphs must not survive between tests in the same
+    // file. Workers are launched with --expose-gc for this bounded cleanup.
+    globalThis.gc?.();
   } finally {
     globalThis.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
   }

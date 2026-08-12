@@ -161,6 +161,7 @@ installRuntimeDiagnostics();
         if (!error) {
             error = document.createElement('section');
             error.className = 'agent-load-error';
+            error.setAttribute('data-agent-font-surface', '');
             error.setAttribute('role', 'alert');
             error.setAttribute('aria-live', 'assertive');
 

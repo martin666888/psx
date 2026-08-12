@@ -32,6 +32,7 @@ function HoverCardContent({
     <HoverCardPrimitive.Portal container={getPortalContainer()} data-slot="hover-card-portal">
       <HoverCardPrimitive.Content
         data-slot="hover-card-content"
+        data-agent-font-surface=""
         align={align}
         sideOffset={sideOffset}
         className={cn(

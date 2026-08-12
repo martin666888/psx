@@ -20,8 +20,23 @@ public sealed class SettingsServiceTests
 
         Assert.AreEqual(Path.GetFullPath(configPath), service.ConfigPath);
         Assert.AreEqual("powershell", settings.DefaultShellProfileId);
-        Assert.AreEqual(settings.FontFamily, settings.AgentMonoFontFamily);
+        Assert.AreEqual(AppSettings.AgentUiFontFamily, settings.AgentFontFamily);
+        Assert.AreEqual(AppSettings.BundledAgentMonoFontFamily, settings.AgentMonoFontFamily);
         Assert.IsFalse(File.Exists(configPath));
+    }
+
+    [TestMethod]
+    public void TerminalOptions_MissingAgentMono_UsesBundledAgentMonoDefault()
+    {
+        var settings = new AppSettings
+        {
+            FontFamily = "Terminal Only Mono",
+            AgentMonoFontFamily = "   "
+        };
+
+        var options = TerminalOptions.FromSettings(settings);
+
+        Assert.AreEqual(AppSettings.BundledAgentMonoFontFamily, options.AgentMonoFontFamily);
     }
 
     [TestMethod]

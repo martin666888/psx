@@ -49,10 +49,11 @@ export default defineConfig({
     // runtime from sharing one process-level commit limit.
     isolate: true,
     pool: 'forks',
+    execArgv: ['--expose-gc'],
     fileParallelism: false,
     maxWorkers: 1,
-    // tools/run-guarded-vitest.ps1 places the entire runner under hard
-    // per-process and process-tree Job Object memory limits.
+    // tools/run-web-tests.ps1 gives each test file its own hard-bounded Job
+    // Object process tree and merges the official Vitest reports afterward.
     testTimeout: 20000,
     coverage: {
       provider: 'v8',
