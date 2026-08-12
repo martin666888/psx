@@ -196,9 +196,13 @@
     border: 0;
     background: transparent;
     box-shadow: none;
+    justify-content: flex-end;
 }
 
-.agent-message-body [data-streamdown="code-block-actions"] {
+/* Code and tables own a left-side label. Mermaid has no left-side action, so
+   its controls use the shared right-side anchor without creating empty space. */
+.agent-message-body [data-streamdown="code-block-actions"],
+.agent-message-body [data-streamdown="table-wrapper"] > div:first-child {
     justify-content: space-between;
 }
 
@@ -214,10 +218,6 @@
     margin-top: calc(
         0px - var(--psx-markdown-block-header-height) - var(--psx-markdown-block-gap)
     );
-}
-
-.agent-message-body [data-streamdown="table-wrapper"] > div:first-child {
-    justify-content: space-between;
 }
 
 .agent-message-body [data-streamdown="table-wrapper"] > div:first-child::before {

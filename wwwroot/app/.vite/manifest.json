@@ -255,7 +255,7 @@
     "isDynamicEntry": true
   },
   "../agent/src/composer/composerIsland.ts": {
-    "file": "assets/composerIsland-BUGIYnCE.js",
+    "file": "assets/composerIsland-DLdBRMTo.js",
     "name": "composerIsland",
     "src": "../agent/src/composer/composerIsland.ts",
     "isDynamicEntry": true,
@@ -263,15 +263,15 @@
       "_react-vendor-BD7IeUrn.js",
       "_index-i4xXhHoc.js",
       "_DecisionOptionPills-QjLk2B4T.js",
-      "_entry-CUi5qu-9.js",
+      "_entry-Ciibg3OG.js",
       "_button-NwjpNhWk.js",
       "_index-CN2Nx2Hb.js",
       "_index-DdqLCPbE.js",
       "_index-Ca-ghGTU.js",
       "_createLucideIcon-sh4lEoDa.js",
-      "_dialog-DV2dxewT.js",
+      "_dialog-Cv0gpbfL.js",
       "_loader-circle-IAek4oKw.js",
-      "_select-BxtLFZ0Y.js",
+      "_select-QrgJkpFJ.js",
       "_use-dismissible-layer-D4jheIQO.js",
       "__commonjsHelpers-CqkleIqs.js",
       "_preload-helper-BHnA-BMQ.js",
@@ -282,7 +282,7 @@
     ]
   },
   "../agent/src/history/historyIsland.ts": {
-    "file": "assets/historyIsland-BTJPB-HQ.js",
+    "file": "assets/historyIsland-IIn1LELt.js",
     "name": "historyIsland",
     "src": "../agent/src/history/historyIsland.ts",
     "isDynamicEntry": true,
@@ -292,9 +292,9 @@
       "_button-NwjpNhWk.js",
       "_badge-NETHXkxX.js",
       "_scroll-area-BySYqiAp.js",
-      "_select-BxtLFZ0Y.js",
-      "_entry-CUi5qu-9.js",
-      "_ProviderIcon-CfRfSB-o.js",
+      "_select-QrgJkpFJ.js",
+      "_entry-Ciibg3OG.js",
+      "_ProviderIcon-t6s7PKvA.js",
       "_createLucideIcon-sh4lEoDa.js",
       "__commonjsHelpers-CqkleIqs.js",
       "_index-CN2Nx2Hb.js",
@@ -400,14 +400,14 @@
     ]
   },
   "../agent/src/plan/planIsland.ts": {
-    "file": "assets/planIsland-Oym-Y3R3.js",
+    "file": "assets/planIsland-B_sIFujC.js",
     "name": "planIsland",
     "src": "../agent/src/plan/planIsland.ts",
     "isDynamicEntry": true,
     "imports": [
       "_react-vendor-BD7IeUrn.js",
       "_index-i4xXhHoc.js",
-      "_entry-CUi5qu-9.js",
+      "_entry-Ciibg3OG.js",
       "_markdown-core-_lvdc32r.js",
       "_scroll-area-BySYqiAp.js",
       "_index-CrgVVRfu.js",
@@ -421,7 +421,7 @@
     ]
   },
   "../agent/src/timeline/timelineIsland.ts": {
-    "file": "assets/timelineIsland-6Q9ePUUE.js",
+    "file": "assets/timelineIsland-DekJhI5F.js",
     "name": "timelineIsland",
     "src": "../agent/src/timeline/timelineIsland.ts",
     "isDynamicEntry": true,
@@ -429,7 +429,7 @@
       "_react-vendor-BD7IeUrn.js",
       "_index-i4xXhHoc.js",
       "_DecisionOptionPills-QjLk2B4T.js",
-      "_entry-CUi5qu-9.js",
+      "_entry-Ciibg3OG.js",
       "_markdown-core-_lvdc32r.js",
       "_button-NwjpNhWk.js",
       "_index-CrgVVRfu.js",
@@ -438,7 +438,7 @@
       "_index-CN2Nx2Hb.js",
       "_chevron-down-l2ALE9uo.js",
       "_circle-x-CQLzCh40.js",
-      "_tooltip-XNFDforG.js",
+      "_tooltip-BRmCC6cr.js",
       "_check-CjPDDNF0.js",
       "__commonjsHelpers-CqkleIqs.js",
       "_preload-helper-BHnA-BMQ.js",
@@ -448,16 +448,16 @@
     ]
   },
   "../agent/src/usage/usageIsland.ts": {
-    "file": "assets/usageIsland-BCUdL5FP.js",
+    "file": "assets/usageIsland-NUH_yUvF.js",
     "name": "usageIsland",
     "src": "../agent/src/usage/usageIsland.ts",
     "isDynamicEntry": true,
     "imports": [
       "_react-vendor-BD7IeUrn.js",
       "_index-i4xXhHoc.js",
-      "_ProviderIcon-CfRfSB-o.js",
+      "_ProviderIcon-t6s7PKvA.js",
       "_button-NwjpNhWk.js",
-      "_dialog-DV2dxewT.js",
+      "_dialog-Cv0gpbfL.js",
       "__commonjsHelpers-CqkleIqs.js",
       "_createLucideIcon-sh4lEoDa.js",
       "index.html",
@@ -465,7 +465,7 @@
       "_index-CN2Nx2Hb.js",
       "_index-Ca-ghGTU.js",
       "_index-BNLmC8YE.js",
-      "_entry-CUi5qu-9.js"
+      "_entry-Ciibg3OG.js"
     ]
   },
   "../agent/src/workspace/runtimeIsland.ts": {
@@ -484,18 +484,18 @@
     ]
   },
   "../agent/src/workspace/sessionIsland.ts": {
-    "file": "assets/sessionIsland-DKhSiY38.js",
+    "file": "assets/sessionIsland-BBaQD50c.js",
     "name": "sessionIsland",
     "src": "../agent/src/workspace/sessionIsland.ts",
     "isDynamicEntry": true,
     "imports": [
       "_react-vendor-BD7IeUrn.js",
       "_index-i4xXhHoc.js",
-      "_SessionToolbar-BH_Mnah6.js",
+      "_SessionToolbar-D_djFOQg.js",
       "__commonjsHelpers-CqkleIqs.js",
       "_button-NwjpNhWk.js",
-      "_tooltip-XNFDforG.js",
-      "_entry-CUi5qu-9.js",
+      "_tooltip-BRmCC6cr.js",
+      "_entry-Ciibg3OG.js",
       "_preload-helper-BHnA-BMQ.js",
       "_index-CN2Nx2Hb.js",
       "_index-Ca-ghGTU.js",
@@ -503,7 +503,7 @@
     ]
   },
   "../agent/src/workspace/toolbarIsland.ts": {
-    "file": "assets/toolbarIsland-C67wxcgY.js",
+    "file": "assets/toolbarIsland-CCIKVFz-.js",
     "name": "toolbarIsland",
     "src": "../agent/src/workspace/toolbarIsland.ts",
     "isDynamicEntry": true,
@@ -511,12 +511,12 @@
       "_react-vendor-BD7IeUrn.js",
       "_index-i4xXhHoc.js",
       "_button-NwjpNhWk.js",
-      "_tooltip-XNFDforG.js",
-      "_SessionToolbar-BH_Mnah6.js",
+      "_tooltip-BRmCC6cr.js",
+      "_SessionToolbar-D_djFOQg.js",
       "_use-dismissible-layer-D4jheIQO.js",
       "_createLucideIcon-sh4lEoDa.js",
       "__commonjsHelpers-CqkleIqs.js",
-      "_entry-CUi5qu-9.js",
+      "_entry-Ciibg3OG.js",
       "_preload-helper-BHnA-BMQ.js",
       "_index-CN2Nx2Hb.js",
       "_index-Ca-ghGTU.js",
@@ -532,8 +532,8 @@
       "_button-NwjpNhWk.js"
     ]
   },
-  "_ProviderIcon-CfRfSB-o.js": {
-    "file": "assets/ProviderIcon-CfRfSB-o.js",
+  "_ProviderIcon-t6s7PKvA.js": {
+    "file": "assets/ProviderIcon-t6s7PKvA.js",
     "name": "ProviderIcon",
     "imports": [
       "_createLucideIcon-sh4lEoDa.js",
@@ -541,13 +541,13 @@
       "index.html"
     ]
   },
-  "_SessionToolbar-BH_Mnah6.js": {
-    "file": "assets/SessionToolbar-BH_Mnah6.js",
+  "_SessionToolbar-D_djFOQg.js": {
+    "file": "assets/SessionToolbar-D_djFOQg.js",
     "name": "SessionToolbar",
     "imports": [
       "_react-vendor-BD7IeUrn.js",
       "_button-NwjpNhWk.js",
-      "_tooltip-XNFDforG.js"
+      "_tooltip-BRmCC6cr.js"
     ]
   },
   "__commonjsHelpers-CqkleIqs.js": {
@@ -612,8 +612,8 @@
       "../../node_modules/katex/dist/katex.mjs"
     ]
   },
-  "_dialog-DV2dxewT.js": {
-    "file": "assets/dialog-DV2dxewT.js",
+  "_dialog-Cv0gpbfL.js": {
+    "file": "assets/dialog-Cv0gpbfL.js",
     "name": "dialog",
     "imports": [
       "_react-vendor-BD7IeUrn.js",
@@ -621,12 +621,12 @@
       "_index-i4xXhHoc.js",
       "_index-Ca-ghGTU.js",
       "_index-BNLmC8YE.js",
-      "_entry-CUi5qu-9.js",
+      "_entry-Ciibg3OG.js",
       "_createLucideIcon-sh4lEoDa.js"
     ]
   },
-  "_entry-CUi5qu-9.js": {
-    "file": "assets/entry-CUi5qu-9.js",
+  "_entry-Ciibg3OG.js": {
+    "file": "assets/entry-Ciibg3OG.js",
     "name": "entry",
     "isDynamicEntry": true,
     "imports": [
@@ -752,8 +752,8 @@
       "_index-Cl5G2U0J.js"
     ]
   },
-  "_select-BxtLFZ0Y.js": {
-    "file": "assets/select-BxtLFZ0Y.js",
+  "_select-QrgJkpFJ.js": {
+    "file": "assets/select-QrgJkpFJ.js",
     "name": "select",
     "imports": [
       "_react-vendor-BD7IeUrn.js",
@@ -763,19 +763,19 @@
       "_index-Ca-ghGTU.js",
       "_index-BNLmC8YE.js",
       "_index-DdqLCPbE.js",
-      "_entry-CUi5qu-9.js",
+      "_entry-Ciibg3OG.js",
       "_chevron-down-l2ALE9uo.js",
       "_check-CjPDDNF0.js",
       "_createLucideIcon-sh4lEoDa.js"
     ]
   },
-  "_tooltip-XNFDforG.js": {
-    "file": "assets/tooltip-XNFDforG.js",
+  "_tooltip-BRmCC6cr.js": {
+    "file": "assets/tooltip-BRmCC6cr.js",
     "name": "tooltip",
     "imports": [
       "_react-vendor-BD7IeUrn.js",
       "_index-i4xXhHoc.js",
-      "_entry-CUi5qu-9.js",
+      "_entry-Ciibg3OG.js",
       "_index-CN2Nx2Hb.js",
       "_index-Ca-ghGTU.js",
       "_index-DdqLCPbE.js"
@@ -789,7 +789,7 @@
     ]
   },
   "index.html": {
-    "file": "assets/main-CLplCDDg.js",
+    "file": "assets/main-CeN5iibK.js",
     "name": "main",
     "src": "index.html",
     "isEntry": true,
@@ -797,10 +797,10 @@
       "_preload-helper-BHnA-BMQ.js"
     ],
     "dynamicImports": [
-      "_entry-CUi5qu-9.js"
+      "_entry-Ciibg3OG.js"
     ],
     "css": [
-      "assets/main-Bp9B4bfv.css"
+      "assets/main-C6N0YU1V.css"
     ]
   }
 }

@@ -383,6 +383,10 @@ test('markdown.css restores list markers and unifies block chrome', async () => 
     actionGroups.map((group) => window.getComputedStyle(group).borderTopWidth),
     ['0px', '0px', '0px']
   );
+  assert.deepEqual(
+    actionGroups.map((group) => window.getComputedStyle(group).justifyContent),
+    ['space-between', 'space-between', 'flex-end']
+  );
   const buttons = [
     host.querySelector('[data-streamdown="code-block-actions"] button'),
     host.querySelector('[data-streamdown="table-wrapper"] > div:first-child > div > button'),
