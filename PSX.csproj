@@ -50,6 +50,8 @@
       @qoder-ai/qodercli into runtime/qoder-current (npm ignore-scripts).
     -->
     <Content Include="tools\qoder-seed\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!-- Pinned Cline wrapper/platform manifests; installed after confirmation. -->
+    <Content Include="tools\cline-seed\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Resource Include="Assets\Icons\psx.ico" />
   </ItemGroup>
 

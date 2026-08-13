@@ -535,3 +535,48 @@ test('markdown.css restores list markers and unifies block chrome', async () => 
   assert.equal(new Set(stickyActions.map((style) => style.top)).size, 1);
   assert.equal(new Set(stickyActions.map((style) => style.marginTop)).size, 1);
 });
+
+test('dark Agent theme uses Shiki dark token colors on code blocks', async () => {
+  const { repositoryRoot } = await import('./agentHarness.js');
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  installAgentRuntime();
+  const markdownCss = fs.readFileSync(
+    path.join(repositoryRoot, 'frontend', 'webview', 'src', 'css', 'agent', 'markdown.css'),
+    'utf8'
+  );
+  const tailwindCss = fs.readFileSync(
+    path.join(repositoryRoot, 'frontend', 'webview', 'src', 'css', 'tailwind.css'),
+    'utf8'
+  );
+  assert.match(
+    tailwindCss,
+    /@custom-variant dark \(\&:where\(\.agent-ui-dark, \.agent-ui-dark \*\)\);/
+  );
+  assert.match(
+    markdownCss,
+    /\.agent-ui\.agent-ui-dark \[data-streamdown="code-block-body"\] \[style\*="--shiki-dark"\]/
+  );
+  assert.match(
+    markdownCss,
+    /color:\s*var\(--shiki-dark\)/
+  );
+
+  const style = document.createElement('style');
+  style.textContent = markdownCss;
+  document.head.appendChild(style);
+  const host = document.createElement('div');
+  host.className = 'agent-ui agent-ui-dark';
+  host.innerHTML = `
+    <div class="agent-message-body">
+      <div data-streamdown="code-block-body">
+        <span style="--sdm-c:#6f42c1;--shiki-dark:#b392f0">Connect</span>
+      </div>
+    </div>`;
+  document.body.appendChild(host);
+  const token = host.querySelector('span');
+  assert.equal(window.getComputedStyle(token).color, 'var(--shiki-dark)');
+
+  host.classList.remove('agent-ui-dark');
+  assert.notEqual(window.getComputedStyle(token).color, 'var(--shiki-dark)');
+});

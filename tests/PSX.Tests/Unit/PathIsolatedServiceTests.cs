@@ -234,5 +234,11 @@ public sealed class RuntimeLocatorTests
         yield return paths.QoderCurrentDirectory;
         yield return paths.QoderNextDirectory;
         yield return paths.QoderActivePointerFile;
+        yield return paths.ClineSeedDirectory;
+        yield return paths.ClineCurrentDirectory;
+        yield return paths.ClineNextDirectory;
+        yield return paths.ClineActivePointerFile;
+        yield return paths.ClineInstallingDirectory;
+        yield return paths.ClineRollbackDirectory;
     }
 }

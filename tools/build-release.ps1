@@ -9,6 +9,7 @@
       - tools/node/                          (portable Node 22.23.1, downloaded)
       - tools/acp-seed/                      (installed by the user on first Agent use)
       - tools/qoder-seed/                    (installed by the user on first Qoder use)
+      - tools/cline-seed/                    (installed by the user on first Cline use)
       - tools/kimi/                          (Kimi Code ACP runtime, installed at
                                               build time from tools/kimi-seed/ via npm ci)
       - tools/qwen/                          (Qwen Code ACP runtime, installed at
@@ -20,7 +21,7 @@
 
     The output zip is portable for end users: unzip and double-click PSX.exe.
     .NET and Node are bundled. Agent mode asks for confirmation before it
-    downloads the ACP / Claude runtime from npm on first use.
+    downloads the Claude, Qoder, or Cline managed runtime from npm on first use.
     WebView2 Runtime can be bundled by passing -WebView2FixedRuntimePath.
     Otherwise machines without it will see a prompt asking the user to install
     it manually.
@@ -80,6 +81,8 @@ $PortableNodeUrl = "https://nodejs.org/dist/$PortableNodeVersion/$PortableNodeAr
 $PortableNodeExpectedSha = "7df0bc9375723f4a86b3aa1b7cc73342423d9677a8df4538aca31a049e309c29"
 $MapleMonoRegularExpectedSha = "E42D081EAECBDA6A043079EAAAF43EA20BD8805666BC06E1FE4DC663C462AD7F"
 $MapleMonoSemiBoldExpectedSha = "F72D4475C7AC435C7C363E0CB35100A18E4A5BB14787F17F7BBC64823B904066"
+$ClineSeedLockExpectedSha = "F32BEAD1EE778ABCA00DDBDD88DD04F77A5B520FB18FCD8573DF753BE9E34698"
+$ClinePinnedVersion = "3.0.53"
 
 # ---- locate repo root ----
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -390,6 +393,8 @@ $requiredFiles = @(
     "licenses\qwen\THIRD-PARTY-NOTICES.md",
     "licenses\qoder\LICENSE",
     "licenses\qoder\THIRD-PARTY-NOTICES.md",
+    "licenses\cline\LICENSE",
+    "licenses\cline\THIRD-PARTY-NOTICES.md",
     "licenses\opencode\LICENSE",
     "licenses\opencode\THIRD-PARTY-NOTICES.md",
     "licenses\communitytoolkit.mvvm\License.md",
@@ -423,6 +428,9 @@ $requiredFiles = @(
     "tools\qoder-seed\package.json",
     "tools\qoder-seed\package-lock.json",
     "tools\qoder-seed\.npmrc",
+    "tools\cline-seed\package.json",
+    "tools\cline-seed\package-lock.json",
+    "tools\cline-seed\.npmrc",
     "tools\kimi\package.json",
     "tools\kimi\package-lock.json",
     "tools\kimi\node_modules\@moonshot-ai\kimi-code\package.json",
@@ -457,6 +465,49 @@ foreach ($entry in $mapleMonoFiles.GetEnumerator()) {
     }
 }
 
+$clineSeedRoot = Join-Path $StagingDir "tools\cline-seed"
+$clineLockPath = Join-Path $clineSeedRoot "package-lock.json"
+$clineLockHash = (Get-FileHash -LiteralPath $clineLockPath -Algorithm SHA256).Hash
+if (-not [string]::Equals($clineLockHash, $ClineSeedLockExpectedSha, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Cline seed lockfile hash mismatch. Review and update the pinned supply-chain evidence explicitly."
+}
+$clineManifest = Get-Content -Raw -LiteralPath (Join-Path $clineSeedRoot "package.json") | ConvertFrom-Json
+if ($clineManifest.dependencies.cline -ne $ClinePinnedVersion `
+    -or $clineManifest.dependencies.'@cline/cli-windows-x64' -ne $ClinePinnedVersion) {
+    throw "Cline seed must pin wrapper and Windows x64 platform package to $ClinePinnedVersion."
+}
+$clineLockText = Get-Content -Raw -LiteralPath $clineLockPath
+if ($clineLockText -match '"resolved"\s*:\s*"https://(?!registry\.npmjs\.org/)') {
+    throw "Cline seed lockfile contains a non-official npm registry resolved URL."
+}
+# PS 5.1 ConvertFrom-Json rejects npm lockfiles that use an empty "" packages
+# key. Read the two pinned entries from text instead of parsing the whole file.
+function Read-ClineLockPackageFields {
+    param(
+        [Parameter(Mandatory)][string]$LockText,
+        [Parameter(Mandatory)][string]$PackagePath
+    )
+    $escaped = [regex]::Escape($PackagePath)
+    $match = [regex]::Match(
+        $LockText,
+        '"' + $escaped + '"\s*:\s*\{\s*"version"\s*:\s*"(?<version>[^"]+)"[\s\S]*?"integrity"\s*:\s*"(?<integrity>[^"]+)"')
+    if (-not $match.Success) {
+        throw "Cline lockfile is missing version/integrity for '$PackagePath'."
+    }
+    return [pscustomobject]@{
+        Version = $match.Groups['version'].Value
+        Integrity = $match.Groups['integrity'].Value
+    }
+}
+$clineWrapperLock = Read-ClineLockPackageFields -LockText $clineLockText -PackagePath 'node_modules/cline'
+$clinePlatformLock = Read-ClineLockPackageFields -LockText $clineLockText -PackagePath 'node_modules/@cline/cli-windows-x64'
+if ($clineWrapperLock.Version -ne $ClinePinnedVersion `
+    -or $clinePlatformLock.Version -ne $ClinePinnedVersion `
+    -or [string]::IsNullOrWhiteSpace($clineWrapperLock.Integrity) `
+    -or [string]::IsNullOrWhiteSpace($clinePlatformLock.Integrity)) {
+    throw "Cline lockfile wrapper/platform versions or integrity evidence are incomplete."
+}
+
 $forbiddenAcpRuntime = Join-Path $StagingDir "runtime\acp-current"
 if (Test-Path -LiteralPath $forbiddenAcpRuntime) {
     throw "Public release must not contain runtime/acp-current."
@@ -465,6 +516,16 @@ if (Test-Path -LiteralPath $forbiddenAcpRuntime) {
 $forbiddenQoderRuntime = Join-Path $StagingDir "runtime\qoder-current"
 if (Test-Path -LiteralPath $forbiddenQoderRuntime) {
     throw "Public release must not contain runtime/qoder-current."
+}
+
+$forbiddenClineRuntime = Join-Path $StagingDir "runtime\cline-current"
+if (Test-Path -LiteralPath $forbiddenClineRuntime) {
+    throw "Public release must not contain runtime/cline-current."
+}
+
+$forbiddenClineNext = Join-Path $StagingDir "runtime\cline-next"
+if (Test-Path -LiteralPath $forbiddenClineNext) {
+    throw "Public release must not contain runtime/cline-next."
 }
 
 $forbiddenOpencodeRuntime = Join-Path $StagingDir "runtime\opencode-current"
@@ -544,6 +605,8 @@ try {
         $agentSourceArtifact = $normalized.StartsWith('wwwroot/app/', [StringComparison]::OrdinalIgnoreCase) -and (-not $normalized.StartsWith('wwwroot/app/vendor/', [StringComparison]::OrdinalIgnoreCase)) -and $extension -in @('.ts', '.map')
         $normalized.StartsWith('runtime/acp-current/', [StringComparison]::OrdinalIgnoreCase) `
             -or $normalized.StartsWith('runtime/qoder-current/', [StringComparison]::OrdinalIgnoreCase) `
+            -or $normalized.StartsWith('runtime/cline-current/', [StringComparison]::OrdinalIgnoreCase) `
+            -or $normalized.StartsWith('runtime/cline-next/', [StringComparison]::OrdinalIgnoreCase) `
             -or $normalized.StartsWith('runtime/opencode-current/', [StringComparison]::OrdinalIgnoreCase) `
             -or $normalized.StartsWith('tests/', [StringComparison]::OrdinalIgnoreCase) `
             -or $normalized.StartsWith('TestResults/', [StringComparison]::OrdinalIgnoreCase) `

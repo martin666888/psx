@@ -11,10 +11,11 @@ $repoRoot = [IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
 $resultsRoot = [IO.Path]::GetFullPath((Join-Path $repoRoot "TestResults\release-smoke"))
 $unpackRoot = [IO.Path]::GetFullPath((Join-Path $resultsRoot "unpacked"))
 $profileRoot = [IO.Path]::GetFullPath((Join-Path $resultsRoot "edge-profile"))
-$domPath = Join-Path $resultsRoot "dom.html"
 $serverOut = Join-Path $resultsRoot "server.out.log"
 $serverErr = Join-Path $resultsRoot "server.err.log"
+$edgeOut = Join-Path $resultsRoot "edge.out.log"
 $edgeErr = Join-Path $resultsRoot "edge.err.log"
+$resultPath = Join-Path $resultsRoot "smoke-result.json"
 
 if ([string]::IsNullOrWhiteSpace($ArchivePath)) {
     $archive = Get-ChildItem (Join-Path $repoRoot "bin\releases\PSX-*-win-x64-portable.zip") |
@@ -90,24 +91,43 @@ try {
         "--no-first-run",
         "--no-default-browser-check",
         ("--user-data-dir=" + $profileRoot),
-        "--virtual-time-budget=10000",
-        "--dump-dom",
         ("http://127.0.0.1:" + $Port + "/app/index.html?smoke=react")
     )
     $edgeProcess = Start-Process -FilePath $edge `
         -ArgumentList $arguments `
         -WindowStyle Hidden `
-        -RedirectStandardOutput $domPath `
+        -RedirectStandardOutput $edgeOut `
         -RedirectStandardError $edgeErr `
-        -Wait `
         -PassThru
-    if ($edgeProcess.ExitCode -ne 0) {
-        throw "Edge smoke exited with code $($edgeProcess.ExitCode). See $edgeErr"
+    $resultUrl = "http://127.0.0.1:" + $Port + "/smoke-result"
+    $payload = $null
+    $deadline = (Get-Date).AddSeconds(60)
+    try {
+        while ((Get-Date) -lt $deadline) {
+            try {
+                $response = Invoke-WebRequest -Uri $resultUrl -UseBasicParsing -TimeoutSec 1
+                if ($response.StatusCode -eq 200 -and -not [string]::IsNullOrWhiteSpace($response.Content)) {
+                    $payload = $response.Content
+                    break
+                }
+            }
+            catch {
+                Start-Sleep -Milliseconds 200
+            }
+        }
     }
-    $dom = Get-Content -LiteralPath $domPath -Raw
-    if ($dom -notmatch 'data-smoke-status="pass"') {
-        $report = [regex]::Match($dom, '<pre id="react-smoke-report">(?<value>.*?)</pre>').Groups["value"].Value
-        throw "React Release smoke failed. Report: $report"
+    finally {
+        if ($null -ne $edgeProcess -and -not $edgeProcess.HasExited) {
+            & taskkill.exe /PID $edgeProcess.Id /T /F | Out-Null
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($payload)) {
+        throw "React Release smoke timed out waiting for /smoke-result. See $edgeErr"
+    }
+    Set-Content -LiteralPath $resultPath -Value $payload -Encoding utf8
+    $report = $payload | ConvertFrom-Json
+    if ($report.passed -ne $true) {
+        throw "React Release smoke failed. Report: $payload"
     }
     Write-Host "[smoke] React islands mounted from the Release ZIP with zero browser errors." -ForegroundColor Green
 }

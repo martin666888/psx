@@ -17,13 +17,6 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         "image/webp",
         "image/gif"
     };
-    private sealed class AcpMode
-    {
-        public string Id { get; init; } = "";
-        public string Name { get; init; } = "";
-        public string Description { get; init; } = "";
-    }
-
     private sealed class AcpConfigOption
     {
         public string Id { get; init; } = "";
@@ -118,7 +111,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         set => _sessionState.TransitionToWire(value);
     }
     private string? _currentRunId;
-    private IReadOnlyList<AcpMode> _modes = Array.Empty<AcpMode>();
+    private IReadOnlyList<AcpSessionModeDescriptor> _modes = Array.Empty<AcpSessionModeDescriptor>();
     private IReadOnlyList<AcpConfigOption> _configOptions = Array.Empty<AcpConfigOption>();
     private string? _currentModeId;
     private bool _isRunning
@@ -2013,7 +2006,9 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 }, TimeSpan.FromSeconds(30), initializeCts.Token).ConfigureAwait(false);
 
                 _adapterVersion = ReadNestedString(initResult, "agentInfo", "version");
-                _supportsImage = ReadNestedBool(initResult, "agentCapabilities", "promptCapabilities", "image") ?? false;
+                var declaredImageSupport =
+                    ReadNestedBool(initResult, "agentCapabilities", "promptCapabilities", "image") ?? false;
+                _supportsImage = _provider.Compatibility.SupportsPromptImage(declaredImageSupport);
                 _supportsSessionResume = SupportsSessionResume(initResult);
                 _authMethods = ParseAuthMethods(initResult);
                 lock (_sessionMutationSync)
@@ -2825,6 +2820,12 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     private async Task SetModeAsync(string modeId)
     {
+        lock (_sessionMutationSync)
+        {
+            if (_modes.All(mode => !string.Equals(mode.Id, modeId, StringComparison.Ordinal)))
+                throw new InvalidOperationException("The selected Agent mode is unavailable.");
+        }
+
         await EnsureAcpSessionAsync(createIfMissing: true).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(_acpSessionId))
             return;
@@ -2846,6 +2847,19 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     private async Task SetConfigOptionAsync(string configId, object value, bool isBoolean)
     {
+        if (!_provider.Compatibility.SupportsSessionConfigOption(configId))
+            throw new InvalidOperationException("The selected Agent configuration is unavailable.");
+
+        if (string.Equals(configId, "mode", StringComparison.Ordinal)
+            && value is string requestedMode)
+        {
+            lock (_sessionMutationSync)
+            {
+                if (_modes.All(mode => !string.Equals(mode.Id, requestedMode, StringComparison.Ordinal)))
+                    throw new InvalidOperationException("The selected Agent mode is unavailable.");
+            }
+        }
+
         await EnsureAcpSessionAsync(createIfMissing: true).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(_acpSessionId))
             return;
@@ -2885,7 +2899,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             if (!result.TryGetProperty("modes", out var modes)
                 || modes.ValueKind != JsonValueKind.Object)
             {
-                _modes = Array.Empty<AcpMode>();
+                _modes = Array.Empty<AcpSessionModeDescriptor>();
                 _currentModeId = null;
                 return;
             }
@@ -2894,15 +2908,18 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             if (modes.TryGetProperty("availableModes", out var availableModes)
                 && availableModes.ValueKind == JsonValueKind.Array)
             {
-                _modes = availableModes.EnumerateArray()
-                    .Select(mode => new AcpMode
-                    {
-                        Id = GetString(mode, "id"),
-                        Name = GetString(mode, "name"),
-                        Description = GetString(mode, "description")
-                    })
+                var declaredModes = availableModes.EnumerateArray()
+                    .Select(mode => new AcpSessionModeDescriptor(
+                        GetString(mode, "id"),
+                        GetString(mode, "name"),
+                        GetString(mode, "description")))
                     .Where(mode => !string.IsNullOrWhiteSpace(mode.Id))
                     .ToArray();
+                _modes = _provider.Compatibility.FilterSessionModes(declaredModes)
+                    .Where(mode => !string.IsNullOrWhiteSpace(mode.Id))
+                    .ToArray();
+                if (_modes.All(mode => !string.Equals(mode.Id, _currentModeId, StringComparison.Ordinal)))
+                    _currentModeId = _modes.FirstOrDefault()?.Id;
             }
 
             _currentThread.ModeId = _currentModeId;
@@ -2932,6 +2949,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                     Options = ReadConfigOptionValues(option)
                 })
                 .Where(option => !string.IsNullOrWhiteSpace(option.Id)
+                                 && _provider.Compatibility.SupportsSessionConfigOption(option.Id)
                                  && ((option.Type == "select" && option.Options.Count > 0)
                                      || (option.Type == "boolean" && option.BooleanValue.HasValue)))
                 .ToArray();

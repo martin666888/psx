@@ -13,6 +13,7 @@
                                      KimiIcon="{StaticResource AgentIconGeometry.Kimi}"
                                      QwenIcon="{StaticResource AgentIconGeometry.Qwen}"
                                      QoderIcon="{StaticResource AgentIconGeometry.Qoder}"
+                                     ClineIcon="{StaticResource AgentIconGeometry.Cline}"
                                      OpencodeIcon="{StaticResource AgentIconGeometry.Opencode}"/>
 
         <Style x:Key="TabItemContainerStyle" TargetType="Border">

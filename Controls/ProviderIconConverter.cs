@@ -12,6 +12,7 @@ public sealed class ProviderIconConverter : IValueConverter
     public Geometry QwenIcon { get; set; } = Geometry.Empty;
     public Geometry QoderIcon { get; set; } = Geometry.Empty;
     public Geometry OpencodeIcon { get; set; } = Geometry.Empty;
+    public Geometry ClineIcon { get; set; } = Geometry.Empty;
 
     public object Convert(
         object? value,
@@ -38,6 +39,7 @@ public sealed class ProviderIconConverter : IValueConverter
         "qwen" => QwenIcon,
         "qoder" => QoderIcon,
         "opencode" => OpencodeIcon,
+        "cline" => ClineIcon,
         _ => null
     };
 }

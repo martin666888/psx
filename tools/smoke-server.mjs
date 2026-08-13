@@ -2,7 +2,7 @@
 // for the Release browser smoke. The Vite output under wwwroot/app uses
 // absolute /app/ URLs, so a plain static server maps the WebView2 virtual-host
 // layout one-to-one. `?smoke=react` injects an isolated host-bridge fixture
-// into /app/index.html and writes its result into the DOM.
+// into /app/index.html and POSTs the result to /smoke-result.
 //
 // Usage: node tools/smoke-server.mjs <wwwroot-dir> [port]
 
@@ -253,15 +253,15 @@ const REACT_SMOKE_BOOTSTRAP = String.raw`
         + String.fromCharCode(96).repeat(3)
     });
     emit({ type: 'run_finished', workspaceId });
-    result.checks.shikiWorkerHighlighted = await waitFor(() =>
-      !!panel?.querySelector('[data-streamdown="code-block-body"] [style*="--sdm-c"]'),
-      10000
-    );
-    const resourcesAfterCode = performance.getEntriesByType('resource').map((entry) => entry.name);
-    result.checks.markdownCodeChunkLoaded =
-      resourcesAfterCode.some((name) => /\/app\/assets\/markdown-code-[-\w]+\.js(?:$|\?)/.test(name));
-    result.checks.localShikiWorkerLoaded =
-      resourcesAfterCode.some((name) => /\/app\/assets\/shiki-worker\.js(?:$|\?)/.test(name));
+    // Edge resource timing omits the module worker and markdown-code chunk;
+    // the Shiki token style plus source text prove the packaged highlighter ran.
+    // Chunk files themselves are gated by tools/web-build-lib.mjs and
+    // tools/markdown-performance.mjs.
+    result.checks.shikiWorkerHighlighted = await waitFor(() => {
+      const block = panel?.querySelector('[data-streamdown="code-block-body"]');
+      return !!block?.querySelector('[style*="--sdm-c"]')
+        && block.textContent.includes('psxMarkdownWorker');
+    }, 15000);
 
     const passed =
       Object.values(result.checks).every((value) => value === true)
@@ -269,19 +269,53 @@ const REACT_SMOKE_BOOTSTRAP = String.raw`
       && result.warnings.length === 0
       && result.unhandled.length === 0;
     document.body.dataset.smokeStatus = passed ? 'pass' : 'fail';
+    const payload = JSON.stringify({ passed, ...result });
     const report = document.createElement('pre');
     report.id = 'react-smoke-report';
-    report.textContent = JSON.stringify(result);
+    report.textContent = payload;
     document.body.appendChild(report);
+    try {
+      await fetch('/smoke-result', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: payload
+      });
+    } catch (error) {
+      result.unhandled.push(text(error));
+    }
   }, { once: true });
 })();`;
 
 const REACT_SMOKE_SCRIPT_PATH = 'app/react-smoke-bootstrap.js';
+let smokeResultBody = null;
 
 const server = http.createServer((req, res) => {
   const requestUrl = new URL(req.url, 'http://localhost');
   const urlPath = decodeURIComponent(requestUrl.pathname);
   const relative = urlPath === '/' ? 'app/index.html' : urlPath.replace(/^\/+/, '');
+  if (relative === 'smoke-result') {
+    if (req.method === 'POST') {
+      const chunks = [];
+      req.on('data', (chunk) => chunks.push(chunk));
+      req.on('end', () => {
+        smokeResultBody = Buffer.concat(chunks).toString('utf8');
+        res.writeHead(204, { 'cache-control': 'no-store' }).end();
+      });
+      return;
+    }
+    if (smokeResultBody == null) {
+      res.writeHead(404, {
+        'content-type': 'text/plain; charset=utf-8',
+        'cache-control': 'no-store'
+      }).end('pending');
+      return;
+    }
+    res.writeHead(200, {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store'
+    }).end(smokeResultBody);
+    return;
+  }
   if (relative === REACT_SMOKE_SCRIPT_PATH) {
     res.writeHead(200, {
       'content-type': MIME['.js'],

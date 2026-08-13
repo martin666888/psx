@@ -30,8 +30,9 @@ The core value of PSX is:
   as three side-by-side columns, without hiding background workspaces.
 - **Clear Agent workflow**: conversations, tool calls, permission prompts, and
   task plans are separated in the interface.
-- **Five managed providers**: Claude Code, Kimi Code, Qwen Code, Qoder CLI, and
-  OpenCode use curated runtime adapters rather than arbitrary executables.
+- **Six managed providers**: Claude Code, Kimi Code, Qwen Code, Qoder CLI,
+  Cline, and OpenCode use curated runtime adapters rather than arbitrary
+  executables.
 - **Global history and configuration**: History, profile, exact usage where a
   provider supports it, and sanitized user-level configuration remain available
   even when the workspace contains only Terminal tabs.
@@ -51,8 +52,8 @@ controllable, and easy to distribute on work machines.
 
 - Terminal mode with real Windows ConPTY sessions.
 - Mixed Terminal and Agent tab stacks in up to three resizable columns.
-- Managed ACP sessions for Claude Code, Kimi Code, Qwen Code, Qoder CLI, and
-  OpenCode.
+- Managed ACP sessions for Claude Code, Kimi Code, Qwen Code, Qoder CLI,
+  Cline, and OpenCode.
 - Process-wide History plus profile, Usage, and sanitized Config views.
 - Workspace-local task Plan card/overlay with completed items checked and
   struck through.
@@ -79,8 +80,9 @@ PSX currently targets Windows x64. Microsoft Edge WebView2 Runtime is required.
 If WebView2 is not installed, PSX will show a prompt instead of opening a blank
 window.
 
-The release package includes the .NET runtime, Portable Node, Claude/Qoder seed
-manifests, and curated bundled baselines for Kimi, Qwen, and OpenCode. It
+The release package includes the .NET runtime, Portable Node,
+Claude/Qoder/Cline seed manifests, and curated bundled baselines for Kimi,
+Qwen, and OpenCode. It
 deliberately does **not** include `claude.exe` or a user-installed runtime under
 `runtime/`.
 
@@ -88,7 +90,7 @@ deliberately does **not** include `claude.exe` or a user-installed runtime under
 
 Terminal mode works immediately and startup never starts an npm download.
 Kimi Code, Qwen Code, and OpenCode can use the curated baseline shipped in the
-portable package. Claude Code and Qoder CLI require an explicit install
+portable package. Claude Code, Qoder CLI, and Cline require an explicit install
 confirmation before PSX downloads their managed runtime from the official npm
 registry. Installation and user-triggered updates show progress and support
 cancellation/retry; cancelling does not leave the runtime directory locked.
@@ -217,7 +219,7 @@ PSX is built with:
 - WebView2 for the terminal and Agent frontend.
 - xterm.js for terminal rendering, ANSI sequences, input, and scrollback.
 - Windows ConPTY for real pseudo-console sessions.
-- ACP runtimes for the five managed Agent providers.
+- ACP runtimes for the six managed Agent providers.
 
 These technologies are implementation details. The goal of PSX is to provide a
 lightweight Windows desktop entry point for AI Agent CLI workflows, especially

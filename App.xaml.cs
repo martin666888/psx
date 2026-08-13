@@ -109,6 +109,17 @@ public partial class App : Application
         services.AddSingleton<QoderCliAcpAgentProvider>();
         services.AddSingleton<IAcpAgentProvider>(sp => sp.GetRequiredService<QoderCliAcpAgentProvider>());
 
+        // Cline ships as a manifest-only managed runtime. Installation happens
+        // after explicit confirmation into runtime/cline-current; toolbar
+        // updates stage cline-next. Its own updater and Hub backend remain
+        // disabled by launch policy.
+        services.AddSingleton<ClineAcpRuntime>(sp =>
+            new ClineAcpRuntime(
+                sp.GetRequiredService<RuntimeLocator>(),
+                Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "agent", "acp-logs")));
+        services.AddSingleton<ClineAcpAgentProvider>();
+        services.AddSingleton<IAcpAgentProvider>(sp => sp.GetRequiredService<ClineAcpAgentProvider>());
+
         // OpenCode is MIT-licensed and pre-installed into tools/opencode/ at
         // build time (a native Bun-compiled binary from the platform package,
         // not the opencode-ai wrapper), so it uses its own bundled runtime

@@ -170,6 +170,18 @@
     padding: 8px 10px;
 }
 
+/* Dual-theme Shiki writes light colors into --sdm-c and dark colors into
+   --shiki-dark. Streamdown only switches via Tailwind `dark:`; keep a
+   theme-class fallback so Agent dark mode never shows github-light tokens
+   on a near-black surface. */
+.agent-ui.agent-ui-dark [data-streamdown="code-block-body"] [style*="--shiki-dark"] {
+    color: var(--shiki-dark);
+}
+
+.agent-ui.agent-ui-dark [data-streamdown="code-block-body"] [style*="--shiki-dark-bg"] {
+    background-color: var(--shiki-dark-bg);
+}
+
 .agent-message-body [data-streamdown="code-block"] pre {
     margin: 0;
     padding: 0;

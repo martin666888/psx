@@ -34,7 +34,7 @@ The portable release redistributes:
 - Radix UI — MIT; see `licenses/radix-ui/LICENSE`.
 - Lucide icons — ISC; see `licenses/lucide/LICENSE`.
 - Lobe Icons static SVG brand marks — MIT; see `licenses/lobe-icons/LICENSE`.
-  The pinned `claude.svg`, `kimi.svg`, `qwen.svg`, `qoder.svg`, and
+  The pinned `claude.svg`, `kimi.svg`, `qwen.svg`, `qoder.svg`, `cline.svg`, and
   `opencode.svg` assets from `@lobehub/icons-static-svg` are retained under
   `Assets/AgentIcons/` and converted to WPF geometry for the
   TabBar. Provider names and marks remain trademarks of their
@@ -50,6 +50,12 @@ The portable release redistributes:
   `licenses/qoder/THIRD-PARTY-NOTICES.md`. The release ships only
   `tools/qoder-seed/`; the installed tree under `runtime/qoder-current/` is
   downloaded after user confirmation and is never redistributed in the ZIP.
+- Cline CLI seed manifests — Apache-2.0; see `licenses/cline/LICENSE` and
+  `licenses/cline/THIRD-PARTY-NOTICES.md`. PSX pins the official Node wrapper
+  and Windows x64 platform package at 3.0.53 for first install. Only
+  `tools/cline-seed/` ships; the installed runtime under `runtime/cline-current/`
+  is downloaded from the official npm registry after explicit user confirmation,
+  and toolbar updates stage `runtime/cline-next/` the same way.
 - Kimi Code ACP runtime — bundled under `tools/kimi/`; MIT. See
   `licenses/kimi/LICENSE` and `licenses/kimi/THIRD-PARTY-NOTICES.md` for the
   runtime and its production dependencies (`node-pty`, `node-addon-api`,
@@ -64,7 +70,7 @@ The portable release redistributes:
   self-contained native executable (~175 MB) embedding the Bun runtime (MIT),
   depended on directly rather than through the `opencode-ai` wrapper.
 
-The release includes only the ACP / Qoder package manifests and lockfiles. It
+The release includes only the ACP / Qoder / Cline package manifests and lockfiles. It
 does not redistribute Claude Code, the Claude Agent SDK native binary, an
 installed ACP runtime, or an installed Qoder CLI. When the user explicitly
 installs Agent support, npm downloads the locked packages from their

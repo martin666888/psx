@@ -11,6 +11,11 @@
 @import "tailwindcss";
 @import "streamdown/styles.css";
 
+/* Streamdown/shadcn `dark:` utilities must follow the INI-driven Agent theme
+   (`.agent-ui-dark`), not OS prefers-color-scheme. Otherwise github-light
+   token colors paint onto a dark code-block surface. */
+@custom-variant dark (&:where(.agent-ui-dark, .agent-ui-dark *));
+
 /* The Agent React sources live OUTSIDE the Vite root (frontend/webview), so
    Tailwind's automatic content detection misses them; register them
    explicitly or every utility class used by agent/src silently vanishes. */

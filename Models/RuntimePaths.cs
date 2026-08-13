@@ -175,6 +175,31 @@ public sealed record RuntimePaths
     /// </summary>
     public required string QoderActivePointerFile { get; init; }
 
+    /// <summary>Read-only Cline seed manifests shipped under tools/cline-seed.</summary>
+    public required string ClineSeedDirectory { get; init; }
+
+    /// <summary>Validated Cline runtime used by live ACP and terminal sessions.</summary>
+    public required string ClineCurrentDirectory { get; init; }
+
+    /// <summary>
+    /// Staging directory for a user-requested Cline update. Never read by the
+    /// live session; promoted to <see cref="ClineCurrentDirectory"/> on the
+    /// next PSX launch when the pointer says "next".
+    /// </summary>
+    public required string ClineNextDirectory { get; init; }
+
+    /// <summary>
+    /// Pending-update marker for the Cline runtime, mirroring
+    /// <see cref="AcpActivePointerFile"/> ("current" or "next").
+    /// </summary>
+    public required string ClineActivePointerFile { get; init; }
+
+    /// <summary>Scratch directory used only while installing the pinned Cline release.</summary>
+    public required string ClineInstallingDirectory { get; init; }
+
+    /// <summary>Rollback copy retained across an interrupted current-directory swap.</summary>
+    public required string ClineRollbackDirectory { get; init; }
+
     /// <summary>
     /// Root of the bundled OpenCode install shipped inside the release zip at
     /// <c>{InstallDir}/tools/opencode/</c>. Pre-installed at build time and

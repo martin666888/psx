@@ -90,6 +90,7 @@ test('tab icons render provider brand SVGs; terminal keeps its text glyph', asyn
         { workspaceId: 'term', kind: 'terminal' },
         { workspaceId: 'qwen', kind: 'agent' },
         { workspaceId: 'qoder', kind: 'agent' },
+        { workspaceId: 'cline', kind: 'agent' },
         { workspaceId: 'weird', kind: 'agent' }
       ],
       activeTabId: 'qwen',
@@ -104,6 +105,7 @@ test('tab icons render provider brand SVGs; terminal keeps its text glyph', asyn
       { workspaceId: 'term', kind: 'terminal', title: 'Term', iconKey: 'terminal', columnId: 'column-1', isActiveTab: false },
       { workspaceId: 'qwen', kind: 'agent', title: 'Qwen', iconKey: 'qwen', columnId: 'column-1', isActiveTab: true },
       { workspaceId: 'qoder', kind: 'agent', title: 'Qoder', iconKey: 'qoder', columnId: 'column-1', isActiveTab: false },
+      { workspaceId: 'cline', kind: 'agent', title: 'Cline', iconKey: 'cline', columnId: 'column-1', isActiveTab: false },
       { workspaceId: 'weird', kind: 'agent', title: 'Weird', iconKey: 'not-a-brand', columnId: 'column-1', isActiveTab: false }
     ]
   });
@@ -112,6 +114,7 @@ test('tab icons render provider brand SVGs; terminal keeps its text glyph', asyn
   assert.equal(tabIcon('term').querySelector('svg'), null, 'terminal tab carries no svg');
   assert.ok(tabIcon('qwen').querySelector('svg[data-icon="qwen"]'), 'qwen tab renders the qwen brand mark');
   assert.ok(tabIcon('qoder').querySelector('svg[data-icon="qoder"]'), 'qoder tab renders the qoder brand mark, not a shared letter');
+  assert.ok(tabIcon('cline').querySelector('svg[data-icon="cline"]'), 'cline tab renders the cline brand mark');
   assert.ok(tabIcon('weird').querySelector('svg[data-icon="agent"]'), 'unknown iconKey falls back to the generic sparkle');
   assert.equal(tabIcon('qwen').querySelector('svg').getAttribute('aria-hidden'), 'true');
   chrome.dispose();

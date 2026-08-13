@@ -25,6 +25,16 @@ public sealed record AcpClientCapabilityProfile
     public bool TerminalOutputMeta { get; init; }
 }
 
+/// <summary>
+/// Provider-neutral projection of an ACP session mode. Compatibility policy
+/// may remove modes whose advertised behavior is not safe for a pinned agent
+/// version before the shared session publishes them to the Composer.
+/// </summary>
+public sealed record AcpSessionModeDescriptor(
+    string Id,
+    string Name,
+    string Description);
+
 public sealed class AcpProcessSpec
 {
     public required string FileName { get; init; }

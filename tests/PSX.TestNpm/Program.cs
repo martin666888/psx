@@ -186,6 +186,38 @@ if (scenario.CreateQoder)
     }
 }
 
+if (scenario.CreateCline)
+{
+    var wrapperVersion = scenario.ClineVersion ?? "3.0.53";
+    WriteJson(
+        Path.Combine(workingDirectory, "node_modules", "cline", "package.json"),
+        new
+        {
+            name = "cline",
+            version = wrapperVersion,
+            bin = new Dictionary<string, string> { ["cline"] = "bin/cline.js" }
+        });
+    WriteFile(
+        Path.Combine(workingDirectory, "node_modules", "cline", "bin", "cline.js"),
+        "// fake Cline wrapper");
+    WriteJson(
+        Path.Combine(workingDirectory, "node_modules", "@cline", "cli-windows-x64", "package.json"),
+        new
+        {
+            name = "@cline/cli-windows-x64",
+            version = scenario.ClinePlatformVersion ?? wrapperVersion
+        });
+    WriteFile(
+        Path.Combine(workingDirectory, "node_modules", "@cline", "cli-windows-x64", "bin", "cline.exe"),
+        "fake Cline executable");
+    if (scenario.ClineSmokeFails)
+    {
+        WriteFile(
+            Path.Combine(workingDirectory, "node_modules", "cline", "smoke-fail.marker"),
+            "fail");
+    }
+}
+
 if (scenario.CreateOpencode)
 {
     var opencodePackage = string.IsNullOrWhiteSpace(scenario.OpencodePackageName)
@@ -257,6 +289,10 @@ internal sealed class FakeNpmScenario
     public string? KimiVersion { get; set; }
     public string? QwenVersion { get; set; }
     public string? QoderVersion { get; set; }
+    public bool CreateCline { get; set; }
+    public bool ClineSmokeFails { get; set; }
+    public string? ClineVersion { get; set; }
+    public string? ClinePlatformVersion { get; set; }
     public string? OpencodeVersion { get; set; }
     public string? OpencodePackageName { get; set; }
 }

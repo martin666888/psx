@@ -9,7 +9,7 @@ PSX 是一个面向 AI Agent 工作流的 Windows 桌面终端。它把 Terminal
 - **便携优先**：以 ZIP 分发，不需要安装器和管理员权限。
 - **Terminal 立即可用**：发布包内置 .NET 和 Portable Node，不依赖首次下载。
 - **Terminal / Agent 统一工作台**：最多三列，可在每列中堆叠和切换 Terminal、Agent 标签。
-- **五个托管 Provider**：Claude Code、Kimi Code、Qwen Code、Qoder CLI、OpenCode 使用受控 Runtime 与入口。
+- **六个托管 Provider**：Claude Code、Kimi Code、Qwen Code、Qoder CLI、Cline、OpenCode 使用受控 Runtime 与入口。
 - **全局 History 与配置**：只有 Terminal 时也能查看历史、Profile、Usage 和经过脱敏的用户级 Config。
 - **完整工作流**：对话、工具调用、权限请求和任务计划在界面中分区展示。
 - **原生终端能力**：通过 Windows ConPTY 提供真实的多标签终端会话。
@@ -19,7 +19,7 @@ PSX 是一个面向 AI Agent 工作流的 Windows 桌面终端。它把 Terminal
 ## 主要功能
 
 - 基于 Windows ConPTY 的 Terminal 模式，以及最多三列的混合 Workspace 标签栈。
-- 面向五个 Managed Provider 的 ACP Agent 会话。
+- 面向六个 Managed Provider 的 ACP Agent 会话。
 - Workspace 内的 Plan 浮层/窄档 Overlay、工具调用卡片、权限及问题交互。
 - 进程级 History、Profile、Usage 与脱敏 Config 面板。
 - 基于 shadcn/ui 与 AI Elements 的现代 Agent 界面，内置 Vercel Neutral 深浅色预设。
@@ -40,11 +40,11 @@ PSX-1.1.2-win-x64-portable.zip
 
 PSX 当前面向 Windows x64，并需要 Microsoft Edge WebView2 Runtime。系统未安装 WebView2 时，PSX 会显示提示，而不是打开空白窗口。
 
-公开发布包包含 .NET、Portable Node、Claude/Qoder seed，以及 Kimi/Qwen/OpenCode 的受控基线；但**不包含** `claude.exe` 或用户安装在 `runtime/` 下的运行环境。
+公开发布包包含 .NET、Portable Node、Claude/Qoder/Cline seed，以及 Kimi/Qwen/OpenCode 的受控基线；但**不包含** `claude.exe` 或用户安装在 `runtime/` 下的运行环境。
 
 ## Agent 首次安装
 
-Terminal 始终可以直接使用，也不会触发 npm 下载。Kimi、Qwen、OpenCode 可使用发布包内基线；Claude 与 Qoder 需要用户确认后才从 npm 官方源安装受控 Runtime。界面显示进度并支持取消/重试，取消返回前会等待进程与输出管道释放，避免锁住 Runtime 目录。
+Terminal 始终可以直接使用，也不会触发 npm 下载。Kimi、Qwen、OpenCode 可使用发布包内基线；Claude、Qoder 与 Cline 需要用户确认后才从 npm 官方源安装受控 Runtime。界面显示进度并支持取消/重试，取消返回前会等待进程与输出管道释放，避免锁住 Runtime 目录。
 
 下载或更新的运行环境保存在 `PSX.exe` 旁边的 `runtime/` 目录。同一个解压目录后续会复用；PSX 启动只会在本地提升已 staged 的更新，绝不会自行访问 npm。
 

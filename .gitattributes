@@ -12,6 +12,7 @@
 ###############################################################################
 frontend/agent/src/**/*.ts text eol=lf
 frontend/agent/src/**/*.tsx text eol=lf
+tools/*-seed/package-lock.json text eol=lf
 
 ###############################################################################
 # Vite build output committed at checkpoint boundaries only.

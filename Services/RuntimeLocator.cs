@@ -27,6 +27,12 @@ public sealed class RuntimeLocator
     private const string QoderCurrentSubdirectoryName = "qoder-current";
     private const string QoderNextSubdirectoryName = "qoder-next";
     private const string QoderActivePointerFileName = "qoder-active.txt";
+    private const string ClineSeedSubdirectoryName = "cline-seed";
+    private const string ClineCurrentSubdirectoryName = "cline-current";
+    private const string ClineNextSubdirectoryName = "cline-next";
+    private const string ClineActivePointerFileName = "cline-active.txt";
+    private const string ClineInstallingSubdirectoryName = "cline-installing";
+    private const string ClineRollbackSubdirectoryName = "cline-rollback";
     private const string OpencodeSubdirectoryName = "opencode";
     private const string OpencodeCurrentSubdirectoryName = "opencode-current";
     private const string OpencodeNextSubdirectoryName = "opencode-next";
@@ -110,6 +116,12 @@ public sealed class RuntimeLocator
             QoderCurrentDirectory = Path.Combine(runtimeRoot, QoderCurrentSubdirectoryName),
             QoderNextDirectory = Path.Combine(runtimeRoot, QoderNextSubdirectoryName),
             QoderActivePointerFile = Path.Combine(runtimeRoot, QoderActivePointerFileName),
+            ClineSeedDirectory = Path.Combine(installDirectory, "tools", ClineSeedSubdirectoryName),
+            ClineCurrentDirectory = Path.Combine(runtimeRoot, ClineCurrentSubdirectoryName),
+            ClineNextDirectory = Path.Combine(runtimeRoot, ClineNextSubdirectoryName),
+            ClineActivePointerFile = Path.Combine(runtimeRoot, ClineActivePointerFileName),
+            ClineInstallingDirectory = Path.Combine(runtimeRoot, ClineInstallingSubdirectoryName),
+            ClineRollbackDirectory = Path.Combine(runtimeRoot, ClineRollbackSubdirectoryName),
             BundledOpencodeDirectory = Path.Combine(installDirectory, "tools", OpencodeSubdirectoryName),
             OpencodeCurrentDirectory = Path.Combine(runtimeRoot, OpencodeCurrentSubdirectoryName),
             OpencodeNextDirectory = Path.Combine(runtimeRoot, OpencodeNextSubdirectoryName),
