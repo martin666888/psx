@@ -27,12 +27,12 @@ public interface IDshWebWorkspaceCoordinator
 
 public sealed class DshWebWorkspaceCoordinator : IDshWebWorkspaceCoordinator
 {
-    private readonly IAgentBridgeService _bridge;
+    private readonly DshWebRuntimeSupervisor _supervisor;
     private readonly object _sync = new();
     private WorkspaceDescriptor? _workspace;
     private bool _shuttingDown;
 
-    public DshWebWorkspaceCoordinator(IAgentBridgeService bridge) => _bridge = bridge;
+    public DshWebWorkspaceCoordinator(DshWebRuntimeSupervisor supervisor) => _supervisor = supervisor;
 
     public Guid? OpenWorkspaceId
     {
@@ -47,10 +47,8 @@ public sealed class DshWebWorkspaceCoordinator : IDshWebWorkspaceCoordinator
         WorkspaceDescriptor? created;
         lock (_sync)
         {
-            if (_shuttingDown)
-                return null;
-            if (_workspace != null)
-                return _workspace.WorkspaceId;
+            if (_shuttingDown) return null;
+            if (_workspace != null) return _workspace.WorkspaceId;
             _workspace = new WorkspaceDescriptor
             {
                 WorkspaceId = Guid.NewGuid(),
@@ -61,42 +59,45 @@ public sealed class DshWebWorkspaceCoordinator : IDshWebWorkspaceCoordinator
             created = _workspace;
         }
         WorkspaceCreated?.Invoke(this, new WorkspaceEventArgs { Workspace = created! });
-        await PublishRuntimeStatusAsync("not_installed").ConfigureAwait(false);
+        // Kick off the runtime (starts the server if installed, else stays not_installed).
+        await _supervisor.EnsureRunningAsync().ConfigureAwait(false);
         return created!.WorkspaceId;
     }
 
-    public Task ActivateAsync(Guid workspaceId)
+    public async Task ActivateAsync(Guid workspaceId)
     {
-        // Phase 1: no runtime state to apply; the descriptor is already open.
-        return Task.CompletedTask;
+        // Ensure the server is running when the user focuses the DSH tab.
+        await _supervisor.EnsureRunningAsync().ConfigureAwait(false);
     }
 
     public Task CloseAsync(Guid workspaceId, WorkspaceCloseReason reason)
     {
         lock (_sync)
         {
-            if (_workspace?.WorkspaceId != workspaceId)
-                return Task.CompletedTask;
+            if (_workspace?.WorkspaceId != workspaceId) return Task.CompletedTask;
             _workspace = null;
         }
         WorkspaceClosed?.Invoke(this, new WorkspaceClosedEventArgs { WorkspaceId = workspaceId });
+        // Closing the tab does NOT stop the runtime (background work survives).
         return Task.CompletedTask;
     }
 
     public async Task HandleCommandAsync(string name)
     {
-        // Phase 1: no runtime — every command lands on the not_installed card.
-        await PublishRuntimeStatusAsync("not_installed").ConfigureAwait(false);
+        switch (name)
+        {
+            case "install":
+                await _supervisor.InstallAsync().ConfigureAwait(false);
+                await _supervisor.EnsureRunningAsync().ConfigureAwait(false);
+                break;
+            case "retry":
+                await _supervisor.EnsureRunningAsync().ConfigureAwait(false);
+                break;
+            case "stop":
+                _supervisor.Stop();
+                break;
+        }
     }
 
     public void BeginShutdown() { lock (_sync) _shuttingDown = true; }
-
-    private Task PublishRuntimeStatusAsync(string state) =>
-        _bridge.SendEventAsync(new
-        {
-            type = "dsh_runtime_status",
-            state,
-            readyUrl = (string?)null,
-            errorClass = (string?)null
-        });
 }

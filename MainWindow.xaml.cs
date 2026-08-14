@@ -20,6 +20,7 @@ public partial class MainWindow : Window
     private readonly IAgentWorkspaceCoordinator? _agentWorkspaceCoordinator;
     private readonly IWorkspaceManager? _workspaceManager;
     private readonly IAgentRuntimeCoordinator? _agentRuntimeCoordinator;
+    private readonly DshWebRuntimeSupervisor? _dshSupervisor;
     private readonly RuntimePreflightService? _preflight;
     private readonly ISettingsService? _settingsService;
     private bool _isShuttingDown;
@@ -39,6 +40,7 @@ public partial class MainWindow : Window
         IAgentWorkspaceCoordinator agentWorkspaceCoordinator,
         IWorkspaceManager workspaceManager,
         IAgentRuntimeCoordinator agentRuntimeCoordinator,
+        DshWebRuntimeSupervisor dshSupervisor,
         RuntimePreflightService preflight,
         ISettingsService settingsService)
     {
@@ -51,6 +53,7 @@ public partial class MainWindow : Window
         _agentWorkspaceCoordinator = agentWorkspaceCoordinator;
         _workspaceManager = workspaceManager;
         _agentRuntimeCoordinator = agentRuntimeCoordinator;
+        _dshSupervisor = dshSupervisor;
         _preflight = preflight;
         _settingsService = settingsService;
 
@@ -239,6 +242,12 @@ public partial class MainWindow : Window
         }
         finally
         {
+            // Reap the DSH process tree after Terminal/Agent shutdown, before
+            // the bridge is disposed. The Job Object (KILL_ON_JOB_CLOSE)
+            // ensures the full dsh web tree dies even on a crash.
+            try { _dshSupervisor?.Dispose(); }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine("DSH supervisor shutdown failed: " + ex); }
+
             if (_bridgeService != null)
             {
                 _bridgeService.FrontendReady -= OnFrontendReady;

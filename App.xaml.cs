@@ -140,6 +140,15 @@ public partial class App : Application
         services.AddSingleton<IAgentWorkspaceFactory, AgentWorkspaceFactory>();
         services.AddSingleton<IAgentWorkspaceCoordinator, AgentWorkspaceCoordinator>();
         services.AddSingleton<IDshWebWorkspaceCoordinator, DshWebWorkspaceCoordinator>();
+        services.AddSingleton<DshWebRuntime>(sp =>
+            new DshWebRuntime(
+                sp.GetRequiredService<RuntimeLocator>(),
+                Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "dsh")));
+        services.AddSingleton<DshWebRuntimeSupervisor>(sp =>
+            new DshWebRuntimeSupervisor(
+                sp.GetRequiredService<DshWebRuntime>(),
+                sp.GetRequiredService<IAgentBridgeService>(),
+                Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "dsh")));
         services.AddSingleton<WorkspaceLayoutService>();
         services.AddSingleton<IWorkspaceManager, WorkspaceManager>();
 

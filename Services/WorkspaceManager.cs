@@ -84,7 +84,11 @@ public sealed class WorkspaceManager : IWorkspaceManager
         _agents = agents;
         _bridge = bridge;
         _layout = layout;
-        _dsh = dsh ?? new DshWebWorkspaceCoordinator(bridge);
+        _dsh = dsh ?? new DshWebWorkspaceCoordinator(
+            new DshWebRuntimeSupervisor(
+                new DshWebRuntime(new RuntimeLocator(), System.IO.Path.GetTempPath()),
+                bridge,
+                System.IO.Path.GetTempPath()));
         _layout.LayoutChanged += OnLayoutChanged;
 
         _terminalTabs.TabCreated += OnTerminalCreated;

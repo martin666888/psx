@@ -233,4 +233,22 @@ public sealed record RuntimePaths
     /// <see cref="AcpActivePointerFile"/> ("current" or "next").
     /// </summary>
     public required string OpencodeActivePointerFile { get; init; }
+
+    /// <summary>Read-only DeepSeek Harness seed manifests shipped under tools/dsh-seed.</summary>
+    public required string DshSeedDirectory { get; init; }
+
+    /// <summary>Validated DSH web runtime used by the live `dsh web` server.</summary>
+    public required string DshCurrentDirectory { get; init; }
+
+    /// <summary>Staging directory for a user-requested DSH update (Phase 2+ V1 no-op).</summary>
+    public required string DshNextDirectory { get; init; }
+
+    /// <summary>Pending-update marker for the DSH runtime.</summary>
+    public required string DshActivePointerFile { get; init; }
+
+    /// <summary>Scratch directory used only while installing the pinned DSH release.</summary>
+    public required string DshInstallingDirectory { get; init; }
+
+    /// <summary>Rollback copy retained across an interrupted current-directory swap.</summary>
+    public required string DshRollbackDirectory { get; init; }
 }

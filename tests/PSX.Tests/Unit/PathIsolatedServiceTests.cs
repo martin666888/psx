@@ -240,5 +240,11 @@ public sealed class RuntimeLocatorTests
         yield return paths.ClineActivePointerFile;
         yield return paths.ClineInstallingDirectory;
         yield return paths.ClineRollbackDirectory;
+        yield return paths.DshSeedDirectory;
+        yield return paths.DshCurrentDirectory;
+        yield return paths.DshNextDirectory;
+        yield return paths.DshActivePointerFile;
+        yield return paths.DshInstallingDirectory;
+        yield return paths.DshRollbackDirectory;
     }
 }
