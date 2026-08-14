@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- P0 probe for the DSH experiment branch. NOT referenced by PSX.slnx:
+       the Fast/Full gates never build or run it. Artifacts (bin/obj/report)
+       land under TestResults/dsh-probe/. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>PSX.DshProbe</AssemblyName>
+    <RootNamespace>PSX.DshProbe</RootNamespace>
+    <BaseIntermediateOutputPath>..\..\TestResults\dsh-probe\obj\</BaseIntermediateOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
+  </ItemGroup>
+
+</Project>
