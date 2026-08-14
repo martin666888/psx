@@ -3,7 +3,24 @@ namespace PSX.Models;
 public enum WorkspaceKind
 {
     Terminal,
-    Agent
+    Agent,
+    DshWeb
+}
+
+/// <summary>
+/// Maps a workspace kind to its wire value. The wire contract is explicit:
+/// <c>DshWeb</c> serializes as <c>dsh_web</c>, never the enum-name lowercasing
+/// (<c>dshweb</c>). Catalog and layout payloads must both go through here.
+/// </summary>
+internal static class WorkspaceWireKind
+{
+    public static string ToWire(WorkspaceKind kind) => kind switch
+    {
+        WorkspaceKind.Terminal => "terminal",
+        WorkspaceKind.Agent => "agent",
+        WorkspaceKind.DshWeb => "dsh_web",
+        _ => kind.ToString().ToLowerInvariant()
+    };
 }
 
 public enum AgentWorkspaceState

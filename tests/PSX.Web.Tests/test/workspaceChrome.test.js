@@ -171,6 +171,36 @@ test('create menu disables new-right on pixel capacity and on the 3-column cap',
   chrome.dispose();
 });
 
+
+test('create menu gates the DeepSeek Harness row with its own fitsDsh capacity', async () => {
+  installAgentRuntime();
+  mountChrome();
+  const { WorkspaceChromeController } = await import(controllerUrl);
+  const chrome = new WorkspaceChromeController(
+    document.getElementById('workspace-chrome'),
+    document.getElementById('workspace-popover-root')
+  );
+  chrome.applyLayout(columnSnapshot([
+    { columnId: 'column-1', tabs: [{ workspaceId: 'w1', kind: 'terminal' }], activeTabId: 'w1', ratio: 1 }
+  ]), new Map());
+  chrome.applyCatalog({ revision: 1, providers: [], workspaces: [], maxColumns: 3 });
+  const row = (text) =>
+    [...document.querySelectorAll('.workspace-menu-row')].find(
+      (r) => r.querySelector('.workspace-menu-primary').textContent === text
+    );
+  const segment = (text) =>
+    [...document.querySelectorAll('.workspace-segments button')].find((b) => b.textContent === text);
+
+  // DSH capacity exhausted at new_right: only the DSH row is blocked.
+  chrome.setCapacityChecker(() => ({ fitsAgent: true, fitsTerminal: true, fitsDsh: false, requestedColumnCount: 1 }));
+  document.querySelector('[data-role="workspace-create-toggle"]').click();
+  segment('右侧新列').click();
+  assert.equal(row('DeepSeek Harness').disabled, true);
+  assert.equal(row('DeepSeek Harness').title, '窗口宽度不足以容纳新列');
+  assert.equal(row('Terminal').disabled, false, 'fitsDsh never gates the shared new-right segment or Terminal row');
+  chrome.dispose();
+});
+
 test('create menu refreshes in place without replaying the entry animation or stealing focus', async () => {
   installAgentRuntime();
   mountChrome();

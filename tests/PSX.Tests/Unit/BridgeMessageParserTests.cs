@@ -281,6 +281,22 @@ public sealed class TerminalBridgeMessageParserTests
         Assert.AreEqual("acp-kimi", create!.WorkspaceCreate!.ProviderKey);
 
         Assert.IsTrue(TerminalBridgeMessageParser.TryParse(
+            """{"type":"workspace_create","kind":"dsh_web","placement":"focused"}""",
+            out var dshCreate));
+        Assert.AreEqual("dsh_web", dshCreate!.WorkspaceCreate!.Kind);
+        Assert.IsNull(dshCreate.WorkspaceCreate.ProviderKey);
+
+        Assert.IsTrue(TerminalBridgeMessageParser.TryParse(
+            """{"type":"dsh_command","name":"install"}""",
+            out var dshCommand));
+        Assert.AreEqual(TerminalBridgeMessageKind.DshCommand, dshCommand!.Kind);
+        Assert.AreEqual("install", dshCommand.DshCommand!.Name);
+
+        Assert.IsFalse(TerminalBridgeMessageParser.TryParse(
+            """{"type":"dsh_command","name":"rm -rf"}""",
+            out _));
+
+        Assert.IsTrue(TerminalBridgeMessageParser.TryParse(
             """{"type":"theme_action","action":"preview","themeKey":"builtin:dark"}""",
             out var theme));
         Assert.AreEqual("preview", theme!.ThemeAction!.Action);

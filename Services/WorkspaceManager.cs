@@ -18,6 +18,8 @@ public interface IWorkspaceManager : IDisposable
     IReadOnlyList<AgentProviderCatalogItem> AgentProviders { get; }
     Task<Guid?> CreateTerminalAsync(ShellProfile? profile = null);
     Task<Guid?> CreateAgentAsync(string providerKey, string? workingDirectory = null);
+    /// <summary>Create (or focus) the single DeepSeek Harness web workspace.</summary>
+    Task<Guid?> CreateDshWebAsync();
     Task<Guid?> OpenAgentThreadAsync(string threadId);
     Task ActivateAsync(Guid workspaceId);
     Task CloseAsync(Guid workspaceId, WorkspaceCloseReason reason = WorkspaceCloseReason.User);
@@ -57,6 +59,7 @@ public sealed class WorkspaceManager : IWorkspaceManager
 {
     private readonly ITabManagementService _terminalTabs;
     private readonly IAgentWorkspaceCoordinator _agents;
+    private readonly IDshWebWorkspaceCoordinator _dsh;
     private readonly IAgentBridgeService _bridge;
     private readonly WorkspaceLayoutService _layout;
     private readonly List<WorkspaceDescriptor> _workspaces = new();
@@ -74,12 +77,14 @@ public sealed class WorkspaceManager : IWorkspaceManager
         ITabManagementService terminalTabs,
         IAgentWorkspaceCoordinator agents,
         IAgentBridgeService bridge,
-        WorkspaceLayoutService layout)
+        WorkspaceLayoutService layout,
+        IDshWebWorkspaceCoordinator? dsh = null)
     {
         _terminalTabs = terminalTabs;
         _agents = agents;
         _bridge = bridge;
         _layout = layout;
+        _dsh = dsh ?? new DshWebWorkspaceCoordinator(bridge);
         _layout.LayoutChanged += OnLayoutChanged;
 
         _terminalTabs.TabCreated += OnTerminalCreated;
@@ -90,10 +95,13 @@ public sealed class WorkspaceManager : IWorkspaceManager
         _terminalTabs.PaneMoveRequested += OnPaneMoveRequested;
         _terminalTabs.WorkspaceLayoutIntentRequested += OnWorkspaceLayoutIntentRequested;
         _terminalTabs.WorkspaceCreateRequested += OnWorkspaceCreateRequested;
+        _terminalTabs.DshCommandRequested += OnDshCommandRequested;
         _agents.WorkspaceCreated += OnAgentCreated;
         _agents.WorkspaceChanged += OnAgentChanged;
         _agents.WorkspaceClosed += OnAgentClosed;
         _agents.WorkspaceActivationRequested += OnActivationRequested;
+        _dsh.WorkspaceCreated += OnDshCreated;
+        _dsh.WorkspaceClosed += OnDshClosed;
     }
 
     public IReadOnlyList<WorkspaceDescriptor> Workspaces
@@ -125,6 +133,24 @@ public sealed class WorkspaceManager : IWorkspaceManager
         _disposed || _shuttingDown
             ? Task.FromResult<Guid?>(null)
             : _agents.CreateAsync(providerKey, workingDirectory);
+
+    public async Task<Guid?> CreateDshWebAsync()
+    {
+        if (_disposed || _shuttingDown)
+            return null;
+        // Single-instance: an already-open DSH workspace is activated in
+        // place (pure jump), never duplicated.
+        var existing = _dsh.OpenWorkspaceId;
+        if (existing.HasValue)
+        {
+            await ActivateAsync(existing.Value).ConfigureAwait(false);
+            return existing.Value;
+        }
+        var created = await _dsh.CreateAsync().ConfigureAwait(false);
+        if (created.HasValue)
+            await ActivateAsync(created.Value).ConfigureAwait(false);
+        return created;
+    }
 
     public Task<Guid?> OpenAgentThreadAsync(string threadId) =>
         _disposed || _shuttingDown
@@ -166,6 +192,8 @@ public sealed class WorkspaceManager : IWorkspaceManager
 
         if (workspace.Kind == WorkspaceKind.Terminal)
             await _terminalTabs.CloseTabAsync(workspaceId).ConfigureAwait(false);
+        else if (workspace.Kind == WorkspaceKind.DshWeb)
+            await _dsh.CloseAsync(workspaceId, reason).ConfigureAwait(false);
         else
             await _agents.CloseAsync(workspaceId, reason).ConfigureAwait(false);
     }
@@ -334,6 +362,23 @@ public sealed class WorkspaceManager : IWorkspaceManager
     private void OnAgentClosed(object? sender, AgentWorkspaceClosedEventArgs args) =>
         RemoveWorkspace(args.WorkspaceId);
 
+    private void OnDshCreated(object? sender, WorkspaceEventArgs args)
+    {
+        lock (_sync)
+        {
+            _workspaces.Add(args.Workspace);
+            _creatingReplacementTerminal = false;
+        }
+        WorkspaceCreated?.Invoke(this, new WorkspaceEventArgs { Workspace = args.Workspace });
+        BroadcastCatalog();
+    }
+
+    private void OnDshClosed(object? sender, WorkspaceClosedEventArgs args) =>
+        RemoveWorkspace(args.WorkspaceId);
+
+    private void OnDshCommandRequested(object? sender, DshCommandEventArgs args) =>
+        _ = _dsh.HandleCommandAsync(args.Name);
+
     private void OnActivationRequested(object? sender, Guid workspaceId)
     {
         lock (_sync)
@@ -443,9 +488,12 @@ public sealed class WorkspaceManager : IWorkspaceManager
         if (args.Placement == "new_right" && _layout.Snapshot.Columns.Count < WorkspaceLayoutService.MaxColumns)
             _layout.RecordPendingPlacement(WorkspaceLayoutService.NewPanePlacement);
 
-        var created = args.Kind == "terminal"
-            ? await CreateTerminalAsync().ConfigureAwait(false)
-            : await CreateAgentAsync(args.ProviderKey!).ConfigureAwait(false);
+        var created = args.Kind switch
+        {
+            "terminal" => await CreateTerminalAsync().ConfigureAwait(false),
+            "dsh_web" => await CreateDshWebAsync().ConfigureAwait(false),
+            _ => await CreateAgentAsync(args.ProviderKey!).ConfigureAwait(false)
+        };
         if (!created.HasValue && args.Placement == "new_right")
             _layout.CancelPendingPlacement();
     }
@@ -496,6 +544,16 @@ public sealed class WorkspaceManager : IWorkspaceManager
                 kind = "terminal"
             }).ConfigureAwait(false);
             WorkspaceActivationRequested?.Invoke(this, workspace.WorkspaceId);
+        }
+        else if (workspace.Kind == WorkspaceKind.DshWeb)
+        {
+            await _dsh.ActivateAsync(workspace.WorkspaceId).ConfigureAwait(false);
+            await _bridge.SendEventAsync(new
+            {
+                type = "workspace_activated",
+                workspaceId = workspace.WorkspaceId,
+                kind = "dsh_web"
+            }).ConfigureAwait(false);
         }
         else
         {
@@ -559,7 +617,7 @@ public sealed class WorkspaceManager : IWorkspaceManager
                 tabs = column.Tabs.Select(tab => new
                 {
                     workspaceId = tab.WorkspaceId,
-                    kind = tab.Kind.ToString().ToLowerInvariant()
+                    kind = WorkspaceWireKind.ToWire(tab.Kind)
                 }).ToArray(),
                 activeTabId = column.ActiveTabId,
                 ratio = column.Ratio
@@ -617,7 +675,7 @@ public sealed class WorkspaceManager : IWorkspaceManager
                 return new
                 {
                     workspaceId = workspace.WorkspaceId,
-                    kind = workspace.Kind.ToString().ToLowerInvariant(),
+                    kind = WorkspaceWireKind.ToWire(workspace.Kind),
                     title = workspace.Title,
                     iconKey = workspace.IconKey,
                     providerKey = workspace.ProviderKey,
@@ -648,9 +706,12 @@ public sealed class WorkspaceManager : IWorkspaceManager
         _terminalTabs.PaneMoveRequested -= OnPaneMoveRequested;
         _terminalTabs.WorkspaceLayoutIntentRequested -= OnWorkspaceLayoutIntentRequested;
         _terminalTabs.WorkspaceCreateRequested -= OnWorkspaceCreateRequested;
+        _terminalTabs.DshCommandRequested -= OnDshCommandRequested;
         _agents.WorkspaceCreated -= OnAgentCreated;
         _agents.WorkspaceChanged -= OnAgentChanged;
         _agents.WorkspaceClosed -= OnAgentClosed;
         _agents.WorkspaceActivationRequested -= OnActivationRequested;
+        _dsh.WorkspaceCreated -= OnDshCreated;
+        _dsh.WorkspaceClosed -= OnDshClosed;
     }
 }

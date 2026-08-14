@@ -24,6 +24,7 @@ public interface ITabManagementService
     event EventHandler<PaneMoveEventArgs>? PaneMoveRequested;
     event EventHandler<WorkspaceLayoutIntentEventArgs>? WorkspaceLayoutIntentRequested;
     event EventHandler<WorkspaceCreateEventArgs>? WorkspaceCreateRequested;
+    event EventHandler<DshCommandEventArgs>? DshCommandRequested;
 }
 
 public class TabCreatedEventArgs : EventArgs

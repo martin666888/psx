@@ -379,6 +379,17 @@ export class WorkspaceChromeController {
             terminalBlocked,
             terminalBlocked ? '窗口宽度不足以容纳新列' : ''
         ));
+        // DeepSeek Harness: the single-instance web workspace. C# deduplicates
+        // on create — clicking again activates the already-open tab. fitsDsh
+        // gates only this row, never the shared new-right segment.
+        const dshBlocked = this.createPlacement === 'new_right' && capacity !== null && !capacity.fitsDsh;
+        menu.appendChild(this.menuRow(
+            'DeepSeek Harness',
+            '',
+            () => this.createWorkspace('dsh_web'),
+            dshBlocked,
+            dshBlocked ? '窗口宽度不足以容纳新列' : ''
+        ));
         if (this.catalog.providers.length) menu.appendChild(this.subheading('AGENT'));
         for (const provider of this.catalog.providers) {
             menu.appendChild(this.menuRow(provider.displayName, '', () => this.createWorkspace('agent', provider.key)));
@@ -452,7 +463,9 @@ export class WorkspaceChromeController {
         if (!workspace) return;
         menu.appendChild(this.heading(workspace.title));
         const capacity = this.capacityChecker?.() ?? null;
-        const newPaneKind = workspace.kind === 'terminal' ? 'terminal' : 'agent';
+        const newPaneKind = workspace.kind === 'terminal'
+            ? 'terminal'
+            : workspace.kind === 'dsh_web' ? 'dsh_web' : 'agent';
         // Splitting the sole tab of its column collapses that column — no
         // column count grows, so the pixel gate must not add the phantom
         // new-column minimum width (the removed column's minimum equals the
@@ -460,7 +473,9 @@ export class WorkspaceChromeController {
         const sourceColumnTabs = this.sourceColumnTabCount(workspace);
         const capacityFits = capacity === null || sourceColumnTabs === 1
             ? true
-            : (newPaneKind === 'terminal' ? capacity.fitsTerminal : capacity.fitsAgent);
+            : (newPaneKind === 'terminal'
+                ? capacity.fitsTerminal
+                : newPaneKind === 'dsh_web' ? capacity.fitsDsh : capacity.fitsAgent);
         const splitBlocked = !workspace.canSplitRight;
         const capacityBlocked = capacity !== null && !capacityFits;
         // Layered gating: the C# canSplitRight decision and the frontend

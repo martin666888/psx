@@ -169,6 +169,7 @@ internal enum TerminalBridgeMessageKind
     PaneMove,
     WorkspaceLayoutIntent,
     WorkspaceCreate,
+    DshCommand,
     ThemeAction
 }
 
@@ -183,6 +184,7 @@ internal sealed record TerminalBridgeMessage(
     Guid? WorkspaceId = null,
     WorkspaceLayoutIntentEventArgs? WorkspaceIntent = null,
     WorkspaceCreateEventArgs? WorkspaceCreate = null,
+    DshCommandEventArgs? DshCommand = null,
     ThemeActionEventArgs? ThemeAction = null);
 
 internal sealed record TerminalPasteRequest(Guid SessionId, Guid RequestId);
@@ -324,7 +326,7 @@ internal static class TerminalBridgeMessageParser
                     });
                 return true;
 
-            case "workspace_create" when source.Kind is "terminal" or "agent"
+            case "workspace_create" when source.Kind is "terminal" or "agent" or "dsh_web"
                                          && source.Placement is "focused" or "new_right":
                 if (source.Kind == "agent" && string.IsNullOrWhiteSpace(source.ProviderKey))
                     return false;
@@ -336,6 +338,12 @@ internal static class TerminalBridgeMessageParser
                         ProviderKey = source.ProviderKey,
                         Placement = source.Placement
                     });
+                return true;
+
+            case "dsh_command" when source.Name is "install" or "retry" or "stop":
+                message = new TerminalBridgeMessage(
+                    TerminalBridgeMessageKind.DshCommand,
+                    DshCommand: new DshCommandEventArgs { Name = source.Name });
                 return true;
 
             case "theme_action" when source.Action is "preview" or "confirm" or "cancel" or "refresh" or "open_folder":

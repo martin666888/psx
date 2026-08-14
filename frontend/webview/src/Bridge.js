@@ -124,7 +124,7 @@ export const Bridge = {
         });
     },
 
-    /** @param {'terminal'|'agent'} kind
+    /** @param {'terminal'|'agent'|'dsh_web'} kind
      * @param {string} [providerKey]
      * @param {'focused'|'new_right'} [placement]
      */
@@ -134,6 +134,14 @@ export const Bridge = {
             kind,
             placement,
             ...(providerKey ? { providerKey } : {})
+        });
+    },
+
+    /** @param {'install'|'retry'|'stop'} name */
+    sendDshCommand(name) {
+        this.sendToHost({
+            type: BridgeSendType.DshCommand,
+            name
         });
     },
 

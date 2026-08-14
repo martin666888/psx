@@ -1,0 +1,46 @@
+.dsh-panel {
+    position: absolute;
+    pointer-events: auto;
+    box-sizing: border-box;
+}
+
+.dsh-card {
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    padding: 16px;
+    background: var(--agent-surface, #ffffff);
+    border: 1px solid var(--agent-border, #e5e7eb);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    color: var(--agent-text, #1f2937);
+}
+
+.dsh-card-title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.dsh-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.dsh-card-body p {
+    margin: 0;
+    color: var(--agent-text-muted, #6b7280);
+}
+
+.dsh-card-action {
+    align-self: flex-start;
+    padding: 6px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--agent-border-strong, #d1d5db);
+    background: var(--agent-surface-raised, #f3f4f6);
+    color: var(--agent-text, #1f2937);
+    cursor: pointer;
+}

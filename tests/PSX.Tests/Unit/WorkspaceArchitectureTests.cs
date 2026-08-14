@@ -629,6 +629,68 @@ public sealed class WorkspaceManagerTests
         Assert.AreEqual(1, terminals.CreateCount);
     }
 
+    [TestMethod]
+    public async Task DshWeb_CreateIsSingleInstance_CloseRemoves_AndReopenGetsFreshId()
+    {
+        var terminals = new RecordingTabManagementService();
+        using var agents = new StubAgentWorkspaceCoordinator();
+        var bridge = new RecordingAgentBridgeService();
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService());
+
+        var first = (await manager.CreateDshWebAsync())!.Value;
+        Assert.AreEqual(WorkspaceKind.DshWeb, manager.Workspaces.Single().Kind);
+        Assert.AreEqual("DeepSeek Harness", manager.Workspaces.Single().Title);
+        Assert.AreEqual("dsh", manager.Workspaces.Single().IconKey);
+
+        // Second create is a pure jump to the existing tab, never a duplicate.
+        var second = (await manager.CreateDshWebAsync())!.Value;
+        Assert.AreEqual(first, second);
+        Assert.HasCount(1, manager.Workspaces);
+
+        // The catalog and layout both serialize the explicit wire kind.
+        var catalog = bridge.Events.Last(message => message.GetProperty("type").GetString() == "workspace_catalog");
+        Assert.AreEqual("dsh_web", catalog.GetProperty("workspaces")[0].GetProperty("kind").GetString());
+        var layout = bridge.Events.Last(message => message.GetProperty("type").GetString() == "workspace_layout");
+        Assert.AreEqual("dsh_web", layout.GetProperty("columns")[0].GetProperty("tabs")[0].GetProperty("kind").GetString());
+
+        // Closing the last tab spawns the replacement terminal (existing
+        // rule) — the DSH descriptor itself is gone and never resurrected.
+        await manager.CloseAsync(first);
+        Assert.IsEmpty(manager.Workspaces.Where(workspace => workspace.Kind == WorkspaceKind.DshWeb));
+        Assert.HasCount(1, manager.Workspaces);
+        Assert.AreEqual(WorkspaceKind.Terminal, manager.Workspaces.Single().Kind);
+
+        // Reopening after close yields a fresh workspace id, alongside the
+        // replacement terminal.
+        var third = (await manager.CreateDshWebAsync())!.Value;
+        Assert.AreNotEqual(first, third);
+        Assert.HasCount(1, manager.Workspaces.Where(workspace => workspace.Kind == WorkspaceKind.DshWeb));
+        Assert.HasCount(2, manager.Workspaces);
+    }
+
+    [TestMethod]
+    public async Task DshWeb_ActivationSendsDshWebWireKind()
+    {
+        var terminals = new RecordingTabManagementService();
+        using var agents = new StubAgentWorkspaceCoordinator();
+        var bridge = new RecordingAgentBridgeService();
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService());
+
+        var id = (await manager.CreateDshWebAsync())!.Value;
+        await manager.ActivateAsync(id);
+
+        var activation = bridge.Events.Last(message => message.GetProperty("type").GetString() == "workspace_activated");
+        Assert.AreEqual("dsh_web", activation.GetProperty("kind").GetString());
+    }
+
+    [TestMethod]
+    public void WorkspaceWireKind_DshWeb_NeverUsesEnumNameLowercasing()
+    {
+        Assert.AreEqual("dsh_web", WorkspaceWireKind.ToWire(WorkspaceKind.DshWeb));
+        Assert.AreEqual("terminal", WorkspaceWireKind.ToWire(WorkspaceKind.Terminal));
+        Assert.AreEqual("agent", WorkspaceWireKind.ToWire(WorkspaceKind.Agent));
+    }
+
     private static WorkspaceDescriptor CreateAgentWorkspace(
         Guid workspaceId,
         AgentWorkspaceState state,
@@ -760,6 +822,7 @@ internal sealed class RecordingTabManagementService : ITabManagementService
     public event EventHandler<PaneMoveEventArgs>? PaneMoveRequested { add { } remove { } }
     public event EventHandler<WorkspaceLayoutIntentEventArgs>? WorkspaceLayoutIntentRequested { add { } remove { } }
     public event EventHandler<WorkspaceCreateEventArgs>? WorkspaceCreateRequested { add { } remove { } }
+    public event EventHandler<DshCommandEventArgs>? DshCommandRequested { add { } remove { } }
 
     public Task<Guid> CreateTabAsync(ShellProfile? profile = null)
     {

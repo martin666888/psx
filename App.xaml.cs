@@ -139,6 +139,7 @@ public partial class App : Application
 
         services.AddSingleton<IAgentWorkspaceFactory, AgentWorkspaceFactory>();
         services.AddSingleton<IAgentWorkspaceCoordinator, AgentWorkspaceCoordinator>();
+        services.AddSingleton<IDshWebWorkspaceCoordinator, DshWebWorkspaceCoordinator>();
         services.AddSingleton<WorkspaceLayoutService>();
         services.AddSingleton<IWorkspaceManager, WorkspaceManager>();
 

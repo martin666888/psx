@@ -77,6 +77,17 @@ export class PaneLayoutController {
         return 320;
     }
 
+    // Display floor for an existing DSH column: aligned with the DeepSeek
+    // Harness center column minimum (640px).
+    static get minDshColumnWidth() {
+        return 640;
+    }
+
+    // Capacity threshold for a brand-new DSH column: 720px.
+    static get minDshNewPaneWidth() {
+        return 720;
+    }
+
     setTerminalMinimumWidthResolver(resolver) {
         this.terminalMinimumWidthResolver = typeof resolver === 'function' ? resolver : null;
     }
@@ -278,10 +289,12 @@ export class PaneLayoutController {
     }
 
     // Display floor for an existing column (decision C): Agent columns 320px,
-    // Terminal columns max(400, 60 x measured cell width + padding) or 480px
-    // until measured.
+    // DSH columns 640px (DSH's center column minimum), Terminal columns
+    // max(400, 60 x measured cell width + padding) or 480px until measured.
     displayFloorForColumn(column) {
-        if (this.columnKind(column) !== 'terminal') return PaneLayoutController.minAgentColumnWidth;
+        const kind = this.columnKind(column);
+        if (kind === 'dsh_web') return PaneLayoutController.minDshColumnWidth;
+        if (kind !== 'terminal') return PaneLayoutController.minAgentColumnWidth;
         const measured = this.terminalMinimumWidthResolver?.(column.activeTabId);
         return Number.isFinite(measured) ? Math.max(PaneLayoutController.minPaneWidth, measured) : 480;
     }
@@ -309,15 +322,19 @@ export class PaneLayoutController {
     }
 
     minimumWidthForPane(column) {
-        if (this.columnKind(column) !== 'terminal') return PaneLayoutController.minPaneWidth;
+        const kind = this.columnKind(column);
+        if (kind === 'dsh_web') return PaneLayoutController.minDshColumnWidth;
+        if (kind !== 'terminal') return PaneLayoutController.minPaneWidth;
         const measured = this.terminalMinimumWidthResolver?.(column.activeTabId);
         return Number.isFinite(measured) ? Math.max(PaneLayoutController.minPaneWidth, measured) : 480;
     }
 
     // A brand-new column has no workspace yet: 'terminal' reuses the measured
     // width of an already-open terminal when one exists, otherwise the
-    // unmeasured fallback (480); Agent columns always need 400.
+    // unmeasured fallback (480); Agent columns always need 400; DSH columns
+    // always need 720 (a fresh DSH column must fit the app's usable center).
     minimumWidthForNewPane(kind) {
+        if (kind === 'dsh_web') return PaneLayoutController.minDshNewPaneWidth;
         if (kind !== 'terminal') return PaneLayoutController.minPaneWidth;
         const terminalColumn = this.snapshot?.columns?.find(
             (column) => this.columnKind(column) === 'terminal' && column.activeTabId

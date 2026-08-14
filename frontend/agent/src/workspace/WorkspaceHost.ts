@@ -134,7 +134,14 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
       const tab = column.tabs?.find((item) => item.workspaceId === column.activeTabId);
       return tab?.kind === 'terminal';
     });
-    this.container.classList.toggle('agent-workspace-active', anyAgentVisible && !anyTerminalVisible);
+    // A DSH column is a shell-owned surface: while one is visible the Agent
+    // blanket must not take the backdrop or swallow its pointer events.
+    const anyDshWebVisible = snapshot.columns.some((column) => {
+      if (!column.activeTabId) return false;
+      const tab = column.tabs?.find((item) => item.workspaceId === column.activeTabId);
+      return tab?.kind === 'dsh_web';
+    });
+    this.container.classList.toggle('agent-workspace-active', anyAgentVisible && !anyTerminalVisible && !anyDshWebVisible);
   }
 
   /** Width of the focused pane's agent panel, for pane-relative responsive

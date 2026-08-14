@@ -43,6 +43,7 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
     public event EventHandler<PaneMoveEventArgs>? PaneMoveRequested;
     public event EventHandler<WorkspaceLayoutIntentEventArgs>? WorkspaceLayoutIntentRequested;
     public event EventHandler<WorkspaceCreateEventArgs>? WorkspaceCreateRequested;
+    public event EventHandler<DshCommandEventArgs>? DshCommandRequested;
     public event EventHandler<ThemeActionEventArgs>? ThemeActionRequested;
 
     public TerminalBridgeService(ISettingsService settingsService, RuntimeLocator runtimeLocator)
@@ -277,6 +278,9 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
                 break;
             case TerminalBridgeMessageKind.WorkspaceCreate:
                 WorkspaceCreateRequested?.Invoke(this, message.WorkspaceCreate!);
+                break;
+            case TerminalBridgeMessageKind.DshCommand:
+                DshCommandRequested?.Invoke(this, message.DshCommand!);
                 break;
             case TerminalBridgeMessageKind.ThemeAction:
                 ThemeActionRequested?.Invoke(this, message.ThemeAction!);

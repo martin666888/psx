@@ -26,7 +26,13 @@ public interface ITerminalBridgeService
     event EventHandler<PaneMoveEventArgs>? PaneMoveRequested;
     event EventHandler<WorkspaceLayoutIntentEventArgs>? WorkspaceLayoutIntentRequested;
     event EventHandler<WorkspaceCreateEventArgs>? WorkspaceCreateRequested;
+    event EventHandler<DshCommandEventArgs>? DshCommandRequested;
     event EventHandler<ThemeActionEventArgs>? ThemeActionRequested;
+}
+
+public sealed class DshCommandEventArgs : EventArgs
+{
+    public required string Name { get; init; }
 }
 
 public sealed class PaneRatiosEventArgs : EventArgs

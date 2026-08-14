@@ -271,6 +271,7 @@ internal sealed class NullTabManagementService : ITabManagementService
     public event EventHandler<PaneMoveEventArgs>? PaneMoveRequested { add { } remove { } }
     public event EventHandler<WorkspaceLayoutIntentEventArgs>? WorkspaceLayoutIntentRequested { add { } remove { } }
     public event EventHandler<WorkspaceCreateEventArgs>? WorkspaceCreateRequested { add { } remove { } }
+    public event EventHandler<DshCommandEventArgs>? DshCommandRequested { add { } remove { } }
 
     public Task<Guid> CreateTabAsync(ShellProfile? profile = null) => Task.FromResult(Guid.NewGuid());
     public Task CloseTabAsync(Guid sessionId) => Task.CompletedTask;
@@ -292,6 +293,7 @@ internal sealed class NullTerminalBridgeService : ITerminalBridgeService
     public event EventHandler<PaneMoveEventArgs>? PaneMoveRequested { add { } remove { } }
     public event EventHandler<WorkspaceLayoutIntentEventArgs>? WorkspaceLayoutIntentRequested { add { } remove { } }
     public event EventHandler<WorkspaceCreateEventArgs>? WorkspaceCreateRequested { add { } remove { } }
+    public event EventHandler<DshCommandEventArgs>? DshCommandRequested { add { } remove { } }
     public event EventHandler<ThemeActionEventArgs>? ThemeActionRequested { add { } remove { } }
 
     public Task InitializeAsync(WebView2 webView) => Task.CompletedTask;

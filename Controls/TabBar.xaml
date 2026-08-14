@@ -86,6 +86,12 @@
                                 <Setter TargetName="TerminalIcon" Property="Visibility" Value="Collapsed"/>
                                 <Setter TargetName="AgentIcon" Property="Visibility" Value="Visible"/>
                             </DataTrigger>
+                            <!-- DeepSeek Harness: hidden compatibility projection; the
+                                 WebView column tab strip is the real surface. -->
+                            <DataTrigger Binding="{Binding Kind}" Value="{x:Static models:WorkspaceKind.DshWeb}">
+                                <Setter TargetName="TerminalIcon" Property="Visibility" Value="Collapsed"/>
+                                <Setter TargetName="AgentIcon" Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
                             <DataTrigger Binding="{Binding IsActive}" Value="True">
                                 <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
                                 <Setter TargetName="ActiveIndicator" Property="Background" Value="{DynamicResource AccentBrush}"/>
