@@ -41,8 +41,44 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
     public Uri? ReadyUrl { get { lock (_sync) return _readyUrl; } }
 
     /// <summary>Wired by MainWindow: receives the ready URL so the
-    /// WebViewHostPolicy frame whitelist can be updated.</summary>
+    /// WebViewHostPolicy frame whitelist can be updated. Null clears it.</summary>
     public Action<Uri?>? ReadyUrlChanged { get; set; }
+
+    /// <summary>Wire value for the <c>dsh_runtime_status</c> state field.
+    /// Enum <c>ToLowerInvariant</c> would emit <c>notinstalled</c>, which the
+    /// shell does not recognize.</summary>
+    public static string ToWireState(DshRuntimeState state) => state switch
+    {
+        DshRuntimeState.NotInstalled => "not_installed",
+        DshRuntimeState.Installing => "installing",
+        DshRuntimeState.Starting => "starting",
+        DshRuntimeState.Ready => "ready",
+        DshRuntimeState.Exited => "exited",
+        DshRuntimeState.Failed => "failed",
+        _ => "failed"
+    };
+
+    /// <summary>Accept only the loopback HTTP origin DSH is allowed to bind.</summary>
+    public static bool TryAcceptReadyUrl(string? candidate, out Uri url)
+    {
+        url = null!;
+        if (!Uri.TryCreate(candidate, UriKind.Absolute, out var parsed))
+            return false;
+        if (!string.Equals(parsed.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase))
+            return false;
+        if (!string.Equals(parsed.Host, "127.0.0.1", StringComparison.OrdinalIgnoreCase))
+            return false;
+        if (!string.IsNullOrEmpty(parsed.UserInfo))
+            return false;
+        url = parsed;
+        return true;
+    }
+
+    /// <summary>Authority form used by FrameNavigationStarting (no trailing slash).</summary>
+    public static string? ToFrameOrigin(Uri? url) =>
+        url != null && TryAcceptReadyUrl(url.GetLeftPart(UriPartial.Authority), out var accepted)
+            ? accepted.GetLeftPart(UriPartial.Authority)
+            : null;
 
     public void PrepareForStartup() => _runtime.PrepareForStartup();
 
@@ -91,6 +127,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         }
         _job?.Dispose();
         _job = null;
+        ReadyUrlChanged?.Invoke(null);
         SetState(DshRuntimeState.Exited);
     }
 
@@ -144,7 +181,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
                 while ((line = await process.StandardOutput.ReadLineAsync().ConfigureAwait(false)) != null)
                 {
                     var match = ReadyPattern.Match(line);
-                    if (match.Success && Uri.TryCreate(match.Groups[1].Value, UriKind.Absolute, out var uri))
+                    if (match.Success && TryAcceptReadyUrl(match.Groups[1].Value, out var uri))
                         readyTcs.TrySetResult(uri);
                 }
             }
@@ -166,35 +203,69 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
             if (await HealthCheckAsync(url).ConfigureAwait(false))
             {
                 lock (_sync) { _readyUrl = url; }
-                SetState(DshRuntimeState.Ready);
                 ReadyUrlChanged?.Invoke(url);
+                SetState(DshRuntimeState.Ready);
+                _ = WatchExitAsync(process, exitedTcs);
                 return;
             }
         }
         if (!process.HasExited) try { process.Kill(entireProcessTree: true); } catch { }
+        ClearReadyOrigin();
         SetState(DshRuntimeState.Failed,
             process.HasExited ? "DSH 进程意外退出。" : "DSH 启动超时（90 秒内未就绪）。");
     }
 
+    private async Task WatchExitAsync(Process process, TaskCompletionSource<bool> exitedTcs)
+    {
+        try { await exitedTcs.Task.ConfigureAwait(false); }
+        catch { return; }
+        lock (_sync)
+        {
+            if (!ReferenceEquals(_process, process))
+                return;
+            _process = null;
+            _readyUrl = null;
+        }
+        ClearReadyOrigin();
+        SetState(DshRuntimeState.Exited);
+    }
+
+    private void ClearReadyOrigin() => ReadyUrlChanged?.Invoke(null);
+
     private static async Task<bool> HealthCheckAsync(Uri url)
     {
+        if (!TryAcceptReadyUrl(url.GetLeftPart(UriPartial.Authority), out _))
+            return false;
         try
         {
-            using var c = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-            return (await c.GetAsync(url).ConfigureAwait(false)).IsSuccessStatusCode;
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            using var response = await client.GetAsync(url).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+                return false;
+            var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+            return body.Contains("__DSH_BOOT__", StringComparison.Ordinal)
+                || body.Contains("DeepSeek Harness", StringComparison.OrdinalIgnoreCase);
         }
-        catch { return false; }
+        catch
+        {
+            return false;
+        }
     }
 
     private void SetState(DshRuntimeState state, string? error = null)
     {
-        lock (_sync) { _state = state; }
+        Uri? readyUrl;
+        lock (_sync)
+        {
+            _state = state;
+            readyUrl = _readyUrl;
+        }
         var wireError = state == DshRuntimeState.Failed ? (error ?? "运行时不可用") : (string?)null;
         _ = _bridge.SendEventAsync(new
         {
             type = "dsh_runtime_status",
-            state = state.ToString().ToLowerInvariant(),
-            readyUrl = state == DshRuntimeState.Ready ? _readyUrl?.ToString() : null,
+            state = ToWireState(state),
+            readyUrl = state == DshRuntimeState.Ready ? ToFrameOrigin(readyUrl) : null,
             errorClass = wireError
         });
     }

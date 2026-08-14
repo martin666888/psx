@@ -14,7 +14,8 @@
 }
 
 #terminal-container,
-#agent-workspace-container {
+#agent-workspace-container,
+#dsh-workspace-container {
     position: absolute;
     inset: 0;
 }

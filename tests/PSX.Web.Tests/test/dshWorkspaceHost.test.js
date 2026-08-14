@@ -32,6 +32,7 @@ describe('DshWorkspaceHost', () => {
     host.applyLayout(snapshot, rects);
     const panel = document.querySelector('.dsh-panel[data-workspace-id="d1"]');
     assert.ok(panel, 'panel exists for the dsh_web column');
+    assert.equal(panel.dataset.columnId, 'column-2');
     assert.equal(panel.hidden, false);
     assert.equal(panel.style.left, '512px');
     assert.equal(panel.style.width, '676px');
@@ -72,12 +73,62 @@ describe('DshWorkspaceHost', () => {
     assert.ok(panel.querySelector('.dsh-card-action'), 'retry button present');
 
     host.applyRuntimeStatus({ state: 'ready', readyUrl: 'http://127.0.0.1:1234/' });
-    const iframe = panel.querySelector('iframe');
+    const iframe = panel.querySelector('iframe.dsh-frame');
     assert.ok(iframe, 'ready state mounts the cross-origin iframe');
     assert.equal(iframe.src, 'http://127.0.0.1:1234/');
+    assert.equal(panel.querySelector('.dsh-card'), null, 'ready iframe has no sibling status card');
     const sandboxAttr = iframe.getAttribute('sandbox') || '';
     assert.ok(sandboxAttr.includes('allow-scripts'), 'sandbox includes allow-scripts');
     assert.ok(sandboxAttr.includes('allow-downloads'), 'sandbox includes allow-downloads');
+
+    iframe.dataset.keep = '1';
+    host.applyRuntimeStatus({ state: 'ready', readyUrl: 'http://127.0.0.1:1234/' });
+    assert.equal(panel.querySelector('iframe.dsh-frame')?.dataset.keep, '1', 'same ready URL does not remount');
+
+    host.applyRuntimeStatus({ state: 'ready', readyUrl: 'http://127.0.0.1:5678/' });
+    const remounted = panel.querySelector('iframe.dsh-frame');
+    assert.ok(remounted, 'new ready URL remounts');
+    assert.notEqual(remounted.dataset.keep, '1');
+    assert.equal(remounted.src, 'http://127.0.0.1:5678/');
+  });
+
+  it('focuses the column from panel mousedown and a matching iframe ping', async () => {
+    const { DshWorkspaceHost } = await import(hostUrl);
+    const bridge = globalThis.Bridge;
+    const spy = vi.spyOn(bridge, 'sendPaneFocus');
+    try {
+      const host = new DshWorkspaceHost(document.getElementById('dsh-workspace-container'));
+      host.applyLayout(
+        {
+          focusedColumnId: 'column-2',
+          columns: [
+            { columnId: 'column-1', tabs: [{ workspaceId: 't1', kind: 'terminal' }], activeTabId: 't1', ratio: 0.4 },
+            { columnId: 'column-2', tabs: [{ workspaceId: 'd1', kind: 'dsh_web' }], activeTabId: 'd1', ratio: 0.6 }
+          ]
+        },
+        new Map([['column-2', { left: 500, top: 40, width: 700, height: 600 }]])
+      );
+      const panel = document.querySelector('.dsh-panel[data-workspace-id="d1"]');
+      assert.equal(panel.dataset.columnId, 'column-2');
+      panel.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true }));
+      assert.deepEqual(spy.mock.calls[0], ['column-2']);
+
+      host.applyRuntimeStatus({ state: 'ready', readyUrl: 'http://127.0.0.1:5998/' });
+      window.dispatchEvent(new window.MessageEvent('message', {
+        origin: 'http://127.0.0.1:5998',
+        data: { source: 'psx-dsh-focus' }
+      }));
+      assert.equal(spy.mock.calls.length, 2, 'matching origin focus ping forwarded');
+      assert.deepEqual(spy.mock.calls[1], ['column-2']);
+
+      window.dispatchEvent(new window.MessageEvent('message', {
+        origin: 'http://127.0.0.1:1',
+        data: { source: 'psx-dsh-focus' }
+      }));
+      assert.equal(spy.mock.calls.length, 2, 'wrong origin focus ping dropped');
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('forwards a DSH frame export message only from the ready origin', async () => {

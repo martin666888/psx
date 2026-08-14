@@ -94,8 +94,17 @@ internal sealed class WebViewHostPolicy : IDisposable
 
     /// <summary>Set by the DSH runtime supervisor when the server becomes Ready.
     /// Only this exact origin may navigate inside a frame; old ports are
-    /// immediately invalid.</summary>
-    public void SetDshOrigin(string? origin) => _dshOrigin = origin;
+    /// immediately invalid. Stored as scheme://host:port with no trailing slash.</summary>
+    public void SetDshOrigin(string? origin)
+    {
+        if (string.IsNullOrWhiteSpace(origin) || !Uri.TryCreate(origin, UriKind.Absolute, out var uri))
+        {
+            _dshOrigin = null;
+            return;
+        }
+
+        _dshOrigin = DshWebRuntimeSupervisor.ToFrameOrigin(uri);
+    }
 
     private static void ConfigureSettings(CoreWebView2Settings settings)
     {
@@ -203,29 +212,22 @@ internal sealed class WebViewHostPolicy : IDisposable
         e.Cancel = true;
     }
 
-    /// <summary>Inject the DSH export-mediation script into every frame. It
-    /// self-gates on anchors whose href targets /api/session.export (only the
-    /// DSH app builds those), so non-DSH frames are unaffected; the shell
-    /// validates the postMessage origin against the current ready URL before
-    /// saving. This replaces the (dead in WebView2) native download path.</summary>
+    /// <summary>Inject the DSH frame script: export mediation plus a
+    /// pointerdown → parent focus ping so clicking the iframe focuses the
+    /// corresponding PSX column. The script self-gates on the DSH origin.</summary>
     private void OnFrameCreated(object? sender, CoreWebView2FrameCreatedEventArgs e)
     {
-        // This WebView2 SDK exposes CoreWebView2Frame.ExecuteScriptAsync but not
-        // AddScriptToExecuteOnDocumentCreatedAsync on frames, so inject the
-        // export-mediation script once the frame document is parsed. The script
-        // installs a capture-phase click listener (event delegation catches the
-        // export anchor DSH builds on demand) and re-injects on reload via its
-        // idempotency guard. It uses standard window.parent.postMessage so the
-        // always-loaded shell - not the WebView2 frame channel - receives and
-        // forwards the export to the host bridge.
         var frame = e.Frame;
-        frame.DOMContentLoaded += (_, _) => _ = frame.ExecuteScriptAsync(DshExportInterceptScript);
+        frame.DOMContentLoaded += (_, _) => _ = frame.ExecuteScriptAsync(DshFrameScript);
     }
 
-    private const string DshExportInterceptScript = """
+    private const string DshFrameScript = """
 (function(){
-  if (window.__psxDshExportGuard) return;
-  window.__psxDshExportGuard = true;
+  if (window.__psxDshFrameGuard) return;
+  window.__psxDshFrameGuard = true;
+  document.addEventListener('pointerdown', function(){
+    window.parent.postMessage({ source: 'psx-dsh-focus' }, '*');
+  }, true);
   var MARKER = '/api/session.export';
   function isExportHref(href){
     if (!href) return false;

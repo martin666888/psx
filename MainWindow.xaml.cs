@@ -148,7 +148,8 @@ public partial class MainWindow : Window
             await _bridgeService.InitializeAsync(TerminalHostControl.WebView);
             if (_dshSupervisor != null && _bridgeService != null)
             {
-                _dshSupervisor.ReadyUrlChanged = url => _bridgeService.SetDshOrigin(url?.ToString());
+                _dshSupervisor.ReadyUrlChanged = url =>
+                    _bridgeService.SetDshOrigin(DshWebRuntimeSupervisor.ToFrameOrigin(url));
             }
             if (_agentBridgeService != null)
             {

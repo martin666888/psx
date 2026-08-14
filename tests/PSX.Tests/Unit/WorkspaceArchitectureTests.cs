@@ -642,6 +642,9 @@ public sealed class WorkspaceManagerTests
         Assert.AreEqual("DeepSeek Harness", manager.Workspaces.Single().Title);
         Assert.AreEqual("dsh", manager.Workspaces.Single().IconKey);
 
+        var status = LastBridgeEvent(bridge, "dsh_runtime_status");
+        Assert.AreEqual("not_installed", status.GetProperty("state").GetString());
+
         // Second create is a pure jump to the existing tab, never a duplicate.
         var second = (await manager.CreateDshWebAsync())!.Value;
         Assert.AreEqual(first, second);

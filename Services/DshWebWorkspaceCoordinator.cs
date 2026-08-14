@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Windows;
 using Microsoft.Win32;
 using PSX.Models;
@@ -128,6 +130,12 @@ public sealed class DshWebWorkspaceCoordinator : IDshWebWorkspaceCoordinator
         using var response = await http.GetAsync(exportUri, HttpCompletionOption.ResponseHeadersRead)
             .ConfigureAwait(false);
         if (!response.IsSuccessStatusCode) return;
+        if (!IsAllowedExportContentType(response.Content.Headers.ContentType)) return;
+
+        await using var source = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+        var prefix = new byte[4];
+        var prefixLength = await source.ReadAsync(prefix.AsMemory(0, prefix.Length)).ConfigureAwait(false);
+        if (!LooksLikeZip(prefix.AsSpan(0, prefixLength))) return;
 
         var path = await Application.Current.Dispatcher
             .InvokeAsync(() => PromptExportSavePath(SanitizeExportFilename(filename)))
@@ -136,15 +144,40 @@ public sealed class DshWebWorkspaceCoordinator : IDshWebWorkspaceCoordinator
 
         try
         {
-            await using var source = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
             await using var destination = File.Create(path);
+            await destination.WriteAsync(prefix.AsMemory(0, prefixLength)).ConfigureAwait(false);
             await source.CopyToAsync(destination).ConfigureAwait(false);
         }
-        catch
+        catch (Exception ex)
         {
+            Debug.WriteLine("DSH export failed: " + ex.Message);
             try { if (File.Exists(path)) File.Delete(path); } catch { }
-            throw;
         }
+    }
+
+    internal static bool IsAllowedExportContentType(MediaTypeHeaderValue? contentType)
+    {
+        var media = contentType?.MediaType;
+        if (string.IsNullOrWhiteSpace(media))
+            return true;
+        if (media.Equals("application/zip", StringComparison.OrdinalIgnoreCase)
+            || media.Equals("application/x-zip-compressed", StringComparison.OrdinalIgnoreCase)
+            || media.Equals("application/octet-stream", StringComparison.OrdinalIgnoreCase))
+            return true;
+        return false;
+    }
+
+    internal static bool LooksLikeZip(ReadOnlySpan<byte> header)
+    {
+        if (header.Length < 4 || header[0] != (byte)'P' || header[1] != (byte)'K')
+            return false;
+        return (header[2], header[3]) switch
+        {
+            (0x03, 0x04) => true,
+            (0x05, 0x06) => true,
+            (0x07, 0x08) => true,
+            _ => false
+        };
     }
 
     private static string SanitizeExportFilename(string filename)
