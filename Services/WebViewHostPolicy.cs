@@ -74,6 +74,7 @@ internal sealed class WebViewHostPolicy : IDisposable
 {
     private readonly CoreWebView2 _coreWebView;
     private readonly string? _debugDevServerOrigin;
+    private string? _dshOrigin; // current DSH ready origin (http://127.0.0.1:<port>)
     private bool _disposed;
 
     public WebViewHostPolicy(CoreWebView2 coreWebView, string? debugDevServerOrigin = null)
@@ -86,8 +87,14 @@ internal sealed class WebViewHostPolicy : IDisposable
         _coreWebView.DownloadStarting += OnDownloadStarting;
         _coreWebView.NewWindowRequested += OnNewWindowRequested;
         _coreWebView.NavigationStarting += OnNavigationStarting;
+        _coreWebView.FrameNavigationStarting += OnFrameNavigationStarting;
         _coreWebView.PermissionRequested += OnPermissionRequested;
     }
+
+    /// <summary>Set by the DSH runtime supervisor when the server becomes Ready.
+    /// Only this exact origin may navigate inside a frame; old ports are
+    /// immediately invalid.</summary>
+    public void SetDshOrigin(string? origin) => _dshOrigin = origin;
 
     private static void ConfigureSettings(CoreWebView2Settings settings)
     {
@@ -160,6 +167,9 @@ internal sealed class WebViewHostPolicy : IDisposable
 
     private void OnNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
     {
+        // Top-level navigation stays locked to psx.local. DSH never navigates
+        // the top document — it lives inside a frame whose origin is gated by
+        // OnFrameNavigationStarting below.
         if (IsDebugDevServerNavigation(e.Uri))
             return;
 
@@ -170,6 +180,26 @@ internal sealed class WebViewHostPolicy : IDisposable
         e.Cancel = true;
         if (target == WebViewNavigationTarget.External && e.IsUserInitiated)
             OpenExternalUri(e.Uri);
+    }
+
+    /// <summary>Frame navigation whitelist: only the current DSH origin (set
+    /// by the runtime supervisor) is allowed inside a frame. Every other frame
+    /// navigation is cancelled — this is the second layer after CSP
+    /// <c>frame-src http://127.0.0.1:*</c>.</summary>
+    private void OnFrameNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
+    {
+        if (string.IsNullOrEmpty(_dshOrigin))
+        {
+            e.Cancel = true;
+            return;
+        }
+        if (Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri))
+        {
+            var origin = uri.GetLeftPart(UriPartial.Authority);
+            if (string.Equals(origin, _dshOrigin, StringComparison.OrdinalIgnoreCase))
+                return; // allowed: exact current DSH origin
+        }
+        e.Cancel = true;
     }
 
     private bool IsDebugDevServerNavigation(string uri)
@@ -222,6 +252,7 @@ internal sealed class WebViewHostPolicy : IDisposable
         _coreWebView.DownloadStarting -= OnDownloadStarting;
         _coreWebView.NewWindowRequested -= OnNewWindowRequested;
         _coreWebView.NavigationStarting -= OnNavigationStarting;
+        _coreWebView.FrameNavigationStarting -= OnFrameNavigationStarting;
         _coreWebView.PermissionRequested -= OnPermissionRequested;
     }
 }

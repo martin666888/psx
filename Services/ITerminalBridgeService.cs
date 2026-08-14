@@ -12,6 +12,8 @@ public interface ITerminalBridgeService
     Task ResizeTerminalAsync(Guid sessionId, int cols, int rows);
     Task SetViewModeAsync(string mode);
     Task SendAppearanceAsync(AppearanceSettings appearance);
+    /// <summary>Set the current DSH origin for the frame navigation whitelist.</summary>
+    void SetDshOrigin(string? origin);
 
     event EventHandler<TerminalInputEventArgs>? InputReceived;
     event EventHandler<TerminalResizeEventArgs>? ResizeRequested;

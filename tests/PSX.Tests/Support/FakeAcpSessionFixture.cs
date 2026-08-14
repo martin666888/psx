@@ -304,4 +304,5 @@ internal sealed class NullTerminalBridgeService : ITerminalBridgeService
     public Task ResizeTerminalAsync(Guid sessionId, int cols, int rows) => Task.CompletedTask;
     public Task SetViewModeAsync(string mode) => Task.CompletedTask;
     public Task SendAppearanceAsync(AppearanceSettings appearance) => Task.CompletedTask;
+    public void SetDshOrigin(string? origin) { }
 }

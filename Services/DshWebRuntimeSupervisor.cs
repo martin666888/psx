@@ -40,6 +40,10 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
     public DshRuntimeState State { get { lock (_sync) return _state; } }
     public Uri? ReadyUrl { get { lock (_sync) return _readyUrl; } }
 
+    /// <summary>Wired by MainWindow: receives the ready URL so the
+    /// WebViewHostPolicy frame whitelist can be updated.</summary>
+    public Action<Uri?>? ReadyUrlChanged { get; set; }
+
     public void PrepareForStartup() => _runtime.PrepareForStartup();
 
     public async Task InstallAsync()
@@ -163,6 +167,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
             {
                 lock (_sync) { _readyUrl = url; }
                 SetState(DshRuntimeState.Ready);
+                ReadyUrlChanged?.Invoke(url);
                 return;
             }
         }

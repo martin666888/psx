@@ -57,7 +57,6 @@ export class DshWorkspaceHost {
         };
         for (const panel of this.panels.values()) this.renderCard(panel, this.status);
     }
-
     applyRect(panel, rect) {
         const gutter = 12;
         panel.style.left = `${rect.left + gutter}px`;
@@ -124,10 +123,23 @@ export class DshWorkspaceHost {
                 break;
             }
             case 'ready': {
-                // Phase 2 mounts the cross-origin iframe at status.readyUrl.
-                const note = document.createElement('p');
-                note.textContent = '运行时已就绪。';
-                body.appendChild(note);
+                if (status.readyUrl) {
+                    // Phase 4: mount the cross-origin iframe. The CSP
+                    // frame-src http://127.0.0.1:* and the C#
+                    // FrameNavigationStarting whitelist gate it. The sandbox
+                    // allows DSH to run scripts, forms and downloads while
+                    // preventing top-level navigation escapes.
+                    const iframe = document.createElement('iframe');
+                    iframe.src = status.readyUrl;
+                    iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-downloads allow-popups allow-modals');
+                    iframe.style.cssText = 'width:100%;height:100%;border:0;';
+                    iframe.setAttribute('aria-label', 'DeepSeek Harness');
+                    panel.replaceChildren(iframe);
+                } else {
+                    const note = document.createElement('p');
+                    note.textContent = '运行时已就绪。';
+                    body.appendChild(note);
+                }
                 break;
             }
             default: {

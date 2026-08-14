@@ -72,6 +72,11 @@ describe('DshWorkspaceHost', () => {
     assert.ok(panel.querySelector('.dsh-card-action'), 'retry button present');
 
     host.applyRuntimeStatus({ state: 'ready', readyUrl: 'http://127.0.0.1:1234/' });
-    assert.match(panel.textContent, /已就绪/);
+    const iframe = panel.querySelector('iframe');
+    assert.ok(iframe, 'ready state mounts the cross-origin iframe');
+    assert.equal(iframe.src, 'http://127.0.0.1:1234/');
+    const sandboxAttr = iframe.getAttribute('sandbox') || '';
+    assert.ok(sandboxAttr.includes('allow-scripts'), 'sandbox includes allow-scripts');
+    assert.ok(sandboxAttr.includes('allow-downloads'), 'sandbox includes allow-downloads');
   });
 });

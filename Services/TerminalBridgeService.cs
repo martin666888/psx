@@ -340,6 +340,8 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
         return _messageDispatcher?.SendAsync(json) ?? Task.CompletedTask;
     }
 
+    public void SetDshOrigin(string? origin) => _hostPolicy?.SetDshOrigin(origin);
+
     public void Dispose()
     {
         if (_disposed) return;
