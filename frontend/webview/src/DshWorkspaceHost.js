@@ -11,6 +11,27 @@ export class DshWorkspaceHost {
         this.container = container;
         this.panels = new Map();   // workspaceId -> panel element
         this.status = { state: 'not_installed' };
+        // The injected DSH frame script posts export handoffs here; the dead
+        // WebView2 download path is mediated host-side. Validate the message
+        // origin against the current DSH ready URL before forwarding so a
+        // spoofed cross-origin message cannot reach the host save path.
+        window.addEventListener('message', (event) => this.onFrameMessage(event));
+    }
+
+    onFrameMessage(event) {
+        const data = event?.data;
+        if (!data || data.source !== 'psx-dsh-export') return;
+        const readyUrl = this.status?.readyUrl;
+        if (!readyUrl) return;
+        let expectedOrigin;
+        try { expectedOrigin = new URL(readyUrl).origin; }
+        catch { return; }
+        if (event.origin !== expectedOrigin) return;
+        const url = typeof data.url === 'string' ? data.url : '';
+        const filename = typeof data.filename === 'string' && data.filename
+            ? data.filename : 'session.zip';
+        if (!url) return;
+        Bridge.sendDshExport(url, filename);
     }
 
     applyLayout(snapshot, rects) {

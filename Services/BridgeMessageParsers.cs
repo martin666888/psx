@@ -170,6 +170,7 @@ internal enum TerminalBridgeMessageKind
     WorkspaceLayoutIntent,
     WorkspaceCreate,
     DshCommand,
+    DshExport,
     ThemeAction
 }
 
@@ -185,6 +186,7 @@ internal sealed record TerminalBridgeMessage(
     WorkspaceLayoutIntentEventArgs? WorkspaceIntent = null,
     WorkspaceCreateEventArgs? WorkspaceCreate = null,
     DshCommandEventArgs? DshCommand = null,
+    DshExportEventArgs? DshExport = null,
     ThemeActionEventArgs? ThemeAction = null);
 
 internal sealed record TerminalPasteRequest(Guid SessionId, Guid RequestId);
@@ -344,6 +346,13 @@ internal static class TerminalBridgeMessageParser
                 message = new TerminalBridgeMessage(
                     TerminalBridgeMessageKind.DshCommand,
                     DshCommand: new DshCommandEventArgs { Name = source.Name });
+                return true;
+
+            case "dsh_export" when !string.IsNullOrWhiteSpace(source.Url)
+                                   && !string.IsNullOrWhiteSpace(source.Filename):
+                message = new TerminalBridgeMessage(
+                    TerminalBridgeMessageKind.DshExport,
+                    DshExport: new DshExportEventArgs { Url = source.Url!, Filename = source.Filename! });
                 return true;
 
             case "theme_action" when source.Action is "preview" or "confirm" or "cancel" or "refresh" or "open_folder":

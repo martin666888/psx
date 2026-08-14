@@ -89,6 +89,12 @@ interface DshCommandPayload {
     name: 'install' | 'retry' | 'stop';
 }
 
+interface DshExportPayload {
+    type: 'dsh_export';
+    url: string;
+    filename: string;
+}
+
 interface ThemeActionPayload {
     type: 'theme_action';
     action: 'preview' | 'confirm' | 'cancel' | 'refresh' | 'open_folder';
@@ -165,6 +171,7 @@ type BridgeOutboundMessage =
     | WorkspaceLayoutIntentPayload
     | WorkspaceCreatePayload
     | DshCommandPayload
+    | DshExportPayload
     | ThemeActionPayload
     | AgentSubmitPayload
     | AgentUploadAttachmentPayload

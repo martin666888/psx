@@ -100,6 +100,7 @@ public sealed class WorkspaceManager : IWorkspaceManager
         _terminalTabs.WorkspaceLayoutIntentRequested += OnWorkspaceLayoutIntentRequested;
         _terminalTabs.WorkspaceCreateRequested += OnWorkspaceCreateRequested;
         _terminalTabs.DshCommandRequested += OnDshCommandRequested;
+        _terminalTabs.DshExportRequested += OnDshExportRequested;
         _agents.WorkspaceCreated += OnAgentCreated;
         _agents.WorkspaceChanged += OnAgentChanged;
         _agents.WorkspaceClosed += OnAgentClosed;
@@ -382,6 +383,9 @@ public sealed class WorkspaceManager : IWorkspaceManager
 
     private void OnDshCommandRequested(object? sender, DshCommandEventArgs args) =>
         _ = _dsh.HandleCommandAsync(args.Name);
+
+    private void OnDshExportRequested(object? sender, DshExportEventArgs args) =>
+        _ = _dsh.HandleExportAsync(args.Url, args.Filename);
 
     private void OnActivationRequested(object? sender, Guid workspaceId)
     {
@@ -711,6 +715,7 @@ public sealed class WorkspaceManager : IWorkspaceManager
         _terminalTabs.WorkspaceLayoutIntentRequested -= OnWorkspaceLayoutIntentRequested;
         _terminalTabs.WorkspaceCreateRequested -= OnWorkspaceCreateRequested;
         _terminalTabs.DshCommandRequested -= OnDshCommandRequested;
+        _terminalTabs.DshExportRequested -= OnDshExportRequested;
         _agents.WorkspaceCreated -= OnAgentCreated;
         _agents.WorkspaceChanged -= OnAgentChanged;
         _agents.WorkspaceClosed -= OnAgentClosed;

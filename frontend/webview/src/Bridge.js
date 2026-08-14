@@ -145,6 +145,22 @@ export const Bridge = {
         });
     },
 
+    /** DSH session-log export mediation: the export URL DSH built (validated
+     * host-side against the current ready origin + /api/session.export path)
+     * and a suggested archive filename. Forwarded when the DSH frame's export
+     * anchor click is intercepted by the injected script - the WebView2 native
+     * download path is never used.
+     * @param {string} url
+     * @param {string} filename
+     */
+    sendDshExport(url, filename) {
+        this.sendToHost({
+            type: BridgeSendType.DshExport,
+            url,
+            filename
+        });
+    },
+
     /** @param {'preview'|'confirm'|'cancel'|'refresh'|'open_folder'} action
      * @param {string} [themeKey]
      */

@@ -25,6 +25,7 @@ public interface ITabManagementService
     event EventHandler<WorkspaceLayoutIntentEventArgs>? WorkspaceLayoutIntentRequested;
     event EventHandler<WorkspaceCreateEventArgs>? WorkspaceCreateRequested;
     event EventHandler<DshCommandEventArgs>? DshCommandRequested;
+    event EventHandler<DshExportEventArgs>? DshExportRequested;
 }
 
 public class TabCreatedEventArgs : EventArgs

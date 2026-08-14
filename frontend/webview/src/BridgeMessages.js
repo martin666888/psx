@@ -25,6 +25,7 @@ export const BridgeSendType = Object.freeze({
     WorkspaceLayoutIntent: 'workspace_layout_intent',
     WorkspaceCreate: 'workspace_create',
     DshCommand: 'dsh_command',
+    DshExport: 'dsh_export',
     ThemeAction: 'theme_action',
     AgentSubmit: 'agent_submit',
     AgentUploadAttachment: 'agent_upload_attachment',

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { beforeEach, describe, it } from 'vitest';
+import { beforeEach, describe, it, vi } from 'vitest';
 import { installAgentRuntime, repositoryRoot } from './agentHarness.js';
 
 const hostUrl = pathToFileURL(
@@ -78,5 +78,43 @@ describe('DshWorkspaceHost', () => {
     const sandboxAttr = iframe.getAttribute('sandbox') || '';
     assert.ok(sandboxAttr.includes('allow-scripts'), 'sandbox includes allow-scripts');
     assert.ok(sandboxAttr.includes('allow-downloads'), 'sandbox includes allow-downloads');
+  });
+
+  it('forwards a DSH frame export message only from the ready origin', async () => {
+    const { DshWorkspaceHost } = await import(hostUrl);
+    const bridge = globalThis.Bridge;
+    assert.ok(bridge, 'Bridge global is installed');
+    const spy = vi.spyOn(bridge, 'sendDshExport');
+    try {
+      // A unique port isolates this host from window listeners accumulated
+      // by earlier tests in the same file.
+      const host = new DshWorkspaceHost(document.getElementById('dsh-workspace-container'));
+      host.applyRuntimeStatus({ state: 'ready', readyUrl: 'http://127.0.0.1:5999/' });
+
+      window.dispatchEvent(new window.MessageEvent('message', {
+        origin: 'http://127.0.0.1:5999',
+        data: { source: 'psx-dsh-export', url: 'http://127.0.0.1:5999/api/session.export?sessionId=s1', filename: 's1.zip' }
+      }));
+      assert.equal(spy.mock.calls.length, 1, 'ready origin forwards once');
+      assert.deepEqual(spy.mock.calls[0],
+        ['http://127.0.0.1:5999/api/session.export?sessionId=s1', 's1.zip']);
+
+      // Wrong origin -> dropped (no new call).
+      window.dispatchEvent(new window.MessageEvent('message', {
+        origin: 'http://127.0.0.1:9999',
+        data: { source: 'psx-dsh-export', url: 'http://127.0.0.1:9999/api/session.export?sessionId=s2', filename: 's2.zip' }
+      }));
+      assert.equal(spy.mock.calls.length, 1, 'wrong origin dropped');
+
+      // Not ready (readyUrl cleared) -> dropped.
+      host.applyRuntimeStatus({ state: 'not_installed' });
+      window.dispatchEvent(new window.MessageEvent('message', {
+        origin: 'http://127.0.0.1:5999',
+        data: { source: 'psx-dsh-export', url: 'http://127.0.0.1:5999/api/session.export?sessionId=s3', filename: 's3.zip' }
+      }));
+      assert.equal(spy.mock.calls.length, 1, 'not-ready dropped');
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

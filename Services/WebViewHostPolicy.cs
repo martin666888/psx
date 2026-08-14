@@ -88,6 +88,7 @@ internal sealed class WebViewHostPolicy : IDisposable
         _coreWebView.NewWindowRequested += OnNewWindowRequested;
         _coreWebView.NavigationStarting += OnNavigationStarting;
         _coreWebView.FrameNavigationStarting += OnFrameNavigationStarting;
+        _coreWebView.FrameCreated += OnFrameCreated;
         _coreWebView.PermissionRequested += OnPermissionRequested;
     }
 
@@ -202,6 +203,52 @@ internal sealed class WebViewHostPolicy : IDisposable
         e.Cancel = true;
     }
 
+    /// <summary>Inject the DSH export-mediation script into every frame. It
+    /// self-gates on anchors whose href targets /api/session.export (only the
+    /// DSH app builds those), so non-DSH frames are unaffected; the shell
+    /// validates the postMessage origin against the current ready URL before
+    /// saving. This replaces the (dead in WebView2) native download path.</summary>
+    private void OnFrameCreated(object? sender, CoreWebView2FrameCreatedEventArgs e)
+    {
+        // This WebView2 SDK exposes CoreWebView2Frame.ExecuteScriptAsync but not
+        // AddScriptToExecuteOnDocumentCreatedAsync on frames, so inject the
+        // export-mediation script once the frame document is parsed. The script
+        // installs a capture-phase click listener (event delegation catches the
+        // export anchor DSH builds on demand) and re-injects on reload via its
+        // idempotency guard. It uses standard window.parent.postMessage so the
+        // always-loaded shell - not the WebView2 frame channel - receives and
+        // forwards the export to the host bridge.
+        var frame = e.Frame;
+        frame.DOMContentLoaded += (_, _) => _ = frame.ExecuteScriptAsync(DshExportInterceptScript);
+    }
+
+    private const string DshExportInterceptScript = """
+(function(){
+  if (window.__psxDshExportGuard) return;
+  window.__psxDshExportGuard = true;
+  var MARKER = '/api/session.export';
+  function isExportHref(href){
+    if (!href) return false;
+    try { return new URL(href, location.href).pathname === MARKER; } catch(e){ return false; }
+  }
+  function dispatchExport(anchor){
+    if (anchor.__psxExportHandled) return;
+    anchor.__psxExportHandled = true;
+    var filename = (anchor.download && String(anchor.download).trim()) || ('session-' + Date.now() + '.zip');
+    window.parent.postMessage({ source: 'psx-dsh-export', url: anchor.href, filename: filename }, '*');
+  }
+  var origClick = HTMLAnchorElement.prototype.click;
+  HTMLAnchorElement.prototype.click = function(){
+    if (isExportHref(this.href)) { dispatchExport(this); return; }
+    return origClick.apply(this, arguments);
+  };
+  document.addEventListener('click', function(ev){
+    var a = ev.target && ev.target.closest ? ev.target.closest('a') : null;
+    if (a && isExportHref(a.href)) { ev.preventDefault(); ev.stopPropagation(); dispatchExport(a); }
+  }, true);
+})();
+""";
+
     private bool IsDebugDevServerNavigation(string uri)
     {
         return _debugDevServerOrigin != null
@@ -253,6 +300,7 @@ internal sealed class WebViewHostPolicy : IDisposable
         _coreWebView.NewWindowRequested -= OnNewWindowRequested;
         _coreWebView.NavigationStarting -= OnNavigationStarting;
         _coreWebView.FrameNavigationStarting -= OnFrameNavigationStarting;
+        _coreWebView.FrameCreated -= OnFrameCreated;
         _coreWebView.PermissionRequested -= OnPermissionRequested;
     }
 }

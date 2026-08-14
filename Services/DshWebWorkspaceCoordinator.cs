@@ -1,3 +1,7 @@
+using System.IO;
+using System.Net.Http;
+using System.Windows;
+using Microsoft.Win32;
 using PSX.Models;
 
 namespace PSX.Services;
@@ -19,6 +23,11 @@ public interface IDshWebWorkspaceCoordinator
     /// <summary>Handle a dsh_command (install | retry | stop). Phase 1 has no
     /// runtime, so every command reports not_installed.</summary>
     Task HandleCommandAsync(string name);
+    /// <summary>Mediate a DSH session-log export: validate the URL against the
+    /// current ready origin + /api/session.export path, fetch it host-side, and
+    /// save via a Windows SaveFileDialog. The browser download path is never
+    /// used (WebView2 DownloadStarting does not fire for the DSH frame).</summary>
+    Task HandleExportAsync(string url, string filename);
     void BeginShutdown();
 
     event EventHandler<WorkspaceEventArgs>? WorkspaceCreated;
@@ -97,6 +106,64 @@ public sealed class DshWebWorkspaceCoordinator : IDshWebWorkspaceCoordinator
                 _supervisor.Stop();
                 break;
         }
+    }
+
+    public async Task HandleExportAsync(string url, string filename)
+    {
+        // The host mediates the export: only the current DSH origin's
+        // /api/session.export endpoint may be fetched, and the save runs through
+        // a Windows SaveFileDialog rather than the (dead in WebView2) download
+        // path. The URL and path are validated against the supervisor's ready URL
+        // before any network call; the browser never saves bytes itself.
+        var readyUrl = _supervisor.ReadyUrl;
+        if (readyUrl == null) return;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var exportUri)) return;
+        if (!string.Equals(
+                exportUri.GetLeftPart(UriPartial.Authority),
+                readyUrl.GetLeftPart(UriPartial.Authority),
+                StringComparison.OrdinalIgnoreCase)) return;
+        if (!string.Equals(exportUri.AbsolutePath, "/api/session.export", StringComparison.OrdinalIgnoreCase)) return;
+
+        using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
+        using var response = await http.GetAsync(exportUri, HttpCompletionOption.ResponseHeadersRead)
+            .ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode) return;
+
+        var path = await Application.Current.Dispatcher
+            .InvokeAsync(() => PromptExportSavePath(SanitizeExportFilename(filename)))
+            .Task.ConfigureAwait(false);
+        if (string.IsNullOrEmpty(path)) return;
+
+        try
+        {
+            await using var source = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+            await using var destination = File.Create(path);
+            await source.CopyToAsync(destination).ConfigureAwait(false);
+        }
+        catch
+        {
+            try { if (File.Exists(path)) File.Delete(path); } catch { }
+            throw;
+        }
+    }
+
+    private static string SanitizeExportFilename(string filename)
+    {
+        var name = string.Join('_', filename.Split(Path.GetInvalidFileNameChars())).Trim();
+        if (string.IsNullOrWhiteSpace(name)) name = "session";
+        if (!name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) name += ".zip";
+        return name;
+    }
+
+    private static string? PromptExportSavePath(string filename)
+    {
+        var dialog = new SaveFileDialog
+        {
+            FileName = filename,
+            DefaultExt = ".zip",
+            Filter = "ZIP 归档 (*.zip)|*.zip"
+        };
+        return dialog.ShowDialog() == true ? dialog.FileName : null;
     }
 
     public void BeginShutdown() { lock (_sync) _shuttingDown = true; }

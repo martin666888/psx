@@ -12,6 +12,7 @@
     "workspace_layout_intent": { "required": { "action": "activate|close|split_right|collapse_single" }, "optional": { "workspaceId": "guid", "paneId": "string" } },
     "workspace_create": { "required": { "kind": "terminal|agent|dsh_web", "placement": "focused|new_right" }, "optional": { "providerKey": "string" } },
     "dsh_command": { "required": { "name": "install|retry|stop" }, "optional": {} },
+    "dsh_export": { "required": { "url": "string", "filename": "string" }, "optional": {} },
     "theme_action": { "required": { "action": "preview|confirm|cancel|refresh|open_folder" }, "optional": { "themeKey": "string" } },
     "agent_submit": { "required": { "workspaceId": "guid", "text": "string", "attachments": "string-array" }, "optional": {} },
     "agent_upload_attachment": { "required": { "workspaceId": "guid", "clientId": "string", "fileName": "string", "mimeType": "string", "size": "integer", "dataBase64": "base64" }, "optional": {} },
