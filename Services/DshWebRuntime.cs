@@ -161,8 +161,11 @@ public sealed class DshWebRuntime
 
     private void Log(string message)
     {
-        try { Directory.CreateDirectory(Path.GetDirectoryName(_logPath)!);
-            File.AppendAllText(_logPath, $"[{DateTimeOffset.Now:O}] {message}{Environment.NewLine}"); }
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(_logPath)!);
+            File.AppendAllText(_logPath, $"[{DateTimeOffset.Now:O}] {message}{Environment.NewLine}");
+        }
         catch { }
     }
 }

@@ -178,8 +178,11 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
 
     private static async Task<bool> HealthCheckAsync(Uri url)
     {
-        try { using var c = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-            return (await c.GetAsync(url).ConfigureAwait(false)).IsSuccessStatusCode; }
+        try
+        {
+            using var c = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            return (await c.GetAsync(url).ConfigureAwait(false)).IsSuccessStatusCode;
+        }
         catch { return false; }
     }
 
@@ -198,8 +201,11 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
 
     private void Log(string message)
     {
-        try { File.AppendAllText(Path.Combine(_logDirectory, "dsh-supervisor.log"),
-            $"[{DateTimeOffset.Now:O}] {message}{Environment.NewLine}"); }
+        try
+        {
+            File.AppendAllText(Path.Combine(_logDirectory, "dsh-supervisor.log"),
+            $"[{DateTimeOffset.Now:O}] {message}{Environment.NewLine}");
+        }
         catch { }
     }
 
