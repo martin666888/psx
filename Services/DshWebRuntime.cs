@@ -79,7 +79,12 @@ public sealed class DshWebRuntime
         Log("Starting DSH install (lifecycle scripts enabled).");
         var scratch = paths.DshInstallingDirectory;
         try { DeleteDirectory(scratch); } catch { }
-        CopySeedManifests(paths.DshSeedDirectory, scratch);
+        var missingSeedFile = CopySeedManifests(paths.DshSeedDirectory, scratch);
+        if (missingSeedFile != null)
+        {
+            Log($"DSH seed is incomplete: {missingSeedFile} is missing from {paths.DshSeedDirectory}.");
+            return new(false, "缺少 DSH 安装种子文件，无法安装。", null);
+        }
 
         var result = await _npmRunner.RunAsync(
             paths.PortableNodePath, paths.PortableNpmCliPath, scratch,
@@ -87,18 +92,43 @@ public sealed class DshWebRuntime
 
         if (result.Kind != AcpRuntimeOperationKind.Success)
         {
-            var msg = result.Kind == AcpRuntimeOperationKind.NetworkUnavailable
-                ? "网络不可用，无法连接 npm 仓库。请检查网络后重试。"
-                : $"安装失败：{(string.IsNullOrWhiteSpace(result.Message) ? "npm ci 返回非零退出码" : result.Message)}";
-            return new(false, msg, result.ExitCode);
+            // The npm runner's message is diagnostic and may carry paths; it
+            // stays in the log. The wire error is a fixed safe string.
+            Log($"DSH install npm result: {result.Kind} exit={result.ExitCode} detail={result.Message}");
+            var message = result.Kind switch
+            {
+                AcpRuntimeOperationKind.NetworkUnavailable => "网络不可用，无法连接 npm 仓库。请检查网络后重试。",
+                AcpRuntimeOperationKind.Cancelled => "安装已停止。",
+                _ => "安装失败：npm ci 没有成功完成。"
+            };
+            return new(false, message, result.ExitCode);
         }
+        return ValidateInstalledTree(paths, scratch);
+    }
+
+    /// <summary>
+    /// Post-install gate: the tree must carry the entry file and exactly the
+    /// seeded version before it may swap onto <c>dsh-current</c>. Any drift
+    /// is refused; details stay in the log and the wire gets a fixed string.
+    /// </summary>
+    internal DshInstallResult ValidateInstalledTree(RuntimePaths paths, string scratch)
+    {
         if (!File.Exists(Path.Combine(scratch, DshEntryPath)))
             return new(false, "安装后入口文件缺失 (lib/bin.js)。", null);
         var version = ReadPackageVersion(Path.Combine(scratch, DshPackageJson));
         if (string.IsNullOrWhiteSpace(version))
             return new(false, "安装后无法读取 DSH 版本。", null);
+        if (!string.Equals(version, SeededPackageVersion, StringComparison.Ordinal))
+        {
+            Log($"DSH install produced version {version}; the seed pins {SeededPackageVersion}. Refusing the swap.");
+            return new(false, "安装结果与锁定版本不一致，已拒绝启用。", null);
+        }
 
-        SwapToCurrent(paths, scratch);
+        if (!TrySwapToCurrent(paths, scratch))
+            return new(false, "安装目录切换失败，运行时未启用。", null);
+        if (!IsInstalled())
+            return new(false, "安装后运行时不可用。", null);
+
         Log("DSH install complete.");
         return new(true, null, null);
     }
@@ -113,34 +143,67 @@ public sealed class DshWebRuntime
         _stagedStore.ClearStaleNext(paths.DshNextDirectory);
     }
 
-    private void SwapToCurrent(RuntimePaths paths, string scratch)
+    /// <summary>
+    /// Move the validated scratch tree onto <c>dsh-current</c>. The commit
+    /// point is the successful <c>Directory.Move(scratch, current)</c>; after
+    /// that the new runtime is live. Rollback cleanup and pointer writes are
+    /// best-effort and must not pretend the swap was undone.
+    /// </summary>
+    internal bool TrySwapToCurrent(RuntimePaths paths, string scratch)
     {
         var rollback = paths.DshRollbackDirectory;
         var current = paths.DshCurrentDirectory;
         try
         {
             DeleteDirectory(rollback);
-            if (Directory.Exists(current)) Directory.Move(current, rollback);
+            if (Directory.Exists(current))
+                Directory.Move(current, rollback);
             Directory.Move(scratch, current);
-            DeleteDirectory(rollback);
         }
         catch (Exception ex)
         {
             Log($"DSH swap failed: {ex}. Recovering.");
             if (Directory.Exists(rollback) && !Directory.Exists(current))
-                try { Directory.Move(rollback, current); } catch { }
+            {
+                try { Directory.Move(rollback, current); }
+                catch (Exception recoveryError)
+                {
+                    Log($"WARN: DSH rollback restore failed: {recoveryError.Message}");
+                }
+            }
+
+            return false;
         }
-        _stagedStore.TryWriteActivePointer(paths.RuntimeRoot, paths.DshActivePointerFile, ActiveCurrentToken);
+
+        try { DeleteDirectory(rollback); }
+        catch (Exception ex)
+        {
+            Log($"WARN: DSH leftover rollback cleanup failed: {ex.Message}");
+        }
+
+        if (!_stagedStore.TryWriteActivePointer(
+                paths.RuntimeRoot, paths.DshActivePointerFile, ActiveCurrentToken))
+            Log("WARN: DSH current is in place but the active pointer could not be written.");
+
+        return true;
     }
 
-    private static void CopySeedManifests(string source, string destination)
+    /// <summary>
+    /// Copy every seed manifest or report the first missing one: an
+    /// incomplete seed must hard-fail instead of letting npm ci run without
+    /// the lockfile or the registry-pinning .npmrc.
+    /// </summary>
+    private static string? CopySeedManifests(string source, string destination)
     {
         Directory.CreateDirectory(destination);
         foreach (var name in new[] { "package.json", "package-lock.json", ".npmrc" })
         {
             var src = Path.Combine(source, name);
-            if (File.Exists(src)) File.Copy(src, Path.Combine(destination, name), overwrite: true);
+            if (!File.Exists(src))
+                return name;
+            File.Copy(src, Path.Combine(destination, name), overwrite: true);
         }
+        return null;
     }
 
     private static string? ReadPackageVersion(string path)
@@ -159,15 +222,8 @@ public sealed class DshWebRuntime
         if (Directory.Exists(path)) Directory.Delete(path, recursive: true);
     }
 
-    private void Log(string message)
-    {
-        try
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(_logPath)!);
-            File.AppendAllText(_logPath, $"[{DateTimeOffset.Now:O}] {message}{Environment.NewLine}");
-        }
-        catch { }
-    }
+    private void Log(string message) =>
+        RotatingDiagnosticLog.AppendLine(_logPath, message);
 }
 
 public sealed record DshLaunchSpec(string NodePath, string EntryPath);

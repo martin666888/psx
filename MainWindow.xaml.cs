@@ -171,19 +171,26 @@ public partial class MainWindow : Window
 
     private async Task InitializeAgentRuntimeStatusAsync()
     {
-        if (_agentRuntimeCoordinator == null)
-            return;
-
         try
         {
             // Startup only promotes locally staged updates into place. It must
             // never touch npm or the network: runtime updates are strictly
             // user-triggered from the Agent toolbar.
-            await _agentRuntimeCoordinator.PrepareForStartupAsync().ConfigureAwait(false);
+            if (_agentRuntimeCoordinator != null)
+                await _agentRuntimeCoordinator.PrepareForStartupAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine("ACP runtime status initialization failed: " + ex);
+        }
+
+        try
+        {
+            _dshSupervisor?.PrepareForStartup();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine("DSH runtime status initialization failed: " + ex);
         }
     }
 
@@ -248,10 +255,19 @@ public partial class MainWindow : Window
         finally
         {
             // Reap the DSH process tree after Terminal/Agent shutdown, before
-            // the bridge is disposed. The Job Object (KILL_ON_JOB_CLOSE)
-            // ensures the full dsh web tree dies even on a crash.
-            try { _dshSupervisor?.Dispose(); }
+            // the bridge is disposed. ShutdownAsync cancels any in-flight
+            // install and bounds its wait, so closing the window during an
+            // install never blocks the UI thread; the Job Object
+            // (KILL_ON_JOB_CLOSE) still ensures the full dsh web tree dies
+            // even on a crash.
+            try
+            {
+                if (_dshSupervisor != null)
+                    await _dshSupervisor.ShutdownAsync().ConfigureAwait(true);
+            }
             catch (Exception ex) { System.Diagnostics.Debug.WriteLine("DSH supervisor shutdown failed: " + ex); }
+            try { _dshSupervisor?.Dispose(); }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine("DSH supervisor dispose failed: " + ex); }
 
             if (_bridgeService != null)
             {

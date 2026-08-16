@@ -78,17 +78,16 @@ public sealed class WorkspaceManager : IWorkspaceManager
         IAgentWorkspaceCoordinator agents,
         IAgentBridgeService bridge,
         WorkspaceLayoutService layout,
-        IDshWebWorkspaceCoordinator? dsh = null)
+        IDshWebWorkspaceCoordinator dsh)
     {
         _terminalTabs = terminalTabs;
         _agents = agents;
         _bridge = bridge;
         _layout = layout;
-        _dsh = dsh ?? new DshWebWorkspaceCoordinator(
-            new DshWebRuntimeSupervisor(
-                new DshWebRuntime(new RuntimeLocator(), System.IO.Path.GetTempPath()),
-                bridge,
-                System.IO.Path.GetTempPath()));
+        // Mandatory injection: a silent fallback would construct a real DSH
+        // runtime against temp directories with an undisposed supervisor.
+        // Tests supply an explicit fake.
+        _dsh = dsh ?? throw new ArgumentNullException(nameof(dsh));
         _layout.LayoutChanged += OnLayoutChanged;
 
         _terminalTabs.TabCreated += OnTerminalCreated;
@@ -382,10 +381,34 @@ public sealed class WorkspaceManager : IWorkspaceManager
         RemoveWorkspace(args.WorkspaceId);
 
     private void OnDshCommandRequested(object? sender, DshCommandEventArgs args) =>
-        _ = _dsh.HandleCommandAsync(args.Name);
+        _ = RunDshCommandAsync(args.Name);
+
+    private async Task RunDshCommandAsync(string name)
+    {
+        try
+        {
+            await _dsh.HandleCommandAsync(name).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine("DSH command failed: " + ex.Message);
+        }
+    }
 
     private void OnDshExportRequested(object? sender, DshExportEventArgs args) =>
-        _ = _dsh.HandleExportAsync(args.Url, args.Filename);
+        _ = RunDshExportAsync(args.Url, args.Filename);
+
+    private async Task RunDshExportAsync(string url, string filename)
+    {
+        try
+        {
+            await _dsh.HandleExportAsync(url, filename).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine("DSH export handling failed: " + ex.Message);
+        }
+    }
 
     private void OnActivationRequested(object? sender, Guid workspaceId)
     {

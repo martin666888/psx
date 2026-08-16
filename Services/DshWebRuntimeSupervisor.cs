@@ -18,23 +18,42 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
     private static readonly Regex ReadyPattern =
         new(@"dsh\s+web:\s+(https?://[^\s]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    /// <summary>Bounded wait for the lifecycle lock during application
+    /// shutdown; after it elapses the teardown runs without the lock instead
+    /// of blocking the window close.</summary>
+    private static readonly TimeSpan ShutdownLockTimeout = TimeSpan.FromSeconds(10);
+
     private readonly DshWebRuntime _runtime;
     private readonly IAgentBridgeService _bridge;
     private readonly string _logDirectory;
+    private readonly string _workspaceDirectory;
     private readonly object _sync = new();
+    private readonly object _publishLock = new();
     private readonly SemaphoreSlim _lifecycleLock = new(1, 1);
+    private readonly DshRuntimeGenerationGate _generation = new();
+    private readonly CancellationTokenSource _lifetimeCts = new();
     private DshRuntimeState _state = DshRuntimeState.NotInstalled;
-    private Process? _process;
-    private JobObjectHandle? _job;
+    private DshRuntimeLease? _lease;
     private Uri? _readyUrl;
+    private CancellationTokenSource? _runCts;   // live install run; guarded by _sync
+    private Task? _inflightInstall;             // single-flight install; guarded by _sync
     private bool _disposed;
 
-    public DshWebRuntimeSupervisor(DshWebRuntime runtime, IAgentBridgeService bridge, string logDirectory)
+    public DshWebRuntimeSupervisor(
+        DshWebRuntime runtime,
+        IAgentBridgeService bridge,
+        string logDirectory,
+        string workspaceDirectory)
     {
         _runtime = runtime;
         _bridge = bridge;
         _logDirectory = logDirectory;
+        _workspaceDirectory = workspaceDirectory;
         Directory.CreateDirectory(logDirectory);
+        // Neutral default project directory for DSH sessions: the web API
+        // proxy falls back to process.cwd() when a session is created without
+        // an explicit project, so this must never be an internal PSX tree.
+        Directory.CreateDirectory(workspaceDirectory);
     }
 
     public DshRuntimeState State { get { lock (_sync) return _state; } }
@@ -82,155 +101,416 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
 
     public void PrepareForStartup() => _runtime.PrepareForStartup();
 
-    public async Task InstallAsync()
+    /// <summary>
+    /// User-triggered install. Single-flight: concurrent callers join the
+    /// in-flight run instead of queueing another full npm ci. The install
+    /// honors the per-run cancellation token, so Stop/Shutdown interrupts it
+    /// instead of blocking behind it.
+    /// </summary>
+    public Task InstallAndStartAsync()
+    {
+        lock (_sync)
+        {
+            if (_inflightInstall != null)
+                return _inflightInstall;
+
+            // The placeholder task is published before the body runs so even
+            // a synchronously completing run cannot leave a stale entry that
+            // a later caller would mistake for a live one.
+            var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _inflightInstall = completion.Task;
+            _ = RunInstallAsync(completion);
+            return completion.Task;
+        }
+    }
+
+    public Task RetryAsync()
+    {
+        Task? inflight;
+        lock (_sync)
+            inflight = _inflightInstall;
+        if (inflight != null)
+            return inflight;
+        return RetryCoreAsync();
+    }
+
+    public async Task EnsureRunningAsync()
+    {
+        await _lifecycleLock.WaitAsync().ConfigureAwait(false);
+        try { await EnsureRunningHoldingLockAsync().ConfigureAwait(false); }
+        finally { _lifecycleLock.Release(); }
+    }
+
+    /// <summary>
+    /// Cancels any in-flight install, then stops the runtime. Never blocks
+    /// synchronously on the lifecycle lock, so it is safe to call from the
+    /// bridge dispatcher while an install is running.
+    /// </summary>
+    public async Task StopAsync()
+    {
+        CancelRun();
+        await _lifecycleLock.WaitAsync().ConfigureAwait(false);
+        try { StopHoldingLifecycleLock(); }
+        finally { _lifecycleLock.Release(); }
+    }
+
+    /// <summary>
+    /// Application shutdown: cancel the running install and stop, bounding
+    /// the lock wait so closing the window never hangs on npm.
+    /// </summary>
+    public async Task ShutdownAsync()
+    {
+        CancelRun();
+        var acquired = false;
+        try { acquired = await _lifecycleLock.WaitAsync(ShutdownLockTimeout).ConfigureAwait(false); }
+        catch (ObjectDisposedException) { acquired = false; }
+
+        if (acquired)
+        {
+            try { StopHoldingLifecycleLock(); }
+            finally { _lifecycleLock.Release(); }
+        }
+        else
+        {
+            // The install did not yield within the shutdown budget; tear down
+            // anyway — the generation gate drops every stale publication.
+            StopHoldingLifecycleLock();
+        }
+    }
+
+    private async Task RunInstallAsync(TaskCompletionSource completion)
+    {
+        try
+        {
+            await _lifecycleLock.WaitAsync().ConfigureAwait(false);
+            try { await InstallAndStartHoldingLockAsync().ConfigureAwait(false); }
+            finally { _lifecycleLock.Release(); }
+            completion.TrySetResult();
+        }
+        catch (Exception ex)
+        {
+            completion.TrySetException(ex);
+        }
+        finally
+        {
+            lock (_sync)
+                _inflightInstall = null;
+        }
+    }
+
+    private async Task RetryCoreAsync()
     {
         await _lifecycleLock.WaitAsync().ConfigureAwait(false);
         try
         {
-            SetState(DshRuntimeState.Installing);
-            var result = await _runtime.InstallAsync(CancellationToken.None).ConfigureAwait(false);
-            SetState(result.Success ? DshRuntimeState.NotInstalled : DshRuntimeState.Failed, result.ErrorMessage);
+            if (_runtime.CreateLaunchSpec() != null)
+                await EnsureRunningHoldingLockAsync().ConfigureAwait(false);
+            else
+                await InstallAndStartHoldingLockAsync().ConfigureAwait(false);
         }
         finally { _lifecycleLock.Release(); }
     }
 
-    public async Task EnsureRunningAsync()
+    private void CancelRun()
+    {
+        lock (_sync)
+            _runCts?.Cancel();
+    }
+
+    private async Task InstallAndStartHoldingLockAsync()
+    {
+        RetireLiveLeaseHoldingLifecycleLock();
+
+        // An already-installed runtime never goes through npm ci again: the
+        // install command bootstraps once, then behaves like retry.
+        if (_runtime.CreateLaunchSpec() != null)
+        {
+            await EnsureRunningHoldingLockAsync().ConfigureAwait(false);
+            return;
+        }
+
+        SetState(DshRuntimeState.Installing);
+        using var runCts = CancellationTokenSource.CreateLinkedTokenSource(_lifetimeCts.Token);
+        lock (_sync)
+            _runCts = runCts;
+        DshInstallResult result;
+        try
+        {
+            result = await _runtime.InstallAsync(runCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            result = new DshInstallResult(false, null, null);
+            runCts.Cancel();
+        }
+        finally
+        {
+            lock (_sync)
+                if (ReferenceEquals(_runCts, runCts))
+                    _runCts = null;
+        }
+
+        if (!result.Success)
+        {
+            // Stop/Shutdown cancelled this run and owns the terminal state;
+            // publishing Failed here would overwrite its Exited.
+            if (runCts.IsCancellationRequested)
+                return;
+            SetState(DshRuntimeState.Failed, result.ErrorMessage ?? "DSH 运行时安装失败。");
+            return;
+        }
+
+        await EnsureRunningHoldingLockAsync().ConfigureAwait(false);
+    }
+
+    private async Task EnsureRunningHoldingLockAsync()
     {
         lock (_sync)
         {
             if (_state == DshRuntimeState.Ready && _readyUrl != null) return;
             if (_state == DshRuntimeState.Starting) return;
         }
-        await _lifecycleLock.WaitAsync().ConfigureAwait(false);
-        try
+
+        var spec = _runtime.CreateLaunchSpec();
+        if (spec == null)
         {
             lock (_sync)
             {
-                if (_state == DshRuntimeState.Ready && _readyUrl != null) return;
-                if (_state == DshRuntimeState.Starting) return;
+                if (_state == DshRuntimeState.Failed)
+                    return;
             }
-            var spec = _runtime.CreateLaunchSpec();
-            if (spec == null) { SetState(DshRuntimeState.NotInstalled); return; }
-            await StartProcessAsync(spec).ConfigureAwait(false);
+            SetState(DshRuntimeState.NotInstalled);
+            return;
         }
-        finally { _lifecycleLock.Release(); }
+
+        await StartProcessAsync(spec).ConfigureAwait(false);
     }
 
-    public void Stop()
+    private void StopHoldingLifecycleLock()
     {
+        DshRuntimeLease? lease;
+        lock (_publishLock)
+        {
+            lock (_sync)
+            {
+                _generation.Invalidate();
+                lease = _lease;
+                _lease = null;
+                _readyUrl = null;
+                _state = DshRuntimeState.Exited;
+            }
+
+            lease?.TearDown();
+            ReadyUrlChanged?.Invoke(null);
+            PublishState(DshRuntimeState.Exited, null);
+        }
+    }
+
+    /// <summary>
+    /// Drop a live process/job before swapping <c>dsh-current</c>. Does not
+    /// publish Exited — the caller is about to publish Installing.
+    /// </summary>
+    private void RetireLiveLeaseHoldingLifecycleLock()
+    {
+        DshRuntimeLease? lease;
+        lock (_publishLock)
+        {
+            lock (_sync)
+            {
+                if (_lease == null)
+                    return;
+                _generation.Invalidate();
+                lease = _lease;
+                _lease = null;
+                _readyUrl = null;
+            }
+
+            lease?.TearDown();
+            ReadyUrlChanged?.Invoke(null);
+        }
+    }
+
+    private Task StartProcessAsync(DshLaunchSpec spec)
+    {
+        if (_lifetimeCts.IsCancellationRequested)
+            return Task.CompletedTask;
+
+        long generation;
+        lock (_sync)
+            generation = _generation.Begin();
+        if (!TryCommitProcessState(generation, DshRuntimeState.Starting, null))
+            return Task.CompletedTask;
+
+        // The suspended-create + job-assign + resume sequence guarantees the
+        // whole process tree joins the KILL_ON_JOB_CLOSE job before any child
+        // can spawn. Failure details may contain absolute paths and stay in
+        // the supervisor log; the wire only carries the fixed safe key.
+        var launch = SuspendedJobProcessLauncher.TryStartInJob(
+            spec.NodePath,
+            new[] { spec.EntryPath, "web", "--host", "127.0.0.1", "--port", "0" },
+            _workspaceDirectory,
+            Log);
+        if (!launch.Succeeded || launch.Process == null)
+        {
+            Log($"DSH launch failed: {launch.FailureDetail}");
+            TryCommitProcessState(generation, DshRuntimeState.Failed, null, "无法启动 DSH 进程。");
+            return Task.CompletedTask;
+        }
+
+        var lease = new DshRuntimeLease(generation)
+        {
+            Process = launch.Process,
+            Job = launch.Job,
+            OutputReader = launch.Output,
+            ErrorReader = launch.Error
+        };
+        var stale = false;
         lock (_sync)
         {
-            if (_process != null && !_process.HasExited)
-                try { _process.Kill(entireProcessTree: true); } catch { }
-            _process = null;
-            _readyUrl = null;
+            if (!_generation.IsCurrent(generation))
+                stale = true;
+            else
+            {
+                _lease?.TearDown();
+                _lease = lease;
+                _readyUrl = null;
+            }
         }
-        _job?.Dispose();
-        _job = null;
-        ReadyUrlChanged?.Invoke(null);
-        SetState(DshRuntimeState.Exited);
-    }
-
-    private async Task StartProcessAsync(DshLaunchSpec spec)
-    {
-        SetState(DshRuntimeState.Starting);
-        var psi = new ProcessStartInfo
+        if (stale)
         {
-            FileName = spec.NodePath,
-            WorkingDirectory = _logDirectory,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true
-        };
-        psi.ArgumentList.Add(spec.EntryPath);
-        psi.ArgumentList.Add("web");
-        psi.ArgumentList.Add("--host");
-        psi.ArgumentList.Add("127.0.0.1");
-        psi.ArgumentList.Add("--port");
-        psi.ArgumentList.Add("0");
+            lease.TearDown();
+            return Task.CompletedTask;
+        }
 
-        Process? process;
-        try { process = Process.Start(psi); }
-        catch (Exception ex) { SetState(DshRuntimeState.Failed, "无法启动 DSH 进程：" + ex.Message); return; }
-        if (process == null) { SetState(DshRuntimeState.Failed, "DSH 进程未启动。"); return; }
-
-        lock (_sync) { _process = process; _readyUrl = null; }
-
-        _job?.Dispose();
-        _job = JobObjectHandle.TryCreateWithKillOnClose(Log);
-        if (_job != null)
-            try { _job.AssignProcess(process.Handle, Log); }
-            catch (Exception ex) { Log($"WARN: job assign failed: {ex.Message}"); }
-
-        _ = MonitorAsync(process);
+        lease.TrackTask(MonitorAsync(lease, generation));
+        return Task.CompletedTask;
     }
 
-    private async Task MonitorAsync(Process process)
+    private async Task MonitorAsync(DshRuntimeLease lease, long generation)
     {
+        var process = lease.Process;
+        if (process == null)
+            return;
+
         var readyTcs = new TaskCompletionSource<Uri?>(TaskCreationOptions.RunContinuationsAsynchronously);
         var exitedTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         process.EnableRaisingEvents = true;
         process.Exited += (_, _) => exitedTcs.TrySetResult(true);
 
-        _ = Task.Run(async () =>
+        var output = lease.OutputReader;
+        var error = lease.ErrorReader;
+        if (output != null)
         {
-            try
+            lease.TrackTask(Task.Run(async () =>
             {
-                string? line;
-                while ((line = await process.StandardOutput.ReadLineAsync().ConfigureAwait(false)) != null)
+                try
                 {
-                    var match = ReadyPattern.Match(line);
-                    if (match.Success && TryAcceptReadyUrl(match.Groups[1].Value, out var uri))
-                        readyTcs.TrySetResult(uri);
+                    string? line;
+                    while ((line = await output.ReadLineAsync().ConfigureAwait(false)) != null)
+                    {
+                        var match = ReadyPattern.Match(line);
+                        if (match.Success && TryAcceptReadyUrl(match.Groups[1].Value, out var uri))
+                            readyTcs.TrySetResult(uri);
+                    }
                 }
-            }
-            catch { }
-            finally { readyTcs.TrySetResult(null); }
-        });
-
-        _ = Task.Run(async () =>
+                catch { }
+                finally { readyTcs.TrySetResult(null); }
+            }));
+        }
+        if (error != null)
         {
-            try { string? line; while ((line = await process.StandardError.ReadLineAsync().ConfigureAwait(false)) != null) Log($"stderr: {line}"); }
-            catch { }
-        });
+            lease.TrackTask(Task.Run(async () =>
+            {
+                try
+                {
+                    string? line;
+                    while ((line = await error.ReadLineAsync().ConfigureAwait(false)) != null)
+                        Log($"stderr: {line}");
+                }
+                catch { }
+            }));
+        }
 
         var winner = await Task.WhenAny(readyTcs.Task, exitedTcs.Task, Task.Delay(TimeSpan.FromSeconds(90)))
             .ConfigureAwait(false);
 
         if (winner == readyTcs.Task && await readyTcs.Task.ConfigureAwait(false) is { } url)
         {
-            if (await HealthCheckAsync(url).ConfigureAwait(false))
+            if (await HealthCheckAsync(url).ConfigureAwait(false)
+                && TryCommitProcessState(generation, DshRuntimeState.Ready, url))
             {
-                lock (_sync) { _readyUrl = url; }
-                ReadyUrlChanged?.Invoke(url);
-                SetState(DshRuntimeState.Ready);
-                _ = WatchExitAsync(process, exitedTcs);
+                lease.TrackTask(WatchExitAsync(generation, exitedTcs));
                 return;
             }
         }
-        if (!process.HasExited) try { process.Kill(entireProcessTree: true); } catch { }
-        ClearReadyOrigin();
-        SetState(DshRuntimeState.Failed,
-            process.HasExited ? "DSH 进程意外退出。" : "DSH 启动超时（90 秒内未就绪）。");
+
+        if (lease.CancellationToken.IsCancellationRequested)
+            return;
+        try
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+        }
+        catch { }
+        TryCommitProcessState(
+            generation,
+            DshRuntimeState.Failed,
+            null,
+            ExitedQuietly(process) ? "DSH 进程意外退出。" : "DSH 启动超时（90 秒内未就绪）。");
     }
 
-    private async Task WatchExitAsync(Process process, TaskCompletionSource<bool> exitedTcs)
+    private static bool ExitedQuietly(Process process)
+    {
+        try { return process.HasExited; }
+        catch { return true; }
+    }
+
+    private async Task WatchExitAsync(long generation, TaskCompletionSource<bool> exitedTcs)
     {
         try { await exitedTcs.Task.ConfigureAwait(false); }
         catch { return; }
-        lock (_sync)
-        {
-            if (!ReferenceEquals(_process, process))
-                return;
-            _process = null;
-            _readyUrl = null;
-        }
-        ClearReadyOrigin();
-        SetState(DshRuntimeState.Exited);
+        TryCommitProcessState(generation, DshRuntimeState.Exited, null);
     }
 
-    private void ClearReadyOrigin() => ReadyUrlChanged?.Invoke(null);
+    /// <summary>
+    /// Publish a process-owned state only when <paramref name="generation"/> is
+    /// still the live start/stop epoch. The generation check, field update and
+    /// origin/bridge publication share <c>_publishLock</c> with Stop so a
+    /// superseded monitor cannot emit Ready after Exited.
+    /// </summary>
+    internal bool TryCommitProcessState(long generation, DshRuntimeState state, Uri? readyUrl, string? error = null)
+    {
+        lock (_publishLock)
+        {
+            DshRuntimeLease? retired = null;
+            lock (_sync)
+            {
+                if (!_generation.IsCurrent(generation))
+                    return false;
+                if (state is DshRuntimeState.Exited or DshRuntimeState.Failed)
+                {
+                    retired = _lease;
+                    _lease = null;
+                    _readyUrl = null;
+                }
+                else
+                {
+                    _readyUrl = readyUrl;
+                }
+
+                _state = state;
+            }
+
+            retired?.TearDown();
+            if (state == DshRuntimeState.Ready)
+                ReadyUrlChanged?.Invoke(readyUrl);
+            else if (state is DshRuntimeState.Failed or DshRuntimeState.Exited)
+                ReadyUrlChanged?.Invoke(null);
+
+            PublishState(state, error, state == DshRuntimeState.Ready ? readyUrl : null);
+            return true;
+        }
+    }
 
     private static async Task<bool> HealthCheckAsync(Uri url)
     {
@@ -254,12 +534,30 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
 
     private void SetState(DshRuntimeState state, string? error = null)
     {
-        Uri? readyUrl;
-        lock (_sync)
+        lock (_publishLock)
         {
-            _state = state;
-            readyUrl = _readyUrl;
+            Uri? readyUrl;
+            lock (_sync)
+            {
+                _state = state;
+                readyUrl = _readyUrl;
+            }
+
+            if (state is DshRuntimeState.Failed or DshRuntimeState.Exited)
+                ReadyUrlChanged?.Invoke(null);
+
+            PublishState(state, error, readyUrl);
         }
+    }
+
+    private void PublishState(DshRuntimeState state, string? error, Uri? readyUrl = null)
+    {
+        if (state == DshRuntimeState.Ready && readyUrl == null)
+        {
+            lock (_sync)
+                readyUrl = _readyUrl;
+        }
+
         var wireError = state == DshRuntimeState.Failed ? (error ?? "运行时不可用") : (string?)null;
         _ = _bridge.SendEventAsync(new
         {
@@ -270,21 +568,125 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         });
     }
 
-    private void Log(string message)
-    {
-        try
-        {
-            File.AppendAllText(Path.Combine(_logDirectory, "dsh-supervisor.log"),
-            $"[{DateTimeOffset.Now:O}] {message}{Environment.NewLine}");
-        }
-        catch { }
-    }
+    private void Log(string message) =>
+        RotatingDiagnosticLog.AppendLine(Path.Combine(_logDirectory, "dsh-supervisor.log"), message);
 
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
-        Stop();
+
+        _lifetimeCts.Cancel();
+        CancelRun();
+        // Never block the caller (the UI thread) on the lifecycle lock.
+        // MainWindow awaits ShutdownAsync before disposing; this keeps a
+        // non-blocking fallback for the path that skips it.
+        if (_lifecycleLock.Wait(0))
+        {
+            try { StopHoldingLifecycleLock(); }
+            finally { _lifecycleLock.Release(); }
+        }
+        else
+        {
+            StopHoldingLifecycleLock();
+        }
+
+        _lifetimeCts.Dispose();
         _lifecycleLock.Dispose();
+    }
+}
+
+/// <summary>
+/// Monotonic start/stop epoch. Each launched process owns one token; Stop and
+/// a newer Start invalidate every older token so stale monitors cannot publish.
+/// </summary>
+internal sealed class DshRuntimeGenerationGate
+{
+    private long _generation;
+
+    public long Current => Interlocked.Read(ref _generation);
+
+    public long Begin() => Interlocked.Increment(ref _generation);
+
+    public long Invalidate() => Interlocked.Increment(ref _generation);
+
+    public bool IsCurrent(long generation) => Interlocked.Read(ref _generation) == generation;
+}
+
+/// <summary>
+/// One start epoch's process tree, Job Object, stream readers and monitor
+/// tasks. Stop and a failed/exited commit tear the lease down; a newer start
+/// never inherits the previous job. TearDown cancels the lease token, kills
+/// the tree, bounds the wait on owned tasks, then disposes the readers,
+/// Process and job so repeated restarts leak no handles.
+/// </summary>
+internal sealed class DshRuntimeLease
+{
+    private static readonly TimeSpan TeardownTaskTimeout = TimeSpan.FromSeconds(5);
+
+    private readonly object _sync = new();
+    private readonly List<Task> _tasks = new();
+    private readonly CancellationTokenSource _cts = new();
+    private bool _tornDown;
+
+    public DshRuntimeLease(long generation) => Generation = generation;
+
+    public long Generation { get; }
+    public Process? Process { get; set; }
+    public JobObjectHandle? Job { get; set; }
+    public StreamReader? OutputReader { get; set; }
+    public StreamReader? ErrorReader { get; set; }
+
+    public CancellationToken CancellationToken => _cts.Token;
+
+    public void TrackTask(Task task)
+    {
+        lock (_sync)
+        {
+            if (_tornDown)
+                return;
+            _tasks.Add(task);
+        }
+    }
+
+    public void TearDown()
+    {
+        Task[] tasks;
+        lock (_sync)
+        {
+            if (_tornDown)
+                return;
+            _tornDown = true;
+            tasks = _tasks.ToArray();
+        }
+
+        _cts.Cancel();
+
+        var process = Process;
+        Process = null;
+        if (process != null)
+        {
+            try { if (!process.HasExited) process.Kill(entireProcessTree: true); } catch { }
+        }
+
+        // The owned tasks observe the lease token and unblock once the
+        // streams close; the bounded wait keeps teardown responsive even if
+        // one of them wedges.
+        try { Task.WhenAll(tasks).Wait(TeardownTaskTimeout); } catch { }
+
+        try { OutputReader?.Dispose(); } catch { }
+        try { ErrorReader?.Dispose(); } catch { }
+        OutputReader = null;
+        ErrorReader = null;
+
+        if (process != null)
+        {
+            try { process.WaitForExit(2000); } catch { }
+            try { process.Dispose(); } catch { }
+        }
+
+        Job?.Dispose();
+        Job = null;
+        _cts.Dispose();
     }
 }

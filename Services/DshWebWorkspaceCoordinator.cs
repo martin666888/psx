@@ -10,11 +10,10 @@ namespace PSX.Services;
 
 /// <summary>
 /// Owns the single DeepSeek Harness (DSH) web workspace: one descriptor per
-/// process, created on demand and never persisted. Phase 1 keeps the runtime
-/// uninstalled — the iframe stays empty and the host shows a placeholder card;
-/// the runtime/supervisor arrive in Phase 2. Closing the tab never disposes a
-/// runtime (there is none yet); the descriptor is simply removed and can be
-/// recreated.
+/// process, created on demand and never persisted. PSX owns the tab, column,
+/// Web container, process lifecycle and export mediation; DSH itself owns
+/// models, keys, projects and sessions. Closing the tab never stops the
+/// runtime; the descriptor is removed and can be recreated as a fresh id.
 /// </summary>
 public interface IDshWebWorkspaceCoordinator
 {
@@ -22,8 +21,7 @@ public interface IDshWebWorkspaceCoordinator
     Task<Guid?> CreateAsync();
     Task ActivateAsync(Guid workspaceId);
     Task CloseAsync(Guid workspaceId, WorkspaceCloseReason reason);
-    /// <summary>Handle a dsh_command (install | retry | stop). Phase 1 has no
-    /// runtime, so every command reports not_installed.</summary>
+    /// <summary>Handle a dsh_command (install | retry | stop).</summary>
     Task HandleCommandAsync(string name);
     /// <summary>Mediate a DSH session-log export: validate the URL against the
     /// current ready origin + /api/session.export path, fetch it host-side, and
@@ -38,12 +36,21 @@ public interface IDshWebWorkspaceCoordinator
 
 public sealed class DshWebWorkspaceCoordinator : IDshWebWorkspaceCoordinator
 {
+    /// <summary>Hard cap for one mediated session export; a runaway or
+    /// malicious export stream must not fill the user's disk.</summary>
+    internal const long MaximumExportBytes = 1L << 30; // 1 GiB
+
     private readonly DshWebRuntimeSupervisor _supervisor;
+    private readonly IAgentBridgeService _bridge;
     private readonly object _sync = new();
     private WorkspaceDescriptor? _workspace;
     private bool _shuttingDown;
 
-    public DshWebWorkspaceCoordinator(DshWebRuntimeSupervisor supervisor) => _supervisor = supervisor;
+    public DshWebWorkspaceCoordinator(DshWebRuntimeSupervisor supervisor, IAgentBridgeService bridge)
+    {
+        _supervisor = supervisor;
+        _bridge = bridge;
+    }
 
     public Guid? OpenWorkspaceId
     {
@@ -98,14 +105,13 @@ public sealed class DshWebWorkspaceCoordinator : IDshWebWorkspaceCoordinator
         switch (name)
         {
             case "install":
-                await _supervisor.InstallAsync().ConfigureAwait(false);
-                await _supervisor.EnsureRunningAsync().ConfigureAwait(false);
+                await _supervisor.InstallAndStartAsync().ConfigureAwait(false);
                 break;
             case "retry":
-                await _supervisor.EnsureRunningAsync().ConfigureAwait(false);
+                await _supervisor.RetryAsync().ConfigureAwait(false);
                 break;
             case "stop":
-                _supervisor.Stop();
+                await _supervisor.StopAsync().ConfigureAwait(false);
                 break;
         }
     }
@@ -117,42 +123,151 @@ public sealed class DshWebWorkspaceCoordinator : IDshWebWorkspaceCoordinator
         // a Windows SaveFileDialog rather than the (dead in WebView2) download
         // path. The URL and path are validated against the supervisor's ready URL
         // before any network call; the browser never saves bytes itself.
-        var readyUrl = _supervisor.ReadyUrl;
-        if (readyUrl == null) return;
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var exportUri)) return;
-        if (!string.Equals(
-                exportUri.GetLeftPart(UriPartial.Authority),
-                readyUrl.GetLeftPart(UriPartial.Authority),
-                StringComparison.OrdinalIgnoreCase)) return;
-        if (!string.Equals(exportUri.AbsolutePath, "/api/session.export", StringComparison.OrdinalIgnoreCase)) return;
-
-        using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
-        using var response = await http.GetAsync(exportUri, HttpCompletionOption.ResponseHeadersRead)
-            .ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode) return;
-        if (!IsAllowedExportContentType(response.Content.Headers.ContentType)) return;
-
-        await using var source = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
-        var prefix = new byte[4];
-        var prefixLength = await source.ReadAsync(prefix.AsMemory(0, prefix.Length)).ConfigureAwait(false);
-        if (!LooksLikeZip(prefix.AsSpan(0, prefixLength))) return;
-
-        var path = await Application.Current.Dispatcher
-            .InvokeAsync(() => PromptExportSavePath(SanitizeExportFilename(filename)))
-            .Task.ConfigureAwait(false);
-        if (string.IsNullOrEmpty(path)) return;
-
         try
         {
-            await using var destination = File.Create(path);
-            await destination.WriteAsync(prefix.AsMemory(0, prefixLength)).ConfigureAwait(false);
-            await source.CopyToAsync(destination).ConfigureAwait(false);
+            var readyUrl = _supervisor.ReadyUrl;
+            if (readyUrl == null) return;
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var exportUri)) return;
+            if (!IsAllowedExportUri(exportUri, readyUrl)) return;
+
+            using var handler = new HttpClientHandler { AllowAutoRedirect = false };
+            using var http = new HttpClient(handler) { Timeout = TimeSpan.FromMinutes(5) };
+            using var response = await http.GetAsync(exportUri, HttpCompletionOption.ResponseHeadersRead)
+                .ConfigureAwait(false);
+            if (ShouldRejectExportResponse(response, readyUrl)) return;
+            if (!IsAllowedExportContentType(response.Content.Headers.ContentType)) return;
+
+            await using var source = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+            var prefix = new byte[4];
+            if (!await TryReadExactAsync(source, prefix).ConfigureAwait(false))
+                return;
+            if (!LooksLikeZip(prefix)) return;
+
+            var path = await Application.Current.Dispatcher
+                .InvokeAsync(() => PromptExportSavePath(SanitizeExportFilename(filename)))
+                .Task.ConfigureAwait(false);
+            if (string.IsNullOrEmpty(path)) return;
+
+            try
+            {
+                await SaveExportAtomicallyAsync(source, prefix, path, MaximumExportBytes)
+                    .ConfigureAwait(false);
+            }
+            catch (DshExportTooLargeException)
+            {
+                Debug.WriteLine("DSH export exceeded the size limit.");
+                await SendFailureNoticeAsync("导出失败：文件过大，已取消。").ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("DSH export failed: " + ex.Message);
+                await SendFailureNoticeAsync("导出失败：文件写入没有完成。").ConfigureAwait(false);
+            }
         }
         catch (Exception ex)
         {
             Debug.WriteLine("DSH export failed: " + ex.Message);
-            try { if (File.Exists(path)) File.Delete(path); } catch { }
         }
+    }
+
+    /// <summary>
+    /// Write the export to a scratch file beside the target, then atomically
+    /// replace the target once the stream is fully written. A pre-existing
+    /// file survives any failure; the scratch file never outlives the call.
+    /// Throws <see cref="DshExportTooLargeException"/> past
+    /// <paramref name="maximumBytes"/>.
+    /// </summary>
+    internal static async Task SaveExportAtomicallyAsync(
+        Stream source, byte[] prefix, string destinationPath, long maximumBytes)
+    {
+        var directory = Path.GetDirectoryName(destinationPath);
+        var tempPath = Path.Combine(
+            string.IsNullOrEmpty(directory) ? "." : directory,
+            $".{Path.GetFileName(destinationPath)}.{Guid.NewGuid():N}.dsh-part");
+
+        var written = 0L;
+        try
+        {
+            await using (var destination = new FileStream(
+                             tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+                             bufferSize: 81920, FileOptions.SequentialScan))
+            {
+                await destination.WriteAsync(prefix).ConfigureAwait(false);
+                written = prefix.Length;
+                var buffer = new byte[81920];
+                int read;
+                while ((read = await source.ReadAsync(buffer).ConfigureAwait(false)) > 0)
+                {
+                    written += read;
+                    if (written > maximumBytes)
+                        throw new DshExportTooLargeException();
+                    await destination.WriteAsync(buffer.AsMemory(0, read)).ConfigureAwait(false);
+                }
+            }
+
+            File.Move(tempPath, destinationPath, overwrite: true);
+        }
+        catch
+        {
+            try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
+            throw;
+        }
+    }
+
+    /// <summary>Raised when an export stream exceeds the size cap.</summary>
+    internal sealed class DshExportTooLargeException : Exception
+    {
+        public DshExportTooLargeException()
+            : base("DSH export exceeded the size limit.")
+        {
+        }
+    }
+
+    private Task SendFailureNoticeAsync(string message) =>
+        _bridge.SendEventAsync(new { type = "workspace_notice", message });
+
+    /// <summary>
+    /// Fill <paramref name="buffer"/> even when the source yields partial
+    /// reads. A short stream returns false instead of treating leftover
+    /// bytes as a ZIP magic.
+    /// </summary>
+    internal static async Task<bool> TryReadExactAsync(Stream source, Memory<byte> buffer)
+    {
+        var total = 0;
+        while (total < buffer.Length)
+        {
+            var read = await source.ReadAsync(buffer[total..]).ConfigureAwait(false);
+            if (read == 0)
+                return false;
+            total += read;
+        }
+
+        return true;
+    }
+
+    internal static bool IsAllowedExportUri(Uri exportUri, Uri readyUrl)
+    {
+        if (!string.Equals(
+                exportUri.GetLeftPart(UriPartial.Authority),
+                readyUrl.GetLeftPart(UriPartial.Authority),
+                StringComparison.OrdinalIgnoreCase))
+            return false;
+        return string.Equals(exportUri.AbsolutePath, "/api/session.export", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Refuse 3xx (auto-follow is disabled) and any final URI that is no
+    /// longer the current DSH origin + export path.
+    /// </summary>
+    internal static bool ShouldRejectExportResponse(HttpResponseMessage response, Uri readyUrl)
+    {
+        var status = (int)response.StatusCode;
+        if (status is >= 300 and < 400)
+            return true;
+        if (!response.IsSuccessStatusCode)
+            return true;
+        return response.RequestMessage?.RequestUri is { } final
+            && !IsAllowedExportUri(final, readyUrl);
     }
 
     internal static bool IsAllowedExportContentType(MediaTypeHeaderValue? contentType)

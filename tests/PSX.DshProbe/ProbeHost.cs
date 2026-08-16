@@ -239,4 +239,3 @@ internal sealed partial class ProbeHost : IDisposable
         // intentionally skips explicit WebView2 teardown.
     }
 }
-
