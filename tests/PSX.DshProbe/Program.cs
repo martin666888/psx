@@ -1,9 +1,10 @@
 // PSX.DshProbe — P0 WebView2 embedding probe for the DeepSeek Harness (DSH)
-// third-workspace experiment. NOT product code and NOT part of PSX.slnx: it
-// answers the WebView2 boundary questions (mixed content, CSP frame-src,
-// frame injection, focus, downloads, popups, WebSocket, hide/restore) against
-// a mock DSH server, and optionally smoke-checks the real `dsh web` app in
-// the same iframe. All artifacts land under TestResults/dsh-probe/.
+// third-workspace experiment. NOT product code; part of PSX.slnx and run by
+// the Full gate in mock mode: it answers the WebView2 boundary questions
+// (mixed content, CSP frame-src, frame injection, focus, downloads, popups,
+// WebSocket, hide/restore) against a mock DSH server, and optionally
+// smoke-checks the real `dsh web` app in the same iframe (--dsh-origin).
+// All artifacts land under TestResults/dsh-probe/.
 using System.Text;
 using System.Text.Json;
 

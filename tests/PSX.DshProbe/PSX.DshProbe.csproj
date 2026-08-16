@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- P0 probe for the DSH experiment branch. NOT referenced by PSX.slnx:
-       the Fast/Full gates never build or run it. Artifacts (bin/obj/report)
-       land under TestResults/dsh-probe/. -->
+  <!-- P0 probe for the DSH experiment branch. Part of PSX.slnx so every
+       build compiles it; the Full gate runs it in mock mode (no network).
+       Artifacts (bin/obj/report) land under TestResults/dsh-probe/. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>

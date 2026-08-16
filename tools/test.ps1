@@ -361,6 +361,20 @@ try {
                 Invoke-Checked "Run all C# tests, including desktop probes, with coverage" {
                     Invoke-DotNetTests -Filter "" -MinimumExpectedTests $minimumTests.Full
                 }
+                Invoke-Checked "Run the DSH WebView embedding probe (mock mode)" {
+                    $dshProbeExe = Join-Path $repoRoot "tests\PSX.DshProbe\bin\Release\net10.0-windows\PSX.DshProbe.exe"
+                    if (-not (Test-Path -LiteralPath $dshProbeExe -PathType Leaf)) {
+                        throw "PSX.DshProbe was not built at $dshProbeExe."
+                    }
+                    $dshProbeReport = Join-Path $resultsDirectory "dsh-probe\full"
+                    & $dshProbeExe --report-dir $dshProbeReport
+                    if ($LASTEXITCODE -ne 0) {
+                        throw "DSH WebView probe failed (exit $LASTEXITCODE). Report kept under $dshProbeReport."
+                    }
+                    if (-not (Test-Path -LiteralPath (Join-Path $dshProbeReport "webview-report.json") -PathType Leaf)) {
+                        throw "DSH WebView probe did not write webview-report.json under $dshProbeReport."
+                    }
+                }
             }
         }
     }
