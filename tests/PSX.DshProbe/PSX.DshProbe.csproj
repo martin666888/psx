@@ -2,7 +2,8 @@
 
   <!-- P0 probe for the DSH experiment branch. Part of PSX.slnx so every
        build compiles it; the Full gate runs it in mock mode (no network).
-       Artifacts (bin/obj/report) land under TestResults/dsh-probe/. -->
+       Reports land under TestResults/dsh-probe/; bin/obj stay in the usual
+       ignored project directories. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
@@ -11,7 +12,11 @@
     <Nullable>enable</Nullable>
     <AssemblyName>PSX.DshProbe</AssemblyName>
     <RootNamespace>PSX.DshProbe</RootNamespace>
-    <BaseIntermediateOutputPath>..\..\TestResults\dsh-probe\obj\</BaseIntermediateOutputPath>
+    <!-- The WebView2 package also ships a lib_manual WPF assembly; the probe
+         hosts WebView2 through WinForms only, so the harmless WindowsBase
+         unification notice (MSB3277) is suppressed to keep the solution
+         build warning-free. -->
+    <NoWarn>$(NoWarn);MSB3277</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
