@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 
 namespace PSX.Services;
@@ -214,15 +215,43 @@ internal sealed class WebViewHostPolicy : IDisposable
 
     /// <summary>Inject the DSH frame script: export mediation plus a
     /// pointerdown → parent focus ping so clicking the iframe focuses the
-    /// corresponding PSX column. The script self-gates on the DSH origin.</summary>
+    /// corresponding PSX column. Injection is limited to the current DSH
+    /// origin; other frames never receive the script, and the payload also
+    /// self-gates on <c>location.origin</c>.</summary>
     private void OnFrameCreated(object? sender, CoreWebView2FrameCreatedEventArgs e)
     {
         var frame = e.Frame;
-        frame.DOMContentLoaded += (_, _) => _ = frame.ExecuteScriptAsync(DshFrameScript);
+        var allowed = false;
+        frame.NavigationStarting += (_, args) =>
+        {
+            allowed = IsAllowedDshFrameSource(args.Uri, _dshOrigin);
+        };
+        frame.DOMContentLoaded += (_, _) =>
+        {
+            if (!allowed || string.IsNullOrEmpty(_dshOrigin))
+                return;
+            _ = frame.ExecuteScriptAsync(BuildDshFrameScript(_dshOrigin));
+        };
     }
 
-    private const string DshFrameScript = """
-(function(){
+    /// <summary>True when <paramref name="source"/> is exactly the current
+    /// DSH loopback origin (scheme://host:port, no path).</summary>
+    internal static bool IsAllowedDshFrameSource(string? source, string? dshOrigin)
+    {
+        if (string.IsNullOrWhiteSpace(source) || string.IsNullOrWhiteSpace(dshOrigin))
+            return false;
+        if (!Uri.TryCreate(source, UriKind.Absolute, out var uri))
+            return false;
+        var origin = uri.GetLeftPart(UriPartial.Authority);
+        return string.Equals(origin, dshOrigin, StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal static string BuildDshFrameScript(string dshOrigin)
+    {
+        var expected = JsonSerializer.Serialize(dshOrigin);
+        return $$"""
+(function(expected){
+  if (String(location.origin).toLowerCase() !== String(expected).toLowerCase()) return;
   if (window.__psxDshFrameGuard) return;
   window.__psxDshFrameGuard = true;
   document.addEventListener('pointerdown', function(){
@@ -248,8 +277,9 @@ internal sealed class WebViewHostPolicy : IDisposable
     var a = ev.target && ev.target.closest ? ev.target.closest('a') : null;
     if (a && isExportHref(a.href)) { ev.preventDefault(); ev.stopPropagation(); dispatchExport(a); }
   }, true);
-})();
+})({{expected}});
 """;
+    }
 
     private bool IsDebugDevServerNavigation(string uri)
     {
