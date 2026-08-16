@@ -10,6 +10,7 @@
       - tools/acp-seed/                      (installed by the user on first Agent use)
       - tools/qoder-seed/                    (installed by the user on first Qoder use)
       - tools/cline-seed/                    (installed by the user on first Cline use)
+      - tools/dsh-seed/                      (installed by the user on first DSH use)
       - tools/kimi/                          (Kimi Code ACP runtime, installed at
                                               build time from tools/kimi-seed/ via npm ci)
       - tools/qwen/                          (Qwen Code ACP runtime, installed at
@@ -83,6 +84,8 @@ $MapleMonoRegularExpectedSha = "E42D081EAECBDA6A043079EAAAF43EA20BD8805666BC06E1
 $MapleMonoSemiBoldExpectedSha = "F72D4475C7AC435C7C363E0CB35100A18E4A5BB14787F17F7BBC64823B904066"
 $ClineSeedLockExpectedSha = "F32BEAD1EE778ABCA00DDBDD88DD04F77A5B520FB18FCD8573DF753BE9E34698"
 $ClinePinnedVersion = "3.0.53"
+$DshSeedLockExpectedSha = "7FAF3EBE00A0D3ED6ED58AB87CF1DD173963352ECEA8FF8E250283A60F40E27F"
+$DshPinnedVersion = "0.1.0-rc.6"
 
 # ---- locate repo root ----
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -431,6 +434,11 @@ $requiredFiles = @(
     "tools\cline-seed\package.json",
     "tools\cline-seed\package-lock.json",
     "tools\cline-seed\.npmrc",
+    "tools\dsh-seed\package.json",
+    "tools\dsh-seed\package-lock.json",
+    "tools\dsh-seed\.npmrc",
+    "licenses\dsh\LICENSE",
+    "licenses\dsh\THIRD-PARTY-NOTICES.md",
     "tools\kimi\package.json",
     "tools\kimi\package-lock.json",
     "tools\kimi\node_modules\@moonshot-ai\kimi-code\package.json",
@@ -508,6 +516,35 @@ if ($clineWrapperLock.Version -ne $ClinePinnedVersion `
     throw "Cline lockfile wrapper/platform versions or integrity evidence are incomplete."
 }
 
+$dshSeedRoot = Join-Path $StagingDir "tools\dsh-seed"
+$dshLockPath = Join-Path $dshSeedRoot "package-lock.json"
+$dshLockHash = (Get-FileHash -LiteralPath $dshLockPath -Algorithm SHA256).Hash
+if (-not [string]::Equals($dshLockHash, $DshSeedLockExpectedSha, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "DSH seed lockfile hash mismatch. Review and update the pinned supply-chain evidence explicitly."
+}
+$dshManifest = Get-Content -Raw -LiteralPath (Join-Path $dshSeedRoot "package.json") | ConvertFrom-Json
+if ($dshManifest.dependencies.'@deepseek-ai/dsh' -ne $DshPinnedVersion) {
+    throw "DSH seed must pin @deepseek-ai/dsh to $DshPinnedVersion."
+}
+$dshLockText = Get-Content -Raw -LiteralPath $dshLockPath
+if ($dshLockText -match '"resolved"\s*:\s*"https://(?!registry\.npmjs\.org/)') {
+    throw "DSH seed lockfile contains a non-official npm registry resolved URL."
+}
+# PS 5.1 ConvertFrom-Json rejects npm lockfiles that use an empty "" packages
+# key. Read the pinned entry from text instead of parsing the whole file.
+$dshLockMatch = [regex]::Match(
+    $dshLockText,
+    '"node_modules/@deepseek-ai/dsh"\s*:\s*\{\s*"version"\s*:\s*"(?<version>[^"]+)"[\s\S]*?"integrity"\s*:\s*"(?<integrity>[^"]+)"')
+if (-not $dshLockMatch.Success `
+    -or $dshLockMatch.Groups['version'].Value -ne $DshPinnedVersion `
+    -or [string]::IsNullOrWhiteSpace($dshLockMatch.Groups['integrity'].Value)) {
+    throw "DSH lockfile @deepseek-ai/dsh version or integrity evidence is incomplete."
+}
+$dshNpmrcText = Get-Content -Raw -LiteralPath (Join-Path $dshSeedRoot ".npmrc")
+if ($dshNpmrcText -notmatch 'registry=https://registry\.npmjs\.org/') {
+    throw "DSH seed .npmrc must pin the official npm registry."
+}
+
 $forbiddenAcpRuntime = Join-Path $StagingDir "runtime\acp-current"
 if (Test-Path -LiteralPath $forbiddenAcpRuntime) {
     throw "Public release must not contain runtime/acp-current."
@@ -531,6 +568,13 @@ if (Test-Path -LiteralPath $forbiddenClineNext) {
 $forbiddenOpencodeRuntime = Join-Path $StagingDir "runtime\opencode-current"
 if (Test-Path -LiteralPath $forbiddenOpencodeRuntime) {
     throw "Public release must not contain runtime/opencode-current."
+}
+
+foreach ($forbiddenDshName in @("dsh-current", "dsh-next", "dsh-installing", "dsh-rollback")) {
+    $forbiddenDshRuntime = Join-Path $StagingDir "runtime\$forbiddenDshName"
+    if (Test-Path -LiteralPath $forbiddenDshRuntime) {
+        throw "Public release must not contain runtime/$forbiddenDshName."
+    }
 }
 
 $forbiddenFiles = @(Get-ChildItem -LiteralPath $StagingDir -Recurse -File | Where-Object {

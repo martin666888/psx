@@ -34,8 +34,8 @@ The portable release redistributes:
 - Radix UI — MIT; see `licenses/radix-ui/LICENSE`.
 - Lucide icons — ISC; see `licenses/lucide/LICENSE`.
 - Lobe Icons static SVG brand marks — MIT; see `licenses/lobe-icons/LICENSE`.
-  The pinned `claude.svg`, `kimi.svg`, `qwen.svg`, `qoder.svg`, `cline.svg`, and
-  `opencode.svg` assets from `@lobehub/icons-static-svg` are retained under
+  The pinned `claude.svg`, `kimi.svg`, `qwen.svg`, `qoder.svg`, `cline.svg`,
+  `opencode.svg`, and `deepseek.svg` assets from `@lobehub/icons-static-svg` are retained under
   `Assets/AgentIcons/` and converted to WPF geometry for the
   TabBar. Provider names and marks remain trademarks of their
   respective owners.
@@ -56,6 +56,13 @@ The portable release redistributes:
   `tools/cline-seed/` ships; the installed runtime under `runtime/cline-current/`
   is downloaded from the official npm registry after explicit user confirmation,
   and toolbar updates stage `runtime/cline-next/` the same way.
+- DeepSeek Harness (DSH) seed manifests — MIT; see `licenses/dsh/LICENSE` and
+  `licenses/dsh/THIRD-PARTY-NOTICES.md`. PSX pins `@deepseek-ai/dsh` at
+  0.1.0-rc.6 for first install. Only `tools/dsh-seed/` ships; the installed
+  runtime under `runtime/dsh-current/` is downloaded from the official npm
+  registry after explicit user confirmation and is never redistributed in the
+  ZIP. The `dsh web` server runs as an independent loopback process; DSH owns
+  its own models, projects, sessions and configuration under `~/.dsh`.
 - Kimi Code ACP runtime — bundled under `tools/kimi/`; MIT. See
   `licenses/kimi/LICENSE` and `licenses/kimi/THIRD-PARTY-NOTICES.md` for the
   runtime and its production dependencies (`node-pty`, `node-addon-api`,
@@ -70,9 +77,10 @@ The portable release redistributes:
   self-contained native executable (~175 MB) embedding the Bun runtime (MIT),
   depended on directly rather than through the `opencode-ai` wrapper.
 
-The release includes only the ACP / Qoder / Cline package manifests and lockfiles. It
+The release includes only the ACP / Qoder / Cline / DSH package manifests and lockfiles. It
 does not redistribute Claude Code, the Claude Agent SDK native binary, an
-installed ACP runtime, or an installed Qoder CLI. When the user explicitly
+installed ACP runtime, an installed Qoder CLI, or an installed DeepSeek
+Harness runtime. When the user explicitly
 installs Agent support, npm downloads the locked packages from their
 publishers. Those downloaded packages retain their own license files and remain
 subject to their respective terms, including the
