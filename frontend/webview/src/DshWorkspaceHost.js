@@ -4,6 +4,7 @@
 // it is independent of workspace_activated ordering.
 
 import { Bridge } from './Bridge.js';
+import { createProviderIconSvg } from './ProviderIcons.js';
 
 function isSameFrameUrl(iframe, readyUrl) {
     try {
@@ -19,11 +20,46 @@ function expectedOriginFromReadyUrl(readyUrl) {
     catch { return null; }
 }
 
+const CARD_COPY = {
+    not_installed: {
+        title: '需要安装 DeepSeek Harness',
+        message: '安装会把锁定版本写入本机 PSX 目录，之后启动可直接复用。',
+        note: '安装会执行第三方 npm 原生脚本（node-pty / koffi）。',
+        action: '安装',
+        command: 'install'
+    },
+    installing: {
+        title: '正在安装运行时',
+        message: '正在写入本机 PSX 目录，请保持窗口打开。'
+    },
+    starting: {
+        title: '正在启动',
+        message: '正在拉起本地 DeepSeek Harness 服务。'
+    },
+    failed: {
+        title: '运行时不可用',
+        message: '安装或启动没有完成。可重试，不会改动 DSH 自己的会话和配置。',
+        action: '重试',
+        command: 'retry'
+    },
+    exited: {
+        title: '已停止',
+        message: '本地服务已退出。重新启动不会新建工作区。',
+        action: '重新启动',
+        command: 'retry'
+    },
+    ready: {
+        title: '运行时已就绪',
+        message: '正在打开 DeepSeek Harness。'
+    }
+};
+
 export class DshWorkspaceHost {
     constructor(container) {
         this.container = container;
         this.panels = new Map();   // workspaceId -> panel element
         this.status = { state: 'not_installed' };
+        this.colorScheme = document.documentElement.style.colorScheme || '';
         // The injected DSH frame script posts export handoffs and a
         // pointerdown focus ping here. Validate the message origin against
         // the current DSH ready URL before forwarding so a spoofed
@@ -63,15 +99,25 @@ export class DshWorkspaceHost {
 
     applyLayout(snapshot, rects) {
         if (!snapshot || !Array.isArray(snapshot.columns)) return;
+        const liveIds = new Set();
         const assignments = new Map();
         for (const column of snapshot.columns) {
+            for (const tab of column.tabs || []) {
+                if (tab?.kind === 'dsh_web' && tab.workspaceId)
+                    liveIds.add(String(tab.workspaceId));
+            }
             if (!column.activeTabId) continue;
             const tab = (column.tabs || []).find((item) => item.workspaceId === column.activeTabId);
             if (!tab || tab.kind !== 'dsh_web') continue;
             const rect = rects?.get(column.columnId);
             if (rect) assignments.set(String(tab.workspaceId), { rect, columnId: column.columnId });
         }
-        for (const [id, panel] of this.panels) {
+        for (const [id, panel] of [...this.panels]) {
+            if (!liveIds.has(id)) {
+                panel.remove();
+                this.panels.delete(id);
+                continue;
+            }
             const assignment = assignments.get(id);
             if (!assignment) {
                 if (!panel.hidden) panel.hidden = true;
@@ -111,6 +157,14 @@ export class DshWorkspaceHost {
         };
         for (const panel of this.panels.values()) this.renderCard(panel, this.status);
     }
+
+    applyColorScheme(scheme) {
+        this.colorScheme = scheme === 'dark' || scheme === 'light' ? scheme : '';
+        for (const panel of this.panels.values()) {
+            const iframe = panel.querySelector('iframe.dsh-frame');
+            if (iframe) iframe.style.colorScheme = this.colorScheme;
+        }
+    }
     applyRect(panel, rect) {
         const gutter = 12;
         panel.style.left = `${rect.left + gutter}px`;
@@ -121,6 +175,7 @@ export class DshWorkspaceHost {
 
     renderCard(panel, status) {
         if (status.state === 'ready' && status.readyUrl) {
+            panel.classList.remove('dsh-panel--status');
             const existing = panel.querySelector('iframe.dsh-frame');
             if (existing && isSameFrameUrl(existing, status.readyUrl)) return;
             const iframe = document.createElement('iframe');
@@ -128,79 +183,74 @@ export class DshWorkspaceHost {
             iframe.src = status.readyUrl;
             iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-downloads allow-popups allow-modals');
             iframe.setAttribute('aria-label', 'DeepSeek Harness');
+            if (this.colorScheme) iframe.style.colorScheme = this.colorScheme;
             panel.replaceChildren(iframe);
             return;
         }
 
+        panel.classList.add('dsh-panel--status');
         panel.replaceChildren();
-        const card = document.createElement('div');
+        const copy = CARD_COPY[status.state] || {
+            title: 'DeepSeek Harness',
+            message: '状态未知。'
+        };
+        const card = document.createElement('section');
         card.className = 'dsh-card';
+        card.dataset.role = 'dsh-runtime-card';
+        card.dataset.state = status.state;
+        card.setAttribute('aria-live', 'polite');
+        if (status.state === 'installing' || status.state === 'starting')
+            card.setAttribute('aria-busy', 'true');
 
+        const mark = document.createElement('span');
+        mark.className = 'dsh-card-mark';
+        mark.setAttribute('aria-hidden', 'true');
+        if (status.state === 'installing' || status.state === 'starting') {
+            const spinner = document.createElement('span');
+            spinner.className = 'dsh-card-spinner';
+            mark.appendChild(spinner);
+        } else {
+            mark.appendChild(createProviderIconSvg('dsh'));
+        }
+
+        const heading = document.createElement('div');
+        heading.className = 'dsh-card-copy';
         const title = document.createElement('h2');
         title.className = 'dsh-card-title';
-        title.textContent = 'DeepSeek Harness';
-        card.appendChild(title);
+        title.dataset.role = 'dsh-runtime-title';
+        title.textContent = copy.title;
+        heading.appendChild(title);
 
-        const body = document.createElement('div');
-        body.className = 'dsh-card-body';
-
-        switch (status.state) {
-            case 'not_installed': {
-                const note = document.createElement('p');
-                note.textContent = '运行时尚未安装。安装会执行第三方 npm 原生脚本（node-pty / koffi）。';
-                body.appendChild(note);
-                const button = document.createElement('button');
-                button.type = 'button';
-                button.className = 'dsh-card-action';
-                button.textContent = '安装';
-                button.addEventListener('click', () => Bridge.sendDshCommand('install'));
-                body.appendChild(button);
-                break;
-            }
-            case 'installing':
-            case 'starting': {
-                const note = document.createElement('p');
-                note.textContent = status.state === 'installing' ? '正在安装运行时…' : '正在启动…';
-                body.appendChild(note);
-                break;
-            }
-            case 'failed': {
-                const note = document.createElement('p');
-                note.textContent = '运行时不可用。';
-                body.appendChild(note);
-                const retry = document.createElement('button');
-                retry.type = 'button';
-                retry.className = 'dsh-card-action';
-                retry.textContent = '重试';
-                retry.addEventListener('click', () => Bridge.sendDshCommand('retry'));
-                body.appendChild(retry);
-                break;
-            }
-            case 'exited': {
-                const note = document.createElement('p');
-                note.textContent = '已停止。';
-                body.appendChild(note);
-                const retry = document.createElement('button');
-                retry.type = 'button';
-                retry.className = 'dsh-card-action';
-                retry.textContent = '重新启动';
-                retry.addEventListener('click', () => Bridge.sendDshCommand('retry'));
-                body.appendChild(retry);
-                break;
-            }
-            case 'ready': {
-                const note = document.createElement('p');
-                note.textContent = '运行时已就绪。';
-                body.appendChild(note);
-                break;
-            }
-            default: {
-                const note = document.createElement('p');
-                note.textContent = '状态未知。';
-                body.appendChild(note);
-            }
+        const message = document.createElement('p');
+        message.className = 'dsh-card-message';
+        message.dataset.role = 'dsh-runtime-message';
+        message.textContent = status.state === 'failed' && status.errorClass
+            ? status.errorClass
+            : copy.message;
+        heading.appendChild(message);
+        if (copy.note) {
+            const note = document.createElement('p');
+            note.className = 'dsh-card-note';
+            note.textContent = copy.note;
+            heading.appendChild(note);
         }
-        card.appendChild(body);
+
+        card.appendChild(mark);
+        card.appendChild(heading);
+
+        if (copy.action && copy.command) {
+            const actions = document.createElement('div');
+            actions.className = 'dsh-card-actions';
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'dsh-card-action';
+            button.dataset.role = copy.command === 'install' ? 'dsh-install' : 'dsh-retry';
+            button.textContent = copy.action;
+            button.addEventListener('click', () => Bridge.sendDshCommand(copy.command));
+            actions.appendChild(button);
+            card.appendChild(actions);
+        }
+
         panel.appendChild(card);
     }
 }

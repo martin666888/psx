@@ -91,6 +91,7 @@ test('tab icons render provider brand SVGs; terminal keeps its text glyph', asyn
         { workspaceId: 'qwen', kind: 'agent' },
         { workspaceId: 'qoder', kind: 'agent' },
         { workspaceId: 'cline', kind: 'agent' },
+        { workspaceId: 'dsh', kind: 'dsh_web' },
         { workspaceId: 'weird', kind: 'agent' }
       ],
       activeTabId: 'qwen',
@@ -106,6 +107,7 @@ test('tab icons render provider brand SVGs; terminal keeps its text glyph', asyn
       { workspaceId: 'qwen', kind: 'agent', title: 'Qwen', iconKey: 'qwen', columnId: 'column-1', isActiveTab: true },
       { workspaceId: 'qoder', kind: 'agent', title: 'Qoder', iconKey: 'qoder', columnId: 'column-1', isActiveTab: false },
       { workspaceId: 'cline', kind: 'agent', title: 'Cline', iconKey: 'cline', columnId: 'column-1', isActiveTab: false },
+      { workspaceId: 'dsh', kind: 'dsh_web', title: 'DeepSeek Harness', iconKey: 'dsh', columnId: 'column-1', isActiveTab: false },
       { workspaceId: 'weird', kind: 'agent', title: 'Weird', iconKey: 'not-a-brand', columnId: 'column-1', isActiveTab: false }
     ]
   });
@@ -115,6 +117,7 @@ test('tab icons render provider brand SVGs; terminal keeps its text glyph', asyn
   assert.ok(tabIcon('qwen').querySelector('svg[data-icon="qwen"]'), 'qwen tab renders the qwen brand mark');
   assert.ok(tabIcon('qoder').querySelector('svg[data-icon="qoder"]'), 'qoder tab renders the qoder brand mark, not a shared letter');
   assert.ok(tabIcon('cline').querySelector('svg[data-icon="cline"]'), 'cline tab renders the cline brand mark');
+  assert.ok(tabIcon('dsh').querySelector('svg[data-icon="dsh"]'), 'dsh tab renders the DeepSeek brand mark');
   assert.ok(tabIcon('weird').querySelector('svg[data-icon="agent"]'), 'unknown iconKey falls back to the generic sparkle');
   assert.equal(tabIcon('qwen').querySelector('svg').getAttribute('aria-hidden'), 'true');
   chrome.dispose();
@@ -198,6 +201,36 @@ test('create menu gates the DeepSeek Harness row with its own fitsDsh capacity',
   assert.equal(row('DeepSeek Harness').disabled, true);
   assert.equal(row('DeepSeek Harness').title, '窗口宽度不足以容纳新列');
   assert.equal(row('Terminal').disabled, false, 'fitsDsh never gates the shared new-right segment or Terminal row');
+  chrome.dispose();
+});
+
+test('create menu lists DeepSeek Harness under AGENT, not beside Terminal', async () => {
+  installAgentRuntime();
+  mountChrome();
+  const { WorkspaceChromeController } = await import(controllerUrl);
+  const chrome = new WorkspaceChromeController(
+    document.getElementById('workspace-chrome'),
+    document.getElementById('workspace-popover-root')
+  );
+  chrome.applyLayout(columnSnapshot([
+    { columnId: 'column-1', tabs: [{ workspaceId: 'w1', kind: 'terminal' }], activeTabId: 'w1', ratio: 1 }
+  ]), new Map());
+  chrome.applyCatalog({
+    revision: 1,
+    providers: [{ key: 'acp-claude', displayName: 'Claude Code', iconKey: 'claude' }],
+    workspaces: [],
+    maxColumns: 3
+  });
+  document.querySelector('[data-role="workspace-create-toggle"]').click();
+  const labels = [...document.querySelectorAll('.workspace-popover .workspace-menu-row .workspace-menu-primary, .workspace-popover .workspace-popover-subheading')]
+    .map((node) => node.textContent);
+  const terminal = labels.indexOf('Terminal');
+  const agent = labels.indexOf('AGENT');
+  const dsh = labels.indexOf('DeepSeek Harness');
+  const claude = labels.indexOf('Claude Code');
+  assert.ok(terminal >= 0 && agent > terminal, 'AGENT heading follows Terminal');
+  assert.ok(dsh > agent, 'DeepSeek Harness sits under AGENT');
+  assert.ok(claude > dsh, 'ACP providers follow DeepSeek Harness');
   chrome.dispose();
 });
 
@@ -470,6 +503,63 @@ test('column menu merge entry sends collapse_single', async () => {
     type: 'workspace_layout_intent',
     action: 'collapse_single'
   });
+  chrome.dispose();
+});
+
+test('dsh_web tab menu exposes a stop-runtime entry; other kinds do not', async () => {
+  const runtime = installAgentRuntime();
+  mountChrome();
+  const { WorkspaceChromeController } = await import(controllerUrl);
+  const chrome = new WorkspaceChromeController(
+    document.getElementById('workspace-chrome'),
+    document.getElementById('workspace-popover-root')
+  );
+  chrome.applyLayout(columnSnapshot([
+    { columnId: 'column-1', tabs: [{ workspaceId: 'dsh1', kind: 'dsh_web' }], activeTabId: 'dsh1', ratio: 1 }
+  ]), new Map([['column-1', { left: 40, top: 40, width: 960, height: 700 }]]));
+  chrome.applyCatalog({
+    revision: 1,
+    providers: [],
+    maxColumns: 3,
+    workspaces: [{
+      workspaceId: 'dsh1', kind: 'dsh_web', title: 'DeepSeek Harness', iconKey: 'dsh',
+      columnId: 'column-1', isActiveTab: true, canSplitRight: true, splitBlockedReason: '',
+      canCollapse: false
+    }]
+  });
+  const stopRowText = (r) => r.querySelector('.workspace-menu-primary').textContent;
+  document.querySelector('.workspace-tab')
+    .dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+  const stopRow = [...document.querySelectorAll('.workspace-menu-row')].find(
+    (r) => stopRowText(r) === '停止运行时'
+  );
+  assert.ok(stopRow, 'the dsh_web tab menu offers the stop-runtime entry');
+  stopRow.click();
+  assert.deepEqual(runtime.postedMessages.at(-1), {
+    type: 'dsh_command',
+    name: 'stop'
+  }, 'clicking the entry sends the dsh_command stop wire message');
+
+  // A terminal tab menu never offers the runtime stop entry.
+  chrome.applyLayout(columnSnapshot([
+    { columnId: 'column-1', tabs: [{ workspaceId: 't1', kind: 'terminal' }], activeTabId: 't1', ratio: 1 }
+  ]), new Map([['column-1', { left: 40, top: 40, width: 960, height: 700 }]]));
+  chrome.applyCatalog({
+    revision: 2,
+    providers: [],
+    maxColumns: 3,
+    workspaces: [{
+      workspaceId: 't1', kind: 'terminal', title: 'PowerShell', iconKey: 'terminal',
+      columnId: 'column-1', isActiveTab: true, canSplitRight: true, splitBlockedReason: '',
+      canCollapse: false
+    }]
+  });
+  document.querySelector('.workspace-tab')
+    .dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+  assert.ok(
+    ![...document.querySelectorAll('.workspace-menu-row')].some((r) => stopRowText(r) === '停止运行时'),
+    'non-dsh tabs keep no stop-runtime entry'
+  );
   chrome.dispose();
 });
 

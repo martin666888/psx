@@ -13,6 +13,7 @@ import type { AgentBridgePort } from '../contracts/bridge-port.js';
 import type { SessionRuntimeHost } from './SessionRuntimeController.js';
 import type { PlanHost } from '../plan/PlanController.js';
 import { applyShadcnTheme } from '../ui/themeAdapter.js';
+import { colorSchemeForBackground } from '../../../webview/src/colorScheme.js';
 import { setPortalContainer } from '../ui/portalContainer.js';
 
 /** The one terminal-view method the host toggles when switching workspaces. */
@@ -467,19 +468,4 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
       el.style.setProperty(name, value.trim());
     }
   }
-}
-
-/** Maps a #rgb/#rrggbb theme background to the matching color-scheme so
- * native controls (form fields, scrollbars) render in the theme's palette. */
-function colorSchemeForBackground(background: unknown): 'dark' | 'light' | null {
-  if (typeof background !== 'string') return null;
-  const match = background.trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
-  if (!match) return null;
-  let hex = match[1];
-  if (hex.length === 3) hex = hex.split('').map((c) => c + c).join('');
-  const r = parseInt(hex.slice(0, 2), 16);
-  const g = parseInt(hex.slice(2, 4), 16);
-  const b = parseInt(hex.slice(4, 6), 16);
-  const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-  return luminance < 0.5 ? 'dark' : 'light';
 }

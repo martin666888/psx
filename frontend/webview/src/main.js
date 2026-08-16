@@ -20,6 +20,7 @@ import './css/agent/index.css';
 import './css/runtime-diagnostics.css';
 import { Bridge } from './Bridge.js';
 import { BridgeEventType } from './BridgeMessages.js';
+import { colorSchemeForBackground } from './colorScheme.js';
 import { PaneLayoutController } from './PaneLayoutController.js';
 import { installRuntimeDiagnostics } from './RuntimeDiagnostics.js';
 import { TerminalManager } from './TerminalManager.js';
@@ -86,6 +87,15 @@ installRuntimeDiagnostics();
                 error: '--agent-error', warning: '--agent-warning', scrollbar: '--agent-scrollbar',
                 scrollbarHover: '--agent-scrollbar-hover'
             })) set(variable, theme[key]);
+            // Cross-origin DSH iframes read prefers-color-scheme from the
+            // embedder's used color-scheme. This used to live only in the
+            // lazy Agent chunk, so a terminal/DSH-only session stayed light
+            // until History loaded Agent UI.
+            const scheme = colorSchemeForBackground(theme.background);
+            if (scheme) {
+                root.style.colorScheme = scheme;
+                dshWorkspaceHost.applyColorScheme(scheme);
+            }
         }
         const agent = settings.agentThemeColors;
         if (agent && typeof agent === 'object') {

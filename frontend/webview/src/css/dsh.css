@@ -8,6 +8,14 @@
     box-sizing: border-box;
 }
 
+.dsh-panel--status {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--agent-space-4, 16px);
+    container-type: size;
+}
+
 .dsh-panel iframe {
     display: block;
     width: 100%;
@@ -15,43 +23,124 @@
     border: 0;
 }
 
+/* Runtime content card: surface + hairline, no shadow. Same family as the
+   Agent SessionRuntimeCard — centered in the column, not a full-bleed box. */
 .dsh-card {
-    width: 100%;
-    height: 100%;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    gap: 14px 16px;
     box-sizing: border-box;
+    width: min(100%, 440px);
+    margin: 0 auto;
     padding: 16px;
-    background: var(--agent-surface, #ffffff);
-    border: 1px solid var(--agent-border, #e5e7eb);
-    border-radius: 8px;
+    background: var(--agent-surface);
+    border: 1px solid var(--agent-border);
+    border-radius: var(--agent-radius-card);
+    color: var(--agent-text);
+    font-family: var(--workspace-font-ui);
+}
+
+.dsh-card[data-state="failed"] {
+    background: var(--agent-error-bg);
+    border-color: color-mix(in srgb, var(--agent-error) 50%, var(--agent-border));
+}
+
+.dsh-card-mark {
     display: flex;
-    flex-direction: column;
-    gap: 12px;
-    color: var(--agent-text, #1f2937);
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    color: var(--agent-accent);
+}
+
+.dsh-card-mark svg {
+    display: block;
+    width: 22px;
+    height: 22px;
+    fill: currentColor;
+}
+
+.dsh-card-spinner {
+    box-sizing: border-box;
+    width: 16px;
+    height: 16px;
+    border: 2px solid color-mix(in srgb, var(--agent-accent) 30%, transparent);
+    border-top-color: var(--agent-accent);
+    border-radius: 50%;
+    animation: dsh-spin 0.7s linear infinite;
+}
+
+.dsh-card-copy {
+    min-width: 0;
 }
 
 .dsh-card-title {
     margin: 0;
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 600;
+    line-height: 1.35;
 }
 
-.dsh-card-body {
+.dsh-card-message,
+.dsh-card-note {
+    margin: 6px 0 0;
+    color: var(--agent-text-muted);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.dsh-card-note {
+    color: var(--agent-text-dim);
+}
+
+.dsh-card-actions {
+    grid-column: 2;
     display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
-.dsh-card-body p {
-    margin: 0;
-    color: var(--agent-text-muted, #6b7280);
+    align-items: center;
+    gap: 8px;
 }
 
 .dsh-card-action {
-    align-self: flex-start;
-    padding: 6px 14px;
-    border-radius: 6px;
-    border: 1px solid var(--agent-border-strong, #d1d5db);
-    background: var(--agent-surface-raised, #f3f4f6);
-    color: var(--agent-text, #1f2937);
+    height: 32px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: var(--agent-radius-control);
+    background: var(--primary, var(--agent-text));
+    color: var(--primary-foreground, var(--agent-bg));
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
     cursor: pointer;
+}
+
+.dsh-card-action:hover {
+    background: color-mix(in srgb, var(--primary, var(--agent-text)) 90%, var(--agent-text));
+}
+
+.dsh-card-action:focus-visible {
+    outline: 2px solid var(--agent-focus-ring);
+    outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .dsh-card-spinner {
+        animation: none;
+        border-top-color: var(--agent-accent);
+    }
+}
+
+@keyframes dsh-spin {
+    to { transform: rotate(360deg); }
+}
+
+@container (max-width: 520px) {
+    .dsh-card {
+        grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    .dsh-card-actions {
+        grid-column: 1 / -1;
+    }
 }
