@@ -110,6 +110,7 @@ export class KimiWebWorkspaceHost {
     onFrameFocus(event) {
         const expectedOrigin = expectedOriginFromReadyUrl(this.status?.readyUrl);
         if (!expectedOrigin || event.origin !== expectedOrigin) return;
+        document.dispatchEvent(new window.CustomEvent('psx-embedded-frame-pointerdown'));
         for (const panel of this.panels.values()) {
             if (panel.hidden) continue;
             const columnId = panel.dataset.columnId;

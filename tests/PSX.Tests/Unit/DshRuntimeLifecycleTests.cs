@@ -758,7 +758,73 @@ public sealed class DshRuntimeLifecycleTests
         Assert.AreEqual(DshRuntimeState.Ready, supervisor.State);
         Assert.AreEqual("0.1.0-rc.7", runtime.CurrentVersion);
         Assert.IsFalse(runtime.HasUncommittedUpdate, "Ready is the commit point for deleting the rollback");
+        CollectionAssert.IsSubsetOf(
+            new[] { "downloading", "validating", "restarting" },
+            bridge.Events
+                .Where(message => message.GetProperty("type").GetString() == "dsh_runtime_status"
+                                  && message.TryGetProperty("updatePhase", out var phase)
+                                  && phase.ValueKind == System.Text.Json.JsonValueKind.String)
+                .Select(message => message.GetProperty("updatePhase").GetString()!)
+                .Distinct()
+                .ToArray(),
+            "the update wire should expose each meaningful background phase");
         Assert.AreEqual("up_to_date", LastRuntimeStatus(bridge).GetProperty("updateState").GetString());
+        await supervisor.StopAsync();
+    }
+
+    [TestMethod]
+    public async Task Supervisor_CancelUpdateWhileDownloadingKeepsCurrentServerAndCandidateAvailable()
+    {
+        using var workspace = TestWorkspace.Create(
+            nameof(Supervisor_CancelUpdateWhileDownloadingKeepsCurrentServerAndCandidateAvailable));
+        var (runtime, paths) = CreateRuntime(workspace);
+        var updateStarted = Path.Combine(workspace.Path, "update-started");
+        SeedScriptedNpm(
+            paths,
+            $$"""
+            const fs = require('fs');
+            if (process.argv.includes('view')) {
+              console.log(JSON.stringify('0.1.0-rc.7'));
+              process.exit(0);
+            }
+            fs.writeFileSync({{System.Text.Json.JsonSerializer.Serialize(updateStarted)}}, 'started');
+            setInterval(() => {}, 1000);
+            """);
+        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        WriteFakeDshServer(Path.Combine(
+            paths.DshCurrentDirectory, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js"));
+
+        var bridge = new RecordingAgentBridgeService();
+        using var supervisor = new DshWebRuntimeSupervisor(
+            runtime,
+            bridge,
+            Path.Combine(workspace.Path, "supervisor"),
+            Path.Combine(workspace.Path, "dsh-workspace"));
+        await supervisor.EnsureRunningAsync();
+        await TestWorkspace.WaitUntilAsync(
+            () => supervisor.State == DshRuntimeState.Ready,
+            TimeSpan.FromSeconds(20),
+            "the baseline DSH server did not reach Ready");
+        await supervisor.CheckForUpdateAsync();
+
+        var updateTask = supervisor.UpdateAndRestartAsync();
+        await TestWorkspace.WaitUntilAsync(
+            () => File.Exists(updateStarted),
+            TimeSpan.FromSeconds(10),
+            "the staged update did not begin downloading");
+        Assert.AreEqual("downloading", LastRuntimeStatus(bridge).GetProperty("updatePhase").GetString());
+
+        await supervisor.CancelUpdateAsync();
+        await updateTask.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.AreEqual(DshRuntimeState.Ready, supervisor.State,
+            "cancelling a staged download must not interrupt the current server");
+        Assert.AreEqual(DshWebRuntime.SeededPackageVersion, runtime.CurrentVersion);
+        Assert.IsFalse(Directory.Exists(paths.DshNextDirectory));
+        var status = LastRuntimeStatus(bridge);
+        Assert.AreEqual("available", status.GetProperty("updateState").GetString(),
+            "the checked candidate remains available for a later retry");
+        Assert.AreEqual(System.Text.Json.JsonValueKind.Null, status.GetProperty("updatePhase").ValueKind);
         await supervisor.StopAsync();
     }
 

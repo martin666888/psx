@@ -176,7 +176,8 @@ public sealed class DshWebRuntime
     /// </summary>
     public async Task<DshUpdateResult> StageUpdateAsync(
         string candidate,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action? validationStarted = null)
     {
         await _installLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -233,6 +234,8 @@ public sealed class DshWebRuntime
                 return new(false, current, candidate, error, install.ExitCode);
             }
 
+            validationStarted?.Invoke();
+            cancellationToken.ThrowIfCancellationRequested();
             try { WriteUpdateReceipt(paths.DshNextDirectory, candidate); }
             catch (Exception ex)
             {

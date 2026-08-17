@@ -21,7 +21,7 @@ public interface IDshWebWorkspaceCoordinator
     Task<Guid?> CreateAsync();
     Task ActivateAsync(Guid workspaceId);
     Task CloseAsync(Guid workspaceId, WorkspaceCloseReason reason);
-    /// <summary>Handle a dsh_command (install | retry | stop | check_update | update).</summary>
+    /// <summary>Handle a dsh_command (install | retry | stop | check_update | update | cancel_update).</summary>
     Task HandleCommandAsync(string name);
     /// <summary>Mediate a DSH session-log export: validate the URL against the
     /// current ready origin + /api/session.export path, fetch it host-side, and
@@ -126,6 +126,9 @@ public sealed class DshWebWorkspaceCoordinator : IDshWebWorkspaceCoordinator
                 break;
             case "update":
                 await _supervisor.UpdateAndRestartAsync().ConfigureAwait(false);
+                break;
+            case "cancel_update":
+                await _supervisor.CancelUpdateAsync().ConfigureAwait(false);
                 break;
         }
     }

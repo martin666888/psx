@@ -293,7 +293,7 @@ public sealed class TerminalBridgeMessageParserTests
         Assert.AreEqual(TerminalBridgeMessageKind.DshCommand, dshCommand!.Kind);
         Assert.AreEqual("install", dshCommand.DshCommand!.Name);
 
-        foreach (var command in new[] { "retry", "stop", "check_update", "update" })
+        foreach (var command in new[] { "retry", "stop", "check_update", "update", "cancel_update" })
         {
             Assert.IsTrue(TerminalBridgeMessageParser.TryParse(
                 $$"""{"type":"dsh_command","name":"{{command}}"}""",

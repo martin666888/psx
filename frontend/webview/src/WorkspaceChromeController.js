@@ -18,6 +18,7 @@ const ATTENTION_LABELS = Object.freeze({
 });
 
 const DSH_UPDATE_STATES = new Set(['idle', 'checking', 'up_to_date', 'available', 'updating', 'failed']);
+const DSH_UPDATE_PHASES = new Set(['downloading', 'validating', 'restarting']);
 
 function safeDshVersion(value) {
     const text = typeof value === 'string' ? value.trim() : '';
@@ -76,6 +77,10 @@ export class WorkspaceChromeController {
             this.closeMenu(this.openMenu === 'theme', false);
         };
         this.onDocumentKeyDown = (event) => this.handleDocumentKeyDown(event);
+        this.onEmbeddedFramePointerDown = () => {
+            if (this.openMenu)
+                this.closeMenu(this.openMenu === 'theme', false);
+        };
         this.onHistoryState = (event) => {
             const open = event.detail?.open === true;
             this.historyButton.setAttribute('aria-expanded', String(open));
@@ -83,12 +88,14 @@ export class WorkspaceChromeController {
         document.addEventListener('pointerdown', this.onDocumentPointerDown, true);
         document.addEventListener('keydown', this.onDocumentKeyDown);
         document.addEventListener('psx-history-state', this.onHistoryState);
+        document.addEventListener('psx-embedded-frame-pointerdown', this.onEmbeddedFramePointerDown);
     }
 
     dispose() {
         document.removeEventListener('pointerdown', this.onDocumentPointerDown, true);
         document.removeEventListener('keydown', this.onDocumentKeyDown);
         document.removeEventListener('psx-history-state', this.onHistoryState);
+        document.removeEventListener('psx-embedded-frame-pointerdown', this.onEmbeddedFramePointerDown);
         this.closeMenu(this.openMenu === 'theme', false);
     }
 
@@ -134,6 +141,7 @@ export class WorkspaceChromeController {
             state: typeof message?.state === 'string' ? message.state : 'not_installed',
             currentVersion: safeDshVersion(message?.currentVersion),
             updateState: DSH_UPDATE_STATES.has(message?.updateState) ? message.updateState : 'idle',
+            updatePhase: DSH_UPDATE_PHASES.has(message?.updatePhase) ? message.updatePhase : '',
             availableVersion,
             updateError: typeof message?.updateError === 'string'
                 ? message.updateError.trim().slice(0, 240) : ''
@@ -335,6 +343,10 @@ export class WorkspaceChromeController {
 
     renderOpenMenu() {
         if (!this.openMenu) return;
+        if (this.openMenu === 'pane' && !this.rebindPaneMenuTrigger()) {
+            this.closeMenu(false, false);
+            return;
+        }
         // In-place refresh (segment toggle, catalog/layout refresh while the
         // menu stays open) vs. a fresh open: the popover node is swapped
         // either way, so only a fresh open may replay the entry animation and
@@ -377,6 +389,20 @@ export class WorkspaceChromeController {
             delete menu.dataset.anchorLeft;
         }
         if (!isRefresh) window.queueMicrotask(() => menu.querySelector('button:not(:disabled)')?.focus());
+    }
+
+    rebindPaneMenuTrigger() {
+        if (this.openTrigger?.isConnected) return true;
+        const workspaceId = this.paneMenuWorkspace?.workspaceId;
+        if (!workspaceId) return false;
+        const tab = [...this.nameplates.querySelectorAll('.workspace-tab')]
+            .find((item) => item.dataset.workspaceId === workspaceId);
+        const replacement = tab?.querySelector('.workspace-tab-target');
+        if (!replacement) return false;
+        this.openTrigger?.setAttribute('aria-expanded', 'false');
+        this.openTrigger = replacement;
+        this.openTrigger.setAttribute('aria-expanded', 'true');
+        return true;
     }
 
     menuLabel() {
@@ -602,16 +628,21 @@ export class WorkspaceChromeController {
             versions.className = 'workspace-update-versions';
             versions.textContent = `${status.currentVersion || '当前版本'} → ${status.availableVersion}`;
             const copy = document.createElement('p');
-            copy.textContent = '更新将重启本地服务；DSH 的配置和会话不会被删除。';
+            copy.textContent = 'PSX 将在后台下载并校验新版本，然后自动切换并重启 DeepSeek Harness 本地服务。无需重启 PSX；配置和会话不会被删除。下载可能需要几分钟。';
             const actions = document.createElement('div');
             actions.className = 'workspace-update-actions';
             const cancel = this.actionButton('取消', () => {
                 this.dshUpdateConfirmation = false;
                 this.refreshDshRuntimeMenu();
             });
-            const confirm = this.actionButton('更新并重启', () => {
+            const confirm = this.actionButton('开始后台更新', () => {
                 this.dshUpdateConfirmation = false;
-                this.dshRuntimeStatus = { ...status, updateState: 'updating', updateError: '' };
+                this.dshRuntimeStatus = {
+                    ...status,
+                    updateState: 'updating',
+                    updatePhase: 'downloading',
+                    updateError: ''
+                };
                 this.refreshDshRuntimeMenu();
                 Bridge.sendDshCommand('update');
             });
@@ -661,7 +692,7 @@ export class WorkspaceChromeController {
             case 'available':
                 menu.appendChild(this.menuRow(
                     `更新到 v${status.availableVersion}`,
-                    '需重启',
+                    '后台更新',
                     () => {
                         this.dshUpdateConfirmation = true;
                         this.refreshDshRuntimeMenu();
@@ -670,12 +701,7 @@ export class WorkspaceChromeController {
                 ));
                 break;
             case 'updating':
-                menu.appendChild(this.menuRow(
-                    '正在更新…',
-                    status.availableVersion ? `v${status.availableVersion}` : '',
-                    () => {},
-                    true
-                ));
+                this.renderDshUpdatingAction(menu, status);
                 break;
             case 'up_to_date':
                 menu.appendChild(this.menuRow('检查更新', '已是最新', check, !canCheck));
@@ -691,6 +717,25 @@ export class WorkspaceChromeController {
                     !canCheck
                 ));
                 break;
+        }
+    }
+
+    renderDshUpdatingAction(menu, status) {
+        const version = status.availableVersion ? ` v${status.availableVersion}` : '';
+        const phaseCopy = {
+            downloading: [`正在后台下载${version}…`, '可能需要几分钟'],
+            validating: [`正在校验${version}…`, '当前服务保持可用'],
+            restarting: [`正在切换到${version || '新版本'}…`, '无需重启 PSX']
+        }[status.updatePhase] || ['正在后台更新…', '无需重启 PSX'];
+        menu.appendChild(this.menuRow(phaseCopy[0], phaseCopy[1], () => {}, true));
+
+        if (status.updatePhase === 'downloading' || status.updatePhase === 'validating') {
+            const cancel = this.menuRow('取消更新', '保留当前版本', () => {
+                cancel.disabled = true;
+                cancel.querySelector('.workspace-menu-primary').textContent = '正在取消…';
+                Bridge.sendDshCommand('cancel_update');
+            });
+            menu.appendChild(cancel);
         }
     }
 

@@ -73,6 +73,10 @@ internal sealed class NpmRuntimeProcessRunner
         try
         {
             await process.WaitForExitAsync(timeoutCts.Token).ConfigureAwait(false);
+            // A descendant may inherit npm's redirected handles and keep the
+            // pipes open after npm itself exits. Keep stream drain inside the
+            // same hard deadline so callers always receive a terminal result.
+            await Task.WhenAll(stdoutTask, stderrTask).WaitAsync(timeoutCts.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {

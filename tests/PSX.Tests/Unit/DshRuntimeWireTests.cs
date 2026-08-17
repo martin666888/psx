@@ -39,6 +39,15 @@ public sealed class DshRuntimeWireTests
     }
 
     [TestMethod]
+    [DataRow(DshUpdatePhase.Downloading, "downloading")]
+    [DataRow(DshUpdatePhase.Validating, "validating")]
+    [DataRow(DshUpdatePhase.Restarting, "restarting")]
+    public void ToWireUpdatePhase_UsesExplicitMapping(DshUpdatePhase phase, string expected)
+    {
+        Assert.AreEqual(expected, DshWebRuntimeSupervisor.ToWireUpdatePhase(phase));
+    }
+
+    [TestMethod]
     [DataRow("0.1.0-rc.6", "0.1.0-rc.7", -1)]
     [DataRow("0.1.0-rc.10", "0.1.0", -1)]
     [DataRow("0.1.0", "0.1.0-rc.99", 1)]

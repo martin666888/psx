@@ -87,6 +87,7 @@ export class DshWorkspaceHost {
     onFrameFocus(event) {
         const expectedOrigin = expectedOriginFromReadyUrl(this.status?.readyUrl);
         if (!expectedOrigin || event.origin !== expectedOrigin) return;
+        document.dispatchEvent(new window.CustomEvent('psx-embedded-frame-pointerdown'));
         for (const panel of this.panels.values()) {
             if (panel.hidden) continue;
             const columnId = panel.dataset.columnId;
@@ -156,6 +157,7 @@ export class DshWorkspaceHost {
             errorClass: message?.errorClass || null,
             currentVersion: message?.currentVersion || null,
             updateState: message?.updateState || 'idle',
+            updatePhase: message?.updatePhase || null,
             availableVersion: message?.availableVersion || null,
             updateError: message?.updateError || null
         };

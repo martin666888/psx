@@ -607,23 +607,55 @@ test('dsh_web tab menu matches chrome hierarchy and confirms an available update
     (row) => row.querySelector('.workspace-menu-primary').textContent === '更新到 v0.1.0-rc.7'
   );
   assert.ok(updateRow);
-  assert.equal(updateRow.querySelector('.workspace-menu-secondary').textContent, '需重启');
+  assert.equal(updateRow.querySelector('.workspace-menu-secondary').textContent, '后台更新');
   updateRow.click();
 
   assert.equal(
     document.querySelector('.workspace-update-versions').textContent,
     '0.1.0-rc.6 → 0.1.0-rc.7'
   );
+  assert.match(document.querySelector('.workspace-update-confirmation p').textContent, /无需重启 PSX/);
   assert.match(document.querySelector('.workspace-update-confirmation p').textContent, /配置和会话不会被删除/);
+  assert.match(document.querySelector('.workspace-update-confirmation p').textContent, /可能需要几分钟/);
   const confirm = [...document.querySelectorAll('.workspace-update-actions button')].find(
-    (button) => button.textContent === '更新并重启'
+    (button) => button.textContent === '开始后台更新'
   );
   confirm.click();
   assert.deepEqual(runtime.postedMessages.at(-1), { type: 'dsh_command', name: 'update' });
   assert.equal(
     document.querySelector('.workspace-menu-row:disabled .workspace-menu-primary').textContent,
-    '正在更新…'
+    '正在后台下载 v0.1.0-rc.7…'
   );
+  assert.equal(
+    document.querySelector('.workspace-menu-row:disabled .workspace-menu-secondary').textContent,
+    '可能需要几分钟'
+  );
+  let cancelUpdate = [...document.querySelectorAll('.workspace-menu-row')].find(
+    (row) => row.querySelector('.workspace-menu-primary').textContent === '取消更新'
+  );
+  assert.equal(cancelUpdate.querySelector('.workspace-menu-secondary').textContent, '保留当前版本');
+
+  chrome.applyDshRuntimeStatus({
+    state: 'ready', currentVersion: '0.1.0-rc.6', updateState: 'updating',
+    updatePhase: 'validating', availableVersion: '0.1.0-rc.7'
+  });
+  assert.equal(document.querySelector('.workspace-menu-row:disabled .workspace-menu-primary').textContent,
+    '正在校验 v0.1.0-rc.7…');
+  cancelUpdate = [...document.querySelectorAll('.workspace-menu-row')].find(
+    (row) => row.querySelector('.workspace-menu-primary').textContent === '取消更新'
+  );
+  cancelUpdate.click();
+  assert.deepEqual(runtime.postedMessages.at(-1), { type: 'dsh_command', name: 'cancel_update' });
+  assert.equal(cancelUpdate.disabled, true);
+
+  chrome.applyDshRuntimeStatus({
+    state: 'ready', currentVersion: '0.1.0-rc.6', updateState: 'updating',
+    updatePhase: 'restarting', availableVersion: '0.1.0-rc.7'
+  });
+  assert.equal(document.querySelector('.workspace-menu-row:disabled .workspace-menu-primary').textContent,
+    '正在切换到 v0.1.0-rc.7…');
+  assert.ok(![...document.querySelectorAll('.workspace-menu-primary')]
+    .some((node) => node.textContent === '取消更新'), 'switch phase is no longer cancellable');
   chrome.dispose();
 });
 
@@ -884,6 +916,56 @@ test('column menu anchors under its tab trigger, left-aligned to it', async () =
   assert.equal(menu.style.left, '700px', 'menu left edge follows the trigger left edge');
   assert.equal(menu.style.transform, '', 'no transform — it would fight the popover-in animation');
   chrome.dispose();
+});
+
+test('column menu rebinds after tab replacement and closes on an embedded-frame pointer ping', async () => {
+  installAgentRuntime();
+  mountChrome();
+  const { WorkspaceChromeController } = await import(controllerUrl);
+  const chrome = new WorkspaceChromeController(
+    document.getElementById('workspace-chrome'),
+    document.getElementById('workspace-popover-root')
+  );
+  const layout = columnSnapshot([
+    { columnId: 'column-1', tabs: [{ workspaceId: 'dsh1', kind: 'dsh_web' }], activeTabId: 'dsh1', ratio: 1 }
+  ]);
+  const rects = new Map([['column-1', { left: 40, top: 40, width: 960, height: 700 }]]);
+  const catalog = (revision) => ({
+    revision,
+    providers: [],
+    maxColumns: 3,
+    workspaces: [{
+      workspaceId: 'dsh1', kind: 'dsh_web', title: 'DeepSeek Harness', iconKey: 'dsh',
+      columnId: 'column-1', isActiveTab: true, canSplitRight: true, canCollapse: false
+    }]
+  });
+  const originalRect = window.HTMLButtonElement.prototype.getBoundingClientRect;
+  window.HTMLButtonElement.prototype.getBoundingClientRect = function getBoundingClientRect() {
+    if (this.classList.contains('workspace-tab-target')) {
+      return { top: 10, bottom: 34, left: 700, right: 732, width: 32, height: 24 };
+    }
+    return originalRect.call(this);
+  };
+  try {
+    chrome.applyLayout(layout, rects);
+    chrome.applyCatalog(catalog(1));
+    const oldTrigger = document.querySelector('.workspace-tab-target');
+    document.querySelector('.workspace-tab')
+      .dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+
+    chrome.applyCatalog(catalog(2));
+    const replacement = document.querySelector('.workspace-tab-target');
+    assert.notEqual(replacement, oldTrigger, 'catalog rendering replaced the tab target');
+    assert.equal(chrome.openTrigger, replacement, 'open menu rebinds to the live tab target');
+    assert.equal(document.querySelector('.workspace-popover-pane').style.top, '38px');
+
+    document.dispatchEvent(new window.CustomEvent('psx-embedded-frame-pointerdown'));
+    assert.equal(document.querySelector('.workspace-popover-pane'), null,
+      'validated iframe pointer pings dismiss shell chrome menus');
+  } finally {
+    window.HTMLButtonElement.prototype.getBoundingClientRect = originalRect;
+    chrome.dispose();
+  }
 });
 
 test('tab strips render attention badges and single-tab columns keep the nameplate look', async () => {

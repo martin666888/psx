@@ -157,6 +157,9 @@ describe('KimiWebWorkspaceHost', () => {
     const { KimiWebWorkspaceHost } = await import(hostUrl);
     const bridge = globalThis.Bridge;
     const spy = vi.spyOn(bridge, 'sendPaneFocus');
+    let embeddedPointerPings = 0;
+    const onEmbeddedPointer = () => { embeddedPointerPings += 1; };
+    document.addEventListener('psx-embedded-frame-pointerdown', onEmbeddedPointer);
     try {
       const host = new KimiWebWorkspaceHost(document.getElementById('kimi-web-workspace-container'));
       host.applyLayout(
@@ -181,13 +184,16 @@ describe('KimiWebWorkspaceHost', () => {
       }));
       assert.equal(spy.mock.calls.length, 2, 'matching origin focus ping forwarded');
       assert.deepEqual(spy.mock.calls[1], ['column-2']);
+      assert.equal(embeddedPointerPings, 1, 'matching origin closes shell chrome overlays');
 
       window.dispatchEvent(new window.MessageEvent('message', {
         origin: 'http://127.0.0.1:1',
         data: { source: 'psx-kimi-web-focus' }
       }));
       assert.equal(spy.mock.calls.length, 2, 'wrong origin focus ping dropped');
+      assert.equal(embeddedPointerPings, 1, 'wrong origin cannot close shell chrome overlays');
     } finally {
+      document.removeEventListener('psx-embedded-frame-pointerdown', onEmbeddedPointer);
       spy.mockRestore();
     }
   });

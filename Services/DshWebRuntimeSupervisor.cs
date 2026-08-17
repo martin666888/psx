@@ -8,6 +8,7 @@ namespace PSX.Services;
 
 public enum DshRuntimeState { NotInstalled, Installing, Starting, Ready, Exited, Failed }
 public enum DshUpdateState { Idle, Checking, UpToDate, Available, Updating, Failed }
+public enum DshUpdatePhase { Downloading, Validating, Restarting }
 
 internal enum DshOperationKind { Install, Retry, CheckUpdate, Update }
 
@@ -39,10 +40,12 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
     private DshRuntimeLease? _lease;
     private Uri? _readyUrl;
     private DshUpdateState _updateState = DshUpdateState.Idle;
+    private DshUpdatePhase? _updatePhase;
     private string? _availableVersion;
     private string? _updateError;
     private CancellationTokenSource? _runCts;   // live lifecycle operation; guarded by _sync
     private Task? _operation;                   // single-flight lifecycle operation; guarded by _sync
+    private DshOperationKind? _operationKind;   // active operation kind; guarded by _sync
     private bool _stopRequested;                // a Stop/Shutdown began and owns the terminal state; guarded by _sync
     private bool _disposed;
 
@@ -97,6 +100,14 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         _ => "failed"
     };
 
+    public static string ToWireUpdatePhase(DshUpdatePhase phase) => phase switch
+    {
+        DshUpdatePhase.Downloading => "downloading",
+        DshUpdatePhase.Validating => "validating",
+        DshUpdatePhase.Restarting => "restarting",
+        _ => "downloading"
+    };
+
     /// <summary>Accept only the loopback HTTP origin DSH is allowed to bind.</summary>
     public static bool TryAcceptReadyUrl(string? candidate, out Uri url)
     {
@@ -140,6 +151,30 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
 
     public Task UpdateAndRestartAsync() => BeginOperationAsync(DshOperationKind.Update);
 
+    /// <summary>
+    /// Cancel only while the candidate is being downloaded or validated. The
+    /// current server still owns dsh-current in those phases, so cancellation
+    /// can discard dsh-next without interrupting the user's live session.
+    /// Once the atomic switch begins, rollback owns recovery instead.
+    /// </summary>
+    public Task CancelUpdateAsync()
+    {
+        lock (_sync)
+        {
+            if (_disposed
+                || _stopRequested
+                || _operationKind != DshOperationKind.Update
+                || _updateState != DshUpdateState.Updating
+                || _updatePhase == DshUpdatePhase.Restarting)
+            {
+                return Task.CompletedTask;
+            }
+
+            _runCts?.Cancel();
+        }
+        return Task.CompletedTask;
+    }
+
     private Task BeginOperationAsync(DshOperationKind kind)
     {
         lock (_sync)
@@ -160,6 +195,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
             var runCts = CancellationTokenSource.CreateLinkedTokenSource(_lifetimeCts.Token);
             _runCts = runCts;
             _operation = completion.Task;
+            _operationKind = kind;
             _ = ExecuteOperationAsync(completion, runCts, kind);
             return completion.Task;
         }
@@ -185,23 +221,30 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
                     abandoned = _stopRequested || runCts.IsCancellationRequested;
                 if (!abandoned)
                 {
-                    switch (kind)
+                    try
                     {
-                        case DshOperationKind.Install:
-                            await InstallAndStartHoldingLockAsync(runCts).ConfigureAwait(false);
-                            break;
-                        case DshOperationKind.Retry:
-                            if (_runtime.CreateLaunchSpec() != null)
-                                await EnsureRunningHoldingLockAsync().ConfigureAwait(false);
-                            else
+                        switch (kind)
+                        {
+                            case DshOperationKind.Install:
                                 await InstallAndStartHoldingLockAsync(runCts).ConfigureAwait(false);
-                            break;
-                        case DshOperationKind.CheckUpdate:
-                            await CheckForUpdateHoldingLockAsync(runCts.Token).ConfigureAwait(false);
-                            break;
-                        case DshOperationKind.Update:
-                            await UpdateAndRestartHoldingLockAsync(runCts).ConfigureAwait(false);
-                            break;
+                                break;
+                            case DshOperationKind.Retry:
+                                if (_runtime.CreateLaunchSpec() != null)
+                                    await EnsureRunningHoldingLockAsync().ConfigureAwait(false);
+                                else
+                                    await InstallAndStartHoldingLockAsync(runCts).ConfigureAwait(false);
+                                break;
+                            case DshOperationKind.CheckUpdate:
+                                await CheckForUpdateHoldingLockAsync(runCts.Token).ConfigureAwait(false);
+                                break;
+                            case DshOperationKind.Update:
+                                await UpdateAndRestartHoldingLockAsync(runCts).ConfigureAwait(false);
+                                break;
+                        }
+                    }
+                    catch (Exception ex) when (kind == DshOperationKind.Update)
+                    {
+                        await RecoverUnexpectedUpdateFailureHoldingLockAsync(ex).ConfigureAwait(false);
                     }
                 }
             }
@@ -220,7 +263,10 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
             lock (_sync)
             {
                 if (ReferenceEquals(_operation, completion.Task))
+                {
                     _operation = null;
+                    _operationKind = null;
+                }
                 if (ReferenceEquals(_runCts, runCts))
                     _runCts = null;
             }
@@ -369,16 +415,23 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
                 return;
         }
 
-        SetUpdateState(DshUpdateState.Updating, candidate);
+        SetUpdateState(DshUpdateState.Updating, candidate, phase: DshUpdatePhase.Downloading);
         DshUpdateResult staged;
         try
         {
-            staged = await _runtime.StageUpdateAsync(candidate, runCts.Token).ConfigureAwait(false);
+            staged = await _runtime.StageUpdateAsync(
+                candidate,
+                runCts.Token,
+                () =>
+                {
+                    if (!runCts.IsCancellationRequested)
+                        SetUpdateState(DshUpdateState.Updating, candidate, phase: DshUpdatePhase.Validating);
+                }).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
             _runtime.DiscardStagedUpdate();
-            SetUpdateState(DshUpdateState.Idle);
+            CompleteCancelledUpdate(candidate);
             return;
         }
         if (!staged.Success)
@@ -386,7 +439,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
             if (runCts.IsCancellationRequested)
             {
                 _runtime.DiscardStagedUpdate();
-                SetUpdateState(DshUpdateState.Idle);
+                CompleteCancelledUpdate(candidate);
                 return;
             }
             _runtime.DiscardStagedUpdate();
@@ -398,6 +451,15 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         }
 
         // The candidate is fully staged before the live process is touched.
+        // Cancellation is intentionally closed from here onward: rollback,
+        // rather than user cancellation, owns every interrupted switch.
+        SetUpdateState(DshUpdateState.Updating, candidate, phase: DshUpdatePhase.Restarting);
+        if (runCts.IsCancellationRequested)
+        {
+            _runtime.DiscardStagedUpdate();
+            CompleteCancelledUpdate(candidate);
+            return;
+        }
         // Wait for the old lease's bounded disposal so native .node handles
         // cannot keep dsh-current locked during the atomic directory swap.
         var retired = RetireLiveLeaseHoldingLifecycleLock();
@@ -448,6 +510,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
                 _availableVersion = null;
                 _updateError = null;
                 _updateState = DshUpdateState.UpToDate;
+                _updatePhase = null;
             }
             PublishCurrentState();
             return;
@@ -457,7 +520,54 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         // on Failed. Calling this again is harmless and covers a stale start.
         _runtime.RollbackAppliedUpdate();
         SetUpdateState(DshUpdateState.Failed, candidate, "新版本启动失败，已恢复原版本。");
-        await EnsureRunningHoldingLockAsync().ConfigureAwait(false);
+        await StartRecoveredRuntimeHoldingLockAsync().ConfigureAwait(false);
+    }
+
+    private void CompleteCancelledUpdate(string candidate)
+    {
+        bool stopped;
+        lock (_sync)
+            stopped = _stopRequested || _lifetimeCts.IsCancellationRequested;
+        SetUpdateState(stopped ? DshUpdateState.Idle : DshUpdateState.Available, candidate);
+    }
+
+    private async Task RecoverUnexpectedUpdateFailureHoldingLockAsync(Exception exception)
+    {
+        string? candidate;
+        lock (_sync)
+            candidate = _availableVersion;
+
+        Log($"Unexpected DSH update failure ({exception.GetType().Name}): {exception}");
+        var switched = _runtime.HasUncommittedUpdate;
+        if (switched)
+        {
+            var retired = RetireLiveLeaseHoldingLifecycleLock();
+            if (retired != null)
+                await retired.DisposalTask.ConfigureAwait(false);
+            _runtime.RollbackAppliedUpdate();
+        }
+        else
+        {
+            _runtime.DiscardStagedUpdate();
+        }
+
+        SetUpdateState(
+            DshUpdateState.Failed,
+            candidate,
+            "更新未能完成，当前版本可继续使用。");
+
+        bool needsStart;
+        lock (_sync)
+            needsStart = _lease == null || _readyUrl == null;
+        if (needsStart)
+            await StartRecoveredRuntimeHoldingLockAsync().ConfigureAwait(false);
+    }
+
+    private async Task StartRecoveredRuntimeHoldingLockAsync()
+    {
+        var spec = _runtime.CreateLaunchSpec();
+        if (spec != null)
+            await StartProcessAsync(spec).ConfigureAwait(false);
     }
 
     private async Task EnsureRunningHoldingLockAsync()
@@ -771,11 +881,13 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
     private void SetUpdateState(
         DshUpdateState state,
         string? availableVersion = null,
-        string? error = null)
+        string? error = null,
+        DshUpdatePhase? phase = null)
     {
         lock (_sync)
         {
             _updateState = state;
+            _updatePhase = state == DshUpdateState.Updating ? phase : null;
             if (availableVersion != null)
                 _availableVersion = availableVersion;
             _updateError = error;
@@ -807,11 +919,15 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         }
 
         string updateState;
+        string? updatePhase;
         string? availableVersion;
         string? updateError;
         lock (_sync)
         {
             updateState = ToWireUpdateState(_updateState);
+            updatePhase = _updateState == DshUpdateState.Updating && _updatePhase.HasValue
+                ? ToWireUpdatePhase(_updatePhase.Value)
+                : null;
             availableVersion = _availableVersion;
             updateError = _updateState == DshUpdateState.Failed ? _updateError : null;
         }
@@ -824,6 +940,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
             errorClass = wireError,
             currentVersion = _runtime.CurrentVersion,
             updateState,
+            updatePhase,
             availableVersion,
             updateError
         });
