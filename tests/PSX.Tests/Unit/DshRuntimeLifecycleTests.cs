@@ -103,6 +103,28 @@ public sealed class DshRuntimeLifecycleTests
     }
 
     [TestMethod]
+    public void PrepareForStartup_NextEntryMissing_DiscardsCandidateAndKeepsCurrent()
+    {
+        using var workspace = TestWorkspace.Create(nameof(PrepareForStartup_NextEntryMissing_DiscardsCandidateAndKeepsCurrent));
+        var (runtime, paths) = CreateRuntime(workspace);
+        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        File.WriteAllText(Path.Combine(paths.DshCurrentDirectory, "ready"), "old");
+        SeedFakeDshTree(paths.DshNextDirectory, DshWebRuntime.SeededPackageVersion);
+        File.Delete(Path.Combine(
+            paths.DshNextDirectory, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js"));
+        Directory.CreateDirectory(paths.RuntimeRoot);
+        File.WriteAllText(paths.DshActivePointerFile, "next");
+
+        runtime.PrepareForStartup();
+
+        Assert.AreEqual("old", File.ReadAllText(Path.Combine(paths.DshCurrentDirectory, "ready")),
+            "an incomplete staged candidate must not replace the working current tree");
+        Assert.IsTrue(runtime.IsInstalled());
+        Assert.IsFalse(Directory.Exists(paths.DshNextDirectory));
+        Assert.AreEqual("current", File.ReadAllText(paths.DshActivePointerFile));
+    }
+
+    [TestMethod]
     public void CreateLaunchSpec_WrongVersionCurrent_IsRefusedUntilReinstalled()
     {
         using var workspace = TestWorkspace.Create(nameof(CreateLaunchSpec_WrongVersionCurrent_IsRefusedUntilReinstalled));
@@ -441,6 +463,100 @@ public sealed class DshRuntimeLifecycleTests
     public void BuildCommandLine_QuotesWindowsArguments(string fileName, string[] arguments, string expected)
     {
         Assert.AreEqual(expected, SuspendedJobProcessLauncher.BuildCommandLine(fileName, arguments));
+    }
+
+    [TestMethod]
+    public async Task TryStartInJob_PassesExtendedHandleListAndRedirectsOutput()
+    {
+        using var workspace = TestWorkspace.Create(nameof(TryStartInJob_PassesExtendedHandleListAndRedirectsOutput));
+        var diagnostics = new List<string>();
+        var command = Path.Combine(Environment.SystemDirectory, "cmd.exe");
+        var launch = SuspendedJobProcessLauncher.TryStartInJob(
+            command,
+            new[] { "/d", "/c", "echo dsh-launch-ok" },
+            workspace.Path,
+            diagnostics.Add);
+
+        Assert.IsTrue(launch.Succeeded,
+            launch.FailureDetail ?? string.Join(Environment.NewLine, diagnostics));
+        Assert.IsNotNull(launch.Process);
+        Assert.IsNotNull(launch.Job);
+        Assert.IsNotNull(launch.Output);
+        Assert.IsNotNull(launch.Error);
+
+        try
+        {
+            var outputTask = launch.Output.ReadToEndAsync();
+            var errorTask = launch.Error.ReadToEndAsync();
+            await launch.Process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+            var output = await outputTask.WaitAsync(TimeSpan.FromSeconds(10));
+            var error = await errorTask.WaitAsync(TimeSpan.FromSeconds(10));
+
+            Assert.AreEqual(0, launch.Process.ExitCode, error);
+            StringAssert.Contains(output, "dsh-launch-ok");
+        }
+        finally
+        {
+            launch.Output?.Dispose();
+            launch.Error?.Dispose();
+            if (launch.Process != null)
+            {
+                try
+                {
+                    if (!launch.Process.HasExited)
+                        launch.Process.Kill(entireProcessTree: true);
+                }
+                catch { }
+                launch.Process.Dispose();
+            }
+            launch.Job?.Dispose();
+        }
+    }
+
+    [TestMethod]
+    public async Task Supervisor_ProductionLauncher_ReachesReadyAndStopsProcessTree()
+    {
+        using var workspace = TestWorkspace.Create(nameof(Supervisor_ProductionLauncher_ReachesReadyAndStopsProcessTree));
+        var (runtime, paths) = CreateRuntime(workspace);
+        SeedRealProcessToolchain(paths);
+        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        var entryPath = Path.Combine(
+            paths.DshCurrentDirectory, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js");
+        File.WriteAllText(
+            entryPath,
+            """
+            const http = require('http');
+            const server = http.createServer((_request, response) => {
+              response.writeHead(200, { 'content-type': 'text/html' });
+              response.end('<!doctype html><title>DeepSeek Harness</title>');
+            });
+            server.listen(0, '127.0.0.1', () => {
+              const address = server.address();
+              console.log(`dsh web: http://127.0.0.1:${address.port}`);
+            });
+            """);
+
+        var bridge = new RecordingAgentBridgeService();
+        using var supervisor = new DshWebRuntimeSupervisor(
+            runtime,
+            bridge,
+            Path.Combine(workspace.Path, "supervisor"),
+            Path.Combine(workspace.Path, "dsh-workspace"));
+
+        await supervisor.EnsureRunningAsync();
+        await TestWorkspace.WaitUntilAsync(
+            () => supervisor.State is DshRuntimeState.Ready or DshRuntimeState.Failed,
+            TimeSpan.FromSeconds(20),
+            "the production launcher did not reach a terminal startup state");
+
+        Assert.AreEqual(DshRuntimeState.Ready, supervisor.State,
+            bridge.Events.LastOrDefault().ToString());
+        Assert.IsNotNull(supervisor.ReadyUrl);
+        Assert.AreEqual("127.0.0.1", supervisor.ReadyUrl.Host);
+
+        await supervisor.StopAsync();
+        Assert.AreEqual(DshRuntimeState.Exited, supervisor.State);
+        Assert.IsNull(supervisor.ReadyUrl);
     }
 
     [TestMethod]

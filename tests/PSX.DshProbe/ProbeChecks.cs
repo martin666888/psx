@@ -138,15 +138,27 @@ internal static partial class ProbeChecks
 
     private static async Task WebSocketEchoAsync(ProbeHost host)
     {
-        var state = await TryWebSocketOnceAsync(host);
-        if (state != "ok:echo:ping")
-            state = await TryWebSocketOnceAsync(host);
-        // Only the exact environmental 'idle' (offscreen background
-        // throttling, P0-FINDINGS secondary observations) is excused — and
-        // only after both attempts. Any error result stays a hard failure so
-        // a real WebSocket regression turns the gate red.
-        Add("websocket-echo", state == "ok:echo:ping", $"ws result = {state}",
-            knownFinding: state == "idle");
+        const string success = "ok:echo:ping";
+        var first = await TryWebSocketOnceAsync(host);
+        if (first == success)
+        {
+            Add("websocket-echo", true, $"attempt1={first}");
+            return;
+        }
+
+        var second = await TryWebSocketOnceAsync(host);
+        // A first idle followed by a successful retry is the documented
+        // background-throttling flake and proves the WebSocket path works.
+        // The report-only known finding is narrower still: both attempts must
+        // remain exactly idle. Never overwrite a concrete error or malformed
+        // echo with a later idle/success result.
+        var recoveredFromIdle = first == "idle" && second == success;
+        var knownIdle = first == "idle" && second == "idle";
+        Add(
+            "websocket-echo",
+            recoveredFromIdle,
+            $"attempt1={first}; attempt2={second}",
+            knownFinding: knownIdle);
     }
 
     private static async Task<string> TryWebSocketOnceAsync(ProbeHost host)

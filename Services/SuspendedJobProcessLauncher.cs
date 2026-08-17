@@ -42,7 +42,9 @@ internal static class SuspendedJobProcessLauncher
         IntPtr stdoutWrite = IntPtr.Zero;
         IntPtr stderrRead = IntPtr.Zero;
         IntPtr stderrWrite = IntPtr.Zero;
+        IntPtr stdinRead = IntPtr.Zero;
         IntPtr attributeList = IntPtr.Zero;
+        var attributeListInitialized = false;
         var pinnedHandles = GCHandle.Alloc(Array.Empty<IntPtr>(), GCHandleType.Pinned);
         try
         {
@@ -55,18 +57,40 @@ internal static class SuspendedJobProcessLauncher
             if (!SetHandleInformation(stderrRead, HANDLE_FLAG_INHERIT, 0))
                 return Failed($"SetHandleInformation(stderr) failed: {new Win32Exception().Message}");
 
-            // Restrict handle inheritance to exactly the two pipe write ends:
+            // STARTF_USESTDHANDLES requires all three standard handles to be
+            // valid and inheritable. DSH web is non-interactive, so give it an
+            // inheritable NUL input handle instead of passing NULL (which
+            // CreateProcess copies unchecked and can make the child misbehave).
+            stdinRead = CreateFileW(
+                "NUL",
+                GENERIC_READ,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                ref securityAttributes,
+                OPEN_EXISTING,
+                FILE_ATTRIBUTE_NORMAL,
+                IntPtr.Zero);
+            if (stdinRead == INVALID_HANDLE_VALUE)
+            {
+                stdinRead = IntPtr.Zero;
+                return Failed($"CreateFile(NUL) failed: {new Win32Exception().Message}");
+            }
+
+            // Restrict handle inheritance to exactly NUL stdin and the two
+            // pipe write ends:
             // without PROC_THREAD_ATTRIBUTE_HANDLE_LIST the child would inherit
             // every inheritable handle in the PSX process. The pinned array and
             // the attribute list must stay alive until CreateProcessW returns.
-            var inheritableHandles = new[] { stdoutWrite, stderrWrite };
+            var inheritableHandles = new[] { stdinRead, stdoutWrite, stderrWrite };
             pinnedHandles.Free();
             pinnedHandles = GCHandle.Alloc(inheritableHandles, GCHandleType.Pinned);
             var attributeListSize = IntPtr.Zero;
             InitializeProcThreadAttributeList(IntPtr.Zero, 1, 0, ref attributeListSize);
+            if (attributeListSize == IntPtr.Zero)
+                return Failed($"InitializeProcThreadAttributeList size query failed: {new Win32Exception().Message}");
             attributeList = Marshal.AllocHGlobal(attributeListSize);
             if (!InitializeProcThreadAttributeList(attributeList, 1, 0, ref attributeListSize))
                 return Failed($"InitializeProcThreadAttributeList failed: {new Win32Exception().Message}");
+            attributeListInitialized = true;
             if (!UpdateProcThreadAttribute(
                     attributeList,
                     IntPtr.Zero,
@@ -82,9 +106,10 @@ internal static class SuspendedJobProcessLauncher
             var startupInfo = new STARTUPINFOEXW();
             startupInfo.StartupInfo.cb = Marshal.SizeOf<STARTUPINFOEXW>();
             startupInfo.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
-            startupInfo.StartupInfo.hStdInput = IntPtr.Zero;
+            startupInfo.StartupInfo.hStdInput = stdinRead;
             startupInfo.StartupInfo.hStdOutput = stdoutWrite;
             startupInfo.StartupInfo.hStdError = stderrWrite;
+            startupInfo.lpAttributeList = attributeList;
             if (!CreateProcessW(
                     null,
                     new StringBuilder(commandLine),
@@ -94,7 +119,7 @@ internal static class SuspendedJobProcessLauncher
                     CREATE_SUSPENDED | CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT,
                     IntPtr.Zero,
                     workingDirectory,
-                    ref startupInfo.StartupInfo,
+                    ref startupInfo,
                     out var processInformation))
             {
                 return Failed($"CreateProcess failed: {new Win32Exception().Message}");
@@ -102,6 +127,8 @@ internal static class SuspendedJobProcessLauncher
 
             // The child is suspended: drop our copies of the inherited write
             // ends, then join the job before its first instruction runs.
+            CloseHandle(stdinRead);
+            stdinRead = IntPtr.Zero;
             CloseHandle(stdoutWrite);
             stdoutWrite = IntPtr.Zero;
             CloseHandle(stderrWrite);
@@ -168,7 +195,8 @@ internal static class SuspendedJobProcessLauncher
         {
             if (attributeList != IntPtr.Zero)
             {
-                DeleteProcThreadAttributeList(attributeList);
+                if (attributeListInitialized)
+                    DeleteProcThreadAttributeList(attributeList);
                 Marshal.FreeHGlobal(attributeList);
             }
             if (pinnedHandles.IsAllocated)
@@ -177,6 +205,7 @@ internal static class SuspendedJobProcessLauncher
             if (stderrWrite != IntPtr.Zero) CloseHandle(stderrWrite);
             if (stdoutRead != IntPtr.Zero) CloseHandle(stdoutRead);
             if (stderrRead != IntPtr.Zero) CloseHandle(stderrRead);
+            if (stdinRead != IntPtr.Zero) CloseHandle(stdinRead);
         }
     }
 
@@ -246,7 +275,13 @@ internal static class SuspendedJobProcessLauncher
     private const uint CREATE_NO_WINDOW = 0x08000000;
     private const uint EXTENDED_STARTUPINFO_PRESENT = 0x00080000;
     private const uint HANDLE_FLAG_INHERIT = 0x00000001;
-    private const IntPtr ProcThreadAttributeHandleList = (IntPtr)0x00020000;
+    private const uint GENERIC_READ = 0x80000000;
+    private const uint FILE_SHARE_READ = 0x00000001;
+    private const uint FILE_SHARE_WRITE = 0x00000002;
+    private const uint OPEN_EXISTING = 3;
+    private const uint FILE_ATTRIBUTE_NORMAL = 0x00000080;
+    private static readonly IntPtr INVALID_HANDLE_VALUE = new(-1);
+    private static readonly IntPtr ProcThreadAttributeHandleList = new(0x00020002);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct SECURITY_ATTRIBUTES
@@ -302,6 +337,16 @@ internal static class SuspendedJobProcessLauncher
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool SetHandleInformation(IntPtr hObject, uint dwMask, uint dwFlags);
 
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern IntPtr CreateFileW(
+        string lpFileName,
+        uint dwDesiredAccess,
+        uint dwShareMode,
+        ref SECURITY_ATTRIBUTES lpSecurityAttributes,
+        uint dwCreationDisposition,
+        uint dwFlagsAndAttributes,
+        IntPtr hTemplateFile);
+
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool InitializeProcThreadAttributeList(
         IntPtr lpAttributeList, int dwAttributeCount, int dwFlags, ref IntPtr lpSize);
@@ -329,7 +374,7 @@ internal static class SuspendedJobProcessLauncher
         uint dwCreationFlags,
         IntPtr lpEnvironment,
         string? lpCurrentDirectory,
-        ref STARTUPINFOW lpStartupInfo,
+        ref STARTUPINFOEXW lpStartupInfo,
         out PROCESS_INFORMATION lpProcessInformation);
 
     [DllImport("kernel32.dll", SetLastError = true)]

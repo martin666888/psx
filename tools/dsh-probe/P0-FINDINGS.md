@@ -1,7 +1,8 @@
 # DSH P0 嵌入探针结论
 
-实验分支 `dsh`,基线 `dev@2273baf`。探针独立于产品代码(`tools/dsh-probe/` +
-`tests/PSX.DshProbe/`,未加入 `PSX.slnx`),产物全部落 `TestResults/dsh-probe/`。
+实验起于分支 `dsh`、基线 `dev@2273baf`。探针工程位于
+`tests/PSX.DshProbe/`，现已加入 `PSX.slnx` 并由 Full gate 以 mock 模式运行；
+辅助材料位于 `tools/dsh-probe/`，产物全部落 `TestResults/dsh-probe/`。
 
 ## Cluster 2 — npm 安装 + 启动(通过)
 
@@ -36,10 +37,11 @@
 - 顶层 **blob 下载**(无 HTTP/无服务器/无跨协议):不触发
 
 结论:本 WebView2 环境(SDK 1.0.2903.40 + 系统 Evergreen runtime)不落下载管线。
-**Phase 3 的 `DownloadStarting + ResultFilePath + 保存对话框` 路线必须放弃**,改为
-**宿主中介导出**:DSH 侧 `fetch` 导出字节 → `postMessage` 给 shell → 新桥消息发 C# →
-C# 弹 Windows 保存对话框写盘。这不依赖 WebView2 下载管线,且天然满足"严格限定
-下载例外"的安全边界(字节经宿主审核后落盘)。
+**Phase 3 的 `DownloadStarting + ResultFilePath + 保存对话框` 路线必须放弃**,现已改为
+**宿主中介导出**:注入脚本拦截 DSH 导出链接 → 把 URL 与建议文件名 `postMessage`
+给 shell → `dsh_export` 发给 C# → C# 校验当前 DSH origin 与固定导出路径、主动拉取
+受限大小的 ZIP，再弹 Windows 保存对话框原子写盘。这不依赖 WebView2 下载管线，
+且字节不会经 WebView Bridge 跨界传输。
 
 ### 次要观测
 

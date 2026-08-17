@@ -53,10 +53,13 @@ public sealed class DshWebRuntime
     public bool IsInstalled()
     {
         var paths = Paths;
-        return File.Exists(Path.Combine(paths.DshCurrentDirectory, DshPackageJson))
-            && File.Exists(Path.Combine(paths.DshCurrentDirectory, DshEntryPath))
-            && VersionMatches(paths.DshCurrentDirectory);
+        return IsLaunchableTree(paths.DshCurrentDirectory);
     }
+
+    private static bool IsLaunchableTree(string directory) =>
+        File.Exists(Path.Combine(directory, DshPackageJson))
+        && File.Exists(Path.Combine(directory, DshEntryPath))
+        && VersionMatches(directory);
 
     private static bool VersionMatches(string directory) =>
         string.Equals(
@@ -151,9 +154,10 @@ public sealed class DshWebRuntime
         var paths = Paths;
         if (_stagedStore.PointerSaysNext(paths.DshActivePointerFile, ActiveNextToken))
         {
-            // Promote only a staged candidate that still carries the seeded
-            // version; anything else is discarded instead of becoming current.
-            if (VersionMatches(paths.DshNextDirectory))
+            // Promote only a complete staged candidate with the seeded
+            // version and launch entry. Anything else is discarded instead
+            // of replacing a healthy current tree with an unusable runtime.
+            if (IsLaunchableTree(paths.DshNextDirectory))
             {
                 _stagedStore.PromoteNextToCurrent(
                     paths.RuntimeRoot, paths.DshCurrentDirectory,
@@ -161,7 +165,7 @@ public sealed class DshWebRuntime
             }
             else
             {
-                Log("DSH dsh-next candidate does not match the seeded version; discarding it.");
+                Log("DSH dsh-next candidate is incomplete or does not match the seeded version; discarding it.");
                 _stagedStore.ClearStaleNext(paths.DshNextDirectory);
                 _stagedStore.TryWriteActivePointer(
                     paths.RuntimeRoot, paths.DshActivePointerFile, ActiveCurrentToken);
