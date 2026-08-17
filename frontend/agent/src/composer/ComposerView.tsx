@@ -169,7 +169,7 @@ function ComposerSelectControl({ control }: { control: ComposerSelectVM }): JSX.
           data-role={control.role}
           data-config-id={control.role === 'mode' ? undefined : control.id}
           size="sm"
-          className="agent-menu-select h-7 min-w-0 gap-1 border-0 bg-transparent px-1.5 text-xs shadow-none"
+          className="agent-menu-select h-7 min-w-0 gap-1 border-0 bg-transparent px-1.5 text-xs shadow-none dark:bg-transparent"
           aria-label={control.label + ': ' + currentLabel}
         >
           <SelectValue placeholder={currentLabel} />

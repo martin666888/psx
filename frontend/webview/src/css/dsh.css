@@ -28,7 +28,7 @@
 .dsh-card {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
-    align-items: start;
+    align-items: center;
     gap: 14px 16px;
     box-sizing: border-box;
     width: min(100%, 440px);
