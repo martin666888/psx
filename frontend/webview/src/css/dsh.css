@@ -28,7 +28,7 @@
 .dsh-card {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
-    align-items: center;
+    align-items: start;
     gap: 14px 16px;
     box-sizing: border-box;
     width: min(100%, 440px);
@@ -51,7 +51,9 @@
     align-items: center;
     justify-content: center;
     width: 28px;
-    height: 28px;
+    /* Match the title line box (14px × 1.35) so the icon/spinner centers
+       on the first text line instead of the whole copy block. */
+    height: calc(14px * 1.35);
     color: var(--agent-accent);
 }
 
@@ -103,8 +105,11 @@
 }
 
 .dsh-card-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     height: 32px;
-    padding: 0 12px;
+    padding: 0 16px;
     border: 0;
     border-radius: var(--agent-radius-control);
     background: var(--primary, var(--agent-text));
@@ -112,6 +117,7 @@
     font-family: inherit;
     font-size: 13px;
     font-weight: 500;
+    line-height: 1;
     cursor: pointer;
 }
 
