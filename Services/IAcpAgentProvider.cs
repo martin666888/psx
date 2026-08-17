@@ -53,7 +53,7 @@ public interface IAcpAgentProvider
     /// Optional interactive login terminal. When non-null, the session engine
     /// opens this profile instead of appending <c>--login</c> to the ACP
     /// process spec (which is wrong for CLIs whose login entry is a separate
-    /// subcommand such as <c>qodercli login</c>, or an interactive TUI such as
+    /// authentication subcommand, or an interactive TUI such as
     /// Qwen Code rather than <c>--acp --login</c>).
     /// </summary>
     ShellProfile? CreateLoginTerminalProfile(string workingDirectory) => null;

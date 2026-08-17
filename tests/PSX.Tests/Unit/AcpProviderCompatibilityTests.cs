@@ -40,21 +40,4 @@ public sealed class AcpProviderCompatibilityTests
         Assert.AreEqual("execute", compatibility.ResolveToolName(update.RootElement));
     }
 
-    [TestMethod]
-    public void ClineCompatibility_DisablesUnverifiedImagesAndKeepsOnlyAct()
-    {
-        IAcpProviderCompatibility compatibility = new ClineAcpProviderCompatibility();
-        var modes = new[]
-        {
-            new AcpSessionModeDescriptor("plan", "Plan", "Plan changes"),
-            new AcpSessionModeDescriptor("act", "Act", "Apply changes")
-        };
-
-        Assert.IsFalse(compatibility.SupportsPromptImage(declaredSupport: true));
-        var filtered = compatibility.FilterSessionModes(modes);
-        Assert.HasCount(1, filtered);
-        Assert.AreEqual("act", filtered[0].Id);
-        Assert.IsFalse(compatibility.SupportsSessionConfigOption("mode"));
-        Assert.IsTrue(compatibility.SupportsSessionConfigOption("model"));
-    }
 }

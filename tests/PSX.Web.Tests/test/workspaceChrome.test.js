@@ -89,8 +89,7 @@ test('tab icons render provider brand SVGs; terminal keeps its text glyph', asyn
       tabs: [
         { workspaceId: 'term', kind: 'terminal' },
         { workspaceId: 'qwen', kind: 'agent' },
-        { workspaceId: 'qoder', kind: 'agent' },
-        { workspaceId: 'cline', kind: 'agent' },
+        { workspaceId: 'opencode', kind: 'agent' },
         { workspaceId: 'dsh', kind: 'dsh_web' },
         { workspaceId: 'weird', kind: 'agent' }
       ],
@@ -105,8 +104,7 @@ test('tab icons render provider brand SVGs; terminal keeps its text glyph', asyn
     workspaces: [
       { workspaceId: 'term', kind: 'terminal', title: 'Term', iconKey: 'terminal', columnId: 'column-1', isActiveTab: false },
       { workspaceId: 'qwen', kind: 'agent', title: 'Qwen', iconKey: 'qwen', columnId: 'column-1', isActiveTab: true },
-      { workspaceId: 'qoder', kind: 'agent', title: 'Qoder', iconKey: 'qoder', columnId: 'column-1', isActiveTab: false },
-      { workspaceId: 'cline', kind: 'agent', title: 'Cline', iconKey: 'cline', columnId: 'column-1', isActiveTab: false },
+      { workspaceId: 'opencode', kind: 'agent', title: 'OpenCode', iconKey: 'opencode', columnId: 'column-1', isActiveTab: false },
       { workspaceId: 'dsh', kind: 'dsh_web', title: 'DeepSeek Harness', iconKey: 'dsh', columnId: 'column-1', isActiveTab: false },
       { workspaceId: 'weird', kind: 'agent', title: 'Weird', iconKey: 'not-a-brand', columnId: 'column-1', isActiveTab: false }
     ]
@@ -115,8 +113,7 @@ test('tab icons render provider brand SVGs; terminal keeps its text glyph', asyn
   assert.equal(tabIcon('term').textContent, '>_', 'terminal tab keeps the text glyph');
   assert.equal(tabIcon('term').querySelector('svg'), null, 'terminal tab carries no svg');
   assert.ok(tabIcon('qwen').querySelector('svg[data-icon="qwen"]'), 'qwen tab renders the qwen brand mark');
-  assert.ok(tabIcon('qoder').querySelector('svg[data-icon="qoder"]'), 'qoder tab renders the qoder brand mark, not a shared letter');
-  assert.ok(tabIcon('cline').querySelector('svg[data-icon="cline"]'), 'cline tab renders the cline brand mark');
+  assert.ok(tabIcon('opencode').querySelector('svg[data-icon="opencode"]'), 'opencode tab renders the opencode brand mark');
   assert.ok(tabIcon('dsh').querySelector('svg[data-icon="dsh"]'), 'dsh tab renders the DeepSeek brand mark');
   assert.ok(tabIcon('weird').querySelector('svg[data-icon="agent"]'), 'unknown iconKey falls back to the generic sparkle');
   assert.equal(tabIcon('qwen').querySelector('svg').getAttribute('aria-hidden'), 'true');
@@ -527,6 +524,11 @@ test('dsh_web tab menu exposes a stop-runtime entry; other kinds do not', async 
       canCollapse: false
     }]
   });
+  chrome.applyDshRuntimeStatus({
+    state: 'ready',
+    currentVersion: '0.1.0-rc.6',
+    updateState: 'idle'
+  });
   const stopRowText = (r) => r.querySelector('.workspace-menu-primary').textContent;
   document.querySelector('.workspace-tab')
     .dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
@@ -560,6 +562,123 @@ test('dsh_web tab menu exposes a stop-runtime entry; other kinds do not', async 
     ![...document.querySelectorAll('.workspace-menu-row')].some((r) => stopRowText(r) === '停止运行时'),
     'non-dsh tabs keep no stop-runtime entry'
   );
+  chrome.dispose();
+});
+
+test('dsh_web tab menu matches chrome hierarchy and confirms an available update in place', async () => {
+  const runtime = installAgentRuntime();
+  mountChrome();
+  const { WorkspaceChromeController } = await import(controllerUrl);
+  const chrome = new WorkspaceChromeController(
+    document.getElementById('workspace-chrome'),
+    document.getElementById('workspace-popover-root')
+  );
+  chrome.applyLayout(columnSnapshot([
+    { columnId: 'column-1', tabs: [{ workspaceId: 'dsh1', kind: 'dsh_web' }], activeTabId: 'dsh1', ratio: 1 }
+  ]), new Map([['column-1', { left: 40, top: 40, width: 960, height: 700 }]]));
+  chrome.applyCatalog({
+    revision: 1,
+    providers: [],
+    maxColumns: 3,
+    workspaces: [{
+      workspaceId: 'dsh1', kind: 'dsh_web', title: 'DeepSeek Harness', iconKey: 'dsh',
+      columnId: 'column-1', isActiveTab: true, canSplitRight: true, splitBlockedReason: '',
+      canCollapse: false
+    }]
+  });
+  chrome.applyDshRuntimeStatus({
+    state: 'ready',
+    currentVersion: '0.1.0-rc.6',
+    updateState: 'available',
+    availableVersion: '0.1.0-rc.7'
+  });
+
+  document.querySelector('.workspace-tab')
+    .dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+  assert.equal(document.querySelector('.workspace-popover-heading-row > span').textContent, 'v0.1.0-rc.6');
+  assert.deepEqual(
+    [...document.querySelectorAll('.workspace-popover-subheading')].map((node) => node.textContent),
+    ['布局', '运行时']
+  );
+  const updateRow = [...document.querySelectorAll('.workspace-menu-row')].find(
+    (row) => row.querySelector('.workspace-menu-primary').textContent === '更新到 v0.1.0-rc.7'
+  );
+  assert.ok(updateRow);
+  assert.equal(updateRow.querySelector('.workspace-menu-secondary').textContent, '需重启');
+  updateRow.click();
+
+  assert.equal(
+    document.querySelector('.workspace-update-versions').textContent,
+    '0.1.0-rc.6 → 0.1.0-rc.7'
+  );
+  assert.match(document.querySelector('.workspace-update-confirmation p').textContent, /配置和会话不会被删除/);
+  const confirm = [...document.querySelectorAll('.workspace-update-actions button')].find(
+    (button) => button.textContent === '更新并重启'
+  );
+  confirm.click();
+  assert.deepEqual(runtime.postedMessages.at(-1), { type: 'dsh_command', name: 'update' });
+  assert.equal(
+    document.querySelector('.workspace-menu-row:disabled .workspace-menu-primary').textContent,
+    '正在更新…'
+  );
+  chrome.dispose();
+});
+
+test('dsh_web update menu reports checking, latest and safe errors without long row descriptions', async () => {
+  const runtime = installAgentRuntime();
+  mountChrome();
+  const { WorkspaceChromeController } = await import(controllerUrl);
+  const chrome = new WorkspaceChromeController(
+    document.getElementById('workspace-chrome'),
+    document.getElementById('workspace-popover-root')
+  );
+  chrome.applyLayout(columnSnapshot([
+    { columnId: 'column-1', tabs: [{ workspaceId: 'dsh1', kind: 'dsh_web' }], activeTabId: 'dsh1', ratio: 1 }
+  ]), new Map([['column-1', { left: 40, top: 40, width: 960, height: 700 }]]));
+  chrome.applyCatalog({
+    revision: 1,
+    providers: [], maxColumns: 3,
+    workspaces: [{
+      workspaceId: 'dsh1', kind: 'dsh_web', title: 'DeepSeek Harness', iconKey: 'dsh',
+      columnId: 'column-1', isActiveTab: true, canSplitRight: true, canCollapse: false
+    }]
+  });
+  chrome.applyDshRuntimeStatus({ state: 'ready', currentVersion: '0.1.0-rc.6', updateState: 'idle' });
+  document.querySelector('.workspace-tab')
+    .dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+  const stableMenu = document.getElementById('workspace-popover-root').firstElementChild;
+  const stableTop = stableMenu.style.top;
+  const stableLeft = stableMenu.style.left;
+  const check = [...document.querySelectorAll('.workspace-menu-row')].find(
+    (row) => row.querySelector('.workspace-menu-primary').textContent === '检查更新'
+  );
+  check.click();
+  assert.deepEqual(runtime.postedMessages.at(-1), { type: 'dsh_command', name: 'check_update' });
+  assert.equal(document.getElementById('workspace-popover-root').firstElementChild, stableMenu,
+    'checking refresh keeps the same anchored popover surface');
+  assert.equal(stableMenu.style.top, stableTop);
+  assert.equal(stableMenu.style.left, stableLeft);
+  assert.equal(document.querySelector('.workspace-menu-row:disabled .workspace-menu-primary').textContent, '正在检查更新…');
+
+  chrome.applyDshRuntimeStatus({ state: 'ready', currentVersion: '0.1.0-rc.6', updateState: 'up_to_date' });
+  assert.equal(document.getElementById('workspace-popover-root').firstElementChild, stableMenu,
+    'backend result refresh keeps the same popover surface');
+  const latest = [...document.querySelectorAll('.workspace-menu-row')].find(
+    (row) => row.querySelector('.workspace-menu-primary').textContent === '检查更新'
+  );
+  assert.equal(latest.querySelector('.workspace-menu-secondary').textContent, '已是最新');
+
+  chrome.applyDshRuntimeStatus({
+    state: 'ready', currentVersion: '0.1.0-rc.6', updateState: 'failed',
+    updateError: '无法连接 npm 仓库，请检查网络后重试。'
+  });
+  assert.equal(document.querySelector('.workspace-popover-message[data-error="true"]').textContent,
+    '无法连接 npm 仓库，请检查网络后重试。');
+  const stop = [...document.querySelectorAll('.workspace-menu-row')].find(
+    (row) => row.querySelector('.workspace-menu-primary').textContent === '停止运行时'
+  );
+  assert.equal(stop.querySelector('.workspace-menu-secondary').textContent, '',
+    'long prose must not squeeze the stop action out of the compact row');
   chrome.dispose();
 });
 

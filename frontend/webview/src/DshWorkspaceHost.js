@@ -153,7 +153,11 @@ export class DshWorkspaceHost {
         this.status = {
             state: String(message?.state || 'not_installed'),
             readyUrl: message?.readyUrl || null,
-            errorClass: message?.errorClass || null
+            errorClass: message?.errorClass || null,
+            currentVersion: message?.currentVersion || null,
+            updateState: message?.updateState || 'idle',
+            availableVersion: message?.availableVersion || null,
+            updateError: message?.updateError || null
         };
         for (const panel of this.panels.values()) this.renderCard(panel, this.status);
     }

@@ -32,9 +32,7 @@ public sealed class AgentTabIconTests
         var claude = resources["AgentIconGeometry.Claude"];
         var kimi = resources["AgentIconGeometry.Kimi"];
         var qwen = resources["AgentIconGeometry.Qwen"];
-        var qoder = resources["AgentIconGeometry.Qoder"];
         var opencode = resources["AgentIconGeometry.Opencode"];
-        var cline = resources["AgentIconGeometry.Cline"];
         var dsh = resources["AgentIconGeometry.Dsh"];
         var converter = new ProviderIconConverter
         {
@@ -42,23 +40,17 @@ public sealed class AgentTabIconTests
             ClaudeIcon = claude,
             KimiIcon = kimi,
             QwenIcon = qwen,
-            QoderIcon = qoder,
             OpencodeIcon = opencode,
-            ClineIcon = cline,
             DshIcon = dsh
         };
 
         Assert.AreNotEqual(fallback.ToString(), claude.ToString());
         Assert.AreNotEqual(fallback.ToString(), kimi.ToString());
         Assert.AreNotEqual(fallback.ToString(), qwen.ToString());
-        Assert.AreNotEqual(fallback.ToString(), qoder.ToString());
         Assert.AreNotEqual(fallback.ToString(), opencode.ToString());
-        Assert.AreNotEqual(fallback.ToString(), cline.ToString());
         Assert.AreNotEqual(claude.ToString(), kimi.ToString());
-        Assert.AreNotEqual(qwen.ToString(), qoder.ToString());
-        Assert.AreNotEqual(qoder.ToString(), opencode.ToString());
-        Assert.AreNotEqual(opencode.ToString(), cline.ToString());
-        Assert.AreNotEqual(cline.ToString(), dsh.ToString());
+        Assert.AreNotEqual(qwen.ToString(), opencode.ToString());
+        Assert.AreNotEqual(opencode.ToString(), dsh.ToString());
         Assert.AreSame(
             claude,
             converter.Convert("claude", typeof(Geometry), null, CultureInfo.InvariantCulture));
@@ -69,14 +61,8 @@ public sealed class AgentTabIconTests
             qwen,
             converter.Convert("qwen", typeof(Geometry), null, CultureInfo.InvariantCulture));
         Assert.AreSame(
-            qoder,
-            converter.Convert("QODER", typeof(Geometry), null, CultureInfo.InvariantCulture));
-        Assert.AreSame(
             opencode,
             converter.Convert("opencode", typeof(Geometry), null, CultureInfo.InvariantCulture));
-        Assert.AreSame(
-            cline,
-            converter.Convert("CLINE", typeof(Geometry), null, CultureInfo.InvariantCulture));
         Assert.AreSame(
             dsh,
             converter.Convert("dsh", typeof(Geometry), null, CultureInfo.InvariantCulture));
@@ -96,9 +82,7 @@ public sealed class AgentTabIconTests
 
         StringAssert.Contains(source, "Data=\"{Binding IconKey, Converter={StaticResource ProviderIconConverter}}\"");
         StringAssert.Contains(source, "QwenIcon=\"{StaticResource AgentIconGeometry.Qwen}\"");
-        StringAssert.Contains(source, "QoderIcon=\"{StaticResource AgentIconGeometry.Qoder}\"");
         StringAssert.Contains(source, "OpencodeIcon=\"{StaticResource AgentIconGeometry.Opencode}\"");
-        StringAssert.Contains(source, "ClineIcon=\"{StaticResource AgentIconGeometry.Cline}\"");
         StringAssert.Contains(source, "DshIcon=\"{StaticResource AgentIconGeometry.Dsh}\"");
         StringAssert.Contains(source, "x:Name=\"NewWorkspacePopup\"");
         Assert.IsFalse(source.Contains("new ContextMenu", StringComparison.Ordinal));

@@ -17,11 +17,11 @@ typecheck、lint、Vitest、前端构建/校验或 `tools/test.ps1`。C# 测试�
 
 | 层级 | 内容 | 最低发现数 |
 |---|---|---:|
-| Unit | 纯逻辑、解析、状态与架构约束 | 399 |
-| Integration | Fake ACP/npm、持久化、Runtime 与进程边界 | 120 |
+| Unit | 纯逻辑、解析、状态与架构约束 | 446 |
+| Integration | Fake ACP/npm、持久化、Runtime 与进程边界 | 107 |
 | Desktop | WPF/ConPTY 桌面探针 | 2 |
-| Fast | Unit + Integration | 519 |
-| Full | 全部 C# 测试 | 521 |
+| Fast | Unit + Integration | 553 |
+| Full | 全部 C# 测试 | 555 |
 | Web | Vitest/jsdom 契约 | 317 |
 
 数字来自 Microsoft Testing Platform TRX 和 Vitest JSON reporter；C# 数量包含

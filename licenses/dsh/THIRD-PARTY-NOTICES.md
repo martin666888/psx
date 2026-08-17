@@ -6,8 +6,9 @@ PSX ships only the installation seed for DeepSeek Harness under
 .npmrc for the 0.1.0-rc.6 release). The DSH runtime itself is NOT
 redistributed in the portable package: it is downloaded from the official
 npm registry (registry.npmjs.org) into `runtime/dsh-current/` only after
-the user explicitly confirms the installation, and it remains subject to
-its own license terms.
+the user explicitly confirms the installation. Later versions are downloaded
+only when the user explicitly requests and confirms an update; every installed
+version remains subject to its own license terms.
 
 The `dsh web` server runs as an independent loopback process supervised by
 PSX (Job Object reaping, readiness and health checks). DSH itself owns its

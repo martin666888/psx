@@ -334,6 +334,7 @@ installRuntimeDiagnostics();
                 // DSH runtime state is shell-owned: never staged into the
                 // Agent chunk.
                 dshWorkspaceHost.applyRuntimeStatus(message);
+                workspaceChrome.applyDshRuntimeStatus(message);
                 return;
             case BridgeEventType.WorkspaceActivated:
                 // The DSH activation is shell-owned; every other activation is

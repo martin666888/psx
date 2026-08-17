@@ -7,6 +7,9 @@ using PSX.Models;
 namespace PSX.Services;
 
 public enum DshRuntimeState { NotInstalled, Installing, Starting, Ready, Exited, Failed }
+public enum DshUpdateState { Idle, Checking, UpToDate, Available, Updating, Failed }
+
+internal enum DshOperationKind { Install, Retry, CheckUpdate, Update }
 
 /// <summary>
 /// Process-level singleton supervising the `dsh web` server: install, launch
@@ -35,8 +38,11 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
     private DshRuntimeState _state = DshRuntimeState.NotInstalled;
     private DshRuntimeLease? _lease;
     private Uri? _readyUrl;
-    private CancellationTokenSource? _runCts;   // live install/retry run; guarded by _sync
-    private Task? _operation;                   // single-flight slot for install AND retry; guarded by _sync
+    private DshUpdateState _updateState = DshUpdateState.Idle;
+    private string? _availableVersion;
+    private string? _updateError;
+    private CancellationTokenSource? _runCts;   // live lifecycle operation; guarded by _sync
+    private Task? _operation;                   // single-flight lifecycle operation; guarded by _sync
     private bool _stopRequested;                // a Stop/Shutdown began and owns the terminal state; guarded by _sync
     private bool _disposed;
 
@@ -80,6 +86,17 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         _ => "failed"
     };
 
+    public static string ToWireUpdateState(DshUpdateState state) => state switch
+    {
+        DshUpdateState.Idle => "idle",
+        DshUpdateState.Checking => "checking",
+        DshUpdateState.UpToDate => "up_to_date",
+        DshUpdateState.Available => "available",
+        DshUpdateState.Updating => "updating",
+        DshUpdateState.Failed => "failed",
+        _ => "failed"
+    };
+
     /// <summary>Accept only the loopback HTTP origin DSH is allowed to bind.</summary>
     public static bool TryAcceptReadyUrl(string? candidate, out Uri url)
     {
@@ -110,16 +127,20 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
     /// honors the per-run cancellation token, so Stop/Shutdown interrupts it
     /// instead of blocking behind it.
     /// </summary>
-    public Task InstallAndStartAsync() => BeginOperationAsync(preferLaunch: false);
+    public Task InstallAndStartAsync() => BeginOperationAsync(DshOperationKind.Install);
 
     /// <summary>
     /// User-triggered retry: launch when installed, otherwise install. Shares
     /// the single operation slot with <see cref="InstallAndStartAsync"/> so
     /// retry bursts can never queue a second npm ci behind the first.
     /// </summary>
-    public Task RetryAsync() => BeginOperationAsync(preferLaunch: true);
+    public Task RetryAsync() => BeginOperationAsync(DshOperationKind.Retry);
 
-    private Task BeginOperationAsync(bool preferLaunch)
+    public Task CheckForUpdateAsync() => BeginOperationAsync(DshOperationKind.CheckUpdate);
+
+    public Task UpdateAndRestartAsync() => BeginOperationAsync(DshOperationKind.Update);
+
+    private Task BeginOperationAsync(DshOperationKind kind)
     {
         lock (_sync)
         {
@@ -139,7 +160,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
             var runCts = CancellationTokenSource.CreateLinkedTokenSource(_lifetimeCts.Token);
             _runCts = runCts;
             _operation = completion.Task;
-            _ = ExecuteOperationAsync(completion, runCts, preferLaunch);
+            _ = ExecuteOperationAsync(completion, runCts, kind);
             return completion.Task;
         }
     }
@@ -147,8 +168,9 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
     private async Task ExecuteOperationAsync(
         TaskCompletionSource completion,
         CancellationTokenSource runCts,
-        bool preferLaunch)
+        DshOperationKind kind)
     {
+        Exception? failure = null;
         try
         {
             await _lifecycleLock.WaitAsync().ConfigureAwait(false);
@@ -163,21 +185,38 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
                     abandoned = _stopRequested || runCts.IsCancellationRequested;
                 if (!abandoned)
                 {
-                    if (preferLaunch && _runtime.CreateLaunchSpec() != null)
-                        await EnsureRunningHoldingLockAsync().ConfigureAwait(false);
-                    else
-                        await InstallAndStartHoldingLockAsync(runCts).ConfigureAwait(false);
+                    switch (kind)
+                    {
+                        case DshOperationKind.Install:
+                            await InstallAndStartHoldingLockAsync(runCts).ConfigureAwait(false);
+                            break;
+                        case DshOperationKind.Retry:
+                            if (_runtime.CreateLaunchSpec() != null)
+                                await EnsureRunningHoldingLockAsync().ConfigureAwait(false);
+                            else
+                                await InstallAndStartHoldingLockAsync(runCts).ConfigureAwait(false);
+                            break;
+                        case DshOperationKind.CheckUpdate:
+                            await CheckForUpdateHoldingLockAsync(runCts.Token).ConfigureAwait(false);
+                            break;
+                        case DshOperationKind.Update:
+                            await UpdateAndRestartHoldingLockAsync(runCts).ConfigureAwait(false);
+                            break;
+                    }
                 }
             }
             finally { _lifecycleLock.Release(); }
-            completion.TrySetResult();
         }
         catch (Exception ex)
         {
-            completion.TrySetException(ex);
+            failure = ex;
         }
         finally
         {
+            // Clear the slot before completing its public task. StopAsync can
+            // otherwise return after acquiring the lifecycle lock while the
+            // completed operation is still published; an immediate Retry or
+            // Update would then join that stale task and do no work.
             lock (_sync)
             {
                 if (ReferenceEquals(_operation, completion.Task))
@@ -186,6 +225,10 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
                     _runCts = null;
             }
             runCts.Dispose();
+            if (failure == null)
+                completion.TrySetResult();
+            else
+                completion.TrySetException(failure);
         }
     }
 
@@ -287,6 +330,136 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         await EnsureRunningHoldingLockAsync().ConfigureAwait(false);
     }
 
+    private async Task CheckForUpdateHoldingLockAsync(CancellationToken cancellationToken)
+    {
+        SetUpdateState(DshUpdateState.Checking);
+        DshUpdateCheckResult result;
+        try
+        {
+            result = await _runtime.CheckForUpdateAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            SetUpdateState(DshUpdateState.Idle);
+            return;
+        }
+
+        lock (_sync)
+        {
+            _availableVersion = result.UpdateAvailable ? result.AvailableVersion : null;
+            _updateError = result.Success ? null : result.ErrorMessage;
+            _updateState = !result.Success
+                ? DshUpdateState.Failed
+                : result.UpdateAvailable ? DshUpdateState.Available : DshUpdateState.UpToDate;
+        }
+        PublishCurrentState();
+    }
+
+    private async Task UpdateAndRestartHoldingLockAsync(CancellationTokenSource runCts)
+    {
+        string? candidate;
+        lock (_sync)
+            candidate = _updateState == DshUpdateState.Available ? _availableVersion : null;
+        if (string.IsNullOrWhiteSpace(candidate))
+        {
+            await CheckForUpdateHoldingLockAsync(runCts.Token).ConfigureAwait(false);
+            lock (_sync)
+                candidate = _updateState == DshUpdateState.Available ? _availableVersion : null;
+            if (string.IsNullOrWhiteSpace(candidate))
+                return;
+        }
+
+        SetUpdateState(DshUpdateState.Updating, candidate);
+        DshUpdateResult staged;
+        try
+        {
+            staged = await _runtime.StageUpdateAsync(candidate, runCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            _runtime.DiscardStagedUpdate();
+            SetUpdateState(DshUpdateState.Idle);
+            return;
+        }
+        if (!staged.Success)
+        {
+            if (runCts.IsCancellationRequested)
+            {
+                _runtime.DiscardStagedUpdate();
+                SetUpdateState(DshUpdateState.Idle);
+                return;
+            }
+            _runtime.DiscardStagedUpdate();
+            SetUpdateState(
+                DshUpdateState.Failed,
+                candidate,
+                staged.ErrorMessage ?? "更新失败，当前版本可继续使用。");
+            return;
+        }
+
+        // The candidate is fully staged before the live process is touched.
+        // Wait for the old lease's bounded disposal so native .node handles
+        // cannot keep dsh-current locked during the atomic directory swap.
+        var retired = RetireLiveLeaseHoldingLifecycleLock();
+        if (retired != null)
+            await retired.DisposalTask.ConfigureAwait(false);
+        if (runCts.IsCancellationRequested)
+        {
+            _runtime.DiscardStagedUpdate();
+            SetUpdateState(DshUpdateState.Idle);
+            return;
+        }
+
+        if (!_runtime.ApplyStagedUpdate(candidate))
+        {
+            _runtime.RollbackAppliedUpdate();
+            SetUpdateState(DshUpdateState.Failed, candidate, "更新切换失败，已保留原版本。");
+            await EnsureRunningHoldingLockAsync().ConfigureAwait(false);
+            return;
+        }
+
+        var spec = _runtime.CreateLaunchSpec();
+        if (spec == null)
+        {
+            _runtime.RollbackAppliedUpdate();
+            SetUpdateState(DshUpdateState.Failed, candidate, "更新无法启动，已恢复原版本。");
+            await EnsureRunningHoldingLockAsync().ConfigureAwait(false);
+            return;
+        }
+
+        bool ready;
+        try
+        {
+            ready = await StartProcessAsync(spec).WaitAsync(runCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            RetireLiveLeaseHoldingLifecycleLock();
+            _runtime.RollbackAppliedUpdate();
+            SetUpdateState(DshUpdateState.Idle);
+            return;
+        }
+
+        if (ready)
+        {
+            _runtime.CommitAppliedUpdate();
+            lock (_sync)
+            {
+                _availableVersion = null;
+                _updateError = null;
+                _updateState = DshUpdateState.UpToDate;
+            }
+            PublishCurrentState();
+            return;
+        }
+
+        // TryCommitProcessState already rolls back an uncommitted candidate
+        // on Failed. Calling this again is harmless and covers a stale start.
+        _runtime.RollbackAppliedUpdate();
+        SetUpdateState(DshUpdateState.Failed, candidate, "新版本启动失败，已恢复原版本。");
+        await EnsureRunningHoldingLockAsync().ConfigureAwait(false);
+    }
+
     private async Task EnsureRunningHoldingLockAsync()
     {
         lock (_sync)
@@ -307,7 +480,8 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
             return;
         }
 
-        await StartProcessAsync(spec).ConfigureAwait(false);
+        _ = StartProcessAsync(spec);
+        await Task.CompletedTask.ConfigureAwait(false);
     }
 
     private void StopHoldingLifecycleLock()
@@ -339,7 +513,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
     /// Drop a live process/job before swapping <c>dsh-current</c>. Does not
     /// publish Exited — the caller is about to publish Installing.
     /// </summary>
-    private void RetireLiveLeaseHoldingLifecycleLock()
+    private DshRuntimeLease? RetireLiveLeaseHoldingLifecycleLock()
     {
         DshRuntimeLease? lease;
         lock (_publishLock)
@@ -347,7 +521,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
             lock (_sync)
             {
                 if (_lease == null)
-                    return;
+                    return null;
                 _generation.Invalidate();
                 lease = _lease;
                 _lease = null;
@@ -357,18 +531,19 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
             lease?.TearDown();
             ReadyUrlChanged?.Invoke(null);
         }
+        return lease;
     }
 
-    private Task StartProcessAsync(DshLaunchSpec spec)
+    private Task<bool> StartProcessAsync(DshLaunchSpec spec)
     {
         if (_lifetimeCts.IsCancellationRequested)
-            return Task.CompletedTask;
+            return Task.FromResult(false);
 
         long generation;
         lock (_sync)
             generation = _generation.Begin();
         if (!TryCommitProcessState(generation, DshRuntimeState.Starting, null))
-            return Task.CompletedTask;
+            return Task.FromResult(false);
 
         // The suspended-create + job-assign + resume sequence guarantees the
         // whole process tree joins the KILL_ON_JOB_CLOSE job before any child
@@ -383,7 +558,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         {
             Log($"DSH launch failed: {launch.FailureDetail}");
             TryCommitProcessState(generation, DshRuntimeState.Failed, null, "无法启动 DSH 进程。");
-            return Task.CompletedTask;
+            return Task.FromResult(false);
         }
 
         var lease = new DshRuntimeLease(generation)
@@ -408,84 +583,93 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         if (stale)
         {
             lease.TearDown();
-            return Task.CompletedTask;
+            lease.CompleteStartup(false);
+            return lease.StartupTask;
         }
 
         lease.TrackTask(MonitorAsync(lease, generation));
-        return Task.CompletedTask;
+        return lease.StartupTask;
     }
 
     private async Task MonitorAsync(DshRuntimeLease lease, long generation)
     {
-        var process = lease.Process;
-        if (process == null)
-            return;
-
-        var readyTcs = new TaskCompletionSource<Uri?>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var exitedTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        process.EnableRaisingEvents = true;
-        process.Exited += (_, _) => exitedTcs.TrySetResult(true);
-
-        var output = lease.OutputReader;
-        var error = lease.ErrorReader;
-        if (output != null)
-        {
-            lease.TrackTask(Task.Run(async () =>
-            {
-                try
-                {
-                    string? line;
-                    while ((line = await output.ReadLineAsync().ConfigureAwait(false)) != null)
-                    {
-                        var match = ReadyPattern.Match(line);
-                        if (match.Success && TryAcceptReadyUrl(match.Groups[1].Value, out var uri))
-                            readyTcs.TrySetResult(uri);
-                    }
-                }
-                catch { }
-                finally { readyTcs.TrySetResult(null); }
-            }));
-        }
-        if (error != null)
-        {
-            lease.TrackTask(Task.Run(async () =>
-            {
-                try
-                {
-                    string? line;
-                    while ((line = await error.ReadLineAsync().ConfigureAwait(false)) != null)
-                        Log($"stderr: {line}");
-                }
-                catch { }
-            }));
-        }
-
-        var winner = await Task.WhenAny(readyTcs.Task, exitedTcs.Task, Task.Delay(TimeSpan.FromSeconds(90)))
-            .ConfigureAwait(false);
-
-        if (winner == readyTcs.Task && await readyTcs.Task.ConfigureAwait(false) is { } url)
-        {
-            if (await HealthCheckAsync(url).ConfigureAwait(false)
-                && TryCommitProcessState(generation, DshRuntimeState.Ready, url))
-            {
-                lease.TrackTask(WatchExitAsync(generation, exitedTcs));
-                return;
-            }
-        }
-
-        if (lease.CancellationToken.IsCancellationRequested)
-            return;
         try
         {
-            if (!process.HasExited)
-                process.Kill(entireProcessTree: true);
+            var process = lease.Process;
+            if (process == null)
+                return;
+
+            var readyTcs = new TaskCompletionSource<Uri?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var exitedTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            process.EnableRaisingEvents = true;
+            process.Exited += (_, _) => exitedTcs.TrySetResult(true);
+
+            var output = lease.OutputReader;
+            var error = lease.ErrorReader;
+            if (output != null)
+            {
+                lease.TrackTask(Task.Run(async () =>
+                {
+                    try
+                    {
+                        string? line;
+                        while ((line = await output.ReadLineAsync().ConfigureAwait(false)) != null)
+                        {
+                            var match = ReadyPattern.Match(line);
+                            if (match.Success && TryAcceptReadyUrl(match.Groups[1].Value, out var uri))
+                                readyTcs.TrySetResult(uri);
+                        }
+                    }
+                    catch { }
+                    finally { readyTcs.TrySetResult(null); }
+                }));
+            }
+            if (error != null)
+            {
+                lease.TrackTask(Task.Run(async () =>
+                {
+                    try
+                    {
+                        string? line;
+                        while ((line = await error.ReadLineAsync().ConfigureAwait(false)) != null)
+                            Log($"stderr: {line}");
+                    }
+                    catch { }
+                }));
+            }
+
+            var winner = await Task.WhenAny(readyTcs.Task, exitedTcs.Task, Task.Delay(TimeSpan.FromSeconds(90)))
+                .ConfigureAwait(false);
+
+            if (winner == readyTcs.Task && await readyTcs.Task.ConfigureAwait(false) is { } url)
+            {
+                if (await HealthCheckAsync(url).ConfigureAwait(false)
+                    && TryCommitProcessState(generation, DshRuntimeState.Ready, url))
+                {
+                    lease.CompleteStartup(true);
+                    lease.TrackTask(WatchExitAsync(generation, exitedTcs));
+                    return;
+                }
+            }
+
+            if (lease.CancellationToken.IsCancellationRequested)
+                return;
+            try
+            {
+                if (!process.HasExited)
+                    process.Kill(entireProcessTree: true);
+            }
+            catch { }
+            TryCommitProcessState(
+                generation,
+                DshRuntimeState.Failed,
+                null,
+                ExitedQuietly(process) ? "DSH 进程意外退出。" : "DSH 启动超时（90 秒内未就绪）。");
         }
-        catch { }
-        TryCommitProcessState(
-            generation,
-            DshRuntimeState.Failed,
-            null,
-            ExitedQuietly(process) ? "DSH 进程意外退出。" : "DSH 启动超时（90 秒内未就绪）。");
+        finally
+        {
+            lease.CompleteStartup(false);
+        }
     }
 
     private static bool ExitedQuietly(Process process)
@@ -531,6 +715,11 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
             }
 
             retired?.TearDown();
+            if (state == DshRuntimeState.Ready && _runtime.HasUncommittedUpdate)
+                _runtime.CommitAppliedUpdate();
+            else if ((state is DshRuntimeState.Failed or DshRuntimeState.Exited)
+                     && _runtime.HasUncommittedUpdate)
+                _runtime.RollbackAppliedUpdate();
             if (state == DshRuntimeState.Ready)
                 ReadyUrlChanged?.Invoke(readyUrl);
             else if (state is DshRuntimeState.Failed or DshRuntimeState.Exited)
@@ -579,6 +768,36 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         }
     }
 
+    private void SetUpdateState(
+        DshUpdateState state,
+        string? availableVersion = null,
+        string? error = null)
+    {
+        lock (_sync)
+        {
+            _updateState = state;
+            if (availableVersion != null)
+                _availableVersion = availableVersion;
+            _updateError = error;
+        }
+        PublishCurrentState();
+    }
+
+    private void PublishCurrentState()
+    {
+        lock (_publishLock)
+        {
+            DshRuntimeState state;
+            Uri? readyUrl;
+            lock (_sync)
+            {
+                state = _state;
+                readyUrl = _readyUrl;
+            }
+            PublishState(state, null, readyUrl);
+        }
+    }
+
     private void PublishState(DshRuntimeState state, string? error, Uri? readyUrl = null)
     {
         if (state == DshRuntimeState.Ready && readyUrl == null)
@@ -587,13 +806,26 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
                 readyUrl = _readyUrl;
         }
 
+        string updateState;
+        string? availableVersion;
+        string? updateError;
+        lock (_sync)
+        {
+            updateState = ToWireUpdateState(_updateState);
+            availableVersion = _availableVersion;
+            updateError = _updateState == DshUpdateState.Failed ? _updateError : null;
+        }
         var wireError = state == DshRuntimeState.Failed ? (error ?? "运行时不可用") : (string?)null;
         _ = _bridge.SendEventAsync(new
         {
             type = "dsh_runtime_status",
             state = ToWireState(state),
             readyUrl = state == DshRuntimeState.Ready ? ToFrameOrigin(readyUrl) : null,
-            errorClass = wireError
+            errorClass = wireError,
+            currentVersion = _runtime.CurrentVersion,
+            updateState,
+            availableVersion,
+            updateError
         });
     }
 
@@ -661,6 +893,10 @@ internal sealed class DshRuntimeLease
     private readonly object _sync = new();
     private readonly List<Task> _tasks = new();
     private readonly CancellationTokenSource _cts = new();
+    private readonly TaskCompletionSource<bool> _startup =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _disposed =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
     // Captured at construction: reading the token stays safe after the CTS is
     // disposed by the disposal phase.
     private readonly CancellationToken _token;
@@ -679,6 +915,10 @@ internal sealed class DshRuntimeLease
     public StreamReader? ErrorReader { get; set; }
 
     public CancellationToken CancellationToken => _token;
+    public Task<bool> StartupTask => _startup.Task;
+    public Task DisposalTask => _disposed.Task;
+
+    public void CompleteStartup(bool ready) => _startup.TrySetResult(ready);
 
     public void TrackTask(Task task)
     {
@@ -702,6 +942,7 @@ internal sealed class DshRuntimeLease
         }
 
         try { _cts.Cancel(); } catch { }
+        _startup.TrySetResult(false);
 
         var process = Process;
         Process = null;
@@ -723,18 +964,22 @@ internal sealed class DshRuntimeLease
         // reader loops to end.
         _ = Task.Run(async () =>
         {
-            try { await Task.WhenAll(tasks).WaitAsync(TeardownTaskTimeout).ConfigureAwait(false); }
-            catch { }
-
-            try { output?.Dispose(); } catch { }
-            try { error?.Dispose(); } catch { }
-            if (process != null)
+            try
             {
-                try { process.WaitForExit(2000); } catch { }
-                try { process.Dispose(); } catch { }
+                try { await Task.WhenAll(tasks).WaitAsync(TeardownTaskTimeout).ConfigureAwait(false); }
+                catch { }
+
+                try { output?.Dispose(); } catch { }
+                try { error?.Dispose(); } catch { }
+                if (process != null)
+                {
+                    try { process.WaitForExit(2000); } catch { }
+                    try { process.Dispose(); } catch { }
+                }
+                try { job?.Dispose(); } catch { }
+                try { _cts.Dispose(); } catch { }
             }
-            try { job?.Dispose(); } catch { }
-            try { _cts.Dispose(); } catch { }
+            finally { _disposed.TrySetResult(); }
         });
     }
 }

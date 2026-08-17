@@ -34,8 +34,8 @@ The portable release redistributes:
 - Radix UI — MIT; see `licenses/radix-ui/LICENSE`.
 - Lucide icons — ISC; see `licenses/lucide/LICENSE`.
 - Lobe Icons static SVG brand marks — MIT; see `licenses/lobe-icons/LICENSE`.
-  The pinned `claude.svg`, `kimi.svg`, `qwen.svg`, `qoder.svg`, `cline.svg`,
-  `opencode.svg`, and `deepseek.svg` assets from `@lobehub/icons-static-svg` are retained under
+  The pinned `claude.svg`, `kimi.svg`, `qwen.svg`, `opencode.svg`, and
+  `deepseek.svg` assets from `@lobehub/icons-static-svg` are retained under
   `Assets/AgentIcons/` and converted to WPF geometry for the
   TabBar. Provider names and marks remain trademarks of their
   respective owners.
@@ -46,22 +46,14 @@ The portable release redistributes:
   monospaced technical content. This adds approximately 35.4 MiB unpacked (about 16 MiB compressed)
   to the portable package.
 - ACP seed manifests — the adapter is Apache-2.0; see `licenses/acp/LICENSE`.
-- Qoder CLI seed manifests — Apache-2.0; see `licenses/qoder/LICENSE` and
-  `licenses/qoder/THIRD-PARTY-NOTICES.md`. The release ships only
-  `tools/qoder-seed/`; the installed tree under `runtime/qoder-current/` is
-  downloaded after user confirmation and is never redistributed in the ZIP.
-- Cline CLI seed manifests — Apache-2.0; see `licenses/cline/LICENSE` and
-  `licenses/cline/THIRD-PARTY-NOTICES.md`. PSX pins the official Node wrapper
-  and Windows x64 platform package at 3.0.53 for first install. Only
-  `tools/cline-seed/` ships; the installed runtime under `runtime/cline-current/`
-  is downloaded from the official npm registry after explicit user confirmation,
-  and toolbar updates stage `runtime/cline-next/` the same way.
 - DeepSeek Harness (DSH) seed manifests — MIT; see `licenses/dsh/LICENSE` and
   `licenses/dsh/THIRD-PARTY-NOTICES.md`. PSX pins `@deepseek-ai/dsh` at
   0.1.0-rc.6 for first install. Only `tools/dsh-seed/` ships; the installed
   runtime under `runtime/dsh-current/` is downloaded from the official npm
   registry after explicit user confirmation and is never redistributed in the
-  ZIP. The `dsh web` server runs as an independent loopback process; DSH owns
+  ZIP. Later versions are downloaded only after a separate user-triggered
+  update and restart confirmation. The `dsh web` server runs as an independent
+  loopback process; DSH owns
   its own models, projects, sessions and configuration under `~/.dsh`.
 - Kimi Code ACP runtime — bundled under `tools/kimi/`; MIT. See
   `licenses/kimi/LICENSE` and `licenses/kimi/THIRD-PARTY-NOTICES.md` for the
@@ -77,10 +69,9 @@ The portable release redistributes:
   self-contained native executable (~175 MB) embedding the Bun runtime (MIT),
   depended on directly rather than through the `opencode-ai` wrapper.
 
-The release includes only the ACP / Qoder / Cline / DSH package manifests and lockfiles. It
+The release includes only the ACP and DSH package manifests and lockfiles. It
 does not redistribute Claude Code, the Claude Agent SDK native binary, an
-installed ACP runtime, an installed Qoder CLI, or an installed DeepSeek
-Harness runtime. When the user explicitly
+installed ACP runtime, or an installed DeepSeek Harness runtime. When the user explicitly
 installs Agent support, npm downloads the locked packages from their
 publishers. Those downloaded packages retain their own license files and remain
 subject to their respective terms, including the
@@ -89,8 +80,8 @@ subject to their respective terms, including the
 Copies of the license and notice files for the binary dependencies shipped by
 PSX are stored under `licenses/` and included in the portable release.
 
-Unlike the Claude ACP adapter and Qoder CLI (installed on first use from their
-seed manifests), the Kimi Code, Qwen Code, and OpenCode runtimes ARE
+Unlike the Claude ACP adapter (installed on first use from its seed manifest),
+the Kimi Code, Qwen Code, and OpenCode runtimes ARE
 redistributed inside the portable release under `tools/kimi/`, `tools/qwen/`,
 and `tools/opencode/`. They are installed at build time from the pinned
 lockfiles in `tools/kimi-seed/`, `tools/qwen-seed/`, and

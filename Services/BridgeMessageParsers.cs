@@ -342,7 +342,8 @@ internal static class TerminalBridgeMessageParser
                     });
                 return true;
 
-            case "dsh_command" when source.Name is "install" or "retry" or "stop":
+            case "dsh_command" when source.Name is "install" or "retry" or "stop"
+                                                or "check_update" or "update":
                 message = new TerminalBridgeMessage(
                     TerminalBridgeMessageKind.DshCommand,
                     DshCommand: new DshCommandEventArgs { Name = source.Name });

@@ -29,7 +29,7 @@ namespace PSX.Services;
 /// The modern binary requires an AVX2-capable CPU. On machines without AVX2
 /// the bundled copy is unusable, so the runtime instead installs
 /// <c>opencode-windows-x64-baseline</c> into <c>opencode-current</c> after
-/// explicit user confirmation (the same "install card" flow as Qoder), and
+/// explicit user confirmation through the shared install-card flow, and
 /// refreshes keep selecting the baseline variant. The "drop runtime copy when
 /// bundled is same-or-newer" cleanup only runs when the bundled binary can
 /// actually execute on this machine (AVX2 present) — otherwise every PSX

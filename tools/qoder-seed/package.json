@@ -1,9 +1,0 @@
-﻿{
-  "private": true,
-  "name": "psx-qoder-runtime",
-  "version": "0.1.0",
-  "description": "PSX Qoder CLI runtime seed — pinned registry version for user-confirmed install into runtime/qoder-current.",
-  "dependencies": {
-    "@qoder-ai/qodercli": "1.1.14"
-  }
-}

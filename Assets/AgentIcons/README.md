@@ -1,13 +1,11 @@
 # Agent brand icon sources
 
-The original monochrome SVGs in `lobehub-1.94.0/` come from
+The monochrome SVGs in `lobehub-1.94.0/` come from
 `@lobehub/icons-static-svg@1.94.0`:
 
 - `claude.svg`
 - `kimi.svg`
 - `qwen.svg`
-- `qoder.svg`
-- `cline.svg`
 - `opencode.svg`
 - `deepseek.svg`
 

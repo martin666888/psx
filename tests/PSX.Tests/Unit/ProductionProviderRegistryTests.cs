@@ -9,38 +9,34 @@ namespace PSX.Tests.Unit;
 public sealed class ProductionProviderRegistryTests
 {
     [TestMethod]
-    public void Registry_ContainsSixCuratedProviders_DefaultStaysClaude()
+    public void Registry_ContainsFourCuratedProviders_DefaultStaysClaude()
     {
-        using var fixture = new FakeNpmFixture(nameof(Registry_ContainsSixCuratedProviders_DefaultStaysClaude));
+        using var fixture = new FakeNpmFixture(nameof(Registry_ContainsFourCuratedProviders_DefaultStaysClaude));
         fixture.InstallKimiBundle();
         fixture.InstallQwenBundle();
-        fixture.InstallQoderSeed();
-        fixture.CreateQoderInstall(fixture.Paths.QoderCurrentDirectory, QoderCliAcpRuntime.SeededPackageVersion);
         fixture.InstallOpencodeBundle();
 
         var claude = new ClaudeAcpAgentProvider(fixture.Manager);
         var kimi = new KimiCodeAcpAgentProvider(fixture.CreateKimiRuntime());
         var qwen = new QwenCodeAcpAgentProvider(fixture.CreateQwenRuntime());
-        var qoder = new QoderCliAcpAgentProvider(fixture.CreateQoderRuntime());
-        var cline = new ClineAcpAgentProvider(fixture.CreateClineRuntime());
         var opencode = new OpencodeAcpAgentProvider(fixture.CreateOpencodeRuntime());
 
         var registry = new AgentProviderRegistry(
-            [claude, kimi, qwen, qoder, cline, opencode],
+            [claude, kimi, qwen, opencode],
             new AgentProviderOptions { DefaultProviderKey = "acp-claude" });
 
-        Assert.HasCount(6, registry.Providers);
+        Assert.HasCount(4, registry.Providers);
         Assert.AreSame(claude, registry.DefaultProvider);
         Assert.AreSame(claude, registry.Find("acp-claude"));
         Assert.AreSame(kimi, registry.Find("acp-kimi"));
         Assert.AreSame(qwen, registry.Find("acp-qwen"));
-        Assert.AreSame(qoder, registry.Find("acp-qoder"));
-        Assert.AreSame(cline, registry.Find("acp-cline"));
         Assert.AreSame(opencode, registry.Find("acp-opencode"));
+        Assert.IsNull(registry.Find("acp-qoder"));
+        Assert.IsNull(registry.Find("acp-cline"));
 
         var keys = registry.Providers.Select(provider => provider.Descriptor.Key).ToArray();
         CollectionAssert.AreEquivalent(
-            new[] { "acp-claude", "acp-kimi", "acp-qwen", "acp-qoder", "acp-cline", "acp-opencode" },
+            new[] { "acp-claude", "acp-kimi", "acp-qwen", "acp-opencode" },
             keys);
     }
 }

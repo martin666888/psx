@@ -17,6 +17,13 @@ const ATTENTION_LABELS = Object.freeze({
     completed: '已完成'
 });
 
+const DSH_UPDATE_STATES = new Set(['idle', 'checking', 'up_to_date', 'available', 'updating', 'failed']);
+
+function safeDshVersion(value) {
+    const text = typeof value === 'string' ? value.trim() : '';
+    return /^[0-9A-Za-z.+-]{1,64}$/.test(text) ? text : '';
+}
+
 export class WorkspaceChromeController {
     constructor(root, portalRoot) {
         if (!root || !portalRoot) throw new Error('WorkspaceChromeController requires chrome and portal roots');
@@ -39,6 +46,8 @@ export class WorkspaceChromeController {
         this.openMenu = null;
         this.openTrigger = null;
         this.paneMenuWorkspace = null;
+        this.dshRuntimeStatus = { state: 'not_installed', updateState: 'idle' };
+        this.dshUpdateConfirmation = false;
         this.createPlacement = 'focused';
         this.capacityChecker = null;
         this.historyButton.disabled = false;
@@ -116,6 +125,26 @@ export class WorkspaceChromeController {
         this.themeCatalog = message;
         if (this.openMenu === 'theme') this.renderOpenMenu();
         return true;
+    }
+
+    applyDshRuntimeStatus(message) {
+        const availableVersion = safeDshVersion(message?.availableVersion);
+        const next = {
+            state: typeof message?.state === 'string' ? message.state : 'not_installed',
+            currentVersion: safeDshVersion(message?.currentVersion),
+            updateState: DSH_UPDATE_STATES.has(message?.updateState) ? message.updateState : 'idle',
+            availableVersion,
+            updateError: typeof message?.updateError === 'string'
+                ? message.updateError.trim().slice(0, 240) : ''
+        };
+        this.dshRuntimeStatus = next;
+        if (next.updateState !== 'available' || !next.availableVersion)
+            this.dshUpdateConfirmation = false;
+        if (this.openMenu === 'pane' && this.paneMenuWorkspace?.kind === 'dsh_web') {
+            const version = this.portalRoot.querySelector('[data-role="dsh-current-version"]');
+            if (version) version.textContent = next.currentVersion ? `v${next.currentVersion}` : '';
+            this.refreshDshRuntimeMenu();
+        }
     }
 
     applyLayout(snapshot, rects) {
@@ -287,6 +316,7 @@ export class WorkspaceChromeController {
         this.openMenu = null;
         this.openTrigger = null;
         this.paneMenuWorkspace = null;
+        this.dshUpdateConfirmation = false;
         this.portalRoot.replaceChildren();
         if (restoreFocus) focusTarget?.focus();
     }
@@ -461,7 +491,20 @@ export class WorkspaceChromeController {
     // decision G). Cross-column tab drags are a later phase.
     renderPaneMenu(menu, workspace) {
         if (!workspace) return;
-        menu.appendChild(this.heading(workspace.title));
+        if (workspace.kind === 'dsh_web') {
+            const top = document.createElement('div');
+            top.className = 'workspace-popover-heading-row';
+            top.appendChild(this.heading(workspace.title));
+            const version = document.createElement('span');
+            version.dataset.role = 'dsh-current-version';
+            version.textContent = this.dshRuntimeStatus.currentVersion
+                ? `v${this.dshRuntimeStatus.currentVersion}` : '';
+            top.appendChild(version);
+            menu.appendChild(top);
+            menu.appendChild(this.subheading('布局'));
+        } else {
+            menu.appendChild(this.heading(workspace.title));
+        }
         const capacity = this.capacityChecker?.() ?? null;
         const newPaneKind = workspace.kind === 'terminal'
             ? 'terminal'
@@ -495,16 +538,129 @@ export class WorkspaceChromeController {
             this.closeMenu(false);
         }));
         // The DSH runtime is a process-wide singleton that survives closing
-        // its tab; the tab menu is the only in-app way to stop the `dsh web`
-        // server without quitting PSX.
-        if (workspace.kind === 'dsh_web') menu.appendChild(this.menuRow(
-            '停止运行时',
-            '关闭本地 DeepSeek Harness 服务，保留会话与配置',
+        // its tab. Keep its maintenance controls in a compact section of the
+        // tab menu; never inject PSX controls into the cross-origin DSH frame.
+        if (workspace.kind === 'dsh_web') {
+            const runtimeSection = document.createElement('div');
+            runtimeSection.dataset.role = 'dsh-runtime-menu';
+            this.renderDshRuntimeMenu(runtimeSection);
+            menu.appendChild(runtimeSection);
+        }
+    }
+
+    refreshDshRuntimeMenu() {
+        const runtimeSection = this.portalRoot.querySelector('[data-role="dsh-runtime-menu"]');
+        if (!runtimeSection) return;
+        // Keep the popover node, anchor and composited surface alive. Replacing
+        // the whole menu for each local/backend update caused a visible blink
+        // even with its CSS entry animation disabled.
+        runtimeSection.replaceChildren();
+        this.renderDshRuntimeMenu(runtimeSection);
+    }
+
+    renderDshRuntimeMenu(menu) {
+        const status = this.dshRuntimeStatus;
+        menu.appendChild(this.subheading('运行时'));
+
+        if (this.dshUpdateConfirmation
+            && status.updateState === 'available'
+            && status.availableVersion) {
+            const confirmation = document.createElement('div');
+            confirmation.className = 'workspace-update-confirmation';
+            const versions = document.createElement('div');
+            versions.className = 'workspace-update-versions';
+            versions.textContent = `${status.currentVersion || '当前版本'} → ${status.availableVersion}`;
+            const copy = document.createElement('p');
+            copy.textContent = '更新将重启本地服务；DSH 的配置和会话不会被删除。';
+            const actions = document.createElement('div');
+            actions.className = 'workspace-update-actions';
+            const cancel = this.actionButton('取消', () => {
+                this.dshUpdateConfirmation = false;
+                this.refreshDshRuntimeMenu();
+            });
+            const confirm = this.actionButton('更新并重启', () => {
+                this.dshUpdateConfirmation = false;
+                this.dshRuntimeStatus = { ...status, updateState: 'updating', updateError: '' };
+                this.refreshDshRuntimeMenu();
+                Bridge.sendDshCommand('update');
+            });
+            confirm.dataset.primary = 'true';
+            actions.append(cancel, confirm);
+            confirmation.append(versions, copy, actions);
+            menu.appendChild(confirmation);
+        } else {
+            this.renderDshUpdateAction(menu, status);
+        }
+
+        if (status.updateState === 'failed' && status.updateError) {
+            const error = document.createElement('p');
+            error.className = 'workspace-popover-message';
+            error.dataset.error = 'true';
+            error.textContent = status.updateError;
+            menu.appendChild(error);
+        }
+
+        const stopped = status.state === 'exited';
+        menu.appendChild(this.menuRow(
+            stopped ? '启动运行时' : '停止运行时',
+            '',
             () => {
-                Bridge.sendDshCommand('stop');
+                Bridge.sendDshCommand(stopped ? 'retry' : 'stop');
                 this.closeMenu(false);
-            }
+            },
+            status.state === 'not_installed' || status.state === 'installing'
         ));
+    }
+
+    renderDshUpdateAction(menu, status) {
+        const canCheck = Boolean(status.currentVersion)
+            && status.state !== 'not_installed'
+            && status.state !== 'installing'
+            && status.state !== 'starting';
+        const check = () => {
+            this.dshRuntimeStatus = { ...status, updateState: 'checking', updateError: '' };
+            this.refreshDshRuntimeMenu();
+            Bridge.sendDshCommand('check_update');
+        };
+
+        switch (status.updateState) {
+            case 'checking':
+                menu.appendChild(this.menuRow('正在检查更新…', '', () => {}, true));
+                break;
+            case 'available':
+                menu.appendChild(this.menuRow(
+                    `更新到 v${status.availableVersion}`,
+                    '需重启',
+                    () => {
+                        this.dshUpdateConfirmation = true;
+                        this.refreshDshRuntimeMenu();
+                    },
+                    !status.availableVersion
+                ));
+                break;
+            case 'updating':
+                menu.appendChild(this.menuRow(
+                    '正在更新…',
+                    status.availableVersion ? `v${status.availableVersion}` : '',
+                    () => {},
+                    true
+                ));
+                break;
+            case 'up_to_date':
+                menu.appendChild(this.menuRow('检查更新', '已是最新', check, !canCheck));
+                break;
+            case 'failed':
+                menu.appendChild(this.menuRow('重新检查', '', check, !canCheck));
+                break;
+            default:
+                menu.appendChild(this.menuRow(
+                    '检查更新',
+                    canCheck ? '' : '请先安装',
+                    check,
+                    !canCheck
+                ));
+                break;
+        }
     }
 
     // The number of tabs in the workspace's requested column, or null when

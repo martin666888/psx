@@ -10,9 +10,7 @@ public sealed class ProviderIconConverter : IValueConverter
     public Geometry ClaudeIcon { get; set; } = Geometry.Empty;
     public Geometry KimiIcon { get; set; } = Geometry.Empty;
     public Geometry QwenIcon { get; set; } = Geometry.Empty;
-    public Geometry QoderIcon { get; set; } = Geometry.Empty;
     public Geometry OpencodeIcon { get; set; } = Geometry.Empty;
-    public Geometry ClineIcon { get; set; } = Geometry.Empty;
     public Geometry DshIcon { get; set; } = Geometry.Empty;
 
     public object Convert(
@@ -38,9 +36,7 @@ public sealed class ProviderIconConverter : IValueConverter
         "claude" => ClaudeIcon,
         "kimi" => KimiIcon,
         "qwen" => QwenIcon,
-        "qoder" => QoderIcon,
         "opencode" => OpencodeIcon,
-        "cline" => ClineIcon,
         "dsh" => DshIcon,
         _ => null
     };

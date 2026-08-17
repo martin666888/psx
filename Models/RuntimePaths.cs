@@ -149,58 +149,6 @@ public sealed record RuntimePaths
     public required string QwenActivePointerFile { get; init; }
 
     /// <summary>
-    /// Path to the bundled Qoder seed directory (contains package.json,
-    /// package-lock.json, .npmrc). Source of truth for user-confirmed
-    /// installation into <see cref="QoderCurrentDirectory"/>; never written to.
-    /// </summary>
-    public required string QoderSeedDirectory { get; init; }
-
-    /// <summary>
-    /// Live Qoder CLI install under the writable <c>runtime/</c> root. Populated
-    /// only after explicit user confirmation (npm install of the pinned seed
-    /// package). Agent mode loads exclusively from here for the process lifetime.
-    /// </summary>
-    public required string QoderCurrentDirectory { get; init; }
-
-    /// <summary>
-    /// Staging directory for a user-requested Qoder update. Never read by the
-    /// live session; promoted to <see cref="QoderCurrentDirectory"/> on the
-    /// next PSX launch when the pointer says "next".
-    /// </summary>
-    public required string QoderNextDirectory { get; init; }
-
-    /// <summary>
-    /// Pending-update marker for the Qoder runtime, mirroring
-    /// <see cref="AcpActivePointerFile"/> ("current" or "next").
-    /// </summary>
-    public required string QoderActivePointerFile { get; init; }
-
-    /// <summary>Read-only Cline seed manifests shipped under tools/cline-seed.</summary>
-    public required string ClineSeedDirectory { get; init; }
-
-    /// <summary>Validated Cline runtime used by live ACP and terminal sessions.</summary>
-    public required string ClineCurrentDirectory { get; init; }
-
-    /// <summary>
-    /// Staging directory for a user-requested Cline update. Never read by the
-    /// live session; promoted to <see cref="ClineCurrentDirectory"/> on the
-    /// next PSX launch when the pointer says "next".
-    /// </summary>
-    public required string ClineNextDirectory { get; init; }
-
-    /// <summary>
-    /// Pending-update marker for the Cline runtime, mirroring
-    /// <see cref="AcpActivePointerFile"/> ("current" or "next").
-    /// </summary>
-    public required string ClineActivePointerFile { get; init; }
-
-    /// <summary>Scratch directory used only while installing the pinned Cline release.</summary>
-    public required string ClineInstallingDirectory { get; init; }
-
-    /// <summary>Rollback copy retained across an interrupted current-directory swap.</summary>
-    public required string ClineRollbackDirectory { get; init; }
-
-    /// <summary>
     /// Root of the bundled OpenCode install shipped inside the release zip at
     /// <c>{InstallDir}/tools/opencode/</c>. Pre-installed at build time and
     /// never populated by a runtime <c>npm ci</c>. Contains
@@ -240,7 +188,7 @@ public sealed record RuntimePaths
     /// <summary>Validated DSH web runtime used by the live `dsh web` server.</summary>
     public required string DshCurrentDirectory { get; init; }
 
-    /// <summary>Staging directory for a user-requested DSH update (Phase 2+ V1 no-op).</summary>
+    /// <summary>Staging directory for a user-requested DSH update.</summary>
     public required string DshNextDirectory { get; init; }
 
     /// <summary>Pending-update marker for the DSH runtime.</summary>

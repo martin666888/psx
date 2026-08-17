@@ -12,8 +12,6 @@
                                      ClaudeIcon="{StaticResource AgentIconGeometry.Claude}"
                                      KimiIcon="{StaticResource AgentIconGeometry.Kimi}"
                                      QwenIcon="{StaticResource AgentIconGeometry.Qwen}"
-                                     QoderIcon="{StaticResource AgentIconGeometry.Qoder}"
-                                     ClineIcon="{StaticResource AgentIconGeometry.Cline}"
                                      DshIcon="{StaticResource AgentIconGeometry.Dsh}"
                                      OpencodeIcon="{StaticResource AgentIconGeometry.Opencode}"/>
 

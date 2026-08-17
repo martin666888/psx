@@ -149,84 +149,6 @@ internal sealed class FakeNpmFixture : IDisposable
             "// fake qwen acp entry");
     }
 
-    /// <summary>Creates a Qoder runtime that shares this fixture's fake node/npm.</summary>
-    public QoderCliAcpRuntime CreateQoderRuntime(TimeSpan? processTimeout = null) =>
-        new(Locator, Path.Combine(InstallDirectory, "logs"), processTimeout ?? TimeSpan.FromSeconds(10));
-
-    /// <summary>Creates a Cline runtime that shares this fixture's fake node/npm.</summary>
-    public ClineAcpRuntime CreateClineRuntime(TimeSpan? processTimeout = null) =>
-        new(Locator, Path.Combine(InstallDirectory, "logs"), processTimeout ?? TimeSpan.FromSeconds(10));
-
-    public void InstallClineSeed(string version = ClineAcpRuntime.SeededPackageVersion)
-    {
-        var seedRoot = Path.Combine(InstallDirectory, "tools", "cline-seed");
-        WriteJson(
-            Path.Combine(seedRoot, "package.json"),
-            new
-            {
-                name = "psx-cline-runtime",
-                dependencies = new Dictionary<string, string>
-                {
-                    ["cline"] = version,
-                    ["@cline/cli-windows-x64"] = version
-                }
-            });
-        WriteFile(Path.Combine(seedRoot, ".npmrc"), "registry=https://registry.npmjs.org/\nos=win32\ncpu=x64\nignore-scripts=true\n");
-        WriteFile(Path.Combine(seedRoot, "package-lock.json"), "{}");
-    }
-
-    public void CreateClineInstall(string directory, string wrapperVersion, string? platformVersion = null)
-    {
-        WriteJson(
-            Path.Combine(directory, "node_modules", "cline", "package.json"),
-            new
-            {
-                name = "cline",
-                version = wrapperVersion,
-                bin = new Dictionary<string, string> { ["cline"] = "bin/cline.js" }
-            });
-        WriteFile(
-            Path.Combine(directory, "node_modules", "cline", "bin", "cline.js"),
-            "// fake Cline wrapper");
-        WriteJson(
-            Path.Combine(directory, "node_modules", "@cline", "cli-windows-x64", "package.json"),
-            new { name = "@cline/cli-windows-x64", version = platformVersion ?? wrapperVersion });
-        WriteFile(
-            Path.Combine(directory, "node_modules", "@cline", "cli-windows-x64", "bin", "cline.exe"),
-            "fake Cline executable");
-    }
-
-    /// <summary>Installs the Qoder seed manifests under tools/qoder-seed.</summary>
-    public void InstallQoderSeed(string version = QoderCliAcpRuntime.SeededPackageVersion)
-    {
-        var seedRoot = Path.Combine(InstallDirectory, "tools", "qoder-seed");
-        WriteJson(
-            Path.Combine(seedRoot, "package.json"),
-            new
-            {
-                name = "psx-qoder-runtime",
-                dependencies = new Dictionary<string, string> { ["@qoder-ai/qodercli"] = version }
-            });
-        WriteFile(Path.Combine(seedRoot, ".npmrc"), "os=win32\ncpu=x64\n");
-        WriteFile(Path.Combine(seedRoot, "package-lock.json"), "{}");
-    }
-
-    /// <summary>Writes a valid Qoder package tree (manifest + bundle entry) into a root.</summary>
-    public void CreateQoderInstall(string directory, string version)
-    {
-        WriteJson(
-            Path.Combine(directory, "node_modules", "@qoder-ai", "qodercli", "package.json"),
-            new
-            {
-                name = "@qoder-ai/qodercli",
-                version,
-                bin = new Dictionary<string, string> { ["qodercli"] = "bundle/qodercli.js" }
-            });
-        WriteFile(
-            Path.Combine(directory, "node_modules", "@qoder-ai", "qodercli", "bundle", "qodercli.js"),
-            "// fake qoder acp entry");
-    }
-
     /// <summary>Creates an OpenCode runtime that shares this fixture's fake node/npm.</summary>
     public OpencodeAcpRuntime CreateOpencodeRuntime(bool supportsAvx2 = true, TimeSpan? processTimeout = null) =>
         new(Locator, Path.Combine(InstallDirectory, "logs"), processTimeout ?? TimeSpan.FromSeconds(10), () => supportsAvx2);
@@ -398,19 +320,12 @@ internal sealed class FakeNpmScenario
     public bool KimiSmokeFails { get; set; }
     public bool CreateQwen { get; set; }
     public bool QwenSmokeFails { get; set; }
-    public bool CreateQoder { get; set; }
-    public bool QoderSmokeFails { get; set; }
     public bool CreateOpencode { get; set; }
     public bool OpencodeSmokeFails { get; set; }
     public string? AdapterVersion { get; set; }
     public string? ClaudeCodeVersion { get; set; }
     public string? KimiVersion { get; set; }
     public string? QwenVersion { get; set; }
-    public string? QoderVersion { get; set; }
-    public bool CreateCline { get; set; }
-    public bool ClineSmokeFails { get; set; }
-    public string? ClineVersion { get; set; }
-    public string? ClinePlatformVersion { get; set; }
     public string? OpencodeVersion { get; set; }
     public string? OpencodePackageName { get; set; }
 }

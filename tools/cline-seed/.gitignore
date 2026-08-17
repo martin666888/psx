@@ -1,3 +1,0 @@
-# Seed-only directory. Never commit an installed tree here.
-node_modules/
-*.log

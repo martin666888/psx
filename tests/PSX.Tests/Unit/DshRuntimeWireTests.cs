@@ -27,6 +27,45 @@ public sealed class DshRuntimeWireTests
     }
 
     [TestMethod]
+    [DataRow(DshUpdateState.Idle, "idle")]
+    [DataRow(DshUpdateState.Checking, "checking")]
+    [DataRow(DshUpdateState.UpToDate, "up_to_date")]
+    [DataRow(DshUpdateState.Available, "available")]
+    [DataRow(DshUpdateState.Updating, "updating")]
+    [DataRow(DshUpdateState.Failed, "failed")]
+    public void ToWireUpdateState_UsesExplicitMapping(DshUpdateState state, string expected)
+    {
+        Assert.AreEqual(expected, DshWebRuntimeSupervisor.ToWireUpdateState(state));
+    }
+
+    [TestMethod]
+    [DataRow("0.1.0-rc.6", "0.1.0-rc.7", -1)]
+    [DataRow("0.1.0-rc.10", "0.1.0", -1)]
+    [DataRow("0.1.0", "0.1.0-rc.99", 1)]
+    [DataRow("1.0.0-alpha.2", "1.0.0-alpha.10", -1)]
+    [DataRow("1.0.0+build.1", "1.0.0+build.2", 0)]
+    public void DshSemanticVersion_UsesSemverPrereleasePrecedence(
+        string leftText,
+        string rightText,
+        int expectedSign)
+    {
+        Assert.IsTrue(DshSemanticVersion.TryParse(leftText, out var left));
+        Assert.IsTrue(DshSemanticVersion.TryParse(rightText, out var right));
+        Assert.AreEqual(expectedSign, Math.Sign(left.CompareTo(right)));
+    }
+
+    [TestMethod]
+    [DataRow("")]
+    [DataRow("v0.1.0")]
+    [DataRow("0.1")]
+    [DataRow("0.1.0-rc..1")]
+    [DataRow("01.1.0")]
+    public void DshSemanticVersion_RejectsInvalidVersions(string value)
+    {
+        Assert.IsFalse(DshSemanticVersion.TryParse(value, out _));
+    }
+
+    [TestMethod]
     [DataRow("http://127.0.0.1:12345/")]
     [DataRow("http://127.0.0.1:12345")]
     [DataRow("HTTP://127.0.0.1:9")]

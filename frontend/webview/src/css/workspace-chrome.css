@@ -312,7 +312,19 @@
     letter-spacing: .04em;
 }
 
-.workspace-popover-heading-row,
+.workspace-popover-heading-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 8px;
+}
+
+.workspace-popover-heading-row .workspace-popover-heading {
+    padding: 0;
+    line-height: 16px;
+}
+
 .workspace-popover-footer {
     display: flex;
     align-items: center;
@@ -325,6 +337,7 @@
     overflow: hidden;
     color: var(--agent-text-muted);
     font-size: 10px;
+    line-height: 16px;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
@@ -363,6 +376,10 @@
 .workspace-segments button:disabled {
     color: var(--agent-text-dim);
     cursor: default;
+}
+
+.workspace-menu-row:disabled:hover {
+    background: transparent;
 }
 
 .workspace-menu-primary {
@@ -412,6 +429,47 @@
 
 .workspace-popover-message[data-error="true"] {
     color: var(--agent-error);
+}
+
+.workspace-update-confirmation {
+    display: grid;
+    gap: 8px;
+    margin: 2px 4px 4px;
+    padding: 8px;
+    border-radius: var(--agent-radius-control);
+    color: var(--agent-text-muted);
+    background: var(--agent-surface-muted);
+}
+
+.workspace-update-versions {
+    overflow: hidden;
+    color: var(--agent-text);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.workspace-update-confirmation p {
+    margin: 0;
+    line-height: 1.5;
+}
+
+.workspace-update-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+}
+
+.workspace-popover-action[data-primary="true"] {
+    background: var(--primary, var(--agent-text));
+    color: var(--primary-foreground, var(--agent-bg));
+}
+
+.workspace-popover-action[data-primary="true"]:hover {
+    background: color-mix(in srgb, var(--primary, var(--agent-text)) 90%, var(--agent-text));
 }
 
 .workspace-popover-footer {

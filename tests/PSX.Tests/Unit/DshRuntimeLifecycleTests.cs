@@ -141,6 +141,142 @@ public sealed class DshRuntimeLifecycleTests
     }
 
     [TestMethod]
+    public void CreateLaunchSpec_ValidatedUserUpdate_IsAcceptedBeyondSeedVersion()
+    {
+        using var workspace = TestWorkspace.Create(nameof(CreateLaunchSpec_ValidatedUserUpdate_IsAcceptedBeyondSeedVersion));
+        var (runtime, paths) = CreateRuntime(workspace);
+        SeedFakeNodeToolchain(paths);
+        SeedAuthorizedDshUpdateTree(paths.DshCurrentDirectory, "0.1.0-rc.7");
+
+        Assert.IsTrue(runtime.IsInstalled());
+        Assert.AreEqual("0.1.0-rc.7", runtime.CurrentVersion);
+        Assert.IsNotNull(runtime.CreateLaunchSpec());
+    }
+
+    [TestMethod]
+    public void ValidateStagedUpdate_RejectsNonOfficialRegistryLockEntry()
+    {
+        using var workspace = TestWorkspace.Create(nameof(ValidateStagedUpdate_RejectsNonOfficialRegistryLockEntry));
+        var (_, paths) = CreateRuntime(workspace);
+        SeedAuthorizedDshUpdateTree(paths.DshNextDirectory, "0.1.0-rc.7", "https://registry.example/dsh.tgz");
+
+        var error = DshWebRuntime.ValidateStagedUpdate(paths.DshNextDirectory, "0.1.0-rc.7");
+
+        Assert.IsNotNull(error);
+        StringAssert.Contains(error, "official registry");
+    }
+
+    [TestMethod]
+    public void ValidateStagedUpdate_RejectsDependencyWithoutIntegrityMetadata()
+    {
+        using var workspace = TestWorkspace.Create(nameof(ValidateStagedUpdate_RejectsDependencyWithoutIntegrityMetadata));
+        var (_, paths) = CreateRuntime(workspace);
+        SeedAuthorizedDshUpdateTree(paths.DshNextDirectory, "0.1.0-rc.7");
+        var lockPath = Path.Combine(paths.DshNextDirectory, "package-lock.json");
+        var lockText = File.ReadAllText(lockPath).Replace(
+            "\"node_modules/@deepseek-ai/dsh\": {",
+            "\"node_modules/unpinned\": { \"version\": \"1.0.0\" },\n" +
+            "    \"node_modules/@deepseek-ai/dsh\": {",
+            StringComparison.Ordinal);
+        File.WriteAllText(lockPath, lockText);
+
+        var error = DshWebRuntime.ValidateStagedUpdate(paths.DshNextDirectory, "0.1.0-rc.7");
+
+        Assert.IsNotNull(error);
+        StringAssert.Contains(error, "registry/integrity pinned");
+    }
+
+    [TestMethod]
+    public void ApplyStagedUpdate_FailedCandidateCanRestoreLastKnownGoodCurrent()
+    {
+        using var workspace = TestWorkspace.Create(nameof(ApplyStagedUpdate_FailedCandidateCanRestoreLastKnownGoodCurrent));
+        var (runtime, paths) = CreateRuntime(workspace);
+        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedAuthorizedDshUpdateTree(paths.DshNextDirectory, "0.1.0-rc.7");
+
+        Assert.IsTrue(runtime.ApplyStagedUpdate("0.1.0-rc.7"));
+        Assert.AreEqual("0.1.0-rc.7", runtime.CurrentVersion);
+        Assert.IsTrue(runtime.HasUncommittedUpdate);
+
+        Assert.IsTrue(runtime.RollbackAppliedUpdate());
+        Assert.AreEqual(DshWebRuntime.SeededPackageVersion, runtime.CurrentVersion);
+        Assert.IsFalse(runtime.HasUncommittedUpdate);
+    }
+
+    [TestMethod]
+    public void ApplyStagedUpdate_ReadyCommitDropsRollbackAndKeepsCandidate()
+    {
+        using var workspace = TestWorkspace.Create(nameof(ApplyStagedUpdate_ReadyCommitDropsRollbackAndKeepsCandidate));
+        var (runtime, paths) = CreateRuntime(workspace);
+        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedAuthorizedDshUpdateTree(paths.DshNextDirectory, "0.1.0-rc.7");
+
+        Assert.IsTrue(runtime.ApplyStagedUpdate("0.1.0-rc.7"));
+        runtime.CommitAppliedUpdate();
+
+        Assert.AreEqual("0.1.0-rc.7", runtime.CurrentVersion);
+        Assert.IsFalse(runtime.HasUncommittedUpdate);
+        Assert.AreEqual("current", File.ReadAllText(paths.DshActivePointerFile));
+    }
+
+    [TestMethod]
+    public async Task CheckForUpdateAsync_UsesRegistryResultWithoutChangingCurrent()
+    {
+        using var workspace = TestWorkspace.Create(nameof(CheckForUpdateAsync_UsesRegistryResultWithoutChangingCurrent));
+        var (runtime, paths) = CreateRuntime(workspace);
+        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedScriptedNpm(paths, "console.log(JSON.stringify('0.1.0-rc.7'));\n");
+
+        var result = await runtime.CheckForUpdateAsync(CancellationToken.None);
+
+        Assert.IsTrue(result.Success, result.ErrorMessage);
+        Assert.IsTrue(result.UpdateAvailable);
+        Assert.AreEqual(DshWebRuntime.SeededPackageVersion, result.CurrentVersion);
+        Assert.AreEqual("0.1.0-rc.7", result.AvailableVersion);
+        Assert.AreEqual(DshWebRuntime.SeededPackageVersion, runtime.CurrentVersion,
+            "a metadata check must never modify dsh-current");
+        Assert.IsFalse(Directory.Exists(paths.DshNextDirectory));
+    }
+
+    [TestMethod]
+    public async Task StageUpdateAsync_WritesValidatedNextWithoutTouchingCurrent()
+    {
+        using var workspace = TestWorkspace.Create(nameof(StageUpdateAsync_WritesValidatedNextWithoutTouchingCurrent));
+        var (runtime, paths) = CreateRuntime(workspace);
+        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedScriptedNpm(
+            paths,
+            """
+            const fs = require('fs');
+            const path = require('path');
+            const spec = process.argv.find((arg) => arg.startsWith('@deepseek-ai/dsh@'));
+            const version = spec.slice(spec.lastIndexOf('@') + 1);
+            const packageDir = path.join(process.cwd(), 'node_modules', '@deepseek-ai', 'dsh');
+            fs.mkdirSync(path.join(packageDir, 'lib'), { recursive: true });
+            fs.writeFileSync(path.join(packageDir, 'lib', 'bin.js'), '// staged dsh');
+            fs.writeFileSync(path.join(packageDir, 'package.json'), JSON.stringify({ version }));
+            fs.writeFileSync(path.join(process.cwd(), 'package-lock.json'), JSON.stringify({
+              lockfileVersion: 3,
+              packages: {
+                '': { dependencies: { '@deepseek-ai/dsh': version } },
+                'node_modules/@deepseek-ai/dsh': {
+                  version,
+                  resolved: `https://registry.npmjs.org/@deepseek-ai/dsh/-/dsh-${version}.tgz`,
+                  integrity: 'sha512-test'
+                }
+              }
+            }));
+            """);
+
+        var result = await runtime.StageUpdateAsync("0.1.0-rc.7", CancellationToken.None);
+
+        Assert.IsTrue(result.Success, result.ErrorMessage);
+        Assert.AreEqual(DshWebRuntime.SeededPackageVersion, runtime.CurrentVersion);
+        Assert.AreEqual("next", File.ReadAllText(paths.DshActivePointerFile));
+        Assert.IsNull(DshWebRuntime.ValidateStagedUpdate(paths.DshNextDirectory, "0.1.0-rc.7"));
+    }
+
+    [TestMethod]
     public void GenerationGate_InvalidateDropsPriorStartToken()
     {
         var gate = new DshRuntimeGenerationGate();
@@ -560,6 +696,73 @@ public sealed class DshRuntimeLifecycleTests
     }
 
     [TestMethod]
+    public async Task Supervisor_UserUpdate_StagesRestartsAndCommitsOnlyAfterReady()
+    {
+        using var workspace = TestWorkspace.Create(nameof(Supervisor_UserUpdate_StagesRestartsAndCommitsOnlyAfterReady));
+        var (runtime, paths) = CreateRuntime(workspace);
+        SeedScriptedNpm(
+            paths,
+            """
+            const fs = require('fs');
+            const path = require('path');
+            if (process.argv.includes('view')) {
+              console.log(JSON.stringify('0.1.0-rc.7'));
+              return;
+            }
+            const spec = process.argv.find((arg) => arg.startsWith('@deepseek-ai/dsh@'));
+            const version = spec.slice(spec.lastIndexOf('@') + 1);
+            const packageDir = path.join(process.cwd(), 'node_modules', '@deepseek-ai', 'dsh');
+            fs.mkdirSync(path.join(packageDir, 'lib'), { recursive: true });
+            fs.writeFileSync(path.join(packageDir, 'lib', 'bin.js'), `
+            const http = require('http');
+            const server = http.createServer((_request, response) => {
+              response.writeHead(200, { 'content-type': 'text/html' });
+              response.end('<!doctype html><title>DeepSeek Harness</title>');
+            });
+            server.listen(0, '127.0.0.1', () => {
+              const address = server.address();
+              console.log('dsh web: http://127.0.0.1:' + address.port);
+            });`);
+            fs.writeFileSync(path.join(packageDir, 'package.json'), JSON.stringify({ version }));
+            fs.writeFileSync(path.join(process.cwd(), 'package-lock.json'), JSON.stringify({
+              lockfileVersion: 3,
+              packages: {
+                '': { dependencies: { '@deepseek-ai/dsh': version } },
+                'node_modules/@deepseek-ai/dsh': {
+                  version,
+                  resolved: `https://registry.npmjs.org/@deepseek-ai/dsh/-/dsh-${version}.tgz`,
+                  integrity: 'sha512-test'
+                }
+              }
+            }));
+            """);
+        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        WriteFakeDshServer(Path.Combine(
+            paths.DshCurrentDirectory, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js"));
+
+        var bridge = new RecordingAgentBridgeService();
+        using var supervisor = new DshWebRuntimeSupervisor(
+            runtime, bridge, Path.Combine(workspace.Path, "supervisor"), Path.Combine(workspace.Path, "dsh-workspace"));
+        await supervisor.EnsureRunningAsync();
+        await TestWorkspace.WaitUntilAsync(
+            () => supervisor.State == DshRuntimeState.Ready,
+            TimeSpan.FromSeconds(20),
+            "the baseline DSH server did not reach Ready");
+
+        await supervisor.CheckForUpdateAsync();
+        Assert.AreEqual("available", LastRuntimeStatus(bridge).GetProperty("updateState").GetString());
+        Assert.AreEqual("0.1.0-rc.7", LastRuntimeStatus(bridge).GetProperty("availableVersion").GetString());
+
+        await supervisor.UpdateAndRestartAsync();
+
+        Assert.AreEqual(DshRuntimeState.Ready, supervisor.State);
+        Assert.AreEqual("0.1.0-rc.7", runtime.CurrentVersion);
+        Assert.IsFalse(runtime.HasUncommittedUpdate, "Ready is the commit point for deleting the rollback");
+        Assert.AreEqual("up_to_date", LastRuntimeStatus(bridge).GetProperty("updateState").GetString());
+        await supervisor.StopAsync();
+    }
+
+    [TestMethod]
     public void ValidateInstalledTree_VersionMismatchWithSeed_IsRejectedBeforeSwap()
     {
         using var workspace = TestWorkspace.Create(nameof(ValidateInstalledTree_VersionMismatchWithSeed_IsRejectedBeforeSwap));
@@ -733,6 +936,8 @@ public sealed class DshRuntimeLifecycleTests
         await coordinator.HandleCommandAsync("install");
         await coordinator.HandleCommandAsync("retry");
         await coordinator.HandleCommandAsync("stop");
+        await coordinator.HandleCommandAsync("check_update");
+        await coordinator.HandleCommandAsync("update");
         await coordinator.HandleExportAsync("http://127.0.0.1:4321/api/session.export", "s.zip");
 
         Assert.AreEqual(DshRuntimeState.NotInstalled, supervisor.State,
@@ -837,12 +1042,73 @@ public sealed class DshRuntimeLifecycleTests
         File.WriteAllText(Path.Combine(paths.DshSeedDirectory, ".npmrc"), "registry=https://registry.npmjs.org/");
     }
 
+    private static void SeedScriptedNpm(RuntimePaths paths, string script)
+    {
+        var nodePath = Path.Combine(
+            TestWorkspace.RepositoryRoot, "TestResults", "node22", "node-v22.23.1-win-x64", "node.exe");
+        if (!File.Exists(nodePath))
+            Assert.Inconclusive("Node 22 toolchain is not available under TestResults/node22.");
+
+        var nodeDirectory = Path.Combine(paths.InstallDirectory, "tools", "node");
+        var npmDirectory = Path.Combine(nodeDirectory, "node_modules", "npm", "bin");
+        Directory.CreateDirectory(npmDirectory);
+        File.Copy(nodePath, Path.Combine(nodeDirectory, "node.exe"));
+        File.WriteAllText(Path.Combine(npmDirectory, "npm-cli.js"), script);
+        Directory.CreateDirectory(paths.DshSeedDirectory);
+        File.WriteAllText(
+            Path.Combine(paths.DshSeedDirectory, ".npmrc"),
+            "registry=https://registry.npmjs.org/\nfund=false\naudit=false\n");
+    }
+
     private static void SeedFakeDshTree(string scratch, string version)
     {
         var packageDirectory = Path.Combine(scratch, "node_modules", "@deepseek-ai", "dsh");
         Directory.CreateDirectory(Path.Combine(packageDirectory, "lib"));
         File.WriteAllText(Path.Combine(packageDirectory, "lib", "bin.js"), "// fake dsh entry");
         File.WriteAllText(Path.Combine(packageDirectory, "package.json"), $"{{\"version\":\"{version}\"}}");
+    }
+
+    private static void WriteFakeDshServer(string entryPath)
+    {
+        File.WriteAllText(
+            entryPath,
+            """
+            const http = require('http');
+            const server = http.createServer((_request, response) => {
+              response.writeHead(200, { 'content-type': 'text/html' });
+              response.end('<!doctype html><title>DeepSeek Harness</title>');
+            });
+            server.listen(0, '127.0.0.1', () => {
+              const address = server.address();
+              console.log(`dsh web: http://127.0.0.1:${address.port}`);
+            });
+            """);
+    }
+
+    private static void SeedAuthorizedDshUpdateTree(
+        string directory,
+        string version,
+        string? resolved = null)
+    {
+        SeedFakeDshTree(directory, version);
+        File.WriteAllText(
+            Path.Combine(directory, "psx-dsh-update.json"),
+            $$"""{"package":"@deepseek-ai/dsh","version":"{{version}}","registry":"https://registry.npmjs.org/"}""");
+        File.WriteAllText(
+            Path.Combine(directory, "package-lock.json"),
+            $$"""
+            {
+              "lockfileVersion": 3,
+              "packages": {
+                "": { "dependencies": { "@deepseek-ai/dsh": "{{version}}" } },
+                "node_modules/@deepseek-ai/dsh": {
+                  "version": "{{version}}",
+                  "resolved": "{{resolved ?? $"https://registry.npmjs.org/@deepseek-ai/dsh/-/dsh-{version}.tgz"}}",
+                  "integrity": "sha512-test"
+                }
+              }
+            }
+            """);
     }
 
     private sealed class ThrowingStream(byte[] data) : Stream

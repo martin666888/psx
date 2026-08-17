@@ -117,39 +117,6 @@ try {
         throw "Complete npm audit found a high/critical vulnerability or could not reach the official registry."
     }
 
-    Write-Host "==> Audit pinned Cline seed dependency tree" -ForegroundColor Cyan
-    $clineSeed = Join-Path $repoRoot "tools\cline-seed"
-    $clineAuditOutput = & $node $npmCli audit --prefix $clineSeed --omit=dev --json --registry=https://registry.npmjs.org 2>&1
-    $clineAuditText = ($clineAuditOutput | Out-String).Trim()
-    try {
-        $clineAudit = $clineAuditText | ConvertFrom-Json
-    } catch {
-        Write-Host $clineAuditText
-        throw "Cline seed audit did not return JSON from the official registry."
-    }
-    if ($null -ne (Get-JsonProperty $clineAudit "error")) {
-        Write-Host $clineAuditText
-        throw "Cline seed audit could not reach the official registry."
-    }
-    $counts = Get-JsonProperty (Get-JsonProperty $clineAudit "metadata") "vulnerabilities"
-    $total = 0
-    foreach ($name in @("low", "moderate", "high", "critical")) {
-        $count = Get-JsonProperty $counts $name
-        if ($null -ne $count) { $total += [int]$count }
-    }
-    if ($total -gt 0) {
-        $critical = Get-JsonProperty $counts "critical"
-        $high = Get-JsonProperty $counts "high"
-        $moderate = Get-JsonProperty $counts "moderate"
-        $low = Get-JsonProperty $counts "low"
-        Write-Warning ("Pinned Cline 3.0.53 lockfile reports upstream npm advisories " +
-            "(critical=$critical high=$high moderate=$moderate low=$low). " +
-            "PSX ships only the seed manifests; do not npm audit fix --force (it would downgrade the C1 pin). " +
-            "Integrity and official-registry URLs remain hard-checked by tools/build-release.ps1.")
-    } else {
-        Write-Host "    Cline seed audit found no known vulnerabilities."
-    }
-
     Write-Host "Dependency audit passed." -ForegroundColor Green
 }
 finally {

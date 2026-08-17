@@ -1301,7 +1301,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             }
             catch (TimeoutException) when (treatTimeoutAsAuthRequired && attempt == 0)
             {
-                // Some external CLIs (e.g. Qoder) hang on session/new until the
+                // Some external CLIs may hang on session/new until the
                 // user finishes interactive login instead of returning an ACP
                 // auth error. Map that stall onto the same recoverable path.
                 if (await RecoverFromAuthRequiredAsync(cancellationToken).ConfigureAwait(false))
@@ -1402,7 +1402,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     /// <summary>
     /// Builds a login terminal profile. Prefer the provider's declared login
-    /// profile (e.g. <c>qodercli login</c>, or Qwen's interactive TUI). Otherwise
+    /// profile (for example Qwen's interactive TUI). Otherwise
     /// append <c>--login</c> to the ACP process spec (Claude / Kimi style).
     /// </summary>
     private ShellProfile? CreateLoginTerminalProfile()

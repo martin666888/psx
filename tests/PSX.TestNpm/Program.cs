@@ -165,59 +165,6 @@ if (scenario.CreateQwen)
     }
 }
 
-if (scenario.CreateQoder)
-{
-    WriteJson(
-        Path.Combine(workingDirectory, "node_modules", "@qoder-ai", "qodercli", "package.json"),
-        new
-        {
-            name = "@qoder-ai/qodercli",
-            version = scenario.QoderVersion ?? "1.1.14",
-            bin = new Dictionary<string, string> { ["qodercli"] = "bundle/qodercli.js" }
-        });
-    WriteFile(
-        Path.Combine(workingDirectory, "node_modules", "@qoder-ai", "qodercli", "bundle", "qodercli.js"),
-        "// fake qoder acp entry");
-    if (scenario.QoderSmokeFails)
-    {
-        WriteFile(
-            Path.Combine(workingDirectory, "node_modules", "@qoder-ai", "qodercli", "smoke-fail.marker"),
-            "fail");
-    }
-}
-
-if (scenario.CreateCline)
-{
-    var wrapperVersion = scenario.ClineVersion ?? "3.0.53";
-    WriteJson(
-        Path.Combine(workingDirectory, "node_modules", "cline", "package.json"),
-        new
-        {
-            name = "cline",
-            version = wrapperVersion,
-            bin = new Dictionary<string, string> { ["cline"] = "bin/cline.js" }
-        });
-    WriteFile(
-        Path.Combine(workingDirectory, "node_modules", "cline", "bin", "cline.js"),
-        "// fake Cline wrapper");
-    WriteJson(
-        Path.Combine(workingDirectory, "node_modules", "@cline", "cli-windows-x64", "package.json"),
-        new
-        {
-            name = "@cline/cli-windows-x64",
-            version = scenario.ClinePlatformVersion ?? wrapperVersion
-        });
-    WriteFile(
-        Path.Combine(workingDirectory, "node_modules", "@cline", "cli-windows-x64", "bin", "cline.exe"),
-        "fake Cline executable");
-    if (scenario.ClineSmokeFails)
-    {
-        WriteFile(
-            Path.Combine(workingDirectory, "node_modules", "cline", "smoke-fail.marker"),
-            "fail");
-    }
-}
-
 if (scenario.CreateOpencode)
 {
     var opencodePackage = string.IsNullOrWhiteSpace(scenario.OpencodePackageName)
@@ -280,19 +227,12 @@ internal sealed class FakeNpmScenario
     public bool KimiSmokeFails { get; set; }
     public bool CreateQwen { get; set; }
     public bool QwenSmokeFails { get; set; }
-    public bool CreateQoder { get; set; }
-    public bool QoderSmokeFails { get; set; }
     public bool CreateOpencode { get; set; }
     public bool OpencodeSmokeFails { get; set; }
     public string? AdapterVersion { get; set; }
     public string? ClaudeCodeVersion { get; set; }
     public string? KimiVersion { get; set; }
     public string? QwenVersion { get; set; }
-    public string? QoderVersion { get; set; }
-    public bool CreateCline { get; set; }
-    public bool ClineSmokeFails { get; set; }
-    public string? ClineVersion { get; set; }
-    public string? ClinePlatformVersion { get; set; }
     public string? OpencodeVersion { get; set; }
     public string? OpencodePackageName { get; set; }
 }

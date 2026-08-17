@@ -137,7 +137,7 @@ export const Bridge = {
         });
     },
 
-    /** @param {'install'|'retry'|'stop'} name */
+    /** @param {'install'|'retry'|'stop'|'check_update'|'update'} name */
     sendDshCommand(name) {
         this.sendToHost({
             type: BridgeSendType.DshCommand,
