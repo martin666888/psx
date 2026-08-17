@@ -308,7 +308,7 @@ function ComposerTextarea(props: {
       value={props.draft}
       disabled={props.draftProps.disabled}
       spellCheck={false}
-      className="agent-native-scroll min-h-[var(--agent-composer-input-min-height)] max-h-[180px] w-full resize-none overflow-y-auto border-0 bg-transparent px-0 py-[7px] font-sans text-sm leading-[1.45] text-foreground shadow-none placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-0"
+      className="agent-native-scroll min-h-[var(--agent-composer-input-min-height)] max-h-[180px] w-full resize-none overflow-y-auto border-0 bg-transparent px-0 py-[4px] font-sans text-sm leading-[1.45] text-foreground shadow-none placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-0"
       aria-autocomplete="list"
       role="combobox"
       aria-haspopup="listbox"
@@ -476,7 +476,7 @@ export function ComposerView(props: ComposerViewProps): JSX.Element {
             </section>
             <div
               data-role="input-row"
-              className="agent-input-row min-w-0 px-[18px] pt-[14px] pb-2"
+              className="agent-input-row min-w-0 px-[18px] pt-[10px] pb-[6px]"
               hidden={!!props.modeTransitionPrompt}
             >
               <ComposerTextarea
@@ -499,7 +499,7 @@ export function ComposerView(props: ComposerViewProps): JSX.Element {
             >
               <CommandHint {...props.hint} />
             </div>
-            <div className="agent-composer-footer box-border flex min-h-[51px] min-w-0 items-center gap-[var(--agent-space-2)] rounded-b-[var(--agent-radius-composer)] pt-1.5 pr-[7px] pb-[7px] pl-[14px]">
+            <div className="agent-composer-footer box-border flex min-h-[44px] min-w-0 items-center gap-[var(--agent-space-2)] rounded-b-[var(--agent-radius-composer)] pt-1.5 pr-[7px] pb-[7px] pl-[14px]">
               <div className="agent-composer-actions flex shrink-0 items-center">
                 <ComposerActions {...props.actions} />
               </div>

@@ -76,7 +76,7 @@
     --agent-duration-fast: 120ms;
     --agent-duration-state: 160ms;
     --agent-ease-standard: cubic-bezier(0.2, 0, 0, 1);
-    --agent-composer-input-min-height: 34px;
+    --agent-composer-input-min-height: 28px;
 }
 
 /* .agent-ui wraps the whole WebView shell, including Terminal and global
