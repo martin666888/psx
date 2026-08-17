@@ -272,7 +272,9 @@ internal sealed class NullTabManagementService : ITabManagementService
     public event EventHandler<WorkspaceLayoutIntentEventArgs>? WorkspaceLayoutIntentRequested { add { } remove { } }
     public event EventHandler<WorkspaceCreateEventArgs>? WorkspaceCreateRequested { add { } remove { } }
     public event EventHandler<DshCommandEventArgs>? DshCommandRequested { add { } remove { } }
+    public event EventHandler<KimiWebCommandEventArgs>? KimiWebCommandRequested { add { } remove { } }
     public event EventHandler<DshExportEventArgs>? DshExportRequested { add { } remove { } }
+    public event EventHandler<KimiWebExportEventArgs>? KimiWebExportRequested { add { } remove { } }
 
     public Task<Guid> CreateTabAsync(ShellProfile? profile = null) => Task.FromResult(Guid.NewGuid());
     public Task CloseTabAsync(Guid sessionId) => Task.CompletedTask;
@@ -295,7 +297,9 @@ internal sealed class NullTerminalBridgeService : ITerminalBridgeService
     public event EventHandler<WorkspaceLayoutIntentEventArgs>? WorkspaceLayoutIntentRequested { add { } remove { } }
     public event EventHandler<WorkspaceCreateEventArgs>? WorkspaceCreateRequested { add { } remove { } }
     public event EventHandler<DshCommandEventArgs>? DshCommandRequested { add { } remove { } }
+    public event EventHandler<KimiWebCommandEventArgs>? KimiWebCommandRequested { add { } remove { } }
     public event EventHandler<DshExportEventArgs>? DshExportRequested { add { } remove { } }
+    public event EventHandler<KimiWebExportEventArgs>? KimiWebExportRequested { add { } remove { } }
     public event EventHandler<ThemeActionEventArgs>? ThemeActionRequested { add { } remove { } }
 
     public Task InitializeAsync(WebView2 webView) => Task.CompletedTask;
@@ -306,5 +310,7 @@ internal sealed class NullTerminalBridgeService : ITerminalBridgeService
     public Task ResizeTerminalAsync(Guid sessionId, int cols, int rows) => Task.CompletedTask;
     public Task SetViewModeAsync(string mode) => Task.CompletedTask;
     public Task SendAppearanceAsync(AppearanceSettings appearance) => Task.CompletedTask;
+    public void SetFrameOrigin(string kind, string? origin) { }
+    public Task PrepareFrameOriginAsync(string kind, string origin) => Task.CompletedTask;
     public void SetDshOrigin(string? origin) { }
 }

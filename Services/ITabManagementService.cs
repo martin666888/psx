@@ -25,7 +25,12 @@ public interface ITabManagementService
     event EventHandler<WorkspaceLayoutIntentEventArgs>? WorkspaceLayoutIntentRequested;
     event EventHandler<WorkspaceCreateEventArgs>? WorkspaceCreateRequested;
     event EventHandler<DshCommandEventArgs>? DshCommandRequested;
+    /// <summary>kimi_web_command (stop | retry) from the embedded Kimi Web tab.</summary>
+    event EventHandler<KimiWebCommandEventArgs>? KimiWebCommandRequested;
     event EventHandler<DshExportEventArgs>? DshExportRequested;
+    /// <summary>Kimi Web session export from the embedded Kimi Web tab
+    /// (forwarded from the neutral bridge).</summary>
+    event EventHandler<KimiWebExportEventArgs>? KimiWebExportRequested;
 }
 
 public class TabCreatedEventArgs : EventArgs

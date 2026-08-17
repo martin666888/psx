@@ -20,7 +20,7 @@ const SRC_ROOT = path.join(repositoryRoot, 'frontend', 'agent', 'src');
 // "cursor" is bounded so Tailwind `cursor-pointer` / `cursor-default` do not
 // count as the Cursor product brand.
 const BRAND_TOKENS =
-  /\b(claude|anthropic|gemini|openai|chatgpt|codex|copilot|llama|qwen|kimi)\b|(?<![\w-])cursor(?![\w-])|\bgpt-\d/i;
+  /\b(claude|anthropic|gemini|openai|chatgpt|codex|copilot|llama|qwen|kimi(?!_web))\b|(?<![\w-])cursor(?![\w-])|\bgpt-\d/i;
 
 // A per-provider-key business branch: comparing a provider identity to a
 // string literal (e.g. providerId === 'claude'). Dynamic-vs-dynamic identity
@@ -84,6 +84,6 @@ test('template bootstrap copy stays provider-neutral', () => {
   const index = fs.readFileSync(path.join(repositoryRoot, 'frontend', 'webview', 'index.html'), 'utf8');
   assert.doesNotMatch(
     index,
-    /claude|anthropic|gemini|openai|chatgpt|codex|copilot|(?<![\w-])cursor(?![\w-])|llama|qwen|kimi/iu
+    /claude|anthropic|gemini|openai|chatgpt|codex|copilot|(?<![\w-])cursor(?![\w-])|llama|qwen|kimi(?!-web-workspace-container)/iu
   );
 });

@@ -1,0 +1,154 @@
+#kimi-web-workspace-container {
+    pointer-events: none;
+}
+
+.kimi-web-panel {
+    position: absolute;
+    pointer-events: auto;
+    box-sizing: border-box;
+}
+
+.kimi-web-panel--status {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--agent-space-4, 16px);
+    container-type: size;
+}
+
+.kimi-web-panel iframe {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+}
+
+/* Runtime content card: surface + hairline, no shadow. Same family as the
+   Agent SessionRuntimeCard and the DSH runtime card — centered in the
+   column, not a full-bleed box. */
+.kimi-web-card {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    gap: 14px 16px;
+    box-sizing: border-box;
+    width: min(100%, 440px);
+    margin: 0 auto;
+    padding: 16px;
+    background: var(--agent-surface);
+    border: 1px solid var(--agent-border);
+    border-radius: var(--agent-radius-card);
+    color: var(--agent-text);
+    font-family: var(--workspace-font-ui);
+}
+
+.kimi-web-card[data-state="failed"],
+.kimi-web-card[data-state="unavailable"] {
+    background: var(--agent-error-bg);
+    border-color: color-mix(in srgb, var(--agent-error) 50%, var(--agent-border));
+}
+
+.kimi-web-card-mark {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    /* Match the title line box (14px × 1.35) so the icon/spinner centers
+       on the first text line instead of the whole copy block. */
+    height: calc(14px * 1.35);
+    color: var(--agent-accent);
+}
+
+.kimi-web-card-mark svg {
+    display: block;
+    width: 22px;
+    height: 22px;
+    fill: currentColor;
+}
+
+.kimi-web-card-spinner {
+    box-sizing: border-box;
+    width: 16px;
+    height: 16px;
+    border: 2px solid color-mix(in srgb, var(--agent-accent) 30%, transparent);
+    border-top-color: var(--agent-accent);
+    border-radius: 50%;
+    animation: kimi-web-spin 0.7s linear infinite;
+}
+
+.kimi-web-card-copy {
+    min-width: 0;
+}
+
+.kimi-web-card-title {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+.kimi-web-card-message,
+.kimi-web-card-note {
+    margin: 6px 0 0;
+    color: var(--agent-text-muted);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.kimi-web-card-note {
+    color: var(--agent-text-dim);
+}
+
+.kimi-web-card-actions {
+    grid-column: 2;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.kimi-web-card-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 32px;
+    padding: 0 16px;
+    border: 0;
+    border-radius: var(--agent-radius-control);
+    background: var(--primary, var(--agent-text));
+    color: var(--primary-foreground, var(--agent-bg));
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.kimi-web-card-action:hover {
+    background: color-mix(in srgb, var(--primary, var(--agent-text)) 90%, var(--agent-text));
+}
+
+.kimi-web-card-action:focus-visible {
+    outline: 2px solid var(--agent-focus-ring);
+    outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .kimi-web-card-spinner {
+        animation: none;
+        border-top-color: var(--agent-accent);
+    }
+}
+
+@keyframes kimi-web-spin {
+    to { transform: rotate(360deg); }
+}
+
+@container (max-width: 520px) {
+    .kimi-web-card {
+        grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    .kimi-web-card-actions {
+        grid-column: 1 / -1;
+    }
+}

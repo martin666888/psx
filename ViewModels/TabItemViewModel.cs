@@ -71,6 +71,9 @@ public partial class TabItemViewModel : ObservableObject
         if (workspace.Kind == WorkspaceKind.DshWeb)
             return workspace.Title + "\nDeepSeek Harness 工作区";
 
+        if (workspace.Kind == WorkspaceKind.KimiWeb)
+            return workspace.Title + "\nKimi Code Web 工作区";
+
         var state = workspace.AgentState?.ToString() ?? "Idle";
         return $"{workspace.ProviderName ?? workspace.ProviderKey ?? "Agent"}\n" +
                $"{workspace.Title}\n" +

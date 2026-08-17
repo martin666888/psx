@@ -447,7 +447,7 @@ public sealed class WorkspaceManagerTests
         var terminals = new RecordingTabManagementService();
         using var agents = new StubAgentWorkspaceCoordinator();
         var bridge = new RecordingAgentBridgeService();
-        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator());
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator(), new FakeKimiWebWorkspaceCoordinator());
         var workspace = CreateAgentWorkspace(Guid.NewGuid(), AgentWorkspaceState.Idle);
 
         agents.RaiseCreated(workspace);
@@ -472,7 +472,7 @@ public sealed class WorkspaceManagerTests
         var terminals = new RecordingTabManagementService();
         using var agents = new StubAgentWorkspaceCoordinator();
         var bridge = new RecordingAgentBridgeService();
-        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator());
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator(), new FakeKimiWebWorkspaceCoordinator());
         var first = CreateAgentWorkspace(Guid.NewGuid(), AgentWorkspaceState.Idle);
         var second = CreateAgentWorkspace(Guid.NewGuid(), AgentWorkspaceState.Idle);
         var notifications = new List<Guid>();
@@ -498,7 +498,7 @@ public sealed class WorkspaceManagerTests
         var terminals = new RecordingTabManagementService();
         using var agents = new StubAgentWorkspaceCoordinator();
         var bridge = new RecordingAgentBridgeService();
-        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator());
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator(), new FakeKimiWebWorkspaceCoordinator());
         var first = CreateAgentWorkspace(Guid.NewGuid(), AgentWorkspaceState.Idle);
         var second = CreateAgentWorkspace(Guid.NewGuid(), AgentWorkspaceState.Idle);
         agents.RaiseCreated(first);
@@ -532,7 +532,7 @@ public sealed class WorkspaceManagerTests
         var terminals = new RecordingTabManagementService();
         using var agents = new StubAgentWorkspaceCoordinator();
         var bridge = new RecordingAgentBridgeService();
-        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator());
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator(), new FakeKimiWebWorkspaceCoordinator());
         var first = CreateAgentWorkspace(Guid.NewGuid(), AgentWorkspaceState.Idle, workspace.Path);
         var second = CreateAgentWorkspace(Guid.NewGuid(), AgentWorkspaceState.Idle, workspace.Path);
         agents.RaiseCreated(first);
@@ -559,7 +559,7 @@ public sealed class WorkspaceManagerTests
         var terminals = new RecordingTabManagementService();
         using var agents = new StubAgentWorkspaceCoordinator();
         var bridge = new RecordingAgentBridgeService();
-        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator());
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator(), new FakeKimiWebWorkspaceCoordinator());
         _ = await manager.CreateTerminalAsync();
         var second = (await manager.CreateTerminalAsync())!.Value;
         manager.SplitWorkspaceToNewPane(second);
@@ -578,7 +578,7 @@ public sealed class WorkspaceManagerTests
         var terminals = new RecordingTabManagementService();
         using var agents = new StubAgentWorkspaceCoordinator();
         var bridge = new RecordingAgentBridgeService();
-        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator());
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator(), new FakeKimiWebWorkspaceCoordinator());
         var workspaceId = (await manager.CreateTerminalAsync())!.Value;
         var layoutEvents = BridgeEvents(bridge, "workspace_layout").Count;
         var catalogRevision = LastBridgeEvent(bridge, "workspace_catalog").GetProperty("revision").GetInt64();
@@ -597,7 +597,7 @@ public sealed class WorkspaceManagerTests
         var terminals = new RecordingTabManagementService();
         using var agents = new StubAgentWorkspaceCoordinator();
         var bridge = new RecordingAgentBridgeService();
-        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator());
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator(), new FakeKimiWebWorkspaceCoordinator());
         var first = (await manager.CreateTerminalAsync())!.Value;
 
         Assert.AreEqual("terminal", manager.Workspaces.Single().IconKey);
@@ -620,7 +620,7 @@ public sealed class WorkspaceManagerTests
         var terminals = new RecordingTabManagementService();
         using var agents = new StubAgentWorkspaceCoordinator();
         var bridge = new RecordingAgentBridgeService();
-        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator());
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator(), new FakeKimiWebWorkspaceCoordinator());
 
         _ = await manager.CreateTerminalAsync();
 
@@ -635,7 +635,7 @@ public sealed class WorkspaceManagerTests
         var terminals = new RecordingTabManagementService();
         using var agents = new StubAgentWorkspaceCoordinator();
         var bridge = new RecordingAgentBridgeService();
-        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator());
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator(), new FakeKimiWebWorkspaceCoordinator());
 
         var first = (await manager.CreateDshWebAsync())!.Value;
         Assert.AreEqual(WorkspaceKind.DshWeb, manager.Workspaces.Single().Kind);
@@ -677,7 +677,7 @@ public sealed class WorkspaceManagerTests
         var terminals = new RecordingTabManagementService();
         using var agents = new StubAgentWorkspaceCoordinator();
         var bridge = new RecordingAgentBridgeService();
-        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator());
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator(), new FakeKimiWebWorkspaceCoordinator());
 
         var id = (await manager.CreateDshWebAsync())!.Value;
         await manager.ActivateAsync(id);
@@ -701,11 +701,99 @@ public sealed class WorkspaceManagerTests
         using var agents = new StubAgentWorkspaceCoordinator();
         var bridge = new RecordingAgentBridgeService();
         var dsh = new FakeDshWorkspaceCoordinator();
-        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), dsh);
+        var kimiWeb = new FakeKimiWebWorkspaceCoordinator();
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), dsh, kimiWeb);
 
         manager.BeginShutdown();
 
         Assert.IsTrue(dsh.ShutdownBegan, "WorkspaceManager.BeginShutdown must forward to the DSH coordinator");
+        Assert.IsTrue(kimiWeb.ShutdownBegan, "WorkspaceManager.BeginShutdown must forward to the Kimi Web coordinator");
+    }
+
+    [TestMethod]
+    public async Task KimiWeb_CreateIsSingleInstance_CloseRemoves_AndReopenGetsFreshId()
+    {
+        var terminals = new RecordingTabManagementService();
+        using var agents = new StubAgentWorkspaceCoordinator();
+        var bridge = new RecordingAgentBridgeService();
+        var kimiWeb = new FakeKimiWebWorkspaceCoordinator();
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator(), kimiWeb);
+
+        var first = (await manager.CreateKimiWebAsync())!.Value;
+        Assert.AreEqual(WorkspaceKind.KimiWeb, manager.Workspaces.Single().Kind);
+        Assert.AreEqual("Kimi Code Web", manager.Workspaces.Single().Title);
+        Assert.AreEqual("kimi", manager.Workspaces.Single().IconKey);
+
+        // Second create is a pure jump to the existing tab, never a duplicate.
+        var second = (await manager.CreateKimiWebAsync())!.Value;
+        Assert.AreEqual(first, second);
+        Assert.HasCount(1, manager.Workspaces);
+
+        // The catalog and layout both serialize the explicit wire kind.
+        var catalog = bridge.Events.Last(message => message.GetProperty("type").GetString() == "workspace_catalog");
+        Assert.AreEqual("kimi_web", catalog.GetProperty("workspaces")[0].GetProperty("kind").GetString());
+        var layout = bridge.Events.Last(message => message.GetProperty("type").GetString() == "workspace_layout");
+        Assert.AreEqual("kimi_web", layout.GetProperty("columns")[0].GetProperty("tabs")[0].GetProperty("kind").GetString());
+
+        // Closing the tab removes the descriptor WITHOUT stopping the runtime:
+        // the fake coordinator records no command, and the existing rule spawns
+        // the replacement terminal.
+        await manager.CloseAsync(first);
+        Assert.IsEmpty(manager.Workspaces.Where(workspace => workspace.Kind == WorkspaceKind.KimiWeb));
+        Assert.IsEmpty(kimiWeb.Commands, "closing the tab must not issue a stop command");
+        Assert.HasCount(1, manager.Workspaces);
+        Assert.AreEqual(WorkspaceKind.Terminal, manager.Workspaces.Single().Kind);
+
+        // Reopening after close yields a fresh workspace id, alongside the
+        // replacement terminal.
+        var third = (await manager.CreateKimiWebAsync())!.Value;
+        Assert.AreNotEqual(first, third);
+        Assert.HasCount(1, manager.Workspaces.Where(workspace => workspace.Kind == WorkspaceKind.KimiWeb));
+        Assert.HasCount(2, manager.Workspaces);
+    }
+
+    [TestMethod]
+    public async Task KimiWeb_ActivationSendsKimiWebWireKind()
+    {
+        var terminals = new RecordingTabManagementService();
+        using var agents = new StubAgentWorkspaceCoordinator();
+        var bridge = new RecordingAgentBridgeService();
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator(), new FakeKimiWebWorkspaceCoordinator());
+
+        var id = (await manager.CreateKimiWebAsync())!.Value;
+        await manager.ActivateAsync(id);
+
+        var activation = bridge.Events.Last(message => message.GetProperty("type").GetString() == "workspace_activated");
+        Assert.AreEqual("kimi_web", activation.GetProperty("kind").GetString());
+    }
+
+    [TestMethod]
+    public void WorkspaceWireKind_KimiWeb_NeverUsesEnumNameLowercasing()
+    {
+        Assert.AreEqual("kimi_web", WorkspaceWireKind.ToWire(WorkspaceKind.KimiWeb));
+        Assert.AreEqual("dsh_web", WorkspaceWireKind.ToWire(WorkspaceKind.DshWeb));
+        Assert.AreEqual("terminal", WorkspaceWireKind.ToWire(WorkspaceKind.Terminal));
+        Assert.AreEqual("agent", WorkspaceWireKind.ToWire(WorkspaceKind.Agent));
+    }
+
+    [TestMethod]
+    public async Task KimiWeb_CommandsAndExports_RouteToTheFakeCoordinator()
+    {
+        var terminals = new RecordingTabManagementService();
+        using var agents = new StubAgentWorkspaceCoordinator();
+        var bridge = new RecordingAgentBridgeService();
+        var kimiWeb = new FakeKimiWebWorkspaceCoordinator();
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator(), kimiWeb);
+
+        _ = (await manager.CreateKimiWebAsync())!.Value;
+        terminals.RaiseKimiWebCommand("stop");
+        await Task.Delay(20);
+        CollectionAssert.AreEqual(new[] { "stop" }, kimiWeb.Commands);
+
+        terminals.RaiseKimiWebExport("http://127.0.0.1:1/x", "/x", "s1");
+        await Task.Delay(20);
+        Assert.HasCount(1, kimiWeb.Exports);
+        Assert.AreEqual(("http://127.0.0.1:1/x", "/x", "s1"), kimiWeb.Exports.Single());
     }
 
     private static WorkspaceDescriptor CreateAgentWorkspace(
@@ -840,7 +928,9 @@ internal sealed class RecordingTabManagementService : ITabManagementService
     public event EventHandler<WorkspaceLayoutIntentEventArgs>? WorkspaceLayoutIntentRequested { add { } remove { } }
     public event EventHandler<WorkspaceCreateEventArgs>? WorkspaceCreateRequested { add { } remove { } }
     public event EventHandler<DshCommandEventArgs>? DshCommandRequested { add { } remove { } }
+    public event EventHandler<KimiWebCommandEventArgs>? KimiWebCommandRequested;
     public event EventHandler<DshExportEventArgs>? DshExportRequested { add { } remove { } }
+    public event EventHandler<KimiWebExportEventArgs>? KimiWebExportRequested;
 
     public Task<Guid> CreateTabAsync(ShellProfile? profile = null)
     {
@@ -868,6 +958,10 @@ internal sealed class RecordingTabManagementService : ITabManagementService
         TabTitleChanged?.Invoke(this, new TabTitleChangedEventArgs { SessionId = sessionId, Title = title });
     public void RaisePaneRatios(long baseRevision, IReadOnlyDictionary<string, double> ratios) =>
         PaneRatiosRequested?.Invoke(this, new PaneRatiosEventArgs { BaseRevision = baseRevision, Ratios = ratios });
+    public void RaiseKimiWebCommand(string name) =>
+        KimiWebCommandRequested?.Invoke(this, new KimiWebCommandEventArgs { Name = name });
+    public void RaiseKimiWebExport(string url, string? path, string? sessionId) =>
+        KimiWebExportRequested?.Invoke(this, new KimiWebExportEventArgs { Url = url, Path = path, SessionId = sessionId });
 }
 
 internal sealed class StubAgentWorkspaceCoordinator : IAgentWorkspaceCoordinator

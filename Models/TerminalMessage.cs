@@ -55,6 +55,9 @@ public sealed class TerminalMessage
     [JsonPropertyName("url")]
     public string? Url { get; set; }
 
+    [JsonPropertyName("path")]
+    public string? Path { get; set; }
+
     [JsonPropertyName("filename")]
     public string? Filename { get; set; }
 

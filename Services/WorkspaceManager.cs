@@ -20,6 +20,8 @@ public interface IWorkspaceManager : IDisposable
     Task<Guid?> CreateAgentAsync(string providerKey, string? workingDirectory = null);
     /// <summary>Create (or focus) the single DeepSeek Harness web workspace.</summary>
     Task<Guid?> CreateDshWebAsync();
+    /// <summary>Create (or focus) the single Kimi Code Web workspace.</summary>
+    Task<Guid?> CreateKimiWebAsync();
     Task<Guid?> OpenAgentThreadAsync(string threadId);
     Task ActivateAsync(Guid workspaceId);
     Task CloseAsync(Guid workspaceId, WorkspaceCloseReason reason = WorkspaceCloseReason.User);
@@ -60,6 +62,7 @@ public sealed class WorkspaceManager : IWorkspaceManager
     private readonly ITabManagementService _terminalTabs;
     private readonly IAgentWorkspaceCoordinator _agents;
     private readonly IDshWebWorkspaceCoordinator _dsh;
+    private readonly IKimiWebWorkspaceCoordinator _kimiWeb;
     private readonly IAgentBridgeService _bridge;
     private readonly WorkspaceLayoutService _layout;
     private readonly List<WorkspaceDescriptor> _workspaces = new();
@@ -78,7 +81,8 @@ public sealed class WorkspaceManager : IWorkspaceManager
         IAgentWorkspaceCoordinator agents,
         IAgentBridgeService bridge,
         WorkspaceLayoutService layout,
-        IDshWebWorkspaceCoordinator dsh)
+        IDshWebWorkspaceCoordinator dsh,
+        IKimiWebWorkspaceCoordinator kimiWeb)
     {
         _terminalTabs = terminalTabs;
         _agents = agents;
@@ -88,6 +92,9 @@ public sealed class WorkspaceManager : IWorkspaceManager
         // runtime against temp directories with an undisposed supervisor.
         // Tests supply an explicit fake.
         _dsh = dsh ?? throw new ArgumentNullException(nameof(dsh));
+        // Mandatory injection mirroring DSH: production DI always supplies the
+        // singleton; a null coordinator would leave the kimi_web branches inert.
+        _kimiWeb = kimiWeb ?? throw new ArgumentNullException(nameof(kimiWeb));
         _layout.LayoutChanged += OnLayoutChanged;
 
         _terminalTabs.TabCreated += OnTerminalCreated;
@@ -100,12 +107,16 @@ public sealed class WorkspaceManager : IWorkspaceManager
         _terminalTabs.WorkspaceCreateRequested += OnWorkspaceCreateRequested;
         _terminalTabs.DshCommandRequested += OnDshCommandRequested;
         _terminalTabs.DshExportRequested += OnDshExportRequested;
+        _terminalTabs.KimiWebCommandRequested += OnKimiWebCommandRequested;
+        _terminalTabs.KimiWebExportRequested += OnKimiWebExportRequested;
         _agents.WorkspaceCreated += OnAgentCreated;
         _agents.WorkspaceChanged += OnAgentChanged;
         _agents.WorkspaceClosed += OnAgentClosed;
         _agents.WorkspaceActivationRequested += OnActivationRequested;
         _dsh.WorkspaceCreated += OnDshCreated;
         _dsh.WorkspaceClosed += OnDshClosed;
+        _kimiWeb.WorkspaceCreated += OnKimiWebCreated;
+        _kimiWeb.WorkspaceClosed += OnKimiWebClosed;
     }
 
     public IReadOnlyList<WorkspaceDescriptor> Workspaces
@@ -156,6 +167,24 @@ public sealed class WorkspaceManager : IWorkspaceManager
         return created;
     }
 
+    public async Task<Guid?> CreateKimiWebAsync()
+    {
+        if (_disposed || _shuttingDown)
+            return null;
+        // Single-instance: an already-open Kimi Web workspace is activated in
+        // place (pure jump), never duplicated.
+        var existing = _kimiWeb.OpenWorkspaceId;
+        if (existing.HasValue)
+        {
+            await ActivateAsync(existing.Value).ConfigureAwait(false);
+            return existing.Value;
+        }
+        var created = await _kimiWeb.CreateAsync().ConfigureAwait(false);
+        if (created.HasValue)
+            await ActivateAsync(created.Value).ConfigureAwait(false);
+        return created;
+    }
+
     public Task<Guid?> OpenAgentThreadAsync(string threadId) =>
         _disposed || _shuttingDown
             ? Task.FromResult<Guid?>(null)
@@ -198,6 +227,8 @@ public sealed class WorkspaceManager : IWorkspaceManager
             await _terminalTabs.CloseTabAsync(workspaceId).ConfigureAwait(false);
         else if (workspace.Kind == WorkspaceKind.DshWeb)
             await _dsh.CloseAsync(workspaceId, reason).ConfigureAwait(false);
+        else if (workspace.Kind == WorkspaceKind.KimiWeb)
+            await _kimiWeb.CloseAsync(workspaceId, reason).ConfigureAwait(false);
         else
             await _agents.CloseAsync(workspaceId, reason).ConfigureAwait(false);
     }
@@ -238,6 +269,7 @@ public sealed class WorkspaceManager : IWorkspaceManager
         // rest of the process lifetime; the supervisor teardown itself is
         // owned by MainWindow's shutdown sequence.
         _dsh.BeginShutdown();
+        _kimiWeb?.BeginShutdown();
     }
 
     private void OnTerminalCreated(object? sender, TabCreatedEventArgs args)
@@ -387,6 +419,35 @@ public sealed class WorkspaceManager : IWorkspaceManager
     private void OnDshClosed(object? sender, WorkspaceClosedEventArgs args) =>
         RemoveWorkspace(args.WorkspaceId);
 
+    private void OnKimiWebCreated(object? sender, WorkspaceEventArgs args)
+    {
+        lock (_sync)
+        {
+            _workspaces.Add(args.Workspace);
+            _creatingReplacementTerminal = false;
+        }
+        WorkspaceCreated?.Invoke(this, new WorkspaceEventArgs { Workspace = args.Workspace });
+        BroadcastCatalog();
+    }
+
+    private void OnKimiWebClosed(object? sender, WorkspaceClosedEventArgs args) =>
+        RemoveWorkspace(args.WorkspaceId);
+
+    private void OnKimiWebCommandRequested(object? sender, KimiWebCommandEventArgs args) =>
+        _ = RunKimiWebCommandAsync(args.Name);
+
+    private async Task RunKimiWebCommandAsync(string name)
+    {
+        try
+        {
+            await _kimiWeb.HandleCommandAsync(name).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine("Kimi Web command failed: " + ex.Message);
+        }
+    }
+
     private void OnDshCommandRequested(object? sender, DshCommandEventArgs args) =>
         _ = RunDshCommandAsync(args.Name);
 
@@ -414,6 +475,21 @@ public sealed class WorkspaceManager : IWorkspaceManager
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine("DSH export handling failed: " + ex.Message);
+        }
+    }
+
+    private void OnKimiWebExportRequested(object? sender, KimiWebExportEventArgs args) =>
+        _ = RunKimiWebExportAsync(args);
+
+    private async Task RunKimiWebExportAsync(KimiWebExportEventArgs args)
+    {
+        try
+        {
+            await _kimiWeb.HandleExportAsync(args.Url, args.Path, args.SessionId).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine("Kimi Web export handling failed: " + ex.Message);
         }
     }
 
@@ -530,6 +606,7 @@ public sealed class WorkspaceManager : IWorkspaceManager
         {
             "terminal" => await CreateTerminalAsync().ConfigureAwait(false),
             "dsh_web" => await CreateDshWebAsync().ConfigureAwait(false),
+            "kimi_web" => await CreateKimiWebAsync().ConfigureAwait(false),
             _ => await CreateAgentAsync(args.ProviderKey!).ConfigureAwait(false)
         };
         if (!created.HasValue && args.Placement == "new_right")
@@ -591,6 +668,16 @@ public sealed class WorkspaceManager : IWorkspaceManager
                 type = "workspace_activated",
                 workspaceId = workspace.WorkspaceId,
                 kind = "dsh_web"
+            }).ConfigureAwait(false);
+        }
+        else if (workspace.Kind == WorkspaceKind.KimiWeb)
+        {
+            await _kimiWeb.ActivateAsync(workspace.WorkspaceId).ConfigureAwait(false);
+            await _bridge.SendEventAsync(new
+            {
+                type = "workspace_activated",
+                workspaceId = workspace.WorkspaceId,
+                kind = "kimi_web"
             }).ConfigureAwait(false);
         }
         else
@@ -746,11 +833,15 @@ public sealed class WorkspaceManager : IWorkspaceManager
         _terminalTabs.WorkspaceCreateRequested -= OnWorkspaceCreateRequested;
         _terminalTabs.DshCommandRequested -= OnDshCommandRequested;
         _terminalTabs.DshExportRequested -= OnDshExportRequested;
+        _terminalTabs.KimiWebCommandRequested -= OnKimiWebCommandRequested;
+        _terminalTabs.KimiWebExportRequested -= OnKimiWebExportRequested;
         _agents.WorkspaceCreated -= OnAgentCreated;
         _agents.WorkspaceChanged -= OnAgentChanged;
         _agents.WorkspaceClosed -= OnAgentClosed;
         _agents.WorkspaceActivationRequested -= OnActivationRequested;
         _dsh.WorkspaceCreated -= OnDshCreated;
         _dsh.WorkspaceClosed -= OnDshClosed;
+        _kimiWeb.WorkspaceCreated -= OnKimiWebCreated;
+        _kimiWeb.WorkspaceClosed -= OnKimiWebClosed;
     }
 }

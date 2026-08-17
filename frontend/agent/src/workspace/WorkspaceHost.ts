@@ -142,7 +142,13 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
       const tab = column.tabs?.find((item) => item.workspaceId === column.activeTabId);
       return tab?.kind === 'dsh_web';
     });
-    this.container.classList.toggle('agent-workspace-active', anyAgentVisible && !anyTerminalVisible && !anyDshWebVisible);
+    // A kimi_web column is another shell-owned surface, same rule as DSH.
+    const anyKimiWebVisible = snapshot.columns.some((column) => {
+      if (!column.activeTabId) return false;
+      const tab = column.tabs?.find((item) => item.workspaceId === column.activeTabId);
+      return tab?.kind === 'kimi_web';
+    });
+    this.container.classList.toggle('agent-workspace-active', anyAgentVisible && !anyTerminalVisible && !anyDshWebVisible && !anyKimiWebVisible);
   }
 
   /** Width of the focused pane's agent panel, for pane-relative responsive

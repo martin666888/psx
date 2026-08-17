@@ -201,7 +201,7 @@ test('create menu gates the DeepSeek Harness row with its own fitsDsh capacity',
   chrome.dispose();
 });
 
-test('create menu lists DeepSeek Harness under AGENT, not beside Terminal', async () => {
+test('create menu lists web apps under WEB APP and ACP providers under AGENT (ACP)', async () => {
   installAgentRuntime();
   mountChrome();
   const { WorkspaceChromeController } = await import(controllerUrl);
@@ -222,15 +222,18 @@ test('create menu lists DeepSeek Harness under AGENT, not beside Terminal', asyn
   const labels = [...document.querySelectorAll('.workspace-popover .workspace-menu-row .workspace-menu-primary, .workspace-popover .workspace-popover-subheading')]
     .map((node) => node.textContent);
   const terminal = labels.indexOf('Terminal');
-  const agent = labels.indexOf('AGENT');
+  const webApp = labels.indexOf('WEB APP');
+  const kimiWeb = labels.indexOf('Kimi Code Web');
   const dsh = labels.indexOf('DeepSeek Harness');
+  const agent = labels.indexOf('AGENT (ACP)');
   const claude = labels.indexOf('Claude Code');
-  assert.ok(terminal >= 0 && agent > terminal, 'AGENT heading follows Terminal');
-  assert.ok(dsh > agent, 'DeepSeek Harness sits under AGENT');
-  assert.ok(claude > dsh, 'ACP providers follow DeepSeek Harness');
+  assert.ok(terminal >= 0 && webApp > terminal, 'WEB APP heading follows Terminal');
+  assert.ok(kimiWeb > webApp, 'Kimi Code Web opens the WEB APP group');
+  assert.ok(dsh > kimiWeb, 'DeepSeek Harness joins the WEB APP group below Kimi Code Web');
+  assert.ok(agent > dsh, 'AGENT (ACP) heading follows the web-app rows');
+  assert.ok(claude > agent, 'ACP providers follow the AGENT heading');
   chrome.dispose();
 });
-
 test('create menu refreshes in place without replaying the entry animation or stealing focus', async () => {
   installAgentRuntime();
   mountChrome();
@@ -679,6 +682,97 @@ test('dsh_web update menu reports checking, latest and safe errors without long 
   );
   assert.equal(stop.querySelector('.workspace-menu-secondary').textContent, '',
     'long prose must not squeeze the stop action out of the compact row');
+  chrome.dispose();
+});
+
+test('create menu gates the Kimi Code Web row with its own fitsKimiWeb capacity', async () => {
+  installAgentRuntime();
+  mountChrome();
+  const { WorkspaceChromeController } = await import(controllerUrl);
+  const chrome = new WorkspaceChromeController(
+    document.getElementById('workspace-chrome'),
+    document.getElementById('workspace-popover-root')
+  );
+  chrome.applyLayout(columnSnapshot([
+    { columnId: 'column-1', tabs: [{ workspaceId: 'w1', kind: 'terminal' }], activeTabId: 'w1', ratio: 1 }
+  ]), new Map());
+  chrome.applyCatalog({ revision: 1, providers: [], workspaces: [], maxColumns: 3 });
+  const row = (text) =>
+    [...document.querySelectorAll('.workspace-menu-row')].find(
+      (r) => r.querySelector('.workspace-menu-primary').textContent === text
+    );
+  const segment = (text) =>
+    [...document.querySelectorAll('.workspace-segments button')].find((b) => b.textContent === text);
+
+  // Kimi Web capacity exhausted at new_right: only the Kimi Code Web row is
+  // blocked; fitsKimiWeb never gates the shared segment or the DSH row.
+  chrome.setCapacityChecker(() => ({ fitsAgent: true, fitsTerminal: true, fitsDsh: true, fitsKimiWeb: false, requestedColumnCount: 1 }));
+  document.querySelector('[data-role="workspace-create-toggle"]').click();
+  segment('右侧新列').click();
+  assert.equal(row('Kimi Code Web').disabled, true);
+  assert.equal(row('Kimi Code Web').title, '窗口宽度不足以容纳新列');
+  assert.equal(row('DeepSeek Harness').disabled, false, 'fitsKimiWeb never gates the DSH row');
+  assert.equal(row('Terminal').disabled, false, 'fitsKimiWeb never gates the Terminal row');
+  chrome.dispose();
+});
+
+test('kimi_web tab menu switches the runtime action by status', async () => {
+  const runtime = installAgentRuntime();
+  mountChrome();
+  const { WorkspaceChromeController } = await import(controllerUrl);
+  const chrome = new WorkspaceChromeController(
+    document.getElementById('workspace-chrome'),
+    document.getElementById('workspace-popover-root')
+  );
+  chrome.applyLayout(columnSnapshot([
+    { columnId: 'column-1', tabs: [{ workspaceId: 'k1', kind: 'kimi_web' }], activeTabId: 'k1', ratio: 1 }
+  ]), new Map([['column-1', { left: 40, top: 40, width: 960, height: 700 }]]));
+  chrome.applyCatalog({
+    revision: 1,
+    providers: [],
+    maxColumns: 3,
+    workspaces: [{
+      workspaceId: 'k1', kind: 'kimi_web', title: 'Kimi Code Web', iconKey: 'kimi',
+      columnId: 'column-1', isActiveTab: true, canSplitRight: true, splitBlockedReason: '',
+      canCollapse: false
+    }]
+  });
+  const primaryText = (r) => r.querySelector('.workspace-menu-primary').textContent;
+  const openMenu = () => document.querySelector('.workspace-tab')
+    .dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+  const runtimeRow = () => [...document.querySelectorAll('.workspace-menu-row')].find(
+    (r) => r.closest('[data-role="kimi-web-runtime-menu"]')
+  );
+
+  // ready -> the stop action.
+  chrome.applyKimiWebRuntimeStatus({ state: 'ready' });
+  openMenu();
+  assert.equal(primaryText(runtimeRow()), '停止');
+  runtimeRow().click();
+  assert.deepEqual(runtime.postedMessages.at(-1), { type: 'kimi_web_command', name: 'stop' });
+
+  // unavailable -> retry that only re-validates (no process pull).
+  chrome.applyKimiWebRuntimeStatus({ state: 'unavailable', reason: 'runtime_missing' });
+  openMenu();
+  assert.equal(primaryText(runtimeRow()), '重试');
+  assert.equal(runtimeRow().querySelector('.workspace-menu-secondary').textContent, '仅重新校验运行时');
+  runtimeRow().click();
+  assert.deepEqual(runtime.postedMessages.at(-1), { type: 'kimi_web_command', name: 'retry' });
+
+  // failed -> retry.
+  chrome.applyKimiWebRuntimeStatus({ state: 'failed', errorClass: 'launch_failed' });
+  openMenu();
+  assert.equal(primaryText(runtimeRow()), '重试');
+
+  // starting / stopping -> disabled busy labels.
+  chrome.applyKimiWebRuntimeStatus({ state: 'starting' });
+  openMenu();
+  assert.equal(primaryText(runtimeRow()), '正在启动…');
+  assert.equal(runtimeRow().disabled, true);
+  chrome.applyKimiWebRuntimeStatus({ state: 'stopping' });
+  openMenu();
+  assert.equal(primaryText(runtimeRow()), '正在停止…');
+  assert.equal(runtimeRow().disabled, true);
   chrome.dispose();
 });
 

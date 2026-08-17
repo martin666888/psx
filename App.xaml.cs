@@ -131,6 +131,16 @@ public partial class App : Application
                 // Neutral default project directory for DSH sessions (DSH falls
                 // back to process.cwd()); never an internal PSX tree.
                 Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "dsh-workspace")));
+        services.AddSingleton<IKimiWebWorkspaceCoordinator, KimiWebWorkspaceCoordinator>();
+        services.AddSingleton<KimiWebRuntimeSupervisor>(sp =>
+            new KimiWebRuntimeSupervisor(
+                sp.GetRequiredService<KimiCodeAcpRuntime>(),
+                sp.GetRequiredService<IAgentBridgeService>(),
+                Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "kimi-web"),
+                // Neutral working directory for `kimi web` sessions (the
+                // server falls back to process.cwd()); never an internal PSX
+                // tree or a user's project directories.
+                Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "kimi-web-workspace")));
         services.AddSingleton<WorkspaceLayoutService>();
         services.AddSingleton<IWorkspaceManager, WorkspaceManager>();
 

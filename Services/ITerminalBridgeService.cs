@@ -12,7 +12,16 @@ public interface ITerminalBridgeService
     Task ResizeTerminalAsync(Guid sessionId, int cols, int rows);
     Task SetViewModeAsync(string mode);
     Task SendAppearanceAsync(AppearanceSettings appearance);
-    /// <summary>Set the current DSH origin for the frame navigation whitelist.</summary>
+    /// <summary>Set (or clear) the frame-origin slot for one embedded web
+    /// runtime ("dsh" / "kimi_web"). A null origin clears the slot; the
+    /// frame navigation whitelist matches any slot's current origin.</summary>
+    void SetFrameOrigin(string kind, string? origin);
+    /// <summary>Prepare a runtime's document-start frame script before its
+    /// origin and Ready URL are published. Kimi Web awaits this handshake so
+    /// its first navigation cannot race export mediation.</summary>
+    Task PrepareFrameOriginAsync(string kind, string origin);
+    /// <summary>Compatibility wrapper for the DSH slot (SetFrameOrigin with
+    /// kind "dsh").</summary>
     void SetDshOrigin(string? origin);
 
     event EventHandler<TerminalInputEventArgs>? InputReceived;
@@ -29,14 +38,28 @@ public interface ITerminalBridgeService
     event EventHandler<WorkspaceLayoutIntentEventArgs>? WorkspaceLayoutIntentRequested;
     event EventHandler<WorkspaceCreateEventArgs>? WorkspaceCreateRequested;
     event EventHandler<DshCommandEventArgs>? DshCommandRequested;
+    /// <summary>kimi_web_command (stop | retry) from the embedded Kimi Web tab.</summary>
+    event EventHandler<KimiWebCommandEventArgs>? KimiWebCommandRequested;
     /// <summary>DSH session-log export: the export URL DSH built (host validates
     /// its origin against the current ready URL and locks the path to
     /// /api/session.export) plus a suggested archive filename.</summary>
     event EventHandler<DshExportEventArgs>? DshExportRequested;
+    /// <summary>Kimi Web session export from the embedded Kimi Web tab: the
+    /// absolute export URL the page built (host validates its origin against
+    /// the current kimi origin and locks the path to
+    /// /api/v1/sessions/{id}/export) plus the path/sessionId it carries. The
+    /// frontend never sends a token — the Authorization header comes only
+    /// from the supervisor's in-memory token.</summary>
+    event EventHandler<KimiWebExportEventArgs>? KimiWebExportRequested;
     event EventHandler<ThemeActionEventArgs>? ThemeActionRequested;
 }
 
 public sealed class DshCommandEventArgs : EventArgs
+{
+    public required string Name { get; init; }
+}
+
+public sealed class KimiWebCommandEventArgs : EventArgs
 {
     public required string Name { get; init; }
 }
@@ -47,6 +70,20 @@ public sealed class DshExportEventArgs : EventArgs
     public required string Url { get; init; }
     /// <summary>Suggested archive filename from the export anchor's download attribute.</summary>
     public required string Filename { get; init; }
+}
+
+public sealed class KimiWebExportEventArgs : EventArgs
+{
+    /// <summary>Absolute export URL the page built. The host validates its
+    /// origin against the current kimi origin and locks the path to
+    /// /api/v1/sessions/{id}/export before fetching; never trusted blindly.</summary>
+    public required string Url { get; init; }
+    /// <summary>Pathname portion of the export URL, informational (never used
+    /// to pick the fetch target).</summary>
+    public string? Path { get; init; }
+    /// <summary>Session id embedded in the path, informational (used only for
+    /// a suggested archive filename).</summary>
+    public string? SessionId { get; init; }
 }
 
 public sealed class PaneRatiosEventArgs : EventArgs

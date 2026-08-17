@@ -137,11 +137,38 @@ export const Bridge = {
         });
     },
 
+    /** @param {'stop'|'retry'} name */
+    sendKimiWebCommand(name) {
+        this.sendToHost({
+            type: BridgeSendType.KimiWebCommand,
+            name
+        });
+    },
+
     /** @param {'install'|'retry'|'stop'|'check_update'|'update'} name */
     sendDshCommand(name) {
         this.sendToHost({
             type: BridgeSendType.DshCommand,
             name
+        });
+    },
+
+    /** Kimi Web session-export mediation: the export URL the kimi frame
+     * built (validated host-side against the current ready origin +
+     * /api/v1/sessions/{id}/export path) plus the frame-provided path and
+     * sessionId. Forwarded from the injected frame script's postMessage —
+     * the WebView2 native download path is never used; the URL never carries
+     * the token, which the host supplies from memory.
+     * @param {string} url
+     * @param {string} path
+     * @param {string} sessionId
+     */
+    sendKimiWebExport(url, path, sessionId) {
+        this.sendToHost({
+            type: BridgeSendType.KimiWebExport,
+            url,
+            path,
+            sessionId
         });
     },
 

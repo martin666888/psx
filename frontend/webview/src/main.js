@@ -16,6 +16,7 @@ import './css/terminal.css';
 import './css/panes.css';
 import './css/workspace-chrome.css';
 import './css/dsh.css';
+import './css/kimi-web.css';
 import './css/agent/index.css';
 import './css/runtime-diagnostics.css';
 import { Bridge } from './Bridge.js';
@@ -26,6 +27,7 @@ import { installRuntimeDiagnostics } from './RuntimeDiagnostics.js';
 import { TerminalManager } from './TerminalManager.js';
 import { WorkspaceChromeController } from './WorkspaceChromeController.js';
 import { DshWorkspaceHost } from './DshWorkspaceHost.js';
+import { KimiWebWorkspaceHost } from './KimiWebWorkspaceHost.js';
 
 installRuntimeDiagnostics();
 
@@ -42,6 +44,7 @@ installRuntimeDiagnostics();
         document.getElementById('workspace-popover-root')
     );
     const dshWorkspaceHost = new DshWorkspaceHost(document.getElementById('dsh-workspace-container'));
+    const kimiWebWorkspaceHost = new KimiWebWorkspaceHost(document.getElementById('kimi-web-workspace-container'));
     // Pixel-capacity gate (prevention): the chrome disables "new column"
     // entries when the requested layout plus one more column of that kind
     // would overflow the current width. The C# 3-column count remains the
@@ -54,6 +57,7 @@ installRuntimeDiagnostics();
             fitsAgent: paneLayout.requestedMinimumWidthSum() + paneLayout.minimumWidthForNewPane('agent') <= available,
             fitsTerminal: paneLayout.requestedMinimumWidthSum() + paneLayout.minimumWidthForNewPane('terminal') <= available,
             fitsDsh: paneLayout.requestedMinimumWidthSum() + paneLayout.minimumWidthForNewPane('dsh_web') <= available,
+            fitsKimiWeb: paneLayout.requestedMinimumWidthSum() + paneLayout.minimumWidthForNewPane('kimi_web') <= available,
             requestedColumnCount: paneLayout.requestedColumnCount
         };
     });
@@ -68,6 +72,7 @@ installRuntimeDiagnostics();
         terminalManager.applyLayout(snapshot, rects, options);
         workspaceChrome.applyLayout(snapshot, rects);
         dshWorkspaceHost.applyLayout(snapshot, rects);
+        kimiWebWorkspaceHost.applyLayout(snapshot, rects);
         if (agentApp) agentApp.setPaneLayout(snapshot, rects);
     });
 
@@ -95,6 +100,7 @@ installRuntimeDiagnostics();
             if (scheme) {
                 root.style.colorScheme = scheme;
                 dshWorkspaceHost.applyColorScheme(scheme);
+                kimiWebWorkspaceHost.applyColorScheme(scheme);
             }
         }
         const agent = settings.agentThemeColors;
@@ -336,9 +342,19 @@ installRuntimeDiagnostics();
                 dshWorkspaceHost.applyRuntimeStatus(message);
                 workspaceChrome.applyDshRuntimeStatus(message);
                 return;
+            case BridgeEventType.KimiWebRuntimeStatus:
+                // Kimi Web runtime state is shell-owned: never staged into
+                // the Agent chunk.
+                kimiWebWorkspaceHost.applyRuntimeStatus(message);
+                workspaceChrome.applyKimiWebRuntimeStatus(message);
+                return;
             case BridgeEventType.WorkspaceActivated:
-                // The DSH activation is shell-owned; every other activation is
-                // Agent-owned and must keep flowing to the Agent app.
+                // DSH and Kimi Web activations are shell-owned; every other
+                // activation is Agent-owned and must keep flowing to the Agent app.
+                if (message.kind === 'kimi_web') {
+                    kimiWebWorkspaceHost.activate(message);
+                    return;
+                }
                 if (message.kind === 'dsh_web') {
                     dshWorkspaceHost.activate(message);
                     return;

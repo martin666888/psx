@@ -163,6 +163,47 @@ test('mixed terminal/agent layout keeps the Agent layer click-through for termin
     'pure agent layout keeps the active workbench layer');
 });
 
+test('mixed kimi_web/agent layout keeps the Agent layer click-through for kimi columns', async () => {
+  const { app } = await mountAgentApp({ paneLayout: { setDockInset() {} } });
+  const container = document.getElementById('agents');
+  createAgentWorkspace(app, FIRST, { ready: false });
+
+  // A visible kimi_web column beside the agent: the shell-owned kimi surface
+  // must not be covered by the Agent blanket, exactly like DSH.
+  app.setPaneLayout(
+    {
+      focusedColumnId: 'column-2',
+      columns: [
+        { columnId: 'column-1', tabs: [{ workspaceId: 'kimi-1', kind: 'kimi_web' }], activeTabId: 'kimi-1', ratio: 0.5 },
+        { columnId: 'column-2', tabs: [{ workspaceId: FIRST, kind: 'agent' }], activeTabId: FIRST, ratio: 0.5 }
+      ]
+    },
+    new Map([
+      ['column-1', { left: 40, top: 40, width: 400, height: 860 }],
+      ['column-2', { left: 440, top: 40, width: 400, height: 860 }]
+    ])
+  );
+  assert.equal(container.classList.contains('agent-workspace-active'), false,
+    'a kimi_web column leaves the container click-through (the kimi panel self-enables)');
+  assert.equal(container.classList.contains('agent-split-active'), true);
+
+  // A kimi_web-only layout also keeps the blanket inactive.
+  app.setPaneLayout(
+    { focusedColumnId: 'column-1', columns: [{ columnId: 'column-1', tabs: [{ workspaceId: 'kimi-1', kind: 'kimi_web' }], activeTabId: 'kimi-1', ratio: 1 }] },
+    new Map([['column-1', { left: 40, top: 40, width: 800, height: 860 }]])
+  );
+  assert.equal(container.classList.contains('agent-workspace-active'), false,
+    'a pure kimi_web layout never activates the Agent blanket');
+
+  // Pure agent layout: the container takes events and paints the workbench.
+  app.setPaneLayout(
+    { focusedColumnId: 'column-1', columns: [{ columnId: 'column-1', tabs: [{ workspaceId: FIRST, kind: 'agent' }], activeTabId: FIRST, ratio: 1 }] },
+    new Map([['column-1', { left: 40, top: 40, width: 800, height: 860 }]])
+  );
+  assert.equal(container.classList.contains('agent-workspace-active'), true,
+    'pure agent layout keeps the active workbench layer');
+});
+
 test('legacy harness without paneLayout keeps the activation fallback', async () => {
   const { app, panelFor, terminal } = await mountAgentApp();
   const container = document.getElementById('agents');

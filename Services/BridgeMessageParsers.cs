@@ -171,6 +171,8 @@ internal enum TerminalBridgeMessageKind
     WorkspaceCreate,
     DshCommand,
     DshExport,
+    KimiWebCommand,
+    KimiWebExport,
     ThemeAction
 }
 
@@ -187,6 +189,8 @@ internal sealed record TerminalBridgeMessage(
     WorkspaceCreateEventArgs? WorkspaceCreate = null,
     DshCommandEventArgs? DshCommand = null,
     DshExportEventArgs? DshExport = null,
+    KimiWebCommandEventArgs? KimiWebCommand = null,
+    KimiWebExportEventArgs? KimiWebExport = null,
     ThemeActionEventArgs? ThemeAction = null);
 
 internal sealed record TerminalPasteRequest(Guid SessionId, Guid RequestId);
@@ -328,7 +332,7 @@ internal static class TerminalBridgeMessageParser
                     });
                 return true;
 
-            case "workspace_create" when source.Kind is "terminal" or "agent" or "dsh_web"
+            case "workspace_create" when source.Kind is "terminal" or "agent" or "dsh_web" or "kimi_web"
                                          && source.Placement is "focused" or "new_right":
                 if (source.Kind == "agent" && string.IsNullOrWhiteSpace(source.ProviderKey))
                     return false;
@@ -349,11 +353,28 @@ internal static class TerminalBridgeMessageParser
                     DshCommand: new DshCommandEventArgs { Name = source.Name });
                 return true;
 
+            case "kimi_web_command" when source.Name is "stop" or "retry":
+                message = new TerminalBridgeMessage(
+                    TerminalBridgeMessageKind.KimiWebCommand,
+                    KimiWebCommand: new KimiWebCommandEventArgs { Name = source.Name });
+                return true;
+
             case "dsh_export" when !string.IsNullOrWhiteSpace(source.Url)
                                    && !string.IsNullOrWhiteSpace(source.Filename):
                 message = new TerminalBridgeMessage(
                     TerminalBridgeMessageKind.DshExport,
                     DshExport: new DshExportEventArgs { Url = source.Url!, Filename = source.Filename! });
+                return true;
+
+            case "kimi_web_export" when !string.IsNullOrWhiteSpace(source.Url):
+                message = new TerminalBridgeMessage(
+                    TerminalBridgeMessageKind.KimiWebExport,
+                    KimiWebExport: new KimiWebExportEventArgs
+                    {
+                        Url = source.Url!,
+                        Path = source.Path,
+                        SessionId = source.SessionId
+                    });
                 return true;
 
             case "theme_action" when source.Action is "preview" or "confirm" or "cancel" or "refresh" or "open_folder":

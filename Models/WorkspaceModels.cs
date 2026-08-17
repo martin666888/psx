@@ -4,13 +4,15 @@ public enum WorkspaceKind
 {
     Terminal,
     Agent,
-    DshWeb
+    DshWeb,
+    KimiWeb
 }
 
 /// <summary>
 /// Maps a workspace kind to its wire value. The wire contract is explicit:
-/// <c>DshWeb</c> serializes as <c>dsh_web</c>, never the enum-name lowercasing
-/// (<c>dshweb</c>). Catalog and layout payloads must both go through here.
+/// <c>DshWeb</c> serializes as <c>dsh_web</c> and <c>KimiWeb</c> as
+/// <c>kimi_web</c>, never the enum-name lowercasing (<c>dshweb</c> /
+/// <c>kimiweb</c>). Catalog and layout payloads must both go through here.
 /// </summary>
 internal static class WorkspaceWireKind
 {
@@ -19,6 +21,7 @@ internal static class WorkspaceWireKind
         WorkspaceKind.Terminal => "terminal",
         WorkspaceKind.Agent => "agent",
         WorkspaceKind.DshWeb => "dsh_web",
+        WorkspaceKind.KimiWeb => "kimi_web",
         _ => kind.ToString().ToLowerInvariant()
     };
 }

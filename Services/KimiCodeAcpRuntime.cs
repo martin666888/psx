@@ -195,6 +195,57 @@ public sealed class KimiCodeAcpRuntime : IAcpAgentRuntime
         };
     }
 
+    /// <summary>
+    /// Resolves the launch configuration for the embedded <c>kimi web</c>
+    /// server: the portable Node executable plus the active Kimi entry point
+    /// (self-updated <c>kimi-current</c>, else the bundled baseline), running
+    /// in a PSX-owned neutral working directory. Returns <c>null</c> — with
+    /// <paramref name="reason"/> filled in — when the runtime cannot launch:
+    /// missing portable Node, or a missing / structurally invalid Kimi install.
+    /// </summary>
+    internal KimiWebLaunchSpec? TryCreateWebLaunchSpec(
+        string workingDirectory,
+        out KimiWebLaunchUnavailableReason reason)
+    {
+        reason = KimiWebLaunchUnavailableReason.RuntimeInvalid;
+
+        var paths = Paths;
+        if (string.IsNullOrWhiteSpace(paths.PortableNodePath) || !File.Exists(paths.PortableNodePath))
+        {
+            reason = KimiWebLaunchUnavailableReason.PortableNodeMissing;
+            return null;
+        }
+
+        var activeRoot = ResolveActiveKimiRoot(paths);
+        var validationError = ValidateActiveInstall(paths, out var entryPath);
+        if (validationError != null || entryPath == null)
+        {
+            reason = Directory.Exists(activeRoot)
+                ? KimiWebLaunchUnavailableReason.RuntimeInvalid
+                : KimiWebLaunchUnavailableReason.RuntimeMissing;
+            Log($"Kimi web launch spec unavailable: {validationError}");
+            return null;
+        }
+
+        // Mirror the ACP launch environment: forward the credential store and
+        // shell overrides plus PATH so `kimi web` can locate Git Bash and its
+        // ~/.kimi-code store. Only variables actually set in this process are
+        // forwarded; the launcher merges them over the process environment.
+        var forwarded = new Dictionary<string, string?>();
+        ForwardEnvironmentVariable(forwarded, "KIMI_CODE_HOME");
+        ForwardEnvironmentVariable(forwarded, "KIMI_SHELL_PATH");
+        ForwardEnvironmentVariable(forwarded, "PATH");
+        var environment = forwarded
+            .Where(pair => pair.Value != null)
+            .ToDictionary(pair => pair.Key, pair => pair.Value!, StringComparer.OrdinalIgnoreCase);
+
+        return new KimiWebLaunchSpec(
+            paths.PortableNodePath,
+            entryPath,
+            workingDirectory,
+            environment);
+    }
+
     public string BuildStatusText(string? suffix = null)
     {
         var paths = Paths;
@@ -783,4 +834,22 @@ public sealed class KimiCodeAcpRuntime : IAcpAgentRuntime
     {
         _npmLock.Dispose();
     }
+}
+
+/// <summary>Launch configuration for the embedded <c>kimi web</c> server.</summary>
+internal sealed record KimiWebLaunchSpec(
+    string NodePath,
+    string EntryPath,
+    string WorkingDirectory,
+    IReadOnlyDictionary<string, string> Environment);
+
+/// <summary>
+/// Why <c>kimi web</c> cannot be launched. Wire-safe enum keys the frontend
+/// maps to copy; details never cross the bridge.
+/// </summary>
+internal enum KimiWebLaunchUnavailableReason
+{
+    PortableNodeMissing,
+    RuntimeMissing,
+    RuntimeInvalid
 }

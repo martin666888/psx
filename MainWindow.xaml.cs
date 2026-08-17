@@ -21,6 +21,7 @@ public partial class MainWindow : Window
     private readonly IWorkspaceManager? _workspaceManager;
     private readonly IAgentRuntimeCoordinator? _agentRuntimeCoordinator;
     private readonly DshWebRuntimeSupervisor? _dshSupervisor;
+    private readonly KimiWebRuntimeSupervisor? _kimiWebSupervisor;
     private readonly RuntimePreflightService? _preflight;
     private readonly ISettingsService? _settingsService;
     private bool _isShuttingDown;
@@ -41,6 +42,7 @@ public partial class MainWindow : Window
         IWorkspaceManager workspaceManager,
         IAgentRuntimeCoordinator agentRuntimeCoordinator,
         DshWebRuntimeSupervisor dshSupervisor,
+        KimiWebRuntimeSupervisor kimiWebSupervisor,
         RuntimePreflightService preflight,
         ISettingsService settingsService)
     {
@@ -54,6 +56,7 @@ public partial class MainWindow : Window
         _workspaceManager = workspaceManager;
         _agentRuntimeCoordinator = agentRuntimeCoordinator;
         _dshSupervisor = dshSupervisor;
+        _kimiWebSupervisor = kimiWebSupervisor;
         _preflight = preflight;
         _settingsService = settingsService;
 
@@ -150,6 +153,15 @@ public partial class MainWindow : Window
             {
                 _dshSupervisor.ReadyUrlChanged = url =>
                     _bridgeService.SetDshOrigin(DshWebRuntimeSupervisor.ToFrameOrigin(url));
+            }
+            if (_kimiWebSupervisor != null && _bridgeService != null)
+            {
+                // Only the fragment-stripped origin may enter the frame policy
+                // chain; the token-bearing ReadyUrl is never forwarded here.
+                _kimiWebSupervisor.FrameOriginPreparingAsync = origin =>
+                    _bridgeService.PrepareFrameOriginAsync(WebViewHostPolicy.KimiWebFrameKind, origin);
+                _kimiWebSupervisor.FrameOriginChanged += origin =>
+                    _bridgeService.SetFrameOrigin(WebViewHostPolicy.KimiWebFrameKind, origin);
             }
             if (_agentBridgeService != null)
             {
@@ -268,6 +280,20 @@ public partial class MainWindow : Window
             catch (Exception ex) { System.Diagnostics.Debug.WriteLine("DSH supervisor shutdown failed: " + ex); }
             try { _dshSupervisor?.Dispose(); }
             catch (Exception ex) { System.Diagnostics.Debug.WriteLine("DSH supervisor dispose failed: " + ex); }
+
+            // Kimi Web supervisor teardown mirrors DSH: the coordinator gate
+            // (BeginShutdown) already ran through WorkspaceManager; closing
+            // the window must reap the `kimi web` process tree before the
+            // bridge is disposed. The Job Object (KILL_ON_JOB_CLOSE) still
+            // ensures the full tree dies even on a crash.
+            try
+            {
+                if (_kimiWebSupervisor != null)
+                    await _kimiWebSupervisor.ShutdownAsync().ConfigureAwait(true);
+            }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine("Kimi Web supervisor shutdown failed: " + ex); }
+            try { _kimiWebSupervisor?.Dispose(); }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine("Kimi Web supervisor dispose failed: " + ex); }
 
             if (_bridgeService != null)
             {

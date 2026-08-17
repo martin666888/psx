@@ -15,7 +15,8 @@
 
 #terminal-container,
 #agent-workspace-container,
-#dsh-workspace-container {
+#dsh-workspace-container,
+#kimi-web-workspace-container {
     position: absolute;
     inset: 0;
 }

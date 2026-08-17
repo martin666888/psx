@@ -47,6 +47,7 @@ export class WorkspaceChromeController {
         this.openTrigger = null;
         this.paneMenuWorkspace = null;
         this.dshRuntimeStatus = { state: 'not_installed', updateState: 'idle' };
+        this.kimiWebRuntimeStatus = { state: 'stopped', errorClass: null, reason: null };
         this.dshUpdateConfirmation = false;
         this.createPlacement = 'focused';
         this.capacityChecker = null;
@@ -144,6 +145,17 @@ export class WorkspaceChromeController {
             const version = this.portalRoot.querySelector('[data-role="dsh-current-version"]');
             if (version) version.textContent = next.currentVersion ? `v${next.currentVersion}` : '';
             this.refreshDshRuntimeMenu();
+        }
+    }
+
+    applyKimiWebRuntimeStatus(message) {
+        this.kimiWebRuntimeStatus = {
+            state: typeof message?.state === 'string' ? message.state : 'stopped',
+            errorClass: message?.errorClass || null,
+            reason: message?.reason || null
+        };
+        if (this.openMenu === 'pane' && this.paneMenuWorkspace?.kind === 'kimi_web') {
+            this.refreshKimiWebRuntimeMenu();
         }
     }
 
@@ -409,10 +421,18 @@ export class WorkspaceChromeController {
             terminalBlocked,
             terminalBlocked ? '窗口宽度不足以容纳新列' : ''
         ));
-        // DeepSeek Harness is a third workspace kind, not an ACP provider, but
-        // it is an AI product: list it under AGENT rather than beside Terminal.
-        // C# deduplicates on create; fitsDsh gates only this row.
-        menu.appendChild(this.subheading('AGENT'));
+        // Kimi Code Web and DeepSeek Harness are shell-owned web-app
+        // workspaces, not ACP providers: list them under WEB APP above the
+        // AGENT group. C# deduplicates on create; fitsKimiWeb / fitsDsh gate only their rows.
+        menu.appendChild(this.subheading('WEB APP'));
+        const kimiWebBlocked = this.createPlacement === 'new_right' && capacity !== null && !capacity.fitsKimiWeb;
+        menu.appendChild(this.menuRow(
+            'Kimi Code Web',
+            '',
+            () => this.createWorkspace('kimi_web'),
+            kimiWebBlocked,
+            kimiWebBlocked ? '窗口宽度不足以容纳新列' : ''
+        ));
         const dshBlocked = this.createPlacement === 'new_right' && capacity !== null && !capacity.fitsDsh;
         menu.appendChild(this.menuRow(
             'DeepSeek Harness',
@@ -421,6 +441,7 @@ export class WorkspaceChromeController {
             dshBlocked,
             dshBlocked ? '窗口宽度不足以容纳新列' : ''
         ));
+        menu.appendChild(this.subheading('AGENT (ACP)'));
         for (const provider of this.catalog.providers) {
             menu.appendChild(this.menuRow(provider.displayName, '', () => this.createWorkspace('agent', provider.key)));
         }
@@ -508,7 +529,8 @@ export class WorkspaceChromeController {
         const capacity = this.capacityChecker?.() ?? null;
         const newPaneKind = workspace.kind === 'terminal'
             ? 'terminal'
-            : workspace.kind === 'dsh_web' ? 'dsh_web' : 'agent';
+            : workspace.kind === 'dsh_web' ? 'dsh_web'
+            : workspace.kind === 'kimi_web' ? 'kimi_web' : 'agent';
         // Splitting the sole tab of its column collapses that column — no
         // column count grows, so the pixel gate must not add the phantom
         // new-column minimum width (the removed column's minimum equals the
@@ -518,7 +540,8 @@ export class WorkspaceChromeController {
             ? true
             : (newPaneKind === 'terminal'
                 ? capacity.fitsTerminal
-                : newPaneKind === 'dsh_web' ? capacity.fitsDsh : capacity.fitsAgent);
+                : newPaneKind === 'dsh_web' ? capacity.fitsDsh
+                : newPaneKind === 'kimi_web' ? capacity.fitsKimiWeb : capacity.fitsAgent);
         const splitBlocked = !workspace.canSplitRight;
         const capacityBlocked = capacity !== null && !capacityFits;
         // Layered gating: the C# canSplitRight decision and the frontend
@@ -544,6 +567,14 @@ export class WorkspaceChromeController {
             const runtimeSection = document.createElement('div');
             runtimeSection.dataset.role = 'dsh-runtime-menu';
             this.renderDshRuntimeMenu(runtimeSection);
+            menu.appendChild(runtimeSection);
+        }
+        // The Kimi Web runtime is a process-wide singleton that survives
+        // closing its tab, mirroring the DSH runtime section.
+        if (workspace.kind === 'kimi_web') {
+            const runtimeSection = document.createElement('div');
+            runtimeSection.dataset.role = 'kimi-web-runtime-menu';
+            this.renderKimiWebRuntimeMenu(runtimeSection);
             menu.appendChild(runtimeSection);
         }
     }
@@ -661,6 +692,59 @@ export class WorkspaceChromeController {
                 ));
                 break;
         }
+    }
+
+    refreshKimiWebRuntimeMenu() {
+        const runtimeSection = this.portalRoot.querySelector('[data-role="kimi-web-runtime-menu"]');
+        if (!runtimeSection) return;
+        // Keep the popover node, anchor and composited surface alive; replace
+        // only the section's children (same in-place refresh DSH uses).
+        runtimeSection.replaceChildren();
+        this.renderKimiWebRuntimeMenu(runtimeSection);
+    }
+
+    renderKimiWebRuntimeMenu(menu) {
+        const status = this.kimiWebRuntimeStatus;
+        menu.appendChild(this.subheading('运行时'));
+        const state = status.state;
+        let label = '重新启动';
+        let command = 'retry';
+        let secondary = '';
+        let disabled = false;
+        switch (state) {
+            case 'starting':
+                label = '正在启动…';
+                disabled = true;
+                break;
+            case 'ready':
+                label = '停止';
+                command = 'stop';
+                break;
+            case 'stopping':
+                label = '正在停止…';
+                disabled = true;
+                break;
+            case 'failed':
+                label = '重试';
+                break;
+            case 'unavailable':
+                label = '重试';
+                // retry in unavailable only re-validates the launch spec;
+                // it never pulls a process or downloads anything.
+                secondary = '仅重新校验运行时';
+                break;
+            default:
+                break;
+        }
+        menu.appendChild(this.menuRow(
+            label,
+            secondary,
+            () => {
+                Bridge.sendKimiWebCommand(command);
+                this.closeMenu(false);
+            },
+            disabled
+        ));
     }
 
     // The number of tabs in the workspace's requested column, or null when

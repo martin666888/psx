@@ -79,7 +79,7 @@ interface WorkspaceLayoutIntentPayload {
 
 interface WorkspaceCreatePayload {
     type: 'workspace_create';
-    kind: 'terminal' | 'agent' | 'dsh_web';
+    kind: 'terminal' | 'agent' | 'dsh_web' | 'kimi_web';
     providerKey?: string;
     placement: 'focused' | 'new_right';
 }
@@ -89,10 +89,22 @@ interface DshCommandPayload {
     name: 'install' | 'retry' | 'stop' | 'check_update' | 'update';
 }
 
+interface KimiWebCommandPayload {
+    type: 'kimi_web_command';
+    name: 'stop' | 'retry';
+}
+
 interface DshExportPayload {
     type: 'dsh_export';
     url: string;
     filename: string;
+}
+
+interface KimiWebExportPayload {
+    type: 'kimi_web_export';
+    url: string;
+    path: string;
+    sessionId: string;
 }
 
 interface ThemeActionPayload {
@@ -171,7 +183,9 @@ type BridgeOutboundMessage =
     | WorkspaceLayoutIntentPayload
     | WorkspaceCreatePayload
     | DshCommandPayload
+    | KimiWebCommandPayload
     | DshExportPayload
+    | KimiWebExportPayload
     | ThemeActionPayload
     | AgentSubmitPayload
     | AgentUploadAttachmentPayload
@@ -362,8 +376,21 @@ interface WorkspaceHostEvent extends BridgeInboundMessageBase {
         | 'agent_workspace_limit_reached'
         | 'agent_providers';
     workspaceId?: string;
-    kind?: 'terminal' | 'agent';
+    kind?: 'terminal' | 'agent' | 'dsh_web' | 'kimi_web';
     text?: string;
+}
+
+/** kimi_web_runtime_status — process-wide Kimi Web runtime state. The
+ * token-bearing readyUrl exists only while Ready (and only in this field and
+ * the iframe src); the errorClass/reason values are fixed enum keys the
+ * frontend maps to copy — never paths, messages or stdout/stderr. */
+interface KimiWebRuntimeStatusEvent extends BridgeInboundMessageBase {
+    type: 'kimi_web_runtime_status';
+    state: 'unavailable' | 'stopped' | 'starting' | 'ready' | 'stopping' | 'failed' | 'exited';
+    /** Only present in the Ready state; carries the #token= fragment. */
+    readyUrl?: string | null;
+    errorClass?: 'launch_failed' | 'start_timeout' | 'health_check_failed' | null;
+    reason?: 'portable_node_missing' | 'runtime_missing' | 'runtime_invalid' | null;
 }
 
 interface AgentThreadOpenErrorEvent extends BridgeInboundMessageBase {
@@ -505,5 +532,6 @@ type AgentEvent =
 type BridgeInboundMessage =
     | BridgeTerminalEvent
     | WorkspaceHostEvent
+    | KimiWebRuntimeStatusEvent
     | AgentGlobalHostEvent
     | AgentEvent;

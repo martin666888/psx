@@ -168,6 +168,15 @@ npmmirror advisories 不可用或返回 404 也不能视为审计通过。
 7. 调整窗口、History 和 Pane 宽度并持续接收流式消息，确认 ResizeObserver 的
    非致命交付通知不会形成用户错误条；人为触发的真实未捕获错误只出现一条脱敏、
    可关闭的提示，不展示堆栈、路径或会话内容。
+8. 新建菜单「WEB APP」组：分别创建 Kimi Code Web 与 DeepSeek Harness，确认
+   kimi_web 列宽下限 320px、DSH 640px 可用；Kimi Web 内完成 OAuth 登录、文件
+   上传、剪贴板与窄列使用；关掉 Kimi Web 标签后进程存活（任务管理器可见），
+   再点「停止」确认先走 `/api/v1/shutdown` 优雅关闭（Kimi 侧日志/端口释放），
+   然后「重试」重新拉起；导出会话时确认保存对话框、ZIP 落盘且任意失败都有
+   workspace_notice 提示，绝不静默。
+9. 与 ACP Kimi、DSH 共存：Kimi Web 重启换端口后旧 iframe 立即失效、新端口
+   可用；停止 kimi 不影响 DSH 槽位；Kimi Web 标签右键的停止/重试按钮随状态
+   切换（ready→停止，unavailable/failed→重试，starting/stopping→禁用）。
 
 只有未使用 `-SkipDependencyAudit` 的 Full、人工查看过的视觉差异，以及上述
 真实 Terminal + Agent 验收共同完成，才能作为发布证据。

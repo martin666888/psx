@@ -1,4 +1,5 @@
 using System.Text;
+using PSX.Models;
 using PSX.Services;
 
 namespace PSX.Tests.Unit;
@@ -329,6 +330,57 @@ public sealed class TerminalBridgeMessageParserTests
         Assert.IsFalse(TerminalBridgeMessageParser.TryParse(
             """{"type":"theme_action","action":"confirm"}""",
             out _));
+    }
+
+    [TestMethod]
+    public void TryParse_KimiWebIntents_WhitelistCommandsAndExportFields()
+    {
+        Assert.IsTrue(TerminalBridgeMessageParser.TryParse(
+            """{"type":"workspace_create","kind":"kimi_web","placement":"focused"}""",
+            out var create));
+        Assert.AreEqual(TerminalBridgeMessageKind.WorkspaceCreate, create!.Kind);
+        Assert.AreEqual("kimi_web", create.WorkspaceCreate!.Kind);
+        Assert.IsNull(create.WorkspaceCreate.ProviderKey);
+
+        foreach (var command in new[] { "stop", "retry" })
+        {
+            Assert.IsTrue(TerminalBridgeMessageParser.TryParse(
+                $$"""{"type":"kimi_web_command","name":"{{command}}"}""",
+                out var parsedCommand));
+            Assert.AreEqual(TerminalBridgeMessageKind.KimiWebCommand, parsedCommand!.Kind);
+            Assert.AreEqual(command, parsedCommand.KimiWebCommand!.Name);
+        }
+
+        // Only stop | retry are kimi_web commands; dsh-only and arbitrary
+        // names are rejected before the session engine ever sees them.
+        foreach (var command in new[] { "install", "update", "check_update", "start", "rm -rf" })
+        {
+            Assert.IsFalse(TerminalBridgeMessageParser.TryParse(
+                $$"""{"type":"kimi_web_command","name":"{{command}}"}""",
+                out _));
+        }
+
+        Assert.IsTrue(TerminalBridgeMessageParser.TryParse(
+            """{"type":"kimi_web_export","url":"http://127.0.0.1:1234/api/v1/sessions/s1/export","path":"/api/v1/sessions/s1/export","sessionId":"s1"}""",
+            out var export));
+        Assert.AreEqual(TerminalBridgeMessageKind.KimiWebExport, export!.Kind);
+        Assert.AreEqual("http://127.0.0.1:1234/api/v1/sessions/s1/export", export.KimiWebExport!.Url);
+        Assert.AreEqual("/api/v1/sessions/s1/export", export.KimiWebExport!.Path);
+        Assert.AreEqual("s1", export.KimiWebExport!.SessionId);
+
+        Assert.IsFalse(TerminalBridgeMessageParser.TryParse(
+            """{"type":"kimi_web_export","url":"","path":"/x","sessionId":"s1"}""",
+            out _));
+
+        // The kimi_web_export wire contract never carries a token: the C#
+        // model has no Token property and an unknown token field in the JSON
+        // is silently ignored.
+        Assert.IsNull(typeof(TerminalMessage).GetProperty("Token"),
+            "the export message must not define a token field");
+        Assert.IsTrue(TerminalBridgeMessageParser.TryParse(
+            """{"type":"kimi_web_export","url":"http://127.0.0.1:1234/api/v1/sessions/s1/export","token":"leaked"}""",
+            out var tokenIgnored));
+        Assert.AreEqual("http://127.0.0.1:1234/api/v1/sessions/s1/export", tokenIgnored!.KimiWebExport!.Url);
     }
 
     [TestMethod]

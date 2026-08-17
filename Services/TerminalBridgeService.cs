@@ -44,7 +44,9 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
     public event EventHandler<WorkspaceLayoutIntentEventArgs>? WorkspaceLayoutIntentRequested;
     public event EventHandler<WorkspaceCreateEventArgs>? WorkspaceCreateRequested;
     public event EventHandler<DshCommandEventArgs>? DshCommandRequested;
+    public event EventHandler<KimiWebCommandEventArgs>? KimiWebCommandRequested;
     public event EventHandler<DshExportEventArgs>? DshExportRequested;
+    public event EventHandler<KimiWebExportEventArgs>? KimiWebExportRequested;
     public event EventHandler<ThemeActionEventArgs>? ThemeActionRequested;
 
     public TerminalBridgeService(ISettingsService settingsService, RuntimeLocator runtimeLocator)
@@ -283,8 +285,14 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
             case TerminalBridgeMessageKind.DshCommand:
                 DshCommandRequested?.Invoke(this, message.DshCommand!);
                 break;
+            case TerminalBridgeMessageKind.KimiWebCommand:
+                KimiWebCommandRequested?.Invoke(this, message.KimiWebCommand!);
+                break;
             case TerminalBridgeMessageKind.DshExport:
                 DshExportRequested?.Invoke(this, message.DshExport!);
+                break;
+            case TerminalBridgeMessageKind.KimiWebExport:
+                KimiWebExportRequested?.Invoke(this, message.KimiWebExport!);
                 break;
             case TerminalBridgeMessageKind.ThemeAction:
                 ThemeActionRequested?.Invoke(this, message.ThemeAction!);
@@ -344,7 +352,55 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
         return _messageDispatcher?.SendAsync(json) ?? Task.CompletedTask;
     }
 
-    public void SetDshOrigin(string? origin) => _hostPolicy?.SetDshOrigin(origin);
+    /// <summary>Set (or clear) the frame-origin slot for one embedded web
+    /// runtime. Marshals to the UI thread when needed: CoreWebView2 APIs
+    /// (including the document-start script registration for kimi_web) are
+    /// thread-affine, while supervisors fire their origin callbacks from
+    /// worker threads.</summary>
+    public void SetFrameOrigin(string kind, string? origin)
+    {
+        var policy = _hostPolicy;
+        if (policy == null)
+            return;
+        if (_webView == null || _webView.Dispatcher.CheckAccess())
+        {
+            policy.SetFrameOrigin(kind, origin);
+            return;
+        }
+        try
+        {
+            _webView.Dispatcher.InvokeAsync(() => policy.SetFrameOrigin(kind, origin));
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine("SetFrameOrigin marshal failed: " + ex.Message);
+        }
+    }
+
+    public Task PrepareFrameOriginAsync(string kind, string origin)
+    {
+        var policy = _hostPolicy;
+        if (policy == null || _webView == null)
+            return Task.CompletedTask;
+        if (_webView.Dispatcher.CheckAccess())
+            return policy.PrepareFrameOriginAsync(kind, origin);
+
+        try
+        {
+            return _webView.Dispatcher
+                .InvokeAsync(() => policy.PrepareFrameOriginAsync(kind, origin))
+                .Task.Unwrap();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine("PrepareFrameOrigin marshal failed: " + ex.GetType().Name);
+            return Task.FromException(ex);
+        }
+    }
+
+    /// <summary>Compatibility wrapper for the DSH slot (SetFrameOrigin with
+    /// kind "dsh").</summary>
+    public void SetDshOrigin(string? origin) => SetFrameOrigin(WebViewHostPolicy.DshFrameKind, origin);
 
     public void Dispose()
     {

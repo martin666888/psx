@@ -1,3 +1,4 @@
+using System.Collections;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
@@ -29,7 +30,8 @@ internal static class SuspendedJobProcessLauncher
         string fileName,
         IReadOnlyList<string> arguments,
         string workingDirectory,
-        Action<string>? log)
+        Action<string>? log,
+        IReadOnlyDictionary<string, string>? environmentOverrides = null)
     {
         var commandLine = BuildCommandLine(fileName, arguments);
         var securityAttributes = new SECURITY_ATTRIBUTES
@@ -46,8 +48,17 @@ internal static class SuspendedJobProcessLauncher
         IntPtr attributeList = IntPtr.Zero;
         var attributeListInitialized = false;
         var pinnedHandles = GCHandle.Alloc(Array.Empty<IntPtr>(), GCHandleType.Pinned);
+        var pinnedEnvironment = default(GCHandle);
         try
         {
+            // An explicit environment block replaces inheritance entirely: the
+            // child then sees exactly the merged process environment + the
+            // overrides. The pinned block must stay alive until CreateProcessW
+            // returns. With no overrides the null block keeps the current
+            // inherit-the-parent behavior.
+            if (environmentOverrides != null)
+                pinnedEnvironment = GCHandle.Alloc(BuildUnicodeEnvironmentBlock(environmentOverrides), GCHandleType.Pinned);
+
             if (!CreatePipe(out stdoutRead, out stdoutWrite, ref securityAttributes, 0))
                 return Failed($"CreatePipe(stdout) failed: {new Win32Exception().Message}");
             if (!SetHandleInformation(stdoutRead, HANDLE_FLAG_INHERIT, 0))
@@ -116,8 +127,9 @@ internal static class SuspendedJobProcessLauncher
                     IntPtr.Zero,
                     IntPtr.Zero,
                     bInheritHandles: true,
-                    CREATE_SUSPENDED | CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT,
-                    IntPtr.Zero,
+                    CREATE_SUSPENDED | CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT
+                        | (pinnedEnvironment.IsAllocated ? CREATE_UNICODE_ENVIRONMENT : 0),
+                    pinnedEnvironment.IsAllocated ? pinnedEnvironment.AddrOfPinnedObject() : IntPtr.Zero,
                     workingDirectory,
                     ref startupInfo,
                     out var processInformation))
@@ -201,12 +213,39 @@ internal static class SuspendedJobProcessLauncher
             }
             if (pinnedHandles.IsAllocated)
                 pinnedHandles.Free();
+            if (pinnedEnvironment.IsAllocated)
+                pinnedEnvironment.Free();
             if (stdoutWrite != IntPtr.Zero) CloseHandle(stdoutWrite);
             if (stderrWrite != IntPtr.Zero) CloseHandle(stderrWrite);
             if (stdoutRead != IntPtr.Zero) CloseHandle(stdoutRead);
             if (stderrRead != IntPtr.Zero) CloseHandle(stderrRead);
             if (stdinRead != IntPtr.Zero) CloseHandle(stdinRead);
         }
+    }
+
+    /// <summary>
+    /// Builds the Unicode (UTF-16) environment block CreateProcessW consumes:
+    /// a sequence of null-terminated <c>Name=Value</c> entries followed by a
+    /// final empty entry (double null). The current process environment is
+    /// merged with <paramref name="overrides"/> (overrides win) and the keys
+    /// are sorted ordinal-case-insensitively so the block is deterministic.
+    /// </summary>
+    private static byte[] BuildUnicodeEnvironmentBlock(IReadOnlyDictionary<string, string> overrides)
+    {
+        var merged = new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (DictionaryEntry entry in Environment.GetEnvironmentVariables())
+        {
+            if (entry.Key is string name && entry.Value is string value)
+                merged[name] = value;
+        }
+        foreach (var pair in overrides)
+            merged[pair.Key] = pair.Value;
+
+        var builder = new StringBuilder();
+        foreach (var pair in merged)
+            builder.Append(pair.Key).Append('=').Append(pair.Value).Append('\0');
+        builder.Append('\0');
+        return Encoding.Unicode.GetBytes(builder.ToString());
     }
 
     private static StreamReader CreateReader(IntPtr readHandle) =>
@@ -274,6 +313,7 @@ internal static class SuspendedJobProcessLauncher
     private const uint CREATE_SUSPENDED = 0x00000004;
     private const uint CREATE_NO_WINDOW = 0x08000000;
     private const uint EXTENDED_STARTUPINFO_PRESENT = 0x00080000;
+    private const uint CREATE_UNICODE_ENVIRONMENT = 0x00000400;
     private const uint HANDLE_FLAG_INHERIT = 0x00000001;
     private const uint GENERIC_READ = 0x80000000;
     private const uint FILE_SHARE_READ = 0x00000001;
