@@ -102,6 +102,14 @@ public sealed class DshWebWorkspaceCoordinator : IDshWebWorkspaceCoordinator
 
     public async Task HandleCommandAsync(string name)
     {
+        // Shutdown gate: once BeginShutdown ran, no new DSH operation may
+        // start; MainWindow's shutdown path owns the supervisor teardown.
+        lock (_sync)
+        {
+            if (_shuttingDown)
+                return;
+        }
+
         switch (name)
         {
             case "install":
@@ -118,11 +126,20 @@ public sealed class DshWebWorkspaceCoordinator : IDshWebWorkspaceCoordinator
 
     public async Task HandleExportAsync(string url, string filename)
     {
+        lock (_sync)
+        {
+            if (_shuttingDown)
+                return;
+        }
+
         // The host mediates the export: only the current DSH origin's
         // /api/session.export endpoint may be fetched, and the save runs through
         // a Windows SaveFileDialog rather than the (dead in WebView2) download
         // path. The URL and path are validated against the supervisor's ready URL
         // before any network call; the browser never saves bytes itself.
+        // Requests that fail validation (no runtime, malformed or spoofed URL)
+        // are dropped silently; from the first validated request on, every
+        // failure surfaces as a fixed safe workspace_notice.
         try
         {
             var readyUrl = _supervisor.ReadyUrl;
@@ -134,14 +151,25 @@ public sealed class DshWebWorkspaceCoordinator : IDshWebWorkspaceCoordinator
             using var http = new HttpClient(handler) { Timeout = TimeSpan.FromMinutes(5) };
             using var response = await http.GetAsync(exportUri, HttpCompletionOption.ResponseHeadersRead)
                 .ConfigureAwait(false);
-            if (ShouldRejectExportResponse(response, readyUrl)) return;
-            if (!IsAllowedExportContentType(response.Content.Headers.ContentType)) return;
+            if (ShouldRejectExportResponse(response, readyUrl))
+            {
+                await SendFailureNoticeAsync("导出失败：服务返回了无效响应。").ConfigureAwait(false);
+                return;
+            }
+            if (!IsAllowedExportContentType(response.Content.Headers.ContentType))
+            {
+                await SendFailureNoticeAsync("导出失败：会话数据格式无效。").ConfigureAwait(false);
+                return;
+            }
 
             await using var source = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
             var prefix = new byte[4];
-            if (!await TryReadExactAsync(source, prefix).ConfigureAwait(false))
+            if (!await TryReadExactAsync(source, prefix).ConfigureAwait(false)
+                || !LooksLikeZip(prefix))
+            {
+                await SendFailureNoticeAsync("导出失败：会话数据无效。").ConfigureAwait(false);
                 return;
-            if (!LooksLikeZip(prefix)) return;
+            }
 
             var path = await Application.Current.Dispatcher
                 .InvokeAsync(() => PromptExportSavePath(SanitizeExportFilename(filename)))
@@ -167,6 +195,7 @@ public sealed class DshWebWorkspaceCoordinator : IDshWebWorkspaceCoordinator
         catch (Exception ex)
         {
             Debug.WriteLine("DSH export failed: " + ex.Message);
+            await SendFailureNoticeAsync("导出失败：无法连接本地服务。").ConfigureAwait(false);
         }
     }
 

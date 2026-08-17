@@ -35,8 +35,9 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
     private DshRuntimeState _state = DshRuntimeState.NotInstalled;
     private DshRuntimeLease? _lease;
     private Uri? _readyUrl;
-    private CancellationTokenSource? _runCts;   // live install run; guarded by _sync
-    private Task? _inflightInstall;             // single-flight install; guarded by _sync
+    private CancellationTokenSource? _runCts;   // live install/retry run; guarded by _sync
+    private Task? _operation;                   // single-flight slot for install AND retry; guarded by _sync
+    private bool _stopRequested;                // a Stop/Shutdown began and owns the terminal state; guarded by _sync
     private bool _disposed;
 
     public DshWebRuntimeSupervisor(
@@ -52,7 +53,9 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         Directory.CreateDirectory(logDirectory);
         // Neutral default project directory for DSH sessions: the web API
         // proxy falls back to process.cwd() when a session is created without
-        // an explicit project, so this must never be an internal PSX tree.
+        // an explicit project, so the process runs in this dedicated
+        // PSX-owned neutral workspace instead of an internal PSX tree
+        // (logs/runtime state) that sessions must never operate on.
         Directory.CreateDirectory(workspaceDirectory);
     }
 
@@ -107,31 +110,83 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
     /// honors the per-run cancellation token, so Stop/Shutdown interrupts it
     /// instead of blocking behind it.
     /// </summary>
-    public Task InstallAndStartAsync()
+    public Task InstallAndStartAsync() => BeginOperationAsync(preferLaunch: false);
+
+    /// <summary>
+    /// User-triggered retry: launch when installed, otherwise install. Shares
+    /// the single operation slot with <see cref="InstallAndStartAsync"/> so
+    /// retry bursts can never queue a second npm ci behind the first.
+    /// </summary>
+    public Task RetryAsync() => BeginOperationAsync(preferLaunch: true);
+
+    private Task BeginOperationAsync(bool preferLaunch)
     {
         lock (_sync)
         {
-            if (_inflightInstall != null)
-                return _inflightInstall;
+            if (_disposed || _stopRequested || _lifetimeCts.IsCancellationRequested)
+                return Task.CompletedTask;
+            if (_operation != null)
+                return _operation;
 
             // The placeholder task is published before the body runs so even
             // a synchronously completing run cannot leave a stale entry that
             // a later caller would mistake for a live one.
             var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            _inflightInstall = completion.Task;
-            _ = RunInstallAsync(completion);
+            // The run token is created BEFORE the operation queues on the
+            // lifecycle lock: a Stop that arrives while this operation waits
+            // for the lock still cancels it (CancelRun sees _runCts), so a
+            // queued operation can never start an uncancellable install.
+            var runCts = CancellationTokenSource.CreateLinkedTokenSource(_lifetimeCts.Token);
+            _runCts = runCts;
+            _operation = completion.Task;
+            _ = ExecuteOperationAsync(completion, runCts, preferLaunch);
             return completion.Task;
         }
     }
 
-    public Task RetryAsync()
+    private async Task ExecuteOperationAsync(
+        TaskCompletionSource completion,
+        CancellationTokenSource runCts,
+        bool preferLaunch)
     {
-        Task? inflight;
-        lock (_sync)
-            inflight = _inflightInstall;
-        if (inflight != null)
-            return inflight;
-        return RetryCoreAsync();
+        try
+        {
+            await _lifecycleLock.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                // A Stop that began while this operation was waiting owns the
+                // terminal state: its CancelRun already hit this run token,
+                // and StopHoldingLifecycleLock publishes Exited. Die quietly
+                // instead of starting another npm ci.
+                bool abandoned;
+                lock (_sync)
+                    abandoned = _stopRequested || runCts.IsCancellationRequested;
+                if (!abandoned)
+                {
+                    if (preferLaunch && _runtime.CreateLaunchSpec() != null)
+                        await EnsureRunningHoldingLockAsync().ConfigureAwait(false);
+                    else
+                        await InstallAndStartHoldingLockAsync(runCts).ConfigureAwait(false);
+                }
+            }
+            finally { _lifecycleLock.Release(); }
+            completion.TrySetResult();
+        }
+        catch (Exception ex)
+        {
+            completion.TrySetException(ex);
+        }
+        finally
+        {
+            lock (_sync)
+            {
+                if (ReferenceEquals(_operation, completion.Task))
+                    _operation = null;
+                if (ReferenceEquals(_runCts, runCts))
+                    _runCts = null;
+            }
+            runCts.Dispose();
+        }
     }
 
     public async Task EnsureRunningAsync()
@@ -142,25 +197,27 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
     }
 
     /// <summary>
-    /// Cancels any in-flight install, then stops the runtime. Never blocks
-    /// synchronously on the lifecycle lock, so it is safe to call from the
-    /// bridge dispatcher while an install is running.
+    /// Cancels the running and any queued operation atomically, then stops the
+    /// runtime. Never blocks synchronously on the lifecycle lock, so it is
+    /// safe to call from the bridge dispatcher while an install is running.
     /// </summary>
     public async Task StopAsync()
     {
-        CancelRun();
+        RequestStop();
         await _lifecycleLock.WaitAsync().ConfigureAwait(false);
         try { StopHoldingLifecycleLock(); }
         finally { _lifecycleLock.Release(); }
     }
 
     /// <summary>
-    /// Application shutdown: cancel the running install and stop, bounding
-    /// the lock wait so closing the window never hangs on npm.
+    /// Application shutdown: close the command entry (lifetime token), cancel
+    /// the running and queued operations, and stop the runtime, bounding the
+    /// lock wait so closing the window never hangs on npm.
     /// </summary>
     public async Task ShutdownAsync()
     {
-        CancelRun();
+        _lifetimeCts.Cancel();
+        RequestStop();
         var acquired = false;
         try { acquired = await _lifecycleLock.WaitAsync(ShutdownLockTimeout).ConfigureAwait(false); }
         catch (ObjectDisposedException) { acquired = false; }
@@ -178,46 +235,22 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         }
     }
 
-    private async Task RunInstallAsync(TaskCompletionSource completion)
-    {
-        try
-        {
-            await _lifecycleLock.WaitAsync().ConfigureAwait(false);
-            try { await InstallAndStartHoldingLockAsync().ConfigureAwait(false); }
-            finally { _lifecycleLock.Release(); }
-            completion.TrySetResult();
-        }
-        catch (Exception ex)
-        {
-            completion.TrySetException(ex);
-        }
-        finally
-        {
-            lock (_sync)
-                _inflightInstall = null;
-        }
-    }
-
-    private async Task RetryCoreAsync()
-    {
-        await _lifecycleLock.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            if (_runtime.CreateLaunchSpec() != null)
-                await EnsureRunningHoldingLockAsync().ConfigureAwait(false);
-            else
-                await InstallAndStartHoldingLockAsync().ConfigureAwait(false);
-        }
-        finally { _lifecycleLock.Release(); }
-    }
-
-    private void CancelRun()
+    /// <summary>
+    /// Atomically enter the stopping window: reject new operations, cancel the
+    /// current run token (created before queuing, so it covers a queued
+    /// operation too). <see cref="StopHoldingLifecycleLock"/> ends the window
+    /// once the terminal Exited state is published, allowing later retries.
+    /// </summary>
+    private void RequestStop()
     {
         lock (_sync)
+        {
+            _stopRequested = true;
             _runCts?.Cancel();
+        }
     }
 
-    private async Task InstallAndStartHoldingLockAsync()
+    private async Task InstallAndStartHoldingLockAsync(CancellationTokenSource runCts)
     {
         RetireLiveLeaseHoldingLifecycleLock();
 
@@ -230,9 +263,6 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         }
 
         SetState(DshRuntimeState.Installing);
-        using var runCts = CancellationTokenSource.CreateLinkedTokenSource(_lifetimeCts.Token);
-        lock (_sync)
-            _runCts = runCts;
         DshInstallResult result;
         try
         {
@@ -242,12 +272,6 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         {
             result = new DshInstallResult(false, null, null);
             runCts.Cancel();
-        }
-        finally
-        {
-            lock (_sync)
-                if (ReferenceEquals(_runCts, runCts))
-                    _runCts = null;
         }
 
         if (!result.Success)
@@ -304,6 +328,11 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
             ReadyUrlChanged?.Invoke(null);
             PublishState(DshRuntimeState.Exited, null);
         }
+
+        // End the stopping window: the terminal state is published, so later
+        // install/retry commands may run again.
+        lock (_sync)
+            _stopRequested = false;
     }
 
     /// <summary>
@@ -577,7 +606,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         _disposed = true;
 
         _lifetimeCts.Cancel();
-        CancelRun();
+        RequestStop();
         // Never block the caller (the UI thread) on the lifecycle lock.
         // MainWindow awaits ShutdownAsync before disposing; this keeps a
         // non-blocking fallback for the path that skips it.
@@ -616,9 +645,14 @@ internal sealed class DshRuntimeGenerationGate
 /// <summary>
 /// One start epoch's process tree, Job Object, stream readers and monitor
 /// tasks. Stop and a failed/exited commit tear the lease down; a newer start
-/// never inherits the previous job. TearDown cancels the lease token, kills
-/// the tree, bounds the wait on owned tasks, then disposes the readers,
-/// Process and job so repeated restarts leak no handles.
+/// never inherits the previous job. TearDown is two-phase: the synchronous
+/// phase (safe to run under the supervisor's publish lock) only marks the
+/// lease torn down, cancels its token and kills the tree — it never waits on
+/// the tracked tasks, because the task currently executing the teardown chain
+/// (MonitorAsync / WatchExitAsync → TryCommitProcessState → TearDown) is
+/// itself one of them. The disposal phase runs on the thread pool: it awaits
+/// the remaining tasks (bounded), then disposes the readers, Process and job
+/// so repeated restarts leak no handles.
 /// </summary>
 internal sealed class DshRuntimeLease
 {
@@ -627,9 +661,16 @@ internal sealed class DshRuntimeLease
     private readonly object _sync = new();
     private readonly List<Task> _tasks = new();
     private readonly CancellationTokenSource _cts = new();
+    // Captured at construction: reading the token stays safe after the CTS is
+    // disposed by the disposal phase.
+    private readonly CancellationToken _token;
     private bool _tornDown;
 
-    public DshRuntimeLease(long generation) => Generation = generation;
+    public DshRuntimeLease(long generation)
+    {
+        Generation = generation;
+        _token = _cts.Token;
+    }
 
     public long Generation { get; }
     public Process? Process { get; set; }
@@ -637,7 +678,7 @@ internal sealed class DshRuntimeLease
     public StreamReader? OutputReader { get; set; }
     public StreamReader? ErrorReader { get; set; }
 
-    public CancellationToken CancellationToken => _cts.Token;
+    public CancellationToken CancellationToken => _token;
 
     public void TrackTask(Task task)
     {
@@ -660,7 +701,7 @@ internal sealed class DshRuntimeLease
             tasks = _tasks.ToArray();
         }
 
-        _cts.Cancel();
+        try { _cts.Cancel(); } catch { }
 
         var process = Process;
         Process = null;
@@ -669,24 +710,31 @@ internal sealed class DshRuntimeLease
             try { if (!process.HasExited) process.Kill(entireProcessTree: true); } catch { }
         }
 
-        // The owned tasks observe the lease token and unblock once the
-        // streams close; the bounded wait keeps teardown responsive even if
-        // one of them wedges.
-        try { Task.WhenAll(tasks).Wait(TeardownTaskTimeout); } catch { }
-
-        try { OutputReader?.Dispose(); } catch { }
-        try { ErrorReader?.Dispose(); } catch { }
+        var output = OutputReader;
+        var error = ErrorReader;
         OutputReader = null;
         ErrorReader = null;
-
-        if (process != null)
-        {
-            try { process.WaitForExit(2000); } catch { }
-            try { process.Dispose(); } catch { }
-        }
-
-        Job?.Dispose();
+        var job = Job;
         Job = null;
-        _cts.Dispose();
+
+        // Disposal phase: a separate pool task awaits the tracked tasks
+        // (including the one that called TearDown — it completes right after
+        // this returns), then closes the streams which force any wedged
+        // reader loops to end.
+        _ = Task.Run(async () =>
+        {
+            try { await Task.WhenAll(tasks).WaitAsync(TeardownTaskTimeout).ConfigureAwait(false); }
+            catch { }
+
+            try { output?.Dispose(); } catch { }
+            try { error?.Dispose(); } catch { }
+            if (process != null)
+            {
+                try { process.WaitForExit(2000); } catch { }
+                try { process.Dispose(); } catch { }
+            }
+            try { job?.Dispose(); } catch { }
+            try { _cts.Dispose(); } catch { }
+        });
     }
 }

@@ -231,7 +231,14 @@ public sealed class WorkspaceManager : IWorkspaceManager
     public void TogglePaneZoom() =>
         _ = _bridge.SendEventAsync(new { type = "pane_zoom_toggle" });
 
-    public void BeginShutdown() => _shuttingDown = true;
+    public void BeginShutdown()
+    {
+        _shuttingDown = true;
+        // Forward the gate so DSH commands and exports are refused for the
+        // rest of the process lifetime; the supervisor teardown itself is
+        // owned by MainWindow's shutdown sequence.
+        _dsh.BeginShutdown();
+    }
 
     private void OnTerminalCreated(object? sender, TabCreatedEventArgs args)
     {

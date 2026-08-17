@@ -42,33 +42,59 @@ internal static class SuspendedJobProcessLauncher
         IntPtr stdoutWrite = IntPtr.Zero;
         IntPtr stderrRead = IntPtr.Zero;
         IntPtr stderrWrite = IntPtr.Zero;
+        IntPtr attributeList = IntPtr.Zero;
+        var pinnedHandles = GCHandle.Alloc(Array.Empty<IntPtr>(), GCHandleType.Pinned);
         try
         {
             if (!CreatePipe(out stdoutRead, out stdoutWrite, ref securityAttributes, 0))
                 return Failed($"CreatePipe(stdout) failed: {new Win32Exception().Message}");
-            SetHandleInformation(stdoutRead, HANDLE_FLAG_INHERIT, 0);
+            if (!SetHandleInformation(stdoutRead, HANDLE_FLAG_INHERIT, 0))
+                return Failed($"SetHandleInformation(stdout) failed: {new Win32Exception().Message}");
             if (!CreatePipe(out stderrRead, out stderrWrite, ref securityAttributes, 0))
                 return Failed($"CreatePipe(stderr) failed: {new Win32Exception().Message}");
-            SetHandleInformation(stderrRead, HANDLE_FLAG_INHERIT, 0);
+            if (!SetHandleInformation(stderrRead, HANDLE_FLAG_INHERIT, 0))
+                return Failed($"SetHandleInformation(stderr) failed: {new Win32Exception().Message}");
 
-            var startupInfo = new STARTUPINFOW
+            // Restrict handle inheritance to exactly the two pipe write ends:
+            // without PROC_THREAD_ATTRIBUTE_HANDLE_LIST the child would inherit
+            // every inheritable handle in the PSX process. The pinned array and
+            // the attribute list must stay alive until CreateProcessW returns.
+            var inheritableHandles = new[] { stdoutWrite, stderrWrite };
+            pinnedHandles.Free();
+            pinnedHandles = GCHandle.Alloc(inheritableHandles, GCHandleType.Pinned);
+            var attributeListSize = IntPtr.Zero;
+            InitializeProcThreadAttributeList(IntPtr.Zero, 1, 0, ref attributeListSize);
+            attributeList = Marshal.AllocHGlobal(attributeListSize);
+            if (!InitializeProcThreadAttributeList(attributeList, 1, 0, ref attributeListSize))
+                return Failed($"InitializeProcThreadAttributeList failed: {new Win32Exception().Message}");
+            if (!UpdateProcThreadAttribute(
+                    attributeList,
+                    IntPtr.Zero,
+                    ProcThreadAttributeHandleList,
+                    pinnedHandles.AddrOfPinnedObject(),
+                    (IntPtr)(IntPtr.Size * inheritableHandles.Length),
+                    IntPtr.Zero,
+                    IntPtr.Zero))
             {
-                cb = Marshal.SizeOf<STARTUPINFOW>(),
-                dwFlags = STARTF_USESTDHANDLES,
-                hStdInput = IntPtr.Zero,
-                hStdOutput = stdoutWrite,
-                hStdError = stderrWrite
-            };
+                return Failed($"UpdateProcThreadAttribute failed: {new Win32Exception().Message}");
+            }
+
+            var startupInfo = new STARTUPINFOEXW();
+            startupInfo.StartupInfo.cb = Marshal.SizeOf<STARTUPINFOEXW>();
+            startupInfo.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+            startupInfo.StartupInfo.hStdInput = IntPtr.Zero;
+            startupInfo.StartupInfo.hStdOutput = stdoutWrite;
+            startupInfo.StartupInfo.hStdError = stderrWrite;
             if (!CreateProcessW(
                     null,
                     new StringBuilder(commandLine),
                     IntPtr.Zero,
                     IntPtr.Zero,
                     bInheritHandles: true,
-                    CREATE_SUSPENDED | CREATE_NO_WINDOW,
+                    CREATE_SUSPENDED | CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT,
                     IntPtr.Zero,
                     workingDirectory,
-                    ref startupInfo,
+                    ref startupInfo.StartupInfo,
                     out var processInformation))
             {
                 return Failed($"CreateProcess failed: {new Win32Exception().Message}");
@@ -140,6 +166,13 @@ internal static class SuspendedJobProcessLauncher
         }
         finally
         {
+            if (attributeList != IntPtr.Zero)
+            {
+                DeleteProcThreadAttributeList(attributeList);
+                Marshal.FreeHGlobal(attributeList);
+            }
+            if (pinnedHandles.IsAllocated)
+                pinnedHandles.Free();
             if (stdoutWrite != IntPtr.Zero) CloseHandle(stdoutWrite);
             if (stderrWrite != IntPtr.Zero) CloseHandle(stderrWrite);
             if (stdoutRead != IntPtr.Zero) CloseHandle(stdoutRead);
@@ -211,7 +244,9 @@ internal static class SuspendedJobProcessLauncher
     private const int STARTF_USESTDHANDLES = 0x00000100;
     private const uint CREATE_SUSPENDED = 0x00000004;
     private const uint CREATE_NO_WINDOW = 0x08000000;
+    private const uint EXTENDED_STARTUPINFO_PRESENT = 0x00080000;
     private const uint HANDLE_FLAG_INHERIT = 0x00000001;
+    private const IntPtr ProcThreadAttributeHandleList = (IntPtr)0x00020000;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct SECURITY_ATTRIBUTES
@@ -245,6 +280,13 @@ internal static class SuspendedJobProcessLauncher
     }
 
     [StructLayout(LayoutKind.Sequential)]
+    private struct STARTUPINFOEXW
+    {
+        public STARTUPINFOW StartupInfo;
+        public IntPtr lpAttributeList;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     private struct PROCESS_INFORMATION
     {
         public IntPtr hProcess;
@@ -259,6 +301,23 @@ internal static class SuspendedJobProcessLauncher
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool SetHandleInformation(IntPtr hObject, uint dwMask, uint dwFlags);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool InitializeProcThreadAttributeList(
+        IntPtr lpAttributeList, int dwAttributeCount, int dwFlags, ref IntPtr lpSize);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool UpdateProcThreadAttribute(
+        IntPtr lpAttributeList,
+        IntPtr lpFlags,
+        IntPtr attribute,
+        IntPtr lpValue,
+        IntPtr cbSize,
+        IntPtr lpPreviousValue,
+        IntPtr lpReturnSize);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern void DeleteProcThreadAttributeList(IntPtr lpAttributeList);
 
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     private static extern bool CreateProcessW(

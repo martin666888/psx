@@ -694,6 +694,20 @@ public sealed class WorkspaceManagerTests
         Assert.AreEqual("agent", WorkspaceWireKind.ToWire(WorkspaceKind.Agent));
     }
 
+    [TestMethod]
+    public void BeginShutdown_ForwardsTheGateToTheDshCoordinator()
+    {
+        var terminals = new RecordingTabManagementService();
+        using var agents = new StubAgentWorkspaceCoordinator();
+        var bridge = new RecordingAgentBridgeService();
+        var dsh = new FakeDshWorkspaceCoordinator();
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), dsh);
+
+        manager.BeginShutdown();
+
+        Assert.IsTrue(dsh.ShutdownBegan, "WorkspaceManager.BeginShutdown must forward to the DSH coordinator");
+    }
+
     private static WorkspaceDescriptor CreateAgentWorkspace(
         Guid workspaceId,
         AgentWorkspaceState state,

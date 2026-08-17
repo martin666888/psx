@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http;
 using PSX.Models;
 using PSX.Services;
@@ -67,7 +67,7 @@ public sealed class DshRuntimeLifecycleTests
     {
         using var workspace = TestWorkspace.Create(nameof(PrepareForStartup_PointerNext_PromotesToCurrentWithoutNetwork));
         var (runtime, paths) = CreateRuntime(workspace);
-        Directory.CreateDirectory(paths.DshNextDirectory);
+        SeedFakeDshTree(paths.DshNextDirectory, DshWebRuntime.SeededPackageVersion);
         File.WriteAllText(Path.Combine(paths.DshNextDirectory, "ready"), "staged");
         Directory.CreateDirectory(paths.RuntimeRoot);
         File.WriteAllText(paths.DshActivePointerFile, "next");
@@ -77,6 +77,45 @@ public sealed class DshRuntimeLifecycleTests
         Assert.AreEqual("staged", File.ReadAllText(Path.Combine(paths.DshCurrentDirectory, "ready")));
         Assert.IsFalse(Directory.Exists(paths.DshNextDirectory));
         Assert.AreEqual("current", File.ReadAllText(paths.DshActivePointerFile));
+        Assert.IsTrue(runtime.IsInstalled(), "the promoted tree carries the seeded version");
+    }
+
+    [TestMethod]
+    public void PrepareForStartup_NextVersionMismatch_DiscardsCandidateAndKeepsCurrent()
+    {
+        using var workspace = TestWorkspace.Create(nameof(PrepareForStartup_NextVersionMismatch_DiscardsCandidateAndKeepsCurrent));
+        var (runtime, paths) = CreateRuntime(workspace);
+        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        File.WriteAllText(Path.Combine(paths.DshCurrentDirectory, "ready"), "old");
+        SeedFakeDshTree(paths.DshNextDirectory, "9.9.9-fake");
+        File.WriteAllText(Path.Combine(paths.DshNextDirectory, "ready"), "staged");
+        Directory.CreateDirectory(paths.RuntimeRoot);
+        File.WriteAllText(paths.DshActivePointerFile, "next");
+
+        runtime.PrepareForStartup();
+
+        Assert.AreEqual("old", File.ReadAllText(Path.Combine(paths.DshCurrentDirectory, "ready")),
+            "a mismatched staged candidate must not be promoted");
+        Assert.IsTrue(runtime.IsInstalled());
+        Assert.IsFalse(Directory.Exists(paths.DshNextDirectory), "the mismatched candidate is discarded");
+        Assert.AreEqual("current", File.ReadAllText(paths.DshActivePointerFile),
+            "the pointer is reset so startup does not retry the bad candidate forever");
+    }
+
+    [TestMethod]
+    public void CreateLaunchSpec_WrongVersionCurrent_IsRefusedUntilReinstalled()
+    {
+        using var workspace = TestWorkspace.Create(nameof(CreateLaunchSpec_WrongVersionCurrent_IsRefusedUntilReinstalled));
+        var (runtime, paths) = CreateRuntime(workspace);
+        SeedFakeNodeToolchain(paths);
+        SeedFakeDshTree(paths.DshCurrentDirectory, "9.9.9-fake");
+
+        Assert.IsFalse(runtime.IsInstalled());
+        Assert.IsNull(runtime.CreateLaunchSpec(), "a stale or hand-replaced dsh-current must not start");
+
+        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        Assert.IsTrue(runtime.IsInstalled());
+        Assert.IsNotNull(runtime.CreateLaunchSpec());
     }
 
     [TestMethod]
@@ -405,22 +444,6 @@ public sealed class DshRuntimeLifecycleTests
     }
 
     [TestMethod]
-    public void RotatingDiagnosticLog_DiscardsOversizedFileBeforeAppending()
-    {
-        using var workspace = TestWorkspace.Create(nameof(RotatingDiagnosticLog_DiscardsOversizedFileBeforeAppending));
-        var logPath = Path.Combine(workspace.Path, "bounded.log");
-
-        RotatingDiagnosticLog.AppendLine(logPath, new string('x', 1_200_000));
-        Assert.IsGreaterThan(1_048_576L, new FileInfo(logPath).Length);
-
-        RotatingDiagnosticLog.AppendLine(logPath, "after rotation");
-
-        var info = new FileInfo(logPath);
-        Assert.IsLessThan(1_048_576L, info.Length, $"expected a bounded log, got {info.Length} bytes");
-        StringAssert.Contains(File.ReadAllText(logPath), "after rotation");
-    }
-
-    [TestMethod]
     public void ValidateInstalledTree_VersionMismatchWithSeed_IsRejectedBeforeSwap()
     {
         using var workspace = TestWorkspace.Create(nameof(ValidateInstalledTree_VersionMismatchWithSeed_IsRejectedBeforeSwap));
@@ -431,7 +454,7 @@ public sealed class DshRuntimeLifecycleTests
         var result = runtime.ValidateInstalledTree(paths, scratch);
 
         Assert.IsFalse(result.Success);
-        StringAssert.Contains(result.ErrorMessage, "锁定版本");
+        StringAssert.Contains(result.ErrorMessage, "\u9501\u5b9a\u7248\u672c");
         Assert.IsFalse(Directory.Exists(paths.DshCurrentDirectory),
             "a mismatched install must not swap onto dsh-current");
     }
@@ -465,7 +488,170 @@ public sealed class DshRuntimeLifecycleTests
         var result = await runtime.InstallAsync(CancellationToken.None);
 
         Assert.IsFalse(result.Success);
-        StringAssert.Contains(result.ErrorMessage, "种子");
+        StringAssert.Contains(result.ErrorMessage, "\u79cd\u5b50");
+    }
+
+    [TestMethod]
+    public async Task RetryBurstThenStop_RunsOneInstallAndCancelsItPromptly()
+    {
+        using var workspace = TestWorkspace.Create(nameof(RetryBurstThenStop_RunsOneInstallAndCancelsItPromptly));
+        var (runtime, paths) = CreateRuntime(workspace);
+        var runsPath = Path.Combine(workspace.Path, "npm-runs.txt");
+        SeedCountingSlowNpm(paths, runsPath, delayMs: 60_000);
+        var bridge = new RecordingAgentBridgeService();
+        using var supervisor = new DshWebRuntimeSupervisor(
+            runtime, bridge, Path.Combine(workspace.Path, "supervisor"), Path.Combine(workspace.Path, "dsh-workspace"));
+        try
+        {
+            // Reviewer repro: retry #1 installs; retry #2 arrives while #1 holds
+            // the lock; Stop cancels only what exists at that moment. With the
+            // shared operation slot both retries are ONE run, so Stop cancels it
+            // and never waits out a second uncancellable npm ci.
+            var first = supervisor.RetryAsync();
+            await TestWorkspace.WaitUntilAsync(
+                () => File.Exists(runsPath) && File.ReadAllLines(runsPath).Length >= 1,
+                TimeSpan.FromSeconds(15),
+                "the fake npm never started");
+            var second = supervisor.RetryAsync();
+            Assert.AreSame(first, second, "retry joins the in-flight operation slot");
+
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var stop = supervisor.StopAsync();
+            await Task.WhenAll(first, second, stop);
+            watch.Stop();
+
+            Assert.AreEqual(DshRuntimeState.Exited, supervisor.State);
+            Assert.HasCount(1, File.ReadAllLines(runsPath),
+                "exactly one npm ci may run for the whole retry burst");
+            Assert.IsLessThan(30_000L, watch.ElapsedMilliseconds,
+                $"Stop must cancel the install promptly, waited {watch.ElapsedMilliseconds}ms");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PSX_DSH_TEST_RUNS", null);
+        }
+    }
+
+    [TestMethod]
+    public async Task StopDuringStopWindow_RejectsNewCommandsAndRecoversAfterwards()
+    {
+        using var workspace = TestWorkspace.Create(nameof(StopDuringStopWindow_RejectsNewCommandsAndRecoversAfterwards));
+        var (runtime, paths) = CreateRuntime(workspace);
+        var runsPath = Path.Combine(workspace.Path, "npm-runs.txt");
+        SeedCountingSlowNpm(paths, runsPath, delayMs: 60_000);
+        var bridge = new RecordingAgentBridgeService();
+        using var supervisor = new DshWebRuntimeSupervisor(
+            runtime, bridge, Path.Combine(workspace.Path, "supervisor"), Path.Combine(workspace.Path, "dsh-workspace"));
+        try
+        {
+            var installing = supervisor.RetryAsync();
+            await TestWorkspace.WaitUntilAsync(
+                () => File.Exists(runsPath) && File.ReadAllLines(runsPath).Length >= 1,
+                TimeSpan.FromSeconds(15),
+                "the fake npm never started");
+
+            var stop = supervisor.StopAsync();
+            // A retry racing the stop window is dropped instead of queueing.
+            var raced = supervisor.RetryAsync();
+            await Task.WhenAll(installing, stop, raced);
+            Assert.AreEqual(DshRuntimeState.Exited, supervisor.State);
+            Assert.HasCount(1, File.ReadAllLines(runsPath));
+
+            // After the stop completes the window closes: a new command may
+            // start a fresh run (observed via the run counter), and stopping
+            // it stays prompt.
+            var recovered = supervisor.RetryAsync();
+            await TestWorkspace.WaitUntilAsync(
+                () => File.Exists(runsPath) && File.ReadAllLines(runsPath).Length >= 2,
+                TimeSpan.FromSeconds(15),
+                "the post-stop retry did not start a new operation");
+            Assert.HasCount(2, File.ReadAllLines(runsPath));
+            var recoveryStop = supervisor.StopAsync();
+            var recoveryWatch = System.Diagnostics.Stopwatch.StartNew();
+            await Task.WhenAll(recovered, recoveryStop);
+            recoveryWatch.Stop();
+            Assert.AreEqual(DshRuntimeState.Exited, supervisor.State);
+            Assert.IsLessThan(30_000L, recoveryWatch.ElapsedMilliseconds,
+                $"the recovered stop also cancelled promptly, waited {recoveryWatch.ElapsedMilliseconds}ms");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PSX_DSH_TEST_RUNS", null);
+        }
+    }
+
+    [TestMethod]
+    public void LeaseTearDown_NeverWaitsOnTasksContainingItsCaller()
+    {
+        var lease = new DshRuntimeLease(1);
+        // Simulates MonitorAsync/WatchExitAsync being tracked while their own
+        // commit chain runs TearDown: a pending task in the set used to cost a
+        // fixed 5s self-wait under the publish lock.
+        var pending = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        lease.TrackTask(pending.Task);
+        try
+        {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            lease.TearDown();
+            watch.Stop();
+            Assert.IsLessThan(2000L, watch.ElapsedMilliseconds,
+                $"TearDown blocked {watch.ElapsedMilliseconds}ms on its own tracked tasks");
+        }
+        finally
+        {
+            pending.TrySetResult();
+        }
+    }
+
+    [TestMethod]
+    public async Task CoordinatorBeginShutdown_RefusesFurtherCommandsAndExports()
+    {
+        using var workspace = TestWorkspace.Create(nameof(CoordinatorBeginShutdown_RefusesFurtherCommandsAndExports));
+        var (runtime, _) = CreateRuntime(workspace);
+        var bridge = new RecordingAgentBridgeService();
+        using var supervisor = new DshWebRuntimeSupervisor(
+            runtime, bridge, Path.Combine(workspace.Path, "supervisor"), Path.Combine(workspace.Path, "dsh-workspace"));
+        var coordinator = new DshWebWorkspaceCoordinator(supervisor, bridge);
+
+        coordinator.BeginShutdown();
+        await coordinator.HandleCommandAsync("install");
+        await coordinator.HandleCommandAsync("retry");
+        await coordinator.HandleCommandAsync("stop");
+        await coordinator.HandleExportAsync("http://127.0.0.1:4321/api/session.export", "s.zip");
+
+        Assert.AreEqual(DshRuntimeState.NotInstalled, supervisor.State,
+            "commands after BeginShutdown must not start anything");
+        Assert.IsEmpty(bridge.Events.Where(message =>
+            message.GetProperty("type").GetString() == "dsh_runtime_status"
+            && message.GetProperty("state").GetString() == "installing"));
+    }
+
+    [TestMethod]
+    public void RotatingDiagnosticLog_TruncatesSingleEntriesAndRotatesBeforeTheCap()
+    {
+        using var workspace = TestWorkspace.Create(nameof(RotatingDiagnosticLog_TruncatesSingleEntriesAndRotatesBeforeTheCap));
+        var logPath = Path.Combine(workspace.Path, "bounded.log");
+
+        // One oversized message is truncated instead of blowing past the cap.
+        RotatingDiagnosticLog.AppendLine(logPath, new string('x', 2_000_000));
+        Assert.IsLessThan(1_048_576L, new FileInfo(logPath).Length, "a single entry must be truncated");
+        StringAssert.Contains(File.ReadAllText(logPath), "[truncated]");
+
+        // Repeated appends rotate (restart) the file as soon as the next
+        // entry would exceed the cap, keeping it a true hard bound. The
+        // chunks stay below the single-entry truncation size.
+        var previous = new FileInfo(logPath).Length;
+        var rotated = false;
+        for (var attempt = 0; attempt < 400 && !rotated; attempt++)
+        {
+            RotatingDiagnosticLog.AppendLine(logPath, new string('y', 4 * 1024));
+            var current = new FileInfo(logPath).Length;
+            rotated = current < previous;
+            previous = current;
+        }
+        Assert.IsTrue(rotated, "appending past the cap must rotate the file");
+        StringAssert.Contains(File.ReadAllText(logPath), "yyyy");
+        Assert.IsLessThan(1_048_576L, new FileInfo(logPath).Length);
     }
 
     private static string[] LeftoverScratchFiles(string directory, string target) =>
@@ -500,6 +686,35 @@ public sealed class DshRuntimeLifecycleTests
 
         // Complete seed so the install reaches the npm step instead of
         // failing synchronously at the seed gate.
+        Directory.CreateDirectory(paths.DshSeedDirectory);
+        File.WriteAllText(Path.Combine(paths.DshSeedDirectory, "package.json"), "{}");
+        File.WriteAllText(Path.Combine(paths.DshSeedDirectory, "package-lock.json"), "{}");
+        File.WriteAllText(Path.Combine(paths.DshSeedDirectory, ".npmrc"), "registry=https://registry.npmjs.org/");
+    }
+
+    private static void SeedCountingSlowNpm(RuntimePaths paths, string runsPath, int delayMs)
+    {
+        // Real Node 22 from TestResults with an npm stand-in that records each
+        // run and then idles: cancellation (not natural exit) must be what
+        // ends it, so the test can prove Stop cancels the only run instead of
+        // waiting out (or starting) another.
+        var nodePath = Path.Combine(
+            TestWorkspace.RepositoryRoot, "TestResults", "node22", "node-v22.23.1-win-x64", "node.exe");
+        if (!File.Exists(nodePath))
+            Assert.Inconclusive("Node 22 toolchain is not available under TestResults/node22.");
+
+        var nodeDirectory = Path.Combine(paths.InstallDirectory, "tools", "node");
+        Directory.CreateDirectory(Path.Combine(nodeDirectory, "node_modules", "npm", "bin"));
+        File.Copy(nodePath, Path.Combine(nodeDirectory, "node.exe"));
+        File.WriteAllText(
+            Path.Combine(nodeDirectory, "node_modules", "npm", "bin", "npm-cli.js"),
+            $$"""
+            require('fs').appendFileSync(process.env.PSX_DSH_TEST_RUNS, 'run\n');
+            setTimeout(() => { process.exitCode = 1; }, {{delayMs}});
+            """);
+        Environment.SetEnvironmentVariable("PSX_DSH_TEST_RUNS", runsPath);
+
+        // Complete seed so the retry reaches the npm step.
         Directory.CreateDirectory(paths.DshSeedDirectory);
         File.WriteAllText(Path.Combine(paths.DshSeedDirectory, "package.json"), "{}");
         File.WriteAllText(Path.Combine(paths.DshSeedDirectory, "package-lock.json"), "{}");

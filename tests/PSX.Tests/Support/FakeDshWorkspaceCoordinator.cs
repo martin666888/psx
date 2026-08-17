@@ -18,6 +18,7 @@ internal sealed class FakeDshWorkspaceCoordinator : IDshWebWorkspaceCoordinator
     public List<(string Url, string Filename)> Exports { get; } = new();
     public int CreateCalls { get; private set; }
     public bool FailNextCreate { get; set; }
+    public bool ShutdownBegan { get; private set; }
 
     public Guid? OpenWorkspaceId
     {
@@ -84,6 +85,9 @@ internal sealed class FakeDshWorkspaceCoordinator : IDshWebWorkspaceCoordinator
     public void BeginShutdown()
     {
         lock (_sync)
+        {
             _shuttingDown = true;
+            ShutdownBegan = true;
+        }
     }
 }

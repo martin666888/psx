@@ -44,12 +44,25 @@ public sealed class DshWebRuntime
     public string LogPath => _logPath;
     public RuntimePaths Paths => _locator.Locate();
 
+    /// <summary>
+    /// A runtime is launchable only when both files exist AND the installed
+    /// package carries exactly <see cref="SeededPackageVersion"/>: a stale,
+    /// hand-replaced or wrongly promoted dsh-current must not start; the
+    /// not-installed path lets the user reinstall over it.
+    /// </summary>
     public bool IsInstalled()
     {
         var paths = Paths;
         return File.Exists(Path.Combine(paths.DshCurrentDirectory, DshPackageJson))
-            && File.Exists(Path.Combine(paths.DshCurrentDirectory, DshEntryPath));
+            && File.Exists(Path.Combine(paths.DshCurrentDirectory, DshEntryPath))
+            && VersionMatches(paths.DshCurrentDirectory);
     }
+
+    private static bool VersionMatches(string directory) =>
+        string.Equals(
+            ReadPackageVersion(Path.Combine(directory, DshPackageJson)),
+            SeededPackageVersion,
+            StringComparison.Ordinal);
 
     public DshLaunchSpec? CreateLaunchSpec()
     {
@@ -137,9 +150,23 @@ public sealed class DshWebRuntime
     {
         var paths = Paths;
         if (_stagedStore.PointerSaysNext(paths.DshActivePointerFile, ActiveNextToken))
-            _stagedStore.PromoteNextToCurrent(
-                paths.RuntimeRoot, paths.DshCurrentDirectory,
-                paths.DshNextDirectory, paths.DshActivePointerFile, ActiveCurrentToken);
+        {
+            // Promote only a staged candidate that still carries the seeded
+            // version; anything else is discarded instead of becoming current.
+            if (VersionMatches(paths.DshNextDirectory))
+            {
+                _stagedStore.PromoteNextToCurrent(
+                    paths.RuntimeRoot, paths.DshCurrentDirectory,
+                    paths.DshNextDirectory, paths.DshActivePointerFile, ActiveCurrentToken);
+            }
+            else
+            {
+                Log("DSH dsh-next candidate does not match the seeded version; discarding it.");
+                _stagedStore.ClearStaleNext(paths.DshNextDirectory);
+                _stagedStore.TryWriteActivePointer(
+                    paths.RuntimeRoot, paths.DshActivePointerFile, ActiveCurrentToken);
+            }
+        }
         _stagedStore.ClearStaleNext(paths.DshNextDirectory);
     }
 

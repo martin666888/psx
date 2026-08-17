@@ -141,11 +141,12 @@ internal static partial class ProbeChecks
         var state = await TryWebSocketOnceAsync(host);
         if (state != "ok:echo:ping")
             state = await TryWebSocketOnceAsync(host);
-        // Known finding: the offscreen window's background throttling
-        // intermittently leaves the ws probe 'idle' (P0-FINDINGS.md,
-        // secondary observations); the capability itself was verified.
+        // Only the exact environmental 'idle' (offscreen background
+        // throttling, P0-FINDINGS secondary observations) is excused — and
+        // only after both attempts. Any error result stays a hard failure so
+        // a real WebSocket regression turns the gate red.
         Add("websocket-echo", state == "ok:echo:ping", $"ws result = {state}",
-            knownFinding: state != "ok:echo:ping");
+            knownFinding: state == "idle");
     }
 
     private static async Task<string> TryWebSocketOnceAsync(ProbeHost host)
