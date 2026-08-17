@@ -155,7 +155,8 @@ npmmirror advisories 不可用或返回 404 也不能视为审计通过。
 1. 首次启动只有 Terminal 时，直接打开 History，确认保存的 Profile、Provider
    图标、Usage/Config 均正确；关闭最后一个 Agent 后再次验证同样行为。
 2. 真实登录五个 Managed Provider，验证流式文本、Thinking、Tool、Permission、
-   Elicitation、Plan、停止与恢复；不要求每个 Provider 都提供精确 Usage parser。
+   Elicitation、Plan、停止与恢复；打开用量面板确认各 Provider 的精确 Token
+   统计（含 Qwen / OpenCode）与完整性提示符合预期。
 3. 实际拖拽两/三列、History 宽度和 divider，在 100/125/150% DPI 下确认圆角、
    Composer 底边、焦点环和 Terminal fit 没有主观异常。
 4. 真实点击 Runtime Update，验证取消/超时返回前进程已退出、目录可立即操作，

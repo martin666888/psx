@@ -382,6 +382,7 @@ Write-Host "==> Validate public package contents" -ForegroundColor Cyan
 $requiredFiles = @(
     "PSX.exe",
     "PSX.dll",
+    "e_sqlite3.dll",
     "psx.ini",
     "LICENSE.txt",
     "THIRD-PARTY-NOTICES.md",
@@ -392,6 +393,9 @@ $requiredFiles = @(
     "licenses\qwen\THIRD-PARTY-NOTICES.md",
     "licenses\opencode\LICENSE",
     "licenses\opencode\THIRD-PARTY-NOTICES.md",
+    "licenses\microsoft.data.sqlite\LICENSE.txt",
+    "licenses\sqlitepclraw\LICENSE",
+    "licenses\sqlite\LICENSE.txt",
     "licenses\communitytoolkit.mvvm\License.md",
     "licenses\dotnet\LICENSE.txt",
     "licenses\microsoft.extensions\LICENSE.TXT",

@@ -20,7 +20,7 @@ public sealed class QwenCodeAcpAgentProviderTests
             Assert.AreEqual("Qwen", provider.Descriptor.AssistantName);
             Assert.AreEqual("qwen", provider.Descriptor.IconKey);
             Assert.HasCount(0, provider.Descriptor.LegacyKeys);
-            Assert.IsNull(provider.UsageSource);
+            Assert.IsInstanceOfType<QwenCodeSessionUsageSource>(provider.UsageSource);
         }
     }
 

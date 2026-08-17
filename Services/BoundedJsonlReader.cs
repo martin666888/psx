@@ -18,6 +18,21 @@ internal static class BoundedJsonlReader
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(onLine);
+        return Read(path, (line, _) => onLine(line), cancellationToken);
+    }
+
+    /// <summary>
+    /// Reads like <see cref="Read(string, Action{ReadOnlyMemory{byte}}, CancellationToken)"/>
+    /// but also tells the callback whether the emitted line is the unterminated
+    /// final piece of the file (no trailing newline). Callers can tolerate a
+    /// half-written trailing line that an interrupted append may have left.
+    /// </summary>
+    public static int Read(
+        string path,
+        Action<ReadOnlyMemory<byte>, bool> onLine,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(onLine);
 
         using var stream = new FileStream(
             path,
@@ -68,7 +83,7 @@ internal static class BoundedJsonlReader
                         continue;
 
                     if (!discarding)
-                        EmitLine(line, onLine);
+                        EmitLine(line, isUnterminatedFinalLine: false, onLine);
                     line.Clear();
                     discarding = false;
                     offset++;
@@ -76,7 +91,7 @@ internal static class BoundedJsonlReader
             }
 
             if (!discarding && line.WrittenCount > 0)
-                EmitLine(line, onLine);
+                EmitLine(line, isUnterminatedFinalLine: true, onLine);
 
             return oversizedLines;
         }
@@ -88,12 +103,13 @@ internal static class BoundedJsonlReader
 
     private static void EmitLine(
         ArrayBufferWriter<byte> line,
-        Action<ReadOnlyMemory<byte>> onLine)
+        bool isUnterminatedFinalLine,
+        Action<ReadOnlyMemory<byte>, bool> onLine)
     {
         var length = line.WrittenCount;
         if (length > 0 && line.WrittenSpan[length - 1] == (byte)'\r')
             length--;
         if (length > 0)
-            onLine(line.WrittenMemory[..length]);
+            onLine(line.WrittenMemory[..length], isUnterminatedFinalLine);
     }
 }

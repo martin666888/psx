@@ -29,7 +29,7 @@ public sealed class QwenCodeAcpAgentProvider : IAcpAgentProvider
 
     public IAcpAgentRuntime Runtime { get; }
 
-    public IAgentUsageSource? UsageSource { get; } = null;
+    public IAgentUsageSource? UsageSource { get; } = new QwenCodeSessionUsageSource();
 
     public IAgentConfigSource? ConfigSource { get; } = new QwenConfigSource();
 

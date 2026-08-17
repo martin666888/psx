@@ -20,7 +20,7 @@ public sealed class OpencodeAcpAgentProviderTests
             Assert.AreEqual("OpenCode", provider.Descriptor.AssistantName);
             Assert.AreEqual("opencode", provider.Descriptor.IconKey);
             Assert.HasCount(0, provider.Descriptor.LegacyKeys);
-            Assert.IsNull(provider.UsageSource);
+            Assert.IsInstanceOfType<OpencodeSessionUsageSource>(provider.UsageSource);
         }
     }
 

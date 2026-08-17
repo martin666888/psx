@@ -68,6 +68,11 @@ The portable release redistributes:
   The bundled artifact is the `opencode-windows-x64` platform package: a
   self-contained native executable (~175 MB) embedding the Bun runtime (MIT),
   depended on directly rather than through the `opencode-ai` wrapper.
+- Microsoft.Data.Sqlite — MIT; see `licenses/microsoft.data.sqlite/LICENSE.txt`.
+  The SQLitePCLRaw packages (`core`, `bundle_e_sqlite3`, `provider.e_sqlite3`,
+  `lib.e_sqlite3`) — Apache-2.0; see `licenses/sqlitepclraw/LICENSE`. The
+  SQLite engine compiled into the bundled `e_sqlite3.dll` native library is
+  in the public domain; see `licenses/sqlite/LICENSE.txt`.
 
 The release includes only the ACP and DSH package manifests and lockfiles. It
 does not redistribute Claude Code, the Claude Agent SDK native binary, an

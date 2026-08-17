@@ -29,10 +29,7 @@ public sealed class OpencodeAcpAgentProvider : IAcpAgentProvider
 
     public IAcpAgentRuntime Runtime { get; }
 
-    // No exact usage parser yet; opencode stats/export are future candidates
-    // for an IAgentUsageSource. Until then the usage panel shows this provider
-    // as unavailable rather than guessing.
-    public IAgentUsageSource? UsageSource { get; } = null;
+    public IAgentUsageSource? UsageSource { get; } = new OpencodeSessionUsageSource();
 
     public IAgentConfigSource? ConfigSource { get; } = new OpencodeConfigSource();
 
