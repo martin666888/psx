@@ -47,8 +47,12 @@ internal static partial class ProbeChecks
         }
         catch (TimeoutException)
         {
+            // Known finding: DownloadStarting never fires in this WebView2
+            // environment (P0-FINDINGS.md); the product exports through the
+            // host-mediated channel instead.
             Add("export-download-zip", false,
-                $"DownloadStarting never fired (click or navigation); frame fetch server probe = {serverNote}");
+                $"DownloadStarting never fired (click or navigation); frame fetch server probe = {serverNote}",
+                knownFinding: true);
         }
     }
 
@@ -97,7 +101,9 @@ internal static partial class ProbeChecks
         }
         catch (TimeoutException)
         {
-            Add("export-download-blob", false, "DownloadStarting never fired for a top-level blob download");
+            // Known finding (P0-FINDINGS.md): no download pipeline at all.
+            Add("export-download-blob", false, "DownloadStarting never fired for a top-level blob download",
+                knownFinding: true);
         }
     }
 
@@ -157,11 +163,14 @@ internal static partial class ProbeChecks
             // record below
         }
         var topHref = ProbeUtil.Unwrap(await host.RunTopAsync("location.href"));
+        // Known finding (P0-FINDINGS.md): even a trusted CDP click never
+        // surfaces DownloadStarting in this environment.
         Add("export-download-top", false,
             "no DownloadStarting even for a trusted CDP click; cdpResult=" + ProbeUtil.Clip(cdpResult)
             + " top=" + topHref
             + " navigations=" + ProbeUtil.Clip(string.Join("|", host.TopNavigations))
-            + " downloadsSessionZip=" + File.Exists(downloadsFile));
+            + " downloadsSessionZip=" + File.Exists(downloadsFile),
+            knownFinding: true);
     }
 
     /// <summary>Control variant: the same iframe download without the sandbox
@@ -187,7 +196,10 @@ internal static partial class ProbeChecks
         }
         catch (TimeoutException)
         {
-            Add("export-download-nosandbox", false, "DownloadStarting never fired even without the iframe sandbox");
+            // Known finding (P0-FINDINGS.md): the sandbox is not the cause —
+            // downloads never surface with or without it.
+            Add("export-download-nosandbox", false, "DownloadStarting never fired even without the iframe sandbox",
+                knownFinding: true);
         }
     }
 

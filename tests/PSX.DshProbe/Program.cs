@@ -82,7 +82,7 @@ internal static class Program
             mode = realDsh ? "real-dsh" : "mock",
             mockOrigin = mock.BaseUri.AbsoluteUri,
             targetOrigin = targetOrigin.AbsoluteUri,
-            checks = ProbeChecks.Results.Select(c => new { c.Name, c.Pass, c.Note }),
+            checks = ProbeChecks.Results.Select(c => new { c.Name, c.Pass, c.Note, c.KnownFinding }),
             manual
         };
         var json = JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true });
@@ -90,8 +90,14 @@ internal static class Program
         await File.WriteAllTextAsync(reportPath, json, new UTF8Encoding(false)).ConfigureAwait(false);
         Console.WriteLine("[probe] report written: " + reportPath);
 
-        var failed = ProbeChecks.Results.Count(c => !c.Pass);
-        Console.WriteLine($"[probe] {ProbeChecks.Results.Count - failed}/{ProbeChecks.Results.Count} checks passed, " + failed + " failed");
+        // Known findings reproduce documented WebView2 platform behaviors
+        // (P0-FINDINGS.md) and stay report-only; only an unknown regression
+        // fails the gate.
+        var knownFindings = ProbeChecks.Results.Count(c => !c.Pass && c.KnownFinding);
+        var failed = ProbeChecks.Results.Count(c => !c.Pass && !c.KnownFinding);
+        Console.WriteLine(
+            $"[probe] {ProbeChecks.Results.Count - knownFindings - failed}/{ProbeChecks.Results.Count} checks passed, " +
+            $"{failed} failed, {knownFindings} known findings");
         Console.WriteLine("[probe] returning exit code " + (failed == 0 ? 0 : 1));
         return failed == 0 ? 0 : 1;
     }

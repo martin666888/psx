@@ -3,7 +3,11 @@ using System.Text.Json;
 
 namespace PSX.DshProbe;
 
-internal sealed record ProbeCheck(string Name, bool Pass, string Note);
+/// <summary>A probe observation. <paramref name="KnownFinding"/> marks a
+/// failure that reproduces a documented WebView2 platform behavior (see
+/// tools/dsh-probe/P0-FINDINGS.md): it stays in the report as evidence but
+/// does not fail the gate — only unknown regressions exit non-zero.</summary>
+internal sealed record ProbeCheck(string Name, bool Pass, string Note, bool KnownFinding = false);
 
 internal static class ProbeUtil
 {
