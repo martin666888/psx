@@ -121,6 +121,12 @@ public sealed partial class KimiConfigSource : IAgentConfigSource
         try
         {
             var providerSections = new List<string>();
+            string? secondaryModel = null;
+            var secondaryModelPool = new List<string>();
+            // TOML keys belong to the most recent [section]; track it so a
+            // default_model inside [secondary_model] is never misreported as
+            // the global default model.
+            var currentSection = string.Empty;
             foreach (var rawLine in text.Split('\n'))
             {
                 var line = rawLine.TrimEnd('\r');
@@ -131,10 +137,13 @@ public sealed partial class KimiConfigSource : IAgentConfigSource
                 if (trimmed.Length == 0 || trimmed.StartsWith('#'))
                     continue;
 
-                var section = ProviderSectionRegex().Match(trimmed);
+                var section = SectionRegex().Match(trimmed);
                 if (section.Success)
                 {
-                    providerSections.Add(section.Groups[1].Value);
+                    currentSection = section.Groups[1].Value;
+                    var provider = ProviderSectionRegex().Match(trimmed);
+                    if (provider.Success)
+                        providerSections.Add(Unquote(provider.Groups[1].Value));
                     continue;
                 }
 
@@ -142,18 +151,42 @@ public sealed partial class KimiConfigSource : IAgentConfigSource
                 if (!kv.Success)
                     continue;
 
-                var key = kv.Groups[1].Value;
-                var value = Unquote(kv.Groups[2].Value.Trim());
-                if (string.Equals(key, "default_model", StringComparison.OrdinalIgnoreCase))
+                var key = kv.Groups[1].Success
+                    ? kv.Groups[1].Value
+                    : kv.Groups[2].Success ? kv.Groups[2].Value : kv.Groups[3].Value;
+                var value = Unquote(kv.Groups[4].Value.Trim());
+                if (currentSection.Length == 0)
                 {
-                    facts.Add(new AgentConfigFact("默认模型", value));
-                    if (!string.IsNullOrWhiteSpace(value))
-                        models.Add(new AgentConfigModelEntry(value, null, null));
+                    if (string.Equals(key, "default_model", StringComparison.OrdinalIgnoreCase))
+                    {
+                        facts.Add(new AgentConfigFact("默认模型", value));
+                        if (!string.IsNullOrWhiteSpace(value))
+                            models.Add(new AgentConfigModelEntry(value, null, null));
+                    }
+                    else if (string.Equals(key, "default_plan_mode", StringComparison.OrdinalIgnoreCase))
+                    {
+                        facts.Add(new AgentConfigFact("默认 Plan 模式", value));
+                    }
                 }
-                else if (string.Equals(key, "default_plan_mode", StringComparison.OrdinalIgnoreCase))
+                else if (string.Equals(currentSection, "secondary_model", StringComparison.Ordinal))
                 {
-                    facts.Add(new AgentConfigFact("默认 Plan 模式", value));
+                    if (string.Equals(key, "default_model", StringComparison.OrdinalIgnoreCase))
+                        secondaryModel = value;
                 }
+                else if (string.Equals(currentSection, "secondary_model.models", StringComparison.Ordinal))
+                {
+                    if (!string.IsNullOrWhiteSpace(key))
+                        secondaryModelPool.Add(key);
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(secondaryModel))
+                facts.Add(new AgentConfigFact("子 Agent 模型", secondaryModel));
+            if (secondaryModelPool.Count > 0)
+            {
+                facts.Add(new AgentConfigFact(
+                    "子 Agent 模型池",
+                    string.Join(", ", secondaryModelPool.Distinct(StringComparer.OrdinalIgnoreCase))));
             }
 
             if (providerSections.Count > 0)
@@ -195,9 +228,12 @@ public sealed partial class KimiConfigSource : IAgentConfigSource
         return string.IsNullOrWhiteSpace(home) ? null : Path.Combine(home, ".kimi-code");
     }
 
+    [GeneratedRegex(@"^\[([^\]]+)\]\s*$", RegexOptions.CultureInvariant)]
+    private static partial Regex SectionRegex();
+
     [GeneratedRegex(@"^\[providers\.([^\]]+)\]\s*$", RegexOptions.CultureInvariant)]
     private static partial Regex ProviderSectionRegex();
 
-    [GeneratedRegex(@"^([A-Za-z0-9_.-]+)\s*=\s*(.+)$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^(?:([A-Za-z0-9_.-]+)|""([^""]+)""|'([^']+)')\s*=\s*(.+)$", RegexOptions.CultureInvariant)]
     private static partial Regex KeyValueRegex();
 }
