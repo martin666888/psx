@@ -6,7 +6,7 @@
 // iconKey — never by provider-name string checks.
 //
 // Path sources:
-// - 'claude' / 'kimi' / 'qwen' / 'qoder' / 'cline' / 'opencode': Lobe Icons static SVG
+// - 'claude' / 'kimi' / 'qwen' / 'qoder' / 'cline' / 'opencode' / 'dsh': Lobe Icons static SVG
 //   1.94.0, archived under Assets/AgentIcons/lobehub-1.94.0 and declared in
 //   licenses/lobe-icons. They are the same marks TabBar renders through
 //   Themes/AgentIcons.xaml.

@@ -37,6 +37,12 @@ public sealed class RuntimeLocator
     private const string OpencodeCurrentSubdirectoryName = "opencode-current";
     private const string OpencodeNextSubdirectoryName = "opencode-next";
     private const string OpencodeActivePointerFileName = "opencode-active.txt";
+    private const string DshSeedSubdirectoryName = "dsh-seed";
+    private const string DshCurrentSubdirectoryName = "dsh-current";
+    private const string DshNextSubdirectoryName = "dsh-next";
+    private const string DshActivePointerFileName = "dsh-active.txt";
+    private const string DshInstallingSubdirectoryName = "dsh-installing";
+    private const string DshRollbackSubdirectoryName = "dsh-rollback";
     private const string NpmCliRelativePath = "node_modules/npm/bin/npm-cli.js";
     private const string WebView2FixedRuntimeSubdirectoryName = "webview2-fixed";
     private const string WebView2ExecutableName = "msedgewebview2.exe";
@@ -126,6 +132,12 @@ public sealed class RuntimeLocator
             OpencodeCurrentDirectory = Path.Combine(runtimeRoot, OpencodeCurrentSubdirectoryName),
             OpencodeNextDirectory = Path.Combine(runtimeRoot, OpencodeNextSubdirectoryName),
             OpencodeActivePointerFile = Path.Combine(runtimeRoot, OpencodeActivePointerFileName),
+            DshSeedDirectory = Path.Combine(installDirectory, "tools", DshSeedSubdirectoryName),
+            DshCurrentDirectory = Path.Combine(runtimeRoot, DshCurrentSubdirectoryName),
+            DshNextDirectory = Path.Combine(runtimeRoot, DshNextSubdirectoryName),
+            DshActivePointerFile = Path.Combine(runtimeRoot, DshActivePointerFileName),
+            DshInstallingDirectory = Path.Combine(runtimeRoot, DshInstallingSubdirectoryName),
+            DshRollbackDirectory = Path.Combine(runtimeRoot, DshRollbackSubdirectoryName),
         };
     }
 

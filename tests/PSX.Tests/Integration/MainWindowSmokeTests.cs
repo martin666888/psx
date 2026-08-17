@@ -58,7 +58,7 @@ public sealed class WorkspaceLayoutWireContractTests
         using var agents = new StubAgentWorkspaceCoordinator();
         var terminals = new RecordingTabManagementService();
         var bridge = new RecordingAgentBridgeService();
-        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService());
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator());
 
         var first = (await manager.CreateTerminalAsync())!.Value;
         var second = (await manager.CreateTerminalAsync())!.Value;
@@ -85,7 +85,7 @@ public sealed class WorkspaceLayoutWireContractTests
         using var agents = new StubAgentWorkspaceCoordinator();
         var terminals = new RecordingTabManagementService();
         var bridge = new RecordingAgentBridgeService();
-        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService());
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator());
 
         await manager.CreateTerminalAsync();
 

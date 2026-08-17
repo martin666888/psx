@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 
 namespace PSX.Services;
@@ -74,6 +75,7 @@ internal sealed class WebViewHostPolicy : IDisposable
 {
     private readonly CoreWebView2 _coreWebView;
     private readonly string? _debugDevServerOrigin;
+    private string? _dshOrigin; // current DSH ready origin (http://127.0.0.1:<port>)
     private bool _disposed;
 
     public WebViewHostPolicy(CoreWebView2 coreWebView, string? debugDevServerOrigin = null)
@@ -86,7 +88,23 @@ internal sealed class WebViewHostPolicy : IDisposable
         _coreWebView.DownloadStarting += OnDownloadStarting;
         _coreWebView.NewWindowRequested += OnNewWindowRequested;
         _coreWebView.NavigationStarting += OnNavigationStarting;
+        _coreWebView.FrameNavigationStarting += OnFrameNavigationStarting;
+        _coreWebView.FrameCreated += OnFrameCreated;
         _coreWebView.PermissionRequested += OnPermissionRequested;
+    }
+
+    /// <summary>Set by the DSH runtime supervisor when the server becomes Ready.
+    /// Only this exact origin may navigate inside a frame; old ports are
+    /// immediately invalid. Stored as scheme://host:port with no trailing slash.</summary>
+    public void SetDshOrigin(string? origin)
+    {
+        if (string.IsNullOrWhiteSpace(origin) || !Uri.TryCreate(origin, UriKind.Absolute, out var uri))
+        {
+            _dshOrigin = null;
+            return;
+        }
+
+        _dshOrigin = DshWebRuntimeSupervisor.ToFrameOrigin(uri);
     }
 
     private static void ConfigureSettings(CoreWebView2Settings settings)
@@ -160,6 +178,9 @@ internal sealed class WebViewHostPolicy : IDisposable
 
     private void OnNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
     {
+        // Top-level navigation stays locked to psx.local. DSH never navigates
+        // the top document — it lives inside a frame whose origin is gated by
+        // OnFrameNavigationStarting below.
         if (IsDebugDevServerNavigation(e.Uri))
             return;
 
@@ -170,6 +191,94 @@ internal sealed class WebViewHostPolicy : IDisposable
         e.Cancel = true;
         if (target == WebViewNavigationTarget.External && e.IsUserInitiated)
             OpenExternalUri(e.Uri);
+    }
+
+    /// <summary>Frame navigation whitelist: only the current DSH origin (set
+    /// by the runtime supervisor) is allowed inside a frame. Every other frame
+    /// navigation is cancelled — this is the second layer after CSP
+    /// <c>frame-src http://127.0.0.1:*</c>.</summary>
+    private void OnFrameNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
+    {
+        if (string.IsNullOrEmpty(_dshOrigin))
+        {
+            e.Cancel = true;
+            return;
+        }
+        if (Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri))
+        {
+            var origin = uri.GetLeftPart(UriPartial.Authority);
+            if (string.Equals(origin, _dshOrigin, StringComparison.OrdinalIgnoreCase))
+                return; // allowed: exact current DSH origin
+        }
+        e.Cancel = true;
+    }
+
+    /// <summary>Inject the DSH frame script: export mediation plus a
+    /// pointerdown → parent focus ping so clicking the iframe focuses the
+    /// corresponding PSX column. Injection is limited to the current DSH
+    /// origin; other frames never receive the script, and the payload also
+    /// self-gates on <c>location.origin</c>.</summary>
+    private void OnFrameCreated(object? sender, CoreWebView2FrameCreatedEventArgs e)
+    {
+        var frame = e.Frame;
+        var allowed = false;
+        frame.NavigationStarting += (_, args) =>
+        {
+            allowed = IsAllowedDshFrameSource(args.Uri, _dshOrigin);
+        };
+        frame.DOMContentLoaded += (_, _) =>
+        {
+            if (!allowed || string.IsNullOrEmpty(_dshOrigin))
+                return;
+            _ = frame.ExecuteScriptAsync(BuildDshFrameScript(_dshOrigin));
+        };
+    }
+
+    /// <summary>True when <paramref name="source"/> is exactly the current
+    /// DSH loopback origin (scheme://host:port, no path).</summary>
+    internal static bool IsAllowedDshFrameSource(string? source, string? dshOrigin)
+    {
+        if (string.IsNullOrWhiteSpace(source) || string.IsNullOrWhiteSpace(dshOrigin))
+            return false;
+        if (!Uri.TryCreate(source, UriKind.Absolute, out var uri))
+            return false;
+        var origin = uri.GetLeftPart(UriPartial.Authority);
+        return string.Equals(origin, dshOrigin, StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal static string BuildDshFrameScript(string dshOrigin)
+    {
+        var expected = JsonSerializer.Serialize(dshOrigin);
+        return $$"""
+(function(expected){
+  if (String(location.origin).toLowerCase() !== String(expected).toLowerCase()) return;
+  if (window.__psxDshFrameGuard) return;
+  window.__psxDshFrameGuard = true;
+  document.addEventListener('pointerdown', function(){
+    window.parent.postMessage({ source: 'psx-dsh-focus' }, '*');
+  }, true);
+  var MARKER = '/api/session.export';
+  function isExportHref(href){
+    if (!href) return false;
+    try { return new URL(href, location.href).pathname === MARKER; } catch(e){ return false; }
+  }
+  function dispatchExport(anchor){
+    if (anchor.__psxExportHandled) return;
+    anchor.__psxExportHandled = true;
+    var filename = (anchor.download && String(anchor.download).trim()) || ('session-' + Date.now() + '.zip');
+    window.parent.postMessage({ source: 'psx-dsh-export', url: anchor.href, filename: filename }, '*');
+  }
+  var origClick = HTMLAnchorElement.prototype.click;
+  HTMLAnchorElement.prototype.click = function(){
+    if (isExportHref(this.href)) { dispatchExport(this); return; }
+    return origClick.apply(this, arguments);
+  };
+  document.addEventListener('click', function(ev){
+    var a = ev.target && ev.target.closest ? ev.target.closest('a') : null;
+    if (a && isExportHref(a.href)) { ev.preventDefault(); ev.stopPropagation(); dispatchExport(a); }
+  }, true);
+})({{expected}});
+""";
     }
 
     private bool IsDebugDevServerNavigation(string uri)
@@ -222,6 +331,8 @@ internal sealed class WebViewHostPolicy : IDisposable
         _coreWebView.DownloadStarting -= OnDownloadStarting;
         _coreWebView.NewWindowRequested -= OnNewWindowRequested;
         _coreWebView.NavigationStarting -= OnNavigationStarting;
+        _coreWebView.FrameNavigationStarting -= OnFrameNavigationStarting;
+        _coreWebView.FrameCreated -= OnFrameCreated;
         _coreWebView.PermissionRequested -= OnPermissionRequested;
     }
 }

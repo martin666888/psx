@@ -43,6 +43,8 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
     public event EventHandler<PaneMoveEventArgs>? PaneMoveRequested;
     public event EventHandler<WorkspaceLayoutIntentEventArgs>? WorkspaceLayoutIntentRequested;
     public event EventHandler<WorkspaceCreateEventArgs>? WorkspaceCreateRequested;
+    public event EventHandler<DshCommandEventArgs>? DshCommandRequested;
+    public event EventHandler<DshExportEventArgs>? DshExportRequested;
     public event EventHandler<ThemeActionEventArgs>? ThemeActionRequested;
 
     public TerminalBridgeService(ISettingsService settingsService, RuntimeLocator runtimeLocator)
@@ -278,6 +280,12 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
             case TerminalBridgeMessageKind.WorkspaceCreate:
                 WorkspaceCreateRequested?.Invoke(this, message.WorkspaceCreate!);
                 break;
+            case TerminalBridgeMessageKind.DshCommand:
+                DshCommandRequested?.Invoke(this, message.DshCommand!);
+                break;
+            case TerminalBridgeMessageKind.DshExport:
+                DshExportRequested?.Invoke(this, message.DshExport!);
+                break;
             case TerminalBridgeMessageKind.ThemeAction:
                 ThemeActionRequested?.Invoke(this, message.ThemeAction!);
                 break;
@@ -335,6 +343,8 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
         var json = JsonSerializer.Serialize(message, JsonOptions);
         return _messageDispatcher?.SendAsync(json) ?? Task.CompletedTask;
     }
+
+    public void SetDshOrigin(string? origin) => _hostPolicy?.SetDshOrigin(origin);
 
     public void Dispose()
     {

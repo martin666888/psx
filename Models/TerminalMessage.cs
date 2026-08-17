@@ -49,6 +49,15 @@ public sealed class TerminalMessage
     [JsonPropertyName("placement")]
     public string? Placement { get; set; }
 
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("url")]
+    public string? Url { get; set; }
+
+    [JsonPropertyName("filename")]
+    public string? Filename { get; set; }
+
     [JsonPropertyName("themeKey")]
     public string? ThemeKey { get; set; }
 

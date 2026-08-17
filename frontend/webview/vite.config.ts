@@ -16,7 +16,7 @@ const productionCsp = [
   "media-src 'self' blob: https://psx-attachments.local",
   "worker-src 'self' blob:",
   "object-src 'none'",
-  "frame-src 'none'",
+  "frame-src http://127.0.0.1:*",
   "base-uri 'none'",
   "form-action 'none'"
 ].join('; ');

@@ -139,6 +139,19 @@ public partial class App : Application
 
         services.AddSingleton<IAgentWorkspaceFactory, AgentWorkspaceFactory>();
         services.AddSingleton<IAgentWorkspaceCoordinator, AgentWorkspaceCoordinator>();
+        services.AddSingleton<IDshWebWorkspaceCoordinator, DshWebWorkspaceCoordinator>();
+        services.AddSingleton<DshWebRuntime>(sp =>
+            new DshWebRuntime(
+                sp.GetRequiredService<RuntimeLocator>(),
+                Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "dsh")));
+        services.AddSingleton<DshWebRuntimeSupervisor>(sp =>
+            new DshWebRuntimeSupervisor(
+                sp.GetRequiredService<DshWebRuntime>(),
+                sp.GetRequiredService<IAgentBridgeService>(),
+                Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "dsh"),
+                // Neutral default project directory for DSH sessions (DSH falls
+                // back to process.cwd()); never an internal PSX tree.
+                Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "dsh-workspace")));
         services.AddSingleton<WorkspaceLayoutService>();
         services.AddSingleton<IWorkspaceManager, WorkspaceManager>();
 

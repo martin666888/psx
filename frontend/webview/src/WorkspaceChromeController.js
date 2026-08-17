@@ -379,7 +379,18 @@ export class WorkspaceChromeController {
             terminalBlocked,
             terminalBlocked ? '窗口宽度不足以容纳新列' : ''
         ));
-        if (this.catalog.providers.length) menu.appendChild(this.subheading('AGENT'));
+        // DeepSeek Harness is a third workspace kind, not an ACP provider, but
+        // it is an AI product: list it under AGENT rather than beside Terminal.
+        // C# deduplicates on create; fitsDsh gates only this row.
+        menu.appendChild(this.subheading('AGENT'));
+        const dshBlocked = this.createPlacement === 'new_right' && capacity !== null && !capacity.fitsDsh;
+        menu.appendChild(this.menuRow(
+            'DeepSeek Harness',
+            '',
+            () => this.createWorkspace('dsh_web'),
+            dshBlocked,
+            dshBlocked ? '窗口宽度不足以容纳新列' : ''
+        ));
         for (const provider of this.catalog.providers) {
             menu.appendChild(this.menuRow(provider.displayName, '', () => this.createWorkspace('agent', provider.key)));
         }
@@ -452,7 +463,9 @@ export class WorkspaceChromeController {
         if (!workspace) return;
         menu.appendChild(this.heading(workspace.title));
         const capacity = this.capacityChecker?.() ?? null;
-        const newPaneKind = workspace.kind === 'terminal' ? 'terminal' : 'agent';
+        const newPaneKind = workspace.kind === 'terminal'
+            ? 'terminal'
+            : workspace.kind === 'dsh_web' ? 'dsh_web' : 'agent';
         // Splitting the sole tab of its column collapses that column — no
         // column count grows, so the pixel gate must not add the phantom
         // new-column minimum width (the removed column's minimum equals the
@@ -460,7 +473,9 @@ export class WorkspaceChromeController {
         const sourceColumnTabs = this.sourceColumnTabCount(workspace);
         const capacityFits = capacity === null || sourceColumnTabs === 1
             ? true
-            : (newPaneKind === 'terminal' ? capacity.fitsTerminal : capacity.fitsAgent);
+            : (newPaneKind === 'terminal'
+                ? capacity.fitsTerminal
+                : newPaneKind === 'dsh_web' ? capacity.fitsDsh : capacity.fitsAgent);
         const splitBlocked = !workspace.canSplitRight;
         const capacityBlocked = capacity !== null && !capacityFits;
         // Layered gating: the C# canSplitRight decision and the frontend
@@ -479,6 +494,17 @@ export class WorkspaceChromeController {
             Bridge.sendWorkspaceLayoutIntent('collapse_single');
             this.closeMenu(false);
         }));
+        // The DSH runtime is a process-wide singleton that survives closing
+        // its tab; the tab menu is the only in-app way to stop the `dsh web`
+        // server without quitting PSX.
+        if (workspace.kind === 'dsh_web') menu.appendChild(this.menuRow(
+            '停止运行时',
+            '关闭本地 DeepSeek Harness 服务，保留会话与配置',
+            () => {
+                Bridge.sendDshCommand('stop');
+                this.closeMenu(false);
+            }
+        ));
     }
 
     // The number of tabs in the workspace's requested column, or null when

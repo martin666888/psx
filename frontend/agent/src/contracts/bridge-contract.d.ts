@@ -79,9 +79,20 @@ interface WorkspaceLayoutIntentPayload {
 
 interface WorkspaceCreatePayload {
     type: 'workspace_create';
-    kind: 'terminal' | 'agent';
+    kind: 'terminal' | 'agent' | 'dsh_web';
     providerKey?: string;
     placement: 'focused' | 'new_right';
+}
+
+interface DshCommandPayload {
+    type: 'dsh_command';
+    name: 'install' | 'retry' | 'stop';
+}
+
+interface DshExportPayload {
+    type: 'dsh_export';
+    url: string;
+    filename: string;
 }
 
 interface ThemeActionPayload {
@@ -159,6 +170,8 @@ type BridgeOutboundMessage =
     | PaneMovePayload
     | WorkspaceLayoutIntentPayload
     | WorkspaceCreatePayload
+    | DshCommandPayload
+    | DshExportPayload
     | ThemeActionPayload
     | AgentSubmitPayload
     | AgentUploadAttachmentPayload

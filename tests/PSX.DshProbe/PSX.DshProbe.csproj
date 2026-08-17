@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- P0 probe for the DSH experiment branch. Part of PSX.slnx so every
+       build compiles it; the Full gate runs it in mock mode (no network).
+       Reports land under TestResults/dsh-probe/; bin/obj stay in the usual
+       ignored project directories. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>PSX.DshProbe</AssemblyName>
+    <RootNamespace>PSX.DshProbe</RootNamespace>
+    <!-- The WebView2 package also ships a lib_manual WPF assembly; the probe
+         hosts WebView2 through WinForms only, so the harmless WindowsBase
+         unification notice (MSB3277) is suppressed to keep the solution
+         build warning-free. -->
+    <NoWarn>$(NoWarn);MSB3277</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
+  </ItemGroup>
+
+</Project>

@@ -15,14 +15,17 @@ import './css/tailwind.css';
 import './css/terminal.css';
 import './css/panes.css';
 import './css/workspace-chrome.css';
+import './css/dsh.css';
 import './css/agent/index.css';
 import './css/runtime-diagnostics.css';
 import { Bridge } from './Bridge.js';
 import { BridgeEventType } from './BridgeMessages.js';
+import { colorSchemeForBackground } from './colorScheme.js';
 import { PaneLayoutController } from './PaneLayoutController.js';
 import { installRuntimeDiagnostics } from './RuntimeDiagnostics.js';
 import { TerminalManager } from './TerminalManager.js';
 import { WorkspaceChromeController } from './WorkspaceChromeController.js';
+import { DshWorkspaceHost } from './DshWorkspaceHost.js';
 
 installRuntimeDiagnostics();
 
@@ -38,6 +41,7 @@ installRuntimeDiagnostics();
         document.getElementById('workspace-chrome'),
         document.getElementById('workspace-popover-root')
     );
+    const dshWorkspaceHost = new DshWorkspaceHost(document.getElementById('dsh-workspace-container'));
     // Pixel-capacity gate (prevention): the chrome disables "new column"
     // entries when the requested layout plus one more column of that kind
     // would overflow the current width. The C# 3-column count remains the
@@ -49,6 +53,7 @@ installRuntimeDiagnostics();
         return {
             fitsAgent: paneLayout.requestedMinimumWidthSum() + paneLayout.minimumWidthForNewPane('agent') <= available,
             fitsTerminal: paneLayout.requestedMinimumWidthSum() + paneLayout.minimumWidthForNewPane('terminal') <= available,
+            fitsDsh: paneLayout.requestedMinimumWidthSum() + paneLayout.minimumWidthForNewPane('dsh_web') <= available,
             requestedColumnCount: paneLayout.requestedColumnCount
         };
     });
@@ -62,6 +67,7 @@ installRuntimeDiagnostics();
     paneLayout.onLayoutApplied((snapshot, rects, options) => {
         terminalManager.applyLayout(snapshot, rects, options);
         workspaceChrome.applyLayout(snapshot, rects);
+        dshWorkspaceHost.applyLayout(snapshot, rects);
         if (agentApp) agentApp.setPaneLayout(snapshot, rects);
     });
 
@@ -81,6 +87,15 @@ installRuntimeDiagnostics();
                 error: '--agent-error', warning: '--agent-warning', scrollbar: '--agent-scrollbar',
                 scrollbarHover: '--agent-scrollbar-hover'
             })) set(variable, theme[key]);
+            // Cross-origin DSH iframes read prefers-color-scheme from the
+            // embedder's used color-scheme. This used to live only in the
+            // lazy Agent chunk, so a terminal/DSH-only session stayed light
+            // until History loaded Agent UI.
+            const scheme = colorSchemeForBackground(theme.background);
+            if (scheme) {
+                root.style.colorScheme = scheme;
+                dshWorkspaceHost.applyColorScheme(scheme);
+            }
         }
         const agent = settings.agentThemeColors;
         if (agent && typeof agent === 'object') {
@@ -314,6 +329,20 @@ installRuntimeDiagnostics();
                 return;
             case BridgeEventType.PaneZoomToggle:
                 paneLayout.toggleZoom();
+                return;
+            case BridgeEventType.DshRuntimeStatus:
+                // DSH runtime state is shell-owned: never staged into the
+                // Agent chunk.
+                dshWorkspaceHost.applyRuntimeStatus(message);
+                return;
+            case BridgeEventType.WorkspaceActivated:
+                // The DSH activation is shell-owned; every other activation is
+                // Agent-owned and must keep flowing to the Agent app.
+                if (message.kind === 'dsh_web') {
+                    dshWorkspaceHost.activate(message);
+                    return;
+                }
+                forwardToAgent(message);
                 return;
             default:
                 // Every other event is Agent-owned (lifecycle, providers,

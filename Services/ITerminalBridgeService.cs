@@ -12,6 +12,8 @@ public interface ITerminalBridgeService
     Task ResizeTerminalAsync(Guid sessionId, int cols, int rows);
     Task SetViewModeAsync(string mode);
     Task SendAppearanceAsync(AppearanceSettings appearance);
+    /// <summary>Set the current DSH origin for the frame navigation whitelist.</summary>
+    void SetDshOrigin(string? origin);
 
     event EventHandler<TerminalInputEventArgs>? InputReceived;
     event EventHandler<TerminalResizeEventArgs>? ResizeRequested;
@@ -26,7 +28,25 @@ public interface ITerminalBridgeService
     event EventHandler<PaneMoveEventArgs>? PaneMoveRequested;
     event EventHandler<WorkspaceLayoutIntentEventArgs>? WorkspaceLayoutIntentRequested;
     event EventHandler<WorkspaceCreateEventArgs>? WorkspaceCreateRequested;
+    event EventHandler<DshCommandEventArgs>? DshCommandRequested;
+    /// <summary>DSH session-log export: the export URL DSH built (host validates
+    /// its origin against the current ready URL and locks the path to
+    /// /api/session.export) plus a suggested archive filename.</summary>
+    event EventHandler<DshExportEventArgs>? DshExportRequested;
     event EventHandler<ThemeActionEventArgs>? ThemeActionRequested;
+}
+
+public sealed class DshCommandEventArgs : EventArgs
+{
+    public required string Name { get; init; }
+}
+
+public sealed class DshExportEventArgs : EventArgs
+{
+    /// <summary>Absolute export URL DSH built (carries sessionId as a query param).</summary>
+    public required string Url { get; init; }
+    /// <summary>Suggested archive filename from the export anchor's download attribute.</summary>
+    public required string Filename { get; init; }
 }
 
 public sealed class PaneRatiosEventArgs : EventArgs

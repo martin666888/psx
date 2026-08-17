@@ -447,7 +447,7 @@ public sealed class WorkspaceManagerTests
         var terminals = new RecordingTabManagementService();
         using var agents = new StubAgentWorkspaceCoordinator();
         var bridge = new RecordingAgentBridgeService();
-        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService());
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator());
         var workspace = CreateAgentWorkspace(Guid.NewGuid(), AgentWorkspaceState.Idle);
 
         agents.RaiseCreated(workspace);
@@ -472,7 +472,7 @@ public sealed class WorkspaceManagerTests
         var terminals = new RecordingTabManagementService();
         using var agents = new StubAgentWorkspaceCoordinator();
         var bridge = new RecordingAgentBridgeService();
-        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService());
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator());
         var first = CreateAgentWorkspace(Guid.NewGuid(), AgentWorkspaceState.Idle);
         var second = CreateAgentWorkspace(Guid.NewGuid(), AgentWorkspaceState.Idle);
         var notifications = new List<Guid>();
@@ -498,7 +498,7 @@ public sealed class WorkspaceManagerTests
         var terminals = new RecordingTabManagementService();
         using var agents = new StubAgentWorkspaceCoordinator();
         var bridge = new RecordingAgentBridgeService();
-        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService());
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator());
         var first = CreateAgentWorkspace(Guid.NewGuid(), AgentWorkspaceState.Idle);
         var second = CreateAgentWorkspace(Guid.NewGuid(), AgentWorkspaceState.Idle);
         agents.RaiseCreated(first);
@@ -532,7 +532,7 @@ public sealed class WorkspaceManagerTests
         var terminals = new RecordingTabManagementService();
         using var agents = new StubAgentWorkspaceCoordinator();
         var bridge = new RecordingAgentBridgeService();
-        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService());
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator());
         var first = CreateAgentWorkspace(Guid.NewGuid(), AgentWorkspaceState.Idle, workspace.Path);
         var second = CreateAgentWorkspace(Guid.NewGuid(), AgentWorkspaceState.Idle, workspace.Path);
         agents.RaiseCreated(first);
@@ -559,7 +559,7 @@ public sealed class WorkspaceManagerTests
         var terminals = new RecordingTabManagementService();
         using var agents = new StubAgentWorkspaceCoordinator();
         var bridge = new RecordingAgentBridgeService();
-        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService());
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator());
         _ = await manager.CreateTerminalAsync();
         var second = (await manager.CreateTerminalAsync())!.Value;
         manager.SplitWorkspaceToNewPane(second);
@@ -578,7 +578,7 @@ public sealed class WorkspaceManagerTests
         var terminals = new RecordingTabManagementService();
         using var agents = new StubAgentWorkspaceCoordinator();
         var bridge = new RecordingAgentBridgeService();
-        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService());
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator());
         var workspaceId = (await manager.CreateTerminalAsync())!.Value;
         var layoutEvents = BridgeEvents(bridge, "workspace_layout").Count;
         var catalogRevision = LastBridgeEvent(bridge, "workspace_catalog").GetProperty("revision").GetInt64();
@@ -597,7 +597,7 @@ public sealed class WorkspaceManagerTests
         var terminals = new RecordingTabManagementService();
         using var agents = new StubAgentWorkspaceCoordinator();
         var bridge = new RecordingAgentBridgeService();
-        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService());
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator());
         var first = (await manager.CreateTerminalAsync())!.Value;
 
         Assert.AreEqual("terminal", manager.Workspaces.Single().IconKey);
@@ -620,13 +620,92 @@ public sealed class WorkspaceManagerTests
         var terminals = new RecordingTabManagementService();
         using var agents = new StubAgentWorkspaceCoordinator();
         var bridge = new RecordingAgentBridgeService();
-        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService());
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator());
 
         _ = await manager.CreateTerminalAsync();
 
         // The bottom runtime status bar is retired, so activating a Terminal
         // workspace no longer clears any Agent runtime projection.
         Assert.AreEqual(1, terminals.CreateCount);
+    }
+
+    [TestMethod]
+    public async Task DshWeb_CreateIsSingleInstance_CloseRemoves_AndReopenGetsFreshId()
+    {
+        var terminals = new RecordingTabManagementService();
+        using var agents = new StubAgentWorkspaceCoordinator();
+        var bridge = new RecordingAgentBridgeService();
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator());
+
+        var first = (await manager.CreateDshWebAsync())!.Value;
+        Assert.AreEqual(WorkspaceKind.DshWeb, manager.Workspaces.Single().Kind);
+        Assert.AreEqual("DeepSeek Harness", manager.Workspaces.Single().Title);
+        Assert.AreEqual("dsh", manager.Workspaces.Single().IconKey);
+
+        // dsh_runtime_status belongs to the supervisor wire and is covered by
+        // DshRuntimeLifecycleTests; the fake coordinator never spins one up.
+
+        // Second create is a pure jump to the existing tab, never a duplicate.
+        var second = (await manager.CreateDshWebAsync())!.Value;
+        Assert.AreEqual(first, second);
+        Assert.HasCount(1, manager.Workspaces);
+
+        // The catalog and layout both serialize the explicit wire kind.
+        var catalog = bridge.Events.Last(message => message.GetProperty("type").GetString() == "workspace_catalog");
+        Assert.AreEqual("dsh_web", catalog.GetProperty("workspaces")[0].GetProperty("kind").GetString());
+        var layout = bridge.Events.Last(message => message.GetProperty("type").GetString() == "workspace_layout");
+        Assert.AreEqual("dsh_web", layout.GetProperty("columns")[0].GetProperty("tabs")[0].GetProperty("kind").GetString());
+
+        // Closing the last tab spawns the replacement terminal (existing
+        // rule) — the DSH descriptor itself is gone and never resurrected.
+        await manager.CloseAsync(first);
+        Assert.IsEmpty(manager.Workspaces.Where(workspace => workspace.Kind == WorkspaceKind.DshWeb));
+        Assert.HasCount(1, manager.Workspaces);
+        Assert.AreEqual(WorkspaceKind.Terminal, manager.Workspaces.Single().Kind);
+
+        // Reopening after close yields a fresh workspace id, alongside the
+        // replacement terminal.
+        var third = (await manager.CreateDshWebAsync())!.Value;
+        Assert.AreNotEqual(first, third);
+        Assert.HasCount(1, manager.Workspaces.Where(workspace => workspace.Kind == WorkspaceKind.DshWeb));
+        Assert.HasCount(2, manager.Workspaces);
+    }
+
+    [TestMethod]
+    public async Task DshWeb_ActivationSendsDshWebWireKind()
+    {
+        var terminals = new RecordingTabManagementService();
+        using var agents = new StubAgentWorkspaceCoordinator();
+        var bridge = new RecordingAgentBridgeService();
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), new FakeDshWorkspaceCoordinator());
+
+        var id = (await manager.CreateDshWebAsync())!.Value;
+        await manager.ActivateAsync(id);
+
+        var activation = bridge.Events.Last(message => message.GetProperty("type").GetString() == "workspace_activated");
+        Assert.AreEqual("dsh_web", activation.GetProperty("kind").GetString());
+    }
+
+    [TestMethod]
+    public void WorkspaceWireKind_DshWeb_NeverUsesEnumNameLowercasing()
+    {
+        Assert.AreEqual("dsh_web", WorkspaceWireKind.ToWire(WorkspaceKind.DshWeb));
+        Assert.AreEqual("terminal", WorkspaceWireKind.ToWire(WorkspaceKind.Terminal));
+        Assert.AreEqual("agent", WorkspaceWireKind.ToWire(WorkspaceKind.Agent));
+    }
+
+    [TestMethod]
+    public void BeginShutdown_ForwardsTheGateToTheDshCoordinator()
+    {
+        var terminals = new RecordingTabManagementService();
+        using var agents = new StubAgentWorkspaceCoordinator();
+        var bridge = new RecordingAgentBridgeService();
+        var dsh = new FakeDshWorkspaceCoordinator();
+        using var manager = new WorkspaceManager(terminals, agents, bridge, new WorkspaceLayoutService(), dsh);
+
+        manager.BeginShutdown();
+
+        Assert.IsTrue(dsh.ShutdownBegan, "WorkspaceManager.BeginShutdown must forward to the DSH coordinator");
     }
 
     private static WorkspaceDescriptor CreateAgentWorkspace(
@@ -760,6 +839,8 @@ internal sealed class RecordingTabManagementService : ITabManagementService
     public event EventHandler<PaneMoveEventArgs>? PaneMoveRequested { add { } remove { } }
     public event EventHandler<WorkspaceLayoutIntentEventArgs>? WorkspaceLayoutIntentRequested { add { } remove { } }
     public event EventHandler<WorkspaceCreateEventArgs>? WorkspaceCreateRequested { add { } remove { } }
+    public event EventHandler<DshCommandEventArgs>? DshCommandRequested { add { } remove { } }
+    public event EventHandler<DshExportEventArgs>? DshExportRequested { add { } remove { } }
 
     public Task<Guid> CreateTabAsync(ShellProfile? profile = null)
     {

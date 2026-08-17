@@ -14,6 +14,7 @@
                                      QwenIcon="{StaticResource AgentIconGeometry.Qwen}"
                                      QoderIcon="{StaticResource AgentIconGeometry.Qoder}"
                                      ClineIcon="{StaticResource AgentIconGeometry.Cline}"
+                                     DshIcon="{StaticResource AgentIconGeometry.Dsh}"
                                      OpencodeIcon="{StaticResource AgentIconGeometry.Opencode}"/>
 
         <Style x:Key="TabItemContainerStyle" TargetType="Border">
@@ -83,6 +84,12 @@
                         </Grid>
                         <ControlTemplate.Triggers>
                             <DataTrigger Binding="{Binding Kind}" Value="{x:Static models:WorkspaceKind.Agent}">
+                                <Setter TargetName="TerminalIcon" Property="Visibility" Value="Collapsed"/>
+                                <Setter TargetName="AgentIcon" Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                            <!-- DeepSeek Harness: hidden compatibility projection; the
+                                 WebView column tab strip is the real surface. -->
+                            <DataTrigger Binding="{Binding Kind}" Value="{x:Static models:WorkspaceKind.DshWeb}">
                                 <Setter TargetName="TerminalIcon" Property="Visibility" Value="Collapsed"/>
                                 <Setter TargetName="AgentIcon" Property="Visibility" Value="Visible"/>
                             </DataTrigger>

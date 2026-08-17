@@ -29,6 +29,8 @@ public sealed class TabManagementService : ITabManagementService, IDisposable
     public event EventHandler<PaneMoveEventArgs>? PaneMoveRequested;
     public event EventHandler<WorkspaceLayoutIntentEventArgs>? WorkspaceLayoutIntentRequested;
     public event EventHandler<WorkspaceCreateEventArgs>? WorkspaceCreateRequested;
+    public event EventHandler<DshCommandEventArgs>? DshCommandRequested;
+    public event EventHandler<DshExportEventArgs>? DshExportRequested;
 
     public TabManagementService(
         ConPtyService conPtyService,
@@ -51,6 +53,8 @@ public sealed class TabManagementService : ITabManagementService, IDisposable
         _bridgeService.PaneMoveRequested += (_, args) => PaneMoveRequested?.Invoke(this, args);
         _bridgeService.WorkspaceLayoutIntentRequested += (_, args) => WorkspaceLayoutIntentRequested?.Invoke(this, args);
         _bridgeService.WorkspaceCreateRequested += (_, args) => WorkspaceCreateRequested?.Invoke(this, args);
+        _bridgeService.DshCommandRequested += (_, args) => DshCommandRequested?.Invoke(this, args);
+        _bridgeService.DshExportRequested += (_, args) => DshExportRequested?.Invoke(this, args);
     }
 
     public Task<Guid> CreateTabAsync(ShellProfile? profile = null)

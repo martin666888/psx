@@ -9,6 +9,7 @@ The original monochrome SVGs in `lobehub-1.94.0/` come from
 - `qoder.svg`
 - `cline.svg`
 - `opencode.svg`
+- `deepseek.svg`
 
 PSX converts these pinned SVG paths to WPF `StreamGeometry` resources in
 `Themes/AgentIcons.xaml`. The application never downloads icons at runtime.
