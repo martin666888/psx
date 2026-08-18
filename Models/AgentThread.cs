@@ -12,6 +12,9 @@ public sealed class AgentThread
     public string? AdapterVersion { get; set; }
     public bool ContainsImages { get; set; }
     public long? ContextUsedTokens { get; set; }
+    public long? ContextWindowTokens { get; set; }
+    public decimal? ContextCostAmount { get; set; }
+    public string? ContextCostCurrency { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.Now;
     public List<AgentMessage> Messages { get; set; } = new();

@@ -14,13 +14,39 @@ public sealed class ClaudeAcpAgentProvider : IAcpAgentProvider
         Runtime = runtime;
     }
 
+    // Claude Code writes per-session JSONL under ~/.claude/projects; the Usage
+    // panel reads exact token usage (including cache hits) from there, scoped to
+    // PSX-owned session ids only.
+    public IAgentUsageSource? UsageSource { get; } = new ClaudeSessionUsageSource();
+
+    // User-level settings / MCP / skills under CLAUDE_CONFIG_DIR ?? ~/.claude
+    // (plus ~/.claude.json mcpServers). Distinct from live ACP config options.
+    public IAgentConfigSource? ConfigSource { get; } = new ClaudeConfigSource();
+
     public AgentDescriptor Descriptor { get; } = new(
         Key: "acp-claude",
         DisplayName: "Claude Code",
         AssistantName: "Claude",
-        LegacyKeys: new[] { "claude-cli" });
+        LegacyKeys: new[] { "claude-cli" })
+    {
+        IconKey = "claude"
+    };
 
     public IAcpAgentRuntime Runtime { get; }
+
+    public IAcpProviderCompatibility Compatibility { get; } = new ClaudeAcpProviderCompatibility();
+
+    // Claude uses the full ACP client surface, including the reverse filesystem
+    // bridge (fs/read_text_file, fs/write_text_file).
+    public AcpClientCapabilityProfile ClientCapabilities { get; } = new()
+    {
+        FileSystemReadText = true,
+        FileSystemWriteText = true,
+        Terminal = true,
+        SessionBooleanConfig = true,
+        ElicitationFormUrl = true,
+        TerminalOutputMeta = true
+    };
 
     public object CreateNewSessionParameters(string workingDirectory)
     {
@@ -31,7 +57,7 @@ public sealed class ClaudeAcpAgentProvider : IAcpAgentProvider
         };
     }
 
-    public object CreateLoadSessionParameters(string sessionId, string workingDirectory)
+    public object CreateRestoreSessionParameters(string sessionId, string workingDirectory)
     {
         return new
         {

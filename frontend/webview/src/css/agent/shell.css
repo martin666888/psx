@@ -1,0 +1,508 @@
+/* AgentShell structural tokens (base values; theme tuning is a later step). */
+:root {
+    --agent-history-width: 280px;
+    --agent-plan-width: 320px;
+    --agent-reading-min-width: 320px;
+    --agent-reading-max-width: 920px;
+    /* Soft workbench frame: the tinted backdrop (--agent-bg) shows through a
+     * 12px gutter around the two rounded panels and a matching gap between
+     * them. Derived layout constants only — never new INI settings. */
+    --agent-workbench-gutter: 12px;
+    --agent-panel-gap: 12px;
+    /* Structural corner radius shared by the Workspace panel, the History
+     * dock and the Composer card. */
+    --agent-radius-structure: 24px;
+    --agent-workspace-radius: var(--agent-radius-structure);
+    --agent-toolbar-height: 44px;
+    /* Canvas surface: one step above the workbench backdrop (--agent-bg), one
+     * below the context cards (--agent-surface-raised) — the luminance ladder
+     * that makes the layered shell read without hard borders. Derived, never
+     * hardcoded. */
+    --agent-canvas-surface: color-mix(in srgb, var(--agent-surface) 50%, var(--agent-surface-raised));
+    --agent-radius-context-card: var(--agent-radius-card);
+    /* Composer card: shares the structural radius (borderless soft fill). */
+    --agent-radius-composer: var(--agent-radius-structure);
+    /* Every pane anchors Composer to the same bottom baseline. Intrinsic
+     * content growth (wrapped placeholder, draft, attachments or decisions)
+     * expands the card upward; responsive bands must not rewrite this inset. */
+    --agent-composer-bottom-space: 24px;
+    /* Restrained, symmetric panel lift — no wide blurs or gradients. */
+    --agent-shadow-canvas: 0 8px 24px color-mix(in srgb, var(--agent-shadow) 16%, transparent);
+    /* The Plan/context card floats inside the main panel; it matches the
+     * composer's lift exactly so neither card looks heavier than the other. */
+    --agent-shadow-context-card: 0 6px 18px color-mix(in srgb, var(--agent-shadow) 12%, transparent);
+    /* Lift comes from whitespace, border and the luminance ladder — the
+     * shadow is a soft hint, not a heavy dark halo. */
+    --agent-shadow-composer: 0 6px 18px color-mix(in srgb, var(--agent-shadow) 12%, transparent);
+    /* Floating menus / popovers and modal media: the only other elevated layers. */
+    --agent-shadow-popover: 0 12px 28px color-mix(in srgb, var(--agent-shadow) 34%, transparent);
+    --agent-shadow-dialog: 0 18px 60px color-mix(in srgb, var(--agent-shadow) 50%, transparent);
+    /* Optional theme-supplied backdrop tint (RRGGBBAA from [agentTheme]
+     * workbenchTint); transparent by default so themes opt in explicitly. */
+    --agent-workbench-tint: transparent;
+}
+
+#agent-workspace-container {
+    position: absolute;
+    inset: 0;
+    /* This absolute Agent layer follows #terminal-container in the DOM. Keep
+     * it transparent to pointer hit-testing until an Agent workspace is the
+     * active view, so a blank terminal click still focuses xterm. */
+    pointer-events: none;
+}
+
+#agent-workspace-container.agent-workspace-active {
+    pointer-events: auto;
+    /* The workbench backdrop both panels float on. Applied only while an
+     * Agent workspace is active so the terminal view underneath stays
+     * visible for Terminal tabs. Themes may add a soft left-to-right tint
+     * wash (workbenchTint) over the flat base color; a transparent tint
+     * leaves the backdrop exactly --agent-bg. */
+    background:
+        linear-gradient(90deg,
+            var(--agent-workbench-tint),
+            transparent 62%),
+        var(--agent-bg);
+}
+
+.agent-load-error {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: var(--agent-space-6);
+    background: var(--agent-bg);
+    color: var(--agent-text);
+}
+
+.agent-load-error[hidden] {
+    display: none;
+}
+
+.agent-load-error-card {
+    width: min(520px, 100%);
+    border: 1px solid var(--agent-error);
+    border-radius: var(--agent-radius-card);
+    background: var(--agent-error-bg);
+    padding: var(--agent-space-5);
+}
+
+.agent-load-error-card h2 {
+    margin: 0 0 var(--agent-space-2);
+    color: var(--agent-error);
+    font-size: 16px;
+}
+
+.agent-load-error-card p {
+    margin: 0;
+    color: var(--agent-text-muted);
+    line-height: 1.5;
+}
+
+.agent-panel {
+    position: absolute;
+    /* The main panel is a free-standing rounded workbench block: a 12px
+     * gutter of backdrop shows on every side (History replaces the left
+     * gutter while the dock is open). In split mode the geometry engine sets
+     * an explicit inline rect per pane. */
+    inset: var(--agent-workbench-gutter);
+    /* Container-query context: pane-relative presentation rules (composer,
+       runtime card, cwd) resolve against THIS panel, whose inline width is
+       the pane width in split mode. */
+    container-type: inline-size;
+    container-name: agent-shell;
+    /* Visible panels stay clickable even in an unfocused pane (click-to-focus)
+     * while the transparent layer beneath passes clicks to the terminal. */
+    pointer-events: auto;
+    display: grid;
+    grid-template-areas:
+        "toolbar"
+        "runtime"
+        "workspace"
+        "composer";
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    /* With History closed, the symmetric panel gutters make the reading
+     * column panel-centred (which is also viewport-centred in a single
+     * pane). Percentages resolve against the panel's own inline size, so
+     * split panes centre their reading column per pane. */
+    --agent-viewport-padding: var(--agent-space-6);
+    --agent-reading-column-max: min(
+        var(--agent-reading-max-width),
+        calc(100% - 2 * var(--agent-viewport-padding))
+    );
+    --agent-reading-column-start: calc((100% - var(--agent-reading-column-max)) / 2);
+    border: 1px solid var(--agent-border);
+    border-radius: var(--agent-workspace-radius);
+    background: var(--agent-canvas-surface);
+    box-shadow: var(--agent-shadow-canvas);
+    color: var(--agent-text);
+}
+
+.agent-panel[hidden] {
+    display: none;
+}
+
+/* Dock open: the panel yields its left edge to History plus one panel gap.
+ * The reading column is always centred inside that remaining panel, so a
+ * wider History dock moves it monotonically at half the dock delta instead
+ * of moving the panel right while applying an equal left compensation. If
+ * the normal width no longer fits, Shell temporarily collapses History; a
+ * manually reopened dock uses the available width rather than overflowing.
+ * Once the pane geometry engine drives rects (agent-layout-driven), the JS
+ * dock inset replaces this block entirely. */
+#agent-workspace-container.agent-history-dock-open:not(.agent-layout-driven) .agent-panel {
+    left: calc(
+        var(--agent-workbench-gutter) + var(--agent-history-width) + var(--agent-panel-gap)
+    );
+    --agent-main-panel-inline-size: calc(
+        100vw - 2 * var(--agent-workbench-gutter) - var(--agent-history-width) - var(--agent-panel-gap)
+    );
+    --agent-reading-column-max: min(
+        var(--agent-reading-max-width),
+        calc(var(--agent-main-panel-inline-size) - 2 * var(--agent-panel-gap))
+    );
+    --agent-reading-column-start: max(
+        var(--agent-panel-gap),
+        calc((var(--agent-main-panel-inline-size) - var(--agent-reading-column-max)) / 2)
+    );
+}
+
+/* Split mode: the full-width workbench backdrop would paint over terminal
+ * panes, so the container stays flat and every visible panel carries its own
+ * backdrop wash out to the gutter edge. */
+#agent-workspace-container.agent-split-active {
+    background: none;
+}
+
+#agent-workspace-container.agent-split-active .agent-panel::before {
+    content: "";
+    position: absolute;
+    inset: calc(-1 * var(--agent-workbench-gutter));
+    z-index: -1;
+    border-radius: calc(var(--agent-workspace-radius) + var(--agent-workbench-gutter));
+    background:
+        linear-gradient(90deg,
+            var(--agent-workbench-tint),
+            transparent 62%),
+        var(--agent-bg);
+}
+
+.agent-toolbar {
+    grid-area: toolbar;
+    min-height: var(--agent-toolbar-height);
+    display: flex;
+    align-items: center;
+    gap: var(--agent-space-4);
+    padding: 0 var(--agent-space-4);
+    /* An in-panel top bar: transparent over the panel surface with only a
+     * light divider — no full-window application strip. */
+    border-bottom: 1px solid var(--agent-border);
+    background: transparent;
+}
+
+/* The toolbar island renders straight into the toolbar flex row. */
+.agent-toolbar-host {
+    display: contents;
+}
+
+/* The resident Agent product version sits left of the Update button; narrow
+ * shells hide the text first (the Update button itself always stays). */
+.agent-update-version {
+    max-width: 16ch;
+}
+
+#agent-workspace-container.agent-shell-narrow .agent-update-version {
+    display: none;
+}
+
+.agent-meta {
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--agent-space-2) var(--agent-space-3);
+    color: var(--agent-text-muted);
+    font-size: 12px;
+}
+
+.agent-meta,
+.agent-toolbar-host,
+.agent-toolbar-more,
+.agent-toolbar-more-content,
+.agent-toolbar-actions {
+    min-width: 0;
+}
+
+/* Runtime state that needs attention now lives in the Pane nameplate. */
+[data-role="status"],
+[data-role="session"] {
+    display: none;
+}
+
+[data-role="status"] {
+    color: var(--agent-text);
+    font-weight: 600;
+}
+
+[data-role="status"][data-status="running"] {
+    color: var(--agent-accent);
+}
+
+[data-role="status"][data-status="error"] {
+    color: var(--agent-error);
+}
+
+[data-role="status"][data-status="fallback"] {
+    color: var(--agent-warning);
+}
+
+[data-role="cwd"] {
+    max-width: min(58vw, 780px);
+    overflow: hidden;
+    color: var(--agent-text-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+[data-role="session"] {
+    color: var(--agent-text-muted);
+}
+
+/* Right group floats to the toolbar edge; everything else (history toggle +
+ * status/path) stays left-anchored. Replaces the previous space-between rule,
+ * which would push the middle child (status) to the centre once the toolbar
+ * carried more than two children. */
+.agent-toolbar-actions {
+    margin-left: auto;
+    display: flex;
+    flex: 0 0 auto;
+    gap: var(--agent-space-2);
+}
+
+.agent-toolbar-more,
+.agent-toolbar-more-content {
+    display: contents;
+}
+
+.agent-toolbar-more-trigger,
+.agent-toolbar-more-session {
+    display: none;
+}
+
+.agent-decision-actions button:focus-visible,
+.agent-attach:focus-visible,
+.agent-history-item:focus-visible,
+.agent-history-retry:focus-visible {
+    outline: 2px solid var(--agent-focus-ring);
+    outline-offset: 2px;
+}
+
+.agent-decision-actions button:active,
+.agent-attach:active,
+.agent-history-item:active {
+    transform: translateY(1px);
+}
+
+.agent-panel button:focus-visible {
+    outline: 2px solid var(--agent-focus-ring);
+    outline-offset: 2px;
+}
+
+.agent-panel button:active:not(:disabled) {
+    transform: translateY(1px);
+}
+
+.agent-panel button:disabled {
+    cursor: default;
+}
+
+.agent-workspace {
+    grid-area: workspace;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+    overflow: hidden;
+}
+
+.agent-conversation-host {
+    display: contents;
+}
+
+/* Conversation root (AI Elements StickToBottom positioning container). */
+.agent-thread {
+    min-height: 0;
+}
+
+/* Keep the floating return-to-bottom control centred on the same reading
+ * column as messages and Composer, including when History centres that
+ * column in the remaining conversation panel. */
+.agent-thread-scroll-button {
+    left: calc(
+        max(0px, var(--agent-reading-column-start)) +
+        var(--agent-reading-column-max) / 2
+    );
+}
+
+/* The single scroll node inside the Conversation. */
+.agent-thread-scroll {
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: var(--agent-space-5) 0 var(--agent-space-8);
+    /* use-stick-to-bottom injects an inline "scrollbar-gutter: stable
+     * both-edges", which insets the thread content by one gutter on BOTH
+     * sides and shifts the reading column right of the composer's identical
+     * vw-based column. !important is the only way to beat the inline style;
+     * plain "stable" keeps the right-side gutter so the scrollbar still never
+     * causes horizontal jitter. No standard scrollbar-color/width here: since
+     * Chromium 121 they suppress the ::-webkit-scrollbar skin (scrollbars.css)
+     * and bring back native arrow buttons. */
+    scrollbar-gutter: stable !important;
+    min-height: 0;
+}
+
+.agent-thread-content > .agent-turn,
+.agent-thread-content > .agent-system,
+.agent-thread-content > .agent-recovery,
+.agent-thread-content > .agent-run-group,
+.agent-thread-content > .agent-tool,
+.agent-thread-content > .agent-decision {
+    width: var(--agent-reading-column-max);
+    max-width: 100%;
+    margin-left: max(0px, var(--agent-reading-column-start));
+    margin-right: auto;
+}
+
+@container agent-shell (max-width: 980px) {
+    .agent-panel {
+        --agent-viewport-padding: var(--agent-space-4);
+    }
+
+    [data-role="cwd"] {
+        max-width: 34cqw;
+    }
+}
+
+@container agent-shell (max-width: 719px) {
+    [data-role="cwd"] {
+        max-width: 28cqw;
+    }
+
+    .agent-update-version {
+        display: none;
+    }
+}
+
+@container agent-shell (max-width: 519px) {
+    .agent-toolbar {
+        gap: var(--agent-space-2);
+        padding-inline: var(--agent-space-3);
+    }
+
+    .agent-meta {
+        flex: 1 1 auto;
+        overflow: hidden;
+    }
+
+    [data-role="cwd"] {
+        max-width: 100%;
+        direction: rtl;
+        text-align: left;
+    }
+
+    [data-role="change-cwd"] {
+        display: none;
+    }
+
+    .agent-toolbar-more {
+        position: relative;
+        display: block;
+        flex: 0 0 auto;
+    }
+
+    .agent-toolbar-more-trigger {
+        display: inline-flex;
+        width: 30px;
+        height: 30px;
+        align-items: center;
+        justify-content: center;
+        border: 0;
+        background: transparent;
+        color: var(--agent-text-muted);
+        border-radius: var(--agent-radius-control);
+        cursor: pointer;
+    }
+
+    @media (hover: hover) {
+        .agent-toolbar-more-trigger:hover {
+            background: var(--agent-hover);
+        }
+    }
+
+    .agent-toolbar-more-trigger:active {
+        transform: translateY(1px);
+    }
+
+    .agent-toolbar-more-trigger:focus-visible {
+        outline: 2px solid var(--agent-focus-ring);
+        outline-offset: 2px;
+    }
+
+    .agent-toolbar-more-content {
+        position: absolute;
+        top: calc(100% + 6px);
+        right: 0;
+        z-index: var(--agent-layer-menu);
+        display: none;
+        width: min(300px, 78cqw);
+        padding: var(--agent-space-2);
+        border: 1px solid var(--agent-border-strong);
+        border-radius: var(--agent-radius-card);
+        background: var(--agent-surface-raised);
+        box-shadow: var(--agent-shadow-popover);
+    }
+
+    .agent-toolbar-more[data-open="true"] .agent-toolbar-more-content {
+        display: block;
+    }
+
+    .agent-toolbar-more-session {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        /* Text-plus-action rows align by their text baseline. The action is a
+         * fixed-height Button while the metadata is an ordinary inline box;
+         * the grid default leaves their glyphs visibly staggered. */
+        align-items: baseline;
+        gap: var(--agent-space-1) var(--agent-space-2);
+        padding: var(--agent-space-2);
+        color: var(--agent-text-muted);
+    }
+
+    .agent-toolbar-more-session > span,
+    .agent-toolbar-more-session > small {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .agent-toolbar-more-session > small {
+        grid-column: 1 / -1;
+    }
+
+    .agent-toolbar-actions {
+        display: flex;
+        justify-content: flex-end;
+        margin: var(--agent-space-2) 0 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .agent-ui *,
+    .agent-ui *::before,
+    .agent-ui *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+    }
+}

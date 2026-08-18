@@ -1,0 +1,43 @@
+import assert from 'node:assert/strict';
+import { describe, it } from 'vitest';
+import { installAgentRuntime } from './agentHarness.js';
+
+describe('WebView bridge', () => {
+  it('sends permission and command payloads without changing ACP identifiers', () => {
+    const { Bridge, postedMessages } = installAgentRuntime();
+
+    Bridge.sendAgentPermissionResponse('workspace-1', 'request-9', 'bypassPermissions');
+    Bridge.sendAgentCommand('workspace-1', 'set_config_option', 'plan', 'mode');
+    Bridge.sendAgentCommand('workspace-1', 'set_config_option', true, 'fast_mode');
+    Bridge.sendAgentGlobalCommand('history', undefined, 'history-1');
+    Bridge.sendPasteRequest('session-1', 'paste-1');
+
+    assert.deepEqual(postedMessages, [
+      { type: 'agent_permission_response', workspaceId: 'workspace-1', requestId: 'request-9', value: 'bypassPermissions' },
+      { type: 'agent_command', workspaceId: 'workspace-1', command: 'set_config_option', value: 'plan', requestId: 'mode' },
+      { type: 'agent_command', workspaceId: 'workspace-1', command: 'set_config_option', value: true, requestId: 'fast_mode' },
+      { type: 'agent_global_command', command: 'history', value: '', requestId: 'history-1' },
+      { type: 'paste_request', sessionId: 'session-1', requestId: 'paste-1' }
+    ]);
+  });
+
+  it('accepts host messages as JSON strings or objects and ignores malformed JSON', () => {
+    const { Bridge, emitHostMessage } = installAgentRuntime();
+    const messages = [];
+    const errors = [];
+    const originalError = console.error;
+    console.error = (...args) => errors.push(args);
+    Bridge.onHostMessage((message) => messages.push(message));
+
+    emitHostMessage('{"type":"agent_state","busy":false}');
+    emitHostMessage({ type: 'plan_update', entries: [] });
+    emitHostMessage('{not-json');
+
+    console.error = originalError;
+    assert.deepEqual(JSON.parse(JSON.stringify(messages)), [
+      { type: 'agent_state', busy: false },
+      { type: 'plan_update', entries: [] }
+    ]);
+    assert.equal(errors.length, 1);
+  });
+});

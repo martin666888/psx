@@ -1,0 +1,40 @@
+/* Runtime install card — shell wiring only (CP4 area 3): grid placement and
+   the reading-column track. Visuals live on the component's Tailwind
+   classes (SessionRuntimeCard.tsx). */
+
+.agent-runtime-card {
+    grid-area: runtime;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 14px;
+    /* Same reading column as the conversation and the composer: the card is
+     * canvas content, not chrome, so it shares the remaining-panel centre. */
+    width: var(--agent-reading-column-max);
+    max-width: 100%;
+    box-sizing: border-box;
+    margin: 12px auto 0 max(0px, var(--agent-reading-column-start));
+    padding: 14px 16px;
+}
+
+.agent-runtime-card[hidden] {
+    display: none;
+}
+
+/* Sibling host for the React runtime-card island. It replaces the legacy
+ * section as the direct grid item in the `runtime` area. */
+.agent-runtime-react-host {
+    grid-area: runtime;
+    min-width: 0;
+}
+
+@container agent-shell (max-width: 720px) {
+    .agent-runtime-card {
+        grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    .agent-runtime-actions {
+        grid-column: 2;
+        justify-content: flex-start;
+    }
+}

@@ -11,6 +11,12 @@ public sealed class TabManagementService : ITabManagementService, IDisposable
     private readonly object _sessionStateLock = new();
     private readonly HashSet<Guid> _closingSessions = new();
     private readonly HashSet<Guid> _closedSessions = new();
+    // Per-session last applied size: dedupes identical resize round-trips and
+    // keeps each ConPTY session on its own dimensions (split-pane foundation).
+    private readonly Dictionary<Guid, (int Cols, int Rows)> _sessionSizes = new();
+    // Creation-time fallback for a new tab (single-pane semantics: the last
+    // resize always came from the one visible pane). Phase 1 replaces this
+    // inheritance with the target pane's measured size.
     private int? _lastTerminalColumns;
     private int? _lastTerminalRows;
     private bool _disposed;
@@ -18,6 +24,15 @@ public sealed class TabManagementService : ITabManagementService, IDisposable
     public event EventHandler<TabCreatedEventArgs>? TabCreated;
     public event EventHandler<TabClosedEventArgs>? TabClosed;
     public event EventHandler<TabTitleChangedEventArgs>? TabTitleChanged;
+    public event EventHandler<string>? PaneFocusRequested;
+    public event EventHandler<PaneRatiosEventArgs>? PaneRatiosRequested;
+    public event EventHandler<PaneMoveEventArgs>? PaneMoveRequested;
+    public event EventHandler<WorkspaceLayoutIntentEventArgs>? WorkspaceLayoutIntentRequested;
+    public event EventHandler<WorkspaceCreateEventArgs>? WorkspaceCreateRequested;
+    public event EventHandler<DshCommandEventArgs>? DshCommandRequested;
+    public event EventHandler<KimiWebCommandEventArgs>? KimiWebCommandRequested;
+    public event EventHandler<DshExportEventArgs>? DshExportRequested;
+    public event EventHandler<KimiWebExportEventArgs>? KimiWebExportRequested;
 
     public TabManagementService(
         ConPtyService conPtyService,
@@ -35,6 +50,15 @@ public sealed class TabManagementService : ITabManagementService, IDisposable
         _bridgeService.ResizeRequested += OnBridgeResize;
         _bridgeService.TitleChanged += OnBridgeTitleChanged;
         _bridgeService.FrontendReady += OnFrontendReady;
+        _bridgeService.PaneFocusRequested += (_, paneId) => PaneFocusRequested?.Invoke(this, paneId);
+        _bridgeService.PaneRatiosRequested += (_, args) => PaneRatiosRequested?.Invoke(this, args);
+        _bridgeService.PaneMoveRequested += (_, args) => PaneMoveRequested?.Invoke(this, args);
+        _bridgeService.WorkspaceLayoutIntentRequested += (_, args) => WorkspaceLayoutIntentRequested?.Invoke(this, args);
+        _bridgeService.WorkspaceCreateRequested += (_, args) => WorkspaceCreateRequested?.Invoke(this, args);
+        _bridgeService.DshCommandRequested += (_, args) => DshCommandRequested?.Invoke(this, args);
+        _bridgeService.KimiWebCommandRequested += (_, args) => KimiWebCommandRequested?.Invoke(this, args);
+        _bridgeService.DshExportRequested += (_, args) => DshExportRequested?.Invoke(this, args);
+        _bridgeService.KimiWebExportRequested += (_, args) => KimiWebExportRequested?.Invoke(this, args);
     }
 
     public Task<Guid> CreateTabAsync(ShellProfile? profile = null)
@@ -78,6 +102,7 @@ public sealed class TabManagementService : ITabManagementService, IDisposable
                 return Task.CompletedTask;
 
             _closingSessions.Add(sessionId);
+            _sessionSizes.Remove(sessionId);
         }
 
         _ = _bridgeService.CloseTerminalAsync(sessionId);
@@ -133,6 +158,8 @@ public sealed class TabManagementService : ITabManagementService, IDisposable
         {
             if (_closingSessions.Contains(e.SessionId) || !_closedSessions.Add(e.SessionId))
                 return;
+
+            _sessionSizes.Remove(e.SessionId);
         }
 
         _ = _bridgeService.CloseTerminalAsync(e.SessionId);
@@ -157,6 +184,15 @@ public sealed class TabManagementService : ITabManagementService, IDisposable
         {
             _lastTerminalColumns = e.Cols;
             _lastTerminalRows = e.Rows;
+
+            // Identical (cols, rows) round-trips must not reach ConPTY again.
+            if (_sessionSizes.TryGetValue(e.SessionId, out var applied)
+                && applied.Cols == e.Cols && applied.Rows == e.Rows)
+            {
+                return;
+            }
+
+            _sessionSizes[e.SessionId] = (e.Cols, e.Rows);
         }
 
         _conPtyService.Resize(e.SessionId, e.Cols, e.Rows);
@@ -213,5 +249,10 @@ public sealed class TabManagementService : ITabManagementService, IDisposable
 
         // ConPtyService.Dispose handles session cleanup
         _conPtyService.Dispose();
+    }
+
+    public Task ShutdownAsync(TimeSpan? timeout = null)
+    {
+        return _conPtyService.ShutdownAsync(timeout);
     }
 }

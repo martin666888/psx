@@ -8,10 +8,19 @@
       - wwwroot/, psx.ini, theme-presets/   (copied from publish output)
       - tools/node/                          (portable Node 22.23.1, downloaded)
       - tools/acp-seed/                      (installed by the user on first Agent use)
+      - tools/dsh-seed/                      (installed by the user on first DSH use)
+      - tools/kimi/                          (Kimi Code ACP runtime, installed at
+                                              build time from tools/kimi-seed/ via npm ci)
+      - tools/qwen/                          (Qwen Code ACP runtime, installed at
+                                              build time from tools/qwen-seed/ via npm ci)
+      - tools/opencode/                      (OpenCode ACP runtime - native
+                                              Bun-compiled binary, installed at
+                                              build time from tools/opencode-seed/
+                                              via npm ci)
 
     The output zip is portable for end users: unzip and double-click PSX.exe.
     .NET and Node are bundled. Agent mode asks for confirmation before it
-    downloads the ACP / Claude runtime from npm on first use.
+    downloads the Claude managed runtime from npm on first use.
     WebView2 Runtime can be bundled by passing -WebView2FixedRuntimePath.
     Otherwise machines without it will see a prompt asking the user to install
     it manually.
@@ -37,6 +46,15 @@
     nested Microsoft.WebView2.FixedVersionRuntime.* folder. When provided, the
     runtime is copied into runtime/webview2-fixed/ in the release package.
 
+.PARAMETER SkipOpenCodeSmoke
+    If set, the OpenCode native smokes (opencode.exe --version and the ACP
+    initialize probe) are not executed. Use only on build machines where
+    security software (Defender/EDR/360) blocks the unsigned Bun-compiled
+    binary from running. The script then verifies the bundled binary
+    statically: the platform package's package.json version must match the
+    seed manifest pin. The produced package MUST be smoke-tested on a machine
+    where opencode.exe is allowed to run.
+
 .EXAMPLE
     pwsh tools/build-release.ps1
     pwsh tools/build-release.ps1 -Configuration Debug -OutputDirectory .\out\
@@ -47,10 +65,12 @@ param(
     [string]$Configuration = "Release",
     [string]$OutputDirectory = "",
     [switch]$SkipNodeDownload,
-    [string]$WebView2FixedRuntimePath = ""
+    [string]$WebView2FixedRuntimePath = "",
+    [switch]$SkipOpenCodeSmoke
 )
 
 $ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
 Set-StrictMode -Version Latest
 
 # ---- pin everything for reproducible builds ----
@@ -58,18 +78,24 @@ $PortableNodeVersion = "v22.23.1"
 $PortableNodeArchive = "node-$PortableNodeVersion-win-x64.zip"
 $PortableNodeUrl = "https://nodejs.org/dist/$PortableNodeVersion/$PortableNodeArchive"
 $PortableNodeExpectedSha = "7df0bc9375723f4a86b3aa1b7cc73342423d9677a8df4538aca31a049e309c29"
+$MapleMonoRegularExpectedSha = "E42D081EAECBDA6A043079EAAAF43EA20BD8805666BC06E1FE4DC663C462AD7F"
+$MapleMonoSemiBoldExpectedSha = "F72D4475C7AC435C7C363E0CB35100A18E4A5BB14787F17F7BBC64823B904066"
+$DshSeedLockExpectedSha = "7FAF3EBE00A0D3ED6ED58AB87CF1DD173963352ECEA8FF8E250283A60F40E27F"
+$DshPinnedVersion = "0.1.0-rc.6"
 
 # ---- locate repo root ----
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$RepoRoot = Resolve-Path (Join-Path $ScriptDir "..")
+$RepoRoot = (Resolve-Path (Join-Path $ScriptDir "..")).Path
 $ProjectPath = Join-Path $RepoRoot "PSX.csproj"
-$PublishOutput = Join-Path $RepoRoot ".\bin\publish\win-x64-self-contained"
-$StagingDir = Join-Path $RepoRoot ".\bin\release-staging"
-$BuildCacheDir = Join-Path $RepoRoot ".\bin\build-cache"
+$PublishOutput = [IO.Path]::GetFullPath((Join-Path $RepoRoot "bin\publish\win-x64-self-contained"))
+$StagingDir = [IO.Path]::GetFullPath((Join-Path $RepoRoot "bin\release-staging"))
+$BuildCacheDir = [IO.Path]::GetFullPath((Join-Path $RepoRoot "bin\build-cache"))
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
-    $OutputDirectory = Join-Path $RepoRoot ".\bin\releases"
+    $OutputDirectory = [IO.Path]::GetFullPath((Join-Path $RepoRoot "bin\releases"))
 } elseif (-not [IO.Path]::IsPathRooted($OutputDirectory)) {
-    $OutputDirectory = Join-Path $RepoRoot $OutputDirectory
+    $OutputDirectory = [IO.Path]::GetFullPath((Join-Path $RepoRoot $OutputDirectory))
+} else {
+    $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
 }
 
 function Resolve-WebView2FixedRuntimeDirectory {
@@ -111,7 +137,7 @@ if (-not [string]::IsNullOrWhiteSpace($WebView2FixedRuntimePath)) {
 Write-Host ""
 
 # ---- step 1: dotnet publish ----
-Write-Host "==> [1/4] dotnet publish (self-contained, win-x64, non-single-file)" -ForegroundColor Cyan
+Write-Host "==> [1/7] dotnet publish (self-contained, win-x64, non-single-file)" -ForegroundColor Cyan
 if (Test-Path $PublishOutput) {
     Remove-Item -Recurse -Force $PublishOutput
 }
@@ -127,7 +153,7 @@ if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed (exit $LASTEXITCODE)" }
 Write-Host ""
 
 # ---- step 2: stage publish output ----
-Write-Host "==> [2/4] Stage publish output" -ForegroundColor Cyan
+Write-Host "==> [2/7] Stage publish output" -ForegroundColor Cyan
 if (Test-Path $StagingDir) {
     Remove-Item -Recurse -Force $StagingDir
 }
@@ -141,12 +167,12 @@ $nodeDir = Join-Path $StagingDir "tools\node"
 $archivePath = Join-Path $BuildCacheDir $PortableNodeArchive
 New-Item -ItemType Directory -Path $BuildCacheDir -Force | Out-Null
 if ($SkipNodeDownload) {
-    Write-Host "==> [3/4] Use cached portable Node $PortableNodeVersion" -ForegroundColor Cyan
+    Write-Host "==> [3/7] Use cached portable Node $PortableNodeVersion" -ForegroundColor Cyan
     if (-not (Test-Path $archivePath)) {
         throw "-SkipNodeDownload requires the verified archive at: $archivePath"
     }
 } else {
-    Write-Host "==> [3/4] Download + extract portable Node $PortableNodeVersion" -ForegroundColor Cyan
+    Write-Host "==> [3/7] Download + extract portable Node $PortableNodeVersion" -ForegroundColor Cyan
     if (-not (Test-Path $archivePath)) {
         Write-Host "    Downloading $PortableNodeUrl"
         Invoke-WebRequest -Uri $PortableNodeUrl -OutFile $archivePath -UseBasicParsing
@@ -177,10 +203,167 @@ Set-Content -Path (Join-Path $nodeDir "node-version.txt") -Value $PortableNodeVe
 Write-Host "    Installed Node into staging/tools/node/; wrote node-version.txt"
 Write-Host ""
 
-# ---- step 4: optional WebView2 Fixed Version runtime ----
+# ---- step 4: bundle Kimi Code ACP runtime (lockfile-driven, reproducible) ----
+Write-Host "==> [4/7] Install Kimi Code ACP runtime into staging/tools/kimi" -ForegroundColor Cyan
+$kimiSeedDir = Join-Path $RepoRoot "tools\kimi-seed"
+$kimiTargetDir = Join-Path $StagingDir "tools\kimi"
+foreach ($seedFile in @("package.json", "package-lock.json", ".npmrc")) {
+    $seedSource = Join-Path $kimiSeedDir $seedFile
+    if (-not (Test-Path -LiteralPath $seedSource -PathType Leaf)) {
+        throw "Kimi seed file is missing: tools/kimi-seed/$seedFile"
+    }
+}
+New-Item -ItemType Directory -Path $kimiTargetDir -Force | Out-Null
+Copy-Item (Join-Path $kimiSeedDir "package.json") $kimiTargetDir -Force
+Copy-Item (Join-Path $kimiSeedDir "package-lock.json") $kimiTargetDir -Force
+Copy-Item (Join-Path $kimiSeedDir ".npmrc") $kimiTargetDir -Force
+
+$nodeExe = Join-Path $nodeDir "node.exe"
+$npmCli = Join-Path $nodeDir "node_modules\npm\bin\npm-cli.js"
+# `npm ci` from the pinned lockfile is more reproducible than
+# `npm install @moonshot-ai/kimi-code@<version>`. --include=optional pulls in
+# the Windows-native components (node-pty, clipboard-win32-x64); the seed
+# .npmrc constrains os/cpu so only win32-x64 packages are installed. Building
+# node-pty's native addon requires the machine's C++ build toolchain.
+& $nodeExe $npmCli ci --prefix $kimiTargetDir --omit=dev --include=optional --no-audit --no-fund | Out-Host
+if ($LASTEXITCODE -ne 0) { throw "npm ci for Kimi Code failed (exit $LASTEXITCODE)" }
+
+# Smoke-check the bundled entry actually starts on the portable Node instead
+# of only checking the file exists. Capture output first (no Out-Host pipe:
+# empty output must be detectable), then check the exit code and emptiness.
+$kimiEntry = Join-Path $kimiTargetDir "node_modules\@moonshot-ai\kimi-code\dist\main.mjs"
+if (-not (Test-Path -LiteralPath $kimiEntry -PathType Leaf)) {
+    throw "Bundled Kimi entry is missing: $kimiEntry"
+}
+$kimiSmokeOutput = (& $nodeExe $kimiEntry --version 2>&1 | Out-String).Trim()
+if ($LASTEXITCODE -ne 0) { throw "Bundled Kimi smoke check failed (exit $LASTEXITCODE): $kimiSmokeOutput" }
+if ([string]::IsNullOrWhiteSpace($kimiSmokeOutput)) { throw "Bundled Kimi smoke check produced no output" }
+Write-Host "    Kimi smoke check passed: --version -> $kimiSmokeOutput"
+Write-Host "    Installed Kimi Code into staging/tools/kimi/"
+Write-Host ""
+
+# ---- step 5: bundle Qwen Code ACP runtime (lockfile-driven, reproducible) ----
+Write-Host "==> [5/7] Install Qwen Code ACP runtime into staging/tools/qwen" -ForegroundColor Cyan
+$qwenSeedDir = Join-Path $RepoRoot "tools\qwen-seed"
+$qwenTargetDir = Join-Path $StagingDir "tools\qwen"
+foreach ($seedFile in @("package.json", "package-lock.json", ".npmrc")) {
+    $seedSource = Join-Path $qwenSeedDir $seedFile
+    if (-not (Test-Path -LiteralPath $seedSource -PathType Leaf)) {
+        throw "Qwen seed file is missing: tools/qwen-seed/$seedFile"
+    }
+}
+New-Item -ItemType Directory -Path $qwenTargetDir -Force | Out-Null
+Copy-Item (Join-Path $qwenSeedDir "package.json") $qwenTargetDir -Force
+Copy-Item (Join-Path $qwenSeedDir "package-lock.json") $qwenTargetDir -Force
+Copy-Item (Join-Path $qwenSeedDir ".npmrc") $qwenTargetDir -Force
+
+& $nodeExe $npmCli ci --prefix $qwenTargetDir --omit=dev --include=optional --no-audit --no-fund | Out-Host
+if ($LASTEXITCODE -ne 0) { throw "npm ci for Qwen Code failed (exit $LASTEXITCODE)" }
+
+# Resolve the npm bin entry dynamically (0.21.x uses cli-entry.js; older used cli.js).
+$qwenPackageJson = Join-Path $qwenTargetDir "node_modules\@qwen-code\qwen-code\package.json"
+if (-not (Test-Path -LiteralPath $qwenPackageJson -PathType Leaf)) {
+    throw "Bundled Qwen package.json is missing: $qwenPackageJson"
+}
+$qwenPkg = Get-Content -LiteralPath $qwenPackageJson -Raw | ConvertFrom-Json
+$qwenBinRelative = $null
+if ($qwenPkg.bin -is [string]) {
+    $qwenBinRelative = [string]$qwenPkg.bin
+} elseif ($qwenPkg.bin.qwen) {
+    $qwenBinRelative = [string]$qwenPkg.bin.qwen
+} else {
+    throw "Bundled Qwen package.json is missing a bin.qwen entry"
+}
+$qwenEntry = Join-Path (Split-Path -Parent $qwenPackageJson) $qwenBinRelative
+if (-not (Test-Path -LiteralPath $qwenEntry -PathType Leaf)) {
+    throw "Bundled Qwen entry is missing: $qwenEntry"
+}
+$qwenVersionOutput = (& $nodeExe $qwenEntry --version 2>&1 | Out-String).Trim()
+if ($LASTEXITCODE -ne 0) { throw "Bundled Qwen --version smoke failed (exit $LASTEXITCODE): $qwenVersionOutput" }
+if ([string]::IsNullOrWhiteSpace($qwenVersionOutput)) { throw "Bundled Qwen --version smoke produced no output" }
+Write-Host "    Qwen --version smoke passed: $qwenVersionOutput"
+
+# Release/CI ACP smoke must NOT call session/new or prompt (no login / network).
+$acpProbe = Join-Path $RepoRoot "tools\acp-initialize-probe.mjs"
+if (-not (Test-Path -LiteralPath $acpProbe -PathType Leaf)) {
+    throw "ACP initialize probe is missing: tools/acp-initialize-probe.mjs"
+}
+& $nodeExe $acpProbe -- $nodeExe $qwenEntry --acp | Out-Host
+if ($LASTEXITCODE -ne 0) { throw "Bundled Qwen ACP initialize smoke failed (exit $LASTEXITCODE)" }
+Write-Host "    Qwen ACP initialize smoke passed"
+Write-Host "    Installed Qwen Code into staging/tools/qwen/"
+Write-Host ""
+
+# ---- step 6: bundle OpenCode ACP runtime (lockfile-driven, reproducible) ----
+Write-Host "==> [6/7] Install OpenCode ACP runtime into staging/tools/opencode" -ForegroundColor Cyan
+$opencodeSeedDir = Join-Path $RepoRoot "tools\opencode-seed"
+$opencodeTargetDir = Join-Path $StagingDir "tools\opencode"
+foreach ($seedFile in @("package.json", "package-lock.json", ".npmrc")) {
+    $seedSource = Join-Path $opencodeSeedDir $seedFile
+    if (-not (Test-Path -LiteralPath $seedSource -PathType Leaf)) {
+        throw "OpenCode seed file is missing: tools/opencode-seed/$seedFile"
+    }
+}
+New-Item -ItemType Directory -Path $opencodeTargetDir -Force | Out-Null
+Copy-Item (Join-Path $opencodeSeedDir "package.json") $opencodeTargetDir -Force
+Copy-Item (Join-Path $opencodeSeedDir "package-lock.json") $opencodeTargetDir -Force
+Copy-Item (Join-Path $opencodeSeedDir ".npmrc") $opencodeTargetDir -Force
+
+& $nodeExe $npmCli ci --prefix $opencodeTargetDir --omit=dev --include=optional --no-audit --no-fund | Out-Host
+if ($LASTEXITCODE -ne 0) { throw "npm ci for OpenCode failed (exit $LASTEXITCODE)" }
+
+# OpenCode ships as a native Bun-compiled executable inside the platform
+# package. PSX depends on opencode-windows-x64 directly - never the
+# opencode-ai wrapper, whose bin is a 479-byte placeholder hydrated by a
+# postinstall script.
+$opencodeExe = Join-Path $opencodeTargetDir "node_modules\opencode-windows-x64\bin\opencode.exe"
+if (-not (Test-Path -LiteralPath $opencodeExe -PathType Leaf)) {
+    throw "Bundled OpenCode executable is missing: $opencodeExe"
+}
+
+if ($SkipOpenCodeSmoke) {
+    # Static fallback for build machines where security software blocks the
+    # unsigned Bun binary from running: identity comes from the installed
+    # package, which must match the seed lockfile pin exactly.
+    $opencodePackageJsonPath = Join-Path $opencodeTargetDir "node_modules\opencode-windows-x64\package.json"
+    if (-not (Test-Path -LiteralPath $opencodePackageJsonPath -PathType Leaf)) {
+        throw "Bundled OpenCode package.json is missing: $opencodePackageJsonPath"
+    }
+    $opencodeBundledVersion = (Get-Content -Raw -LiteralPath $opencodePackageJsonPath | ConvertFrom-Json).version
+    # Pin comes from the seed manifest, not the lockfile: PS 5.1 ConvertFrom-Json
+    # chokes on duplicate keys that npm lockfiles legitimately contain.
+    $opencodeSeedManifestPath = Join-Path $opencodeSeedDir "package.json"
+    $opencodeLockedVersion = (Get-Content -Raw -LiteralPath $opencodeSeedManifestPath | ConvertFrom-Json).dependencies.'opencode-windows-x64'
+    if ([string]::IsNullOrWhiteSpace($opencodeBundledVersion)) { throw "Bundled OpenCode package.json carries no version" }
+    if ([string]::IsNullOrWhiteSpace($opencodeLockedVersion)) { throw "OpenCode seed manifest pins no opencode-windows-x64 version" }
+    if ($opencodeBundledVersion -ne $opencodeLockedVersion) {
+        throw "Bundled OpenCode version $opencodeBundledVersion does not match the seed manifest pin $opencodeLockedVersion"
+    }
+    Write-Host "    OpenCode native smokes SKIPPED (-SkipOpenCodeSmoke); static version check passed: $opencodeBundledVersion" -ForegroundColor Yellow
+    Write-Warning "OpenCode --version and ACP initialize smokes were skipped. Smoke-test the produced package on a machine where opencode.exe is allowed to run."
+} else {
+    try {
+        $opencodeVersionOutput = (& $opencodeExe --version 2>&1 | Out-String).Trim()
+        $opencodeVersionExit = $LASTEXITCODE
+    } catch {
+        throw "Bundled OpenCode --version smoke could not start opencode.exe: $($_.Exception.Message) If security software (Defender/EDR/360) blocks the unsigned Bun binary on this build machine, whitelist it or rerun with -SkipOpenCodeSmoke to fall back to static checks."
+    }
+    if ($opencodeVersionExit -ne 0) { throw "Bundled OpenCode --version smoke failed (exit $opencodeVersionExit): $opencodeVersionOutput" }
+    if ([string]::IsNullOrWhiteSpace($opencodeVersionOutput)) { throw "Bundled OpenCode --version smoke produced no output" }
+    Write-Host "    OpenCode --version smoke passed: $opencodeVersionOutput"
+
+    # Release/CI ACP smoke must NOT call session/new or prompt (no login / network).
+    & $nodeExe $acpProbe -- $opencodeExe acp | Out-Host
+    if ($LASTEXITCODE -ne 0) { throw "Bundled OpenCode ACP initialize smoke failed (exit $LASTEXITCODE)" }
+    Write-Host "    OpenCode ACP initialize smoke passed"
+}
+Write-Host "    Installed OpenCode into staging/tools/opencode/"
+Write-Host ""
+
+# ---- step 6: optional WebView2 Fixed Version runtime ----
 $fixedWebView2Source = Resolve-WebView2FixedRuntimeDirectory $WebView2FixedRuntimePath
 if ($fixedWebView2Source) {
-    Write-Host "==> [4/4] Bundle WebView2 Fixed Version runtime" -ForegroundColor Cyan
+    Write-Host "==> [7/7] Bundle WebView2 Fixed Version runtime" -ForegroundColor Cyan
     $fixedWebView2Target = Join-Path $StagingDir "runtime\webview2-fixed"
     if (Test-Path $fixedWebView2Target) {
         Remove-Item -Recurse -Force $fixedWebView2Target
@@ -189,7 +372,7 @@ if ($fixedWebView2Source) {
     Copy-Item -Recurse -Force (Join-Path $fixedWebView2Source "*") $fixedWebView2Target
     Write-Host "    Copied fixed runtime from $fixedWebView2Source"
 } else {
-    Write-Host "==> [4/4] WebView2 runtime is NOT bundled" -ForegroundColor Yellow
+    Write-Host "==> [7/7] WebView2 runtime is NOT bundled" -ForegroundColor Yellow
     Write-Host "    Users without WebView2 will see a prompt asking them to install it."
 }
 Write-Host ""
@@ -199,24 +382,69 @@ Write-Host "==> Validate public package contents" -ForegroundColor Cyan
 $requiredFiles = @(
     "PSX.exe",
     "PSX.dll",
+    "e_sqlite3.dll",
     "psx.ini",
     "LICENSE.txt",
     "THIRD-PARTY-NOTICES.md",
     "licenses\acp\LICENSE",
+    "licenses\kimi\LICENSE",
+    "licenses\kimi\THIRD-PARTY-NOTICES.md",
+    "licenses\qwen\LICENSE",
+    "licenses\qwen\THIRD-PARTY-NOTICES.md",
+    "licenses\opencode\LICENSE",
+    "licenses\opencode\THIRD-PARTY-NOTICES.md",
+    "licenses\microsoft.data.sqlite\LICENSE.txt",
+    "licenses\sqlitepclraw\LICENSE",
+    "licenses\sqlite\LICENSE.txt",
     "licenses\communitytoolkit.mvvm\License.md",
     "licenses\dotnet\LICENSE.txt",
     "licenses\microsoft.extensions\LICENSE.TXT",
     "licenses\webview2\LICENSE.txt",
-    "wwwroot\index.html",
-    "wwwroot\vendor\xterm\LICENSE",
+    "licenses\react\LICENSE.txt",
+    "licenses\xterm\LICENSE",
+    "licenses\shadcn\LICENSE",
+    "licenses\ai-elements\LICENSE",
+    "licenses\streamdown\LICENSE",
+    "licenses\shiki\LICENSE",
+    "licenses\katex\LICENSE",
+    "licenses\mermaid\LICENSE",
+    "licenses\radix-ui\LICENSE",
+    "licenses\lucide\LICENSE",
+    "licenses\tailwindcss\LICENSE",
+    "licenses\maple-mono\LICENSE.txt",
+    "theme-presets\vercel-neutral-dark.ini",
+    "theme-presets\vercel-neutral-light.ini",
+    "wwwroot\app\index.html",
+    "wwwroot\app\.vite\manifest.json",
+    "wwwroot\vendor\fonts\maple-mono\MapleMonoNormal-CN-Regular.ttf",
+    "wwwroot\vendor\fonts\maple-mono\MapleMonoNormal-CN-SemiBold.ttf",
     "tools\node\node.exe",
     "tools\node\LICENSE",
     "tools\node\node_modules\npm\LICENSE",
     "tools\node\node_modules\npm\bin\npm-cli.js",
     "tools\acp-seed\package.json",
-    "tools\acp-seed\package-lock.json",
-    "tools\acp-seed\.npmrc"
+    "tools\acp-seed\.npmrc",
+    "tools\dsh-seed\package.json",
+    "tools\dsh-seed\package-lock.json",
+    "tools\dsh-seed\.npmrc",
+    "licenses\dsh\LICENSE",
+    "licenses\dsh\THIRD-PARTY-NOTICES.md",
+    "tools\kimi\package.json",
+    "tools\kimi\package-lock.json",
+    "tools\kimi\node_modules\@moonshot-ai\kimi-code\package.json",
+    "tools\kimi\node_modules\@moonshot-ai\kimi-code\dist\main.mjs",
+    "tools\qwen\package.json",
+    "tools\qwen\package-lock.json",
+    "tools\qwen\node_modules\@qwen-code\qwen-code\package.json",
+    "tools\opencode\package.json",
+    "tools\opencode\package-lock.json",
+    "tools\opencode\node_modules\opencode-windows-x64\package.json",
+    "tools\opencode\node_modules\opencode-windows-x64\bin\opencode.exe"
 )
+# Keep the resolved Qwen bin entry in the required set (dynamic; not hardcoded
+# to cli-entry.js so a future bin rename still validates).
+$qwenEntryRelative = $qwenEntry.Substring($StagingDir.Length).TrimStart('\').Replace('/', '\')
+$requiredFiles += $qwenEntryRelative
 foreach ($relativePath in $requiredFiles) {
     $fullPath = Join-Path $StagingDir $relativePath
     if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) {
@@ -224,13 +452,81 @@ foreach ($relativePath in $requiredFiles) {
     }
 }
 
+$mapleMonoFiles = @{
+    "wwwroot\vendor\fonts\maple-mono\MapleMonoNormal-CN-Regular.ttf" = $MapleMonoRegularExpectedSha
+    "wwwroot\vendor\fonts\maple-mono\MapleMonoNormal-CN-SemiBold.ttf" = $MapleMonoSemiBoldExpectedSha
+}
+foreach ($entry in $mapleMonoFiles.GetEnumerator()) {
+    $actualHash = (Get-FileHash -LiteralPath (Join-Path $StagingDir $entry.Key) -Algorithm SHA256).Hash
+    if (-not [string]::Equals($actualHash, $entry.Value, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Bundled Maple Mono font hash mismatch: $($entry.Key)"
+    }
+}
+
+$dshSeedRoot = Join-Path $StagingDir "tools\dsh-seed"
+$dshLockPath = Join-Path $dshSeedRoot "package-lock.json"
+$dshLockHash = (Get-FileHash -LiteralPath $dshLockPath -Algorithm SHA256).Hash
+if (-not [string]::Equals($dshLockHash, $DshSeedLockExpectedSha, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "DSH seed lockfile hash mismatch. Review and update the pinned supply-chain evidence explicitly."
+}
+$dshManifest = Get-Content -Raw -LiteralPath (Join-Path $dshSeedRoot "package.json") | ConvertFrom-Json
+if ($dshManifest.dependencies.'@deepseek-ai/dsh' -ne $DshPinnedVersion) {
+    throw "DSH seed must pin @deepseek-ai/dsh to $DshPinnedVersion."
+}
+$dshLockText = Get-Content -Raw -LiteralPath $dshLockPath
+if ($dshLockText -match '"resolved"\s*:\s*"https://(?!registry\.npmjs\.org/)') {
+    throw "DSH seed lockfile contains a non-official npm registry resolved URL."
+}
+# PS 5.1 ConvertFrom-Json rejects npm lockfiles that use an empty "" packages
+# key. Read the pinned entry from text instead of parsing the whole file.
+$dshLockMatch = [regex]::Match(
+    $dshLockText,
+    '"node_modules/@deepseek-ai/dsh"\s*:\s*\{\s*"version"\s*:\s*"(?<version>[^"]+)"[\s\S]*?"integrity"\s*:\s*"(?<integrity>[^"]+)"')
+if (-not $dshLockMatch.Success `
+    -or $dshLockMatch.Groups['version'].Value -ne $DshPinnedVersion `
+    -or [string]::IsNullOrWhiteSpace($dshLockMatch.Groups['integrity'].Value)) {
+    throw "DSH lockfile @deepseek-ai/dsh version or integrity evidence is incomplete."
+}
+$dshNpmrcText = Get-Content -Raw -LiteralPath (Join-Path $dshSeedRoot ".npmrc")
+if ($dshNpmrcText -notmatch 'registry=https://registry\.npmjs\.org/') {
+    throw "DSH seed .npmrc must pin the official npm registry."
+}
+
 $forbiddenAcpRuntime = Join-Path $StagingDir "runtime\acp-current"
 if (Test-Path -LiteralPath $forbiddenAcpRuntime) {
     throw "Public release must not contain runtime/acp-current."
 }
 
+$forbiddenOpencodeRuntime = Join-Path $StagingDir "runtime\opencode-current"
+if (Test-Path -LiteralPath $forbiddenOpencodeRuntime) {
+    throw "Public release must not contain runtime/opencode-current."
+}
+
+foreach ($forbiddenDshName in @("dsh-current", "dsh-next", "dsh-installing", "dsh-rollback")) {
+    $forbiddenDshRuntime = Join-Path $StagingDir "runtime\$forbiddenDshName"
+    if (Test-Path -LiteralPath $forbiddenDshRuntime) {
+        throw "Public release must not contain runtime/$forbiddenDshName."
+    }
+}
+
 $forbiddenFiles = @(Get-ChildItem -LiteralPath $StagingDir -Recurse -File | Where-Object {
-    $_.Name -ieq "claude.exe" -or $_.Extension -in @(".log", ".tmp", ".binlog")
+    $relative = $_.FullName.Substring($StagingDir.Length).TrimStart('\').Replace('\', '/')
+    $strayNodeModules = ($relative -match '(^|/)node_modules/') -and (-not $relative.StartsWith('tools/node/node_modules/', [StringComparison]::OrdinalIgnoreCase)) -and (-not $relative.StartsWith('tools/kimi/node_modules/', [StringComparison]::OrdinalIgnoreCase)) -and (-not $relative.StartsWith('tools/qwen/node_modules/', [StringComparison]::OrdinalIgnoreCase)) -and (-not $relative.StartsWith('tools/opencode/node_modules/', [StringComparison]::OrdinalIgnoreCase))
+    # Source maps and TypeScript are forbidden only for the generated Vite
+    # output (vendored passthrough files under wwwroot/app/vendor may ship
+    # upstream maps). Portable Node/npm legitimately contains maps.
+    $agentSourceArtifact = $relative.StartsWith('wwwroot/app/', [StringComparison]::OrdinalIgnoreCase) -and (-not $relative.StartsWith('wwwroot/app/vendor/', [StringComparison]::OrdinalIgnoreCase)) -and $_.Extension -in @('.ts', '.map')
+    $_.Name -ieq "claude.exe" `
+        -or $_.Extension -in @(".log", ".tmp", ".binlog") `
+        -or $agentSourceArtifact `
+        -or $relative.StartsWith('frontend/', [StringComparison]::OrdinalIgnoreCase) `
+        -or $strayNodeModules `
+        -or $relative.StartsWith('tests/', [StringComparison]::OrdinalIgnoreCase) `
+        -or $relative.StartsWith('TestResults/', [StringComparison]::OrdinalIgnoreCase) `
+        -or $_.Name -like 'PSX.Tests.*' `
+        -or $_.Name -like 'PSX.TestAgent.*' `
+        -or $_.Name -like 'PSX.TestNpm.*' `
+        -or $_.Name -like 'PSX.DesktopProbe.*'
 })
 if ($forbiddenFiles.Count -gt 0) {
     $paths = ($forbiddenFiles | ForEach-Object { $_.FullName.Substring($StagingDir.Length).TrimStart('\') }) -join ", "
@@ -279,8 +575,22 @@ try {
         $normalized = $_.Replace('\', '/')
         $leaf = [IO.Path]::GetFileName($normalized)
         $extension = [IO.Path]::GetExtension($normalized)
+        $strayNodeModules = ($normalized -match '(^|/)node_modules/') -and (-not $normalized.StartsWith('tools/node/node_modules/', [StringComparison]::OrdinalIgnoreCase)) -and (-not $normalized.StartsWith('tools/kimi/node_modules/', [StringComparison]::OrdinalIgnoreCase)) -and (-not $normalized.StartsWith('tools/qwen/node_modules/', [StringComparison]::OrdinalIgnoreCase)) -and (-not $normalized.StartsWith('tools/opencode/node_modules/', [StringComparison]::OrdinalIgnoreCase))
+        # Keep this scoped to the Vite output for parity with the staging
+        # check; Node/npm and wwwroot/app/vendor files can ship source maps.
+        $agentSourceArtifact = $normalized.StartsWith('wwwroot/app/', [StringComparison]::OrdinalIgnoreCase) -and (-not $normalized.StartsWith('wwwroot/app/vendor/', [StringComparison]::OrdinalIgnoreCase)) -and $extension -in @('.ts', '.map')
         $normalized.StartsWith('runtime/acp-current/', [StringComparison]::OrdinalIgnoreCase) `
+            -or $normalized.StartsWith('runtime/opencode-current/', [StringComparison]::OrdinalIgnoreCase) `
+            -or $normalized.StartsWith('tests/', [StringComparison]::OrdinalIgnoreCase) `
+            -or $normalized.StartsWith('TestResults/', [StringComparison]::OrdinalIgnoreCase) `
+            -or $normalized.StartsWith('frontend/', [StringComparison]::OrdinalIgnoreCase) `
+            -or $agentSourceArtifact `
+            -or $strayNodeModules `
             -or $leaf -ieq 'claude.exe' `
+            -or $leaf -like 'PSX.Tests.*' `
+            -or $leaf -like 'PSX.TestAgent.*' `
+            -or $leaf -like 'PSX.TestNpm.*' `
+            -or $leaf -like 'PSX.DesktopProbe.*' `
             -or $extension -in @('.log', '.tmp', '.binlog')
     })
     if ($forbiddenEntries.Count -gt 0) {

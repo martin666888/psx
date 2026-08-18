@@ -14,19 +14,23 @@ public interface IAgentBridgeService
 
 public sealed class AgentSubmitEventArgs : EventArgs
 {
+    public Guid WorkspaceId { get; set; }
     public string Text { get; set; } = "";
     public List<string> AttachmentIds { get; set; } = new();
 }
 
 public sealed class AgentCommandEventArgs : EventArgs
 {
+    public Guid WorkspaceId { get; set; }
     public string Command { get; set; } = "";
     public string? RequestId { get; set; }
     public string? Value { get; set; }
+    public bool? BooleanValue { get; set; }
 }
 
 public sealed class AgentAttachmentUploadEventArgs : EventArgs
 {
+    public Guid WorkspaceId { get; set; }
     public string ClientId { get; set; } = "";
     public string FileName { get; set; } = "";
     public string MimeType { get; set; } = "";

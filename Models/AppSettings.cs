@@ -2,6 +2,9 @@ namespace PSX.Models;
 
 public sealed class AppSettings
 {
+    public const string AgentUiFontFamily = "Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI, Segoe UI Emoji, sans-serif";
+    public const string BundledAgentMonoFontFamily = "PSX Maple Mono, Segoe UI Emoji, Microsoft YaHei UI, monospace";
+
     public string ActiveThemeKey { get; set; } = "";
     public string ThemeFingerprint { get; set; } = "";
     public string DefaultShellProfileId { get; set; } = "powershell";
@@ -10,8 +13,8 @@ public sealed class AppSettings
     public string Theme { get; set; } = "dark";
     public int Scrollback { get; set; } = 10000;
     public int AgentFontSize { get; set; } = 15;
-    public string AgentFontFamily { get; set; } = "Segoe UI Variable, Segoe UI, Microsoft YaHei UI, Microsoft YaHei, sans-serif";
-    public string AgentMonoFontFamily { get; set; } = "";
+    public string AgentFontFamily { get; set; } = AgentUiFontFamily;
+    public string AgentMonoFontFamily { get; set; } = BundledAgentMonoFontFamily;
     public double WindowWidth { get; set; } = 1200;
     public double WindowHeight { get; set; } = 800;
     public double WindowX { get; set; }
@@ -118,6 +121,9 @@ public sealed class AgentThemeColors
     public string Overlay { get; set; } = "#000000";
     public string Shadow { get; set; } = "#000000";
     public string FocusRing { get; set; } = "#5aa6a0";
+    // Optional workbench backdrop tint painted as a top-down gradient behind
+    // the two Agent panels. RRGGBBAA; fully transparent means "no tint".
+    public string WorkbenchTint { get; set; } = "#00000000";
 }
 
 public sealed class TerminalPalette

@@ -1,0 +1,326 @@
+/* PSX Streamdown wrapper. All selectors remain scoped to Agent message,
+   Plan, and Decision surfaces; Streamdown's data attributes are the stable
+   component contract and the element selectors cover semantic GFM output. */
+
+.agent-message-body p {
+    margin: 0 0 12px;
+}
+
+.agent-message-body p:last-child {
+    margin-bottom: 0;
+}
+
+.agent-message-body h1,
+.agent-message-body h2,
+.agent-message-body h3,
+.agent-message-body h4,
+.agent-message-body h5,
+.agent-message-body h6 {
+    margin: 18px 0 8px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.35;
+}
+
+.agent-message-body h1 {
+    font-size: 1.47em;
+}
+
+.agent-message-body h2 {
+    font-size: 1.27em;
+}
+
+.agent-message-body h3 {
+    font-size: 1.13em;
+}
+
+/* Tailwind Preflight sets `ol,ul,menu { list-style: none }`. Restore markers
+   here; keep indent on padding-left so outside markers stay inside the box
+   (MessageContent uses overflow-hidden). */
+.agent-message-body ul,
+.agent-message-body ol {
+    margin: 8px 0 12px;
+    padding: 0 0 0 22px;
+}
+
+.agent-message-body ul {
+    list-style-type: disc;
+}
+
+.agent-message-body ol {
+    list-style-type: decimal;
+}
+
+.agent-message-body li {
+    margin: 3px 0;
+}
+
+.agent-message-body blockquote {
+    margin: 10px 0 12px;
+    padding: 6px 0 6px 12px;
+    border-left: 3px solid var(--border);
+    color: var(--muted-foreground);
+}
+
+.agent-table-scroll {
+    max-width: 100%;
+    overflow-x: auto;
+    margin: 10px 0 14px;
+}
+
+.agent-message-body table {
+    width: 100%;
+    margin: 0;
+    border-collapse: collapse;
+    font-size: 0.93em;
+}
+
+.agent-message-body th,
+.agent-message-body td {
+    padding: 7px 9px;
+    border: 1px solid var(--border);
+    text-align: left;
+    vertical-align: top;
+}
+
+.agent-message-body th {
+    background: var(--muted);
+    font-weight: 600;
+}
+
+.agent-message-body hr {
+    height: 1px;
+    margin: 18px 0;
+    border: 0;
+    background: var(--border);
+}
+
+.agent-message-body a {
+    color: var(--primary);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.agent-message-body code {
+    padding: 1px 4px;
+    border-radius: calc(var(--radius) - 4px);
+    background: var(--muted);
+    font-family: var(--agent-font-mono);
+    font-size: 0.92em;
+}
+
+.agent-message-body pre,
+.agent-decision pre {
+    overflow: auto;
+    margin: 8px 0 0;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--muted);
+    font-family: var(--agent-font-mono);
+    font-size: clamp(11px, calc(var(--agent-font-size) * 0.8), 18px);
+    line-height: 1.5;
+    white-space: pre-wrap;
+}
+
+.agent-message-body pre code {
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    font-size: inherit;
+}
+
+.agent-message-body [data-streamdown="ordered-list"],
+.agent-message-body [data-streamdown="unordered-list"] {
+    list-style-position: outside;
+}
+
+.agent-message-body [data-streamdown="list-item"] > input[type="checkbox"] {
+    margin: 0 7px 0 0;
+    accent-color: var(--primary);
+}
+
+.agent-message-body :is(
+    [data-streamdown="code-block"],
+    [data-streamdown="table-wrapper"],
+    [data-streamdown="mermaid-block"]
+) {
+    --psx-markdown-block-inset: 6px;
+    --psx-markdown-block-header-height: 28px;
+    --psx-markdown-block-gap: 4px;
+    max-width: 100%;
+    margin: 10px 0 14px;
+    gap: var(--psx-markdown-block-gap);
+    padding: var(--psx-markdown-block-inset);
+    border-color: var(--border);
+    border-radius: var(--radius);
+    background: var(--muted);
+}
+
+.agent-message-body :is(
+    [data-streamdown="code-block-header"],
+    [data-streamdown="table-wrapper"] > div:first-child,
+    [data-streamdown="mermaid-block"] > div:first-child
+) {
+    height: var(--psx-markdown-block-header-height);
+    min-height: var(--psx-markdown-block-header-height);
+}
+
+.agent-message-body [data-streamdown="code-block-body"] {
+    padding: 8px 10px;
+}
+
+/* Dual-theme Shiki writes light colors into --sdm-c and dark colors into
+   --shiki-dark. Streamdown only switches via Tailwind `dark:`; keep a
+   theme-class fallback so Agent dark mode never shows github-light tokens
+   on a near-black surface. */
+.agent-ui.agent-ui-dark [data-streamdown="code-block-body"] [style*="--shiki-dark"] {
+    color: var(--shiki-dark);
+}
+
+.agent-ui.agent-ui-dark [data-streamdown="code-block-body"] [style*="--shiki-dark-bg"] {
+    background-color: var(--shiki-dark-bg);
+}
+
+.agent-message-body [data-streamdown="code-block"] pre {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    line-height: 1.45;
+    white-space: pre;
+}
+
+.agent-message-body [data-streamdown="code-block-body"] code > span::before {
+    width: 2ch;
+    margin-right: 10px;
+}
+
+.agent-message-body :is(
+    [data-streamdown="code-block-actions"],
+    [data-streamdown="mermaid-block-actions"],
+    [data-streamdown="table-wrapper"] > div:first-child
+) {
+    width: 100%;
+    height: var(--psx-markdown-block-header-height);
+    min-height: var(--psx-markdown-block-header-height);
+    padding: 0 2px;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    justify-content: flex-end;
+}
+
+/* Code and tables own a left-side label. Mermaid has no left-side action, so
+   its controls use the shared right-side anchor without creating empty space. */
+.agent-message-body [data-streamdown="code-block-actions"],
+.agent-message-body [data-streamdown="table-wrapper"] > div:first-child {
+    justify-content: space-between;
+}
+
+.agent-message-body :is(
+    [data-streamdown="code-block"],
+    [data-streamdown="mermaid-block"]
+) > div:has(> :is(
+    [data-streamdown="code-block-actions"],
+    [data-streamdown="mermaid-block-actions"]
+)) {
+    top: var(--psx-markdown-block-inset);
+    height: var(--psx-markdown-block-header-height);
+    margin-top: calc(
+        0px - var(--psx-markdown-block-header-height) - var(--psx-markdown-block-gap)
+    );
+}
+
+.agent-message-body [data-streamdown="table-wrapper"] > div:first-child::before {
+    color: var(--muted-foreground);
+    content: "table";
+    font-family: var(--agent-font-mono);
+    font-size: 12px;
+    line-height: var(--psx-markdown-block-header-height);
+}
+
+.agent-message-body :is(
+    [data-streamdown="code-block-actions"],
+    [data-streamdown="mermaid-block-actions"]
+) button,
+.agent-message-body [data-streamdown="table-wrapper"] > div:first-child > div > button {
+    display: inline-flex;
+    width: var(--psx-markdown-block-header-height);
+    height: var(--psx-markdown-block-header-height);
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    border-radius: calc(var(--radius) - 4px);
+    background: transparent;
+}
+
+.agent-message-body :is(
+    [data-streamdown="code-block-actions"],
+    [data-streamdown="mermaid-block-actions"]
+) button:hover,
+.agent-message-body [data-streamdown="table-wrapper"] > div:first-child > div > button:hover {
+    background: var(--background);
+}
+
+.agent-message-body :is(
+    [data-streamdown="code-block-actions"],
+    [data-streamdown="mermaid-block-actions"]
+) button:focus-visible,
+.agent-message-body [data-streamdown="table-wrapper"] > div:first-child > div > button:focus-visible {
+    outline: 1px solid var(--ring);
+    outline-offset: 1px;
+}
+
+.agent-message-body [data-streamdown="code-block"]:has([data-psx-code-label])
+    [data-streamdown="code-block-header"] span {
+    visibility: hidden;
+}
+
+.agent-message-body [data-psx-code-label] {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--muted-foreground);
+    font-family: var(--agent-font-mono);
+    font-size: 12px;
+    line-height: var(--psx-markdown-block-header-height);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.agent-message-body [data-streamdown="mermaid-block"] {
+    min-height: 200px;
+}
+
+.agent-message-body .katex-display {
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 2px 0;
+}
+
+.agent-message-body [data-streamdown="blocked-image"],
+.agent-message-body .psx-markdown-error {
+    color: var(--muted-foreground);
+    font-size: 0.92em;
+}
+
+.agent-message-body img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 10px 0;
+    border-radius: var(--radius);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .psx-markdown *,
+    .psx-markdown *::before,
+    .psx-markdown *::after {
+        scroll-behavior: auto !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}

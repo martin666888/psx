@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "messages": {
+    "input": { "required": { "sessionId": "guid", "data": "base64" }, "optional": {} },
+    "resize": { "required": { "sessionId": "guid", "cols": "integer", "rows": "integer" }, "optional": {} },
+    "title": { "required": { "sessionId": "guid", "title": "string" }, "optional": {} },
+    "paste_request": { "required": { "sessionId": "guid", "requestId": "guid" }, "optional": {} },
+    "ready": { "required": {}, "optional": {} },
+    "pane_focus": { "required": { "paneId": "string" }, "optional": {} },
+    "pane_ratios_commit": { "required": { "baseRevision": "integer", "panes": "pane-ratio-array" }, "optional": {} },
+    "pane_move": { "required": { "workspaceId": "guid", "paneId": "string" }, "optional": {} },
+    "workspace_layout_intent": { "required": { "action": "activate|close|split_right|collapse_single" }, "optional": { "workspaceId": "guid", "paneId": "string" } },
+    "workspace_create": { "required": { "kind": "terminal|agent|dsh_web|kimi_web", "placement": "focused|new_right" }, "optional": { "providerKey": "string" } },
+    "dsh_command": { "required": { "name": "install|retry|stop|check_update|update|cancel_update" }, "optional": {} },
+    "kimi_web_command": { "required": { "name": "stop|retry" }, "optional": {} },
+    "kimi_web_export": { "required": { "url": "string", "path": "string", "sessionId": "string" }, "optional": {} },
+    "dsh_export": { "required": { "url": "string", "filename": "string" }, "optional": {} },
+    "theme_action": { "required": { "action": "preview|confirm|cancel|refresh|open_folder" }, "optional": { "themeKey": "string" } },
+    "agent_submit": { "required": { "workspaceId": "guid", "text": "string", "attachments": "string-array" }, "optional": {} },
+    "agent_upload_attachment": { "required": { "workspaceId": "guid", "clientId": "string", "fileName": "string", "mimeType": "string", "size": "integer", "dataBase64": "base64" }, "optional": {} },
+    "agent_command": { "required": { "workspaceId": "guid", "command": "string" }, "optional": { "requestId": "string", "value": "string|boolean" } },
+    "agent_global_command": { "required": { "command": "string" }, "optional": { "requestId": "string", "value": "string|boolean" } },
+    "agent_permission_response": { "required": { "workspaceId": "guid", "requestId": "string", "value": "string" }, "optional": {} },
+    "agent_question_response": { "required": { "workspaceId": "guid", "requestId": "string", "value": "string" }, "optional": {} },
+    "agent_elicitation_response": { "required": { "workspaceId": "guid", "requestId": "string", "value": "string" }, "optional": {} }
+  }
+}

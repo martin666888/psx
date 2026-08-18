@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
 using PSX.Models;
@@ -46,6 +46,22 @@ public partial class App : Application
         services.AddSingleton<ITabManagementService, TabManagementService>();
         services.AddSingleton<IAgentBridgeService, AgentBridgeService>();
         services.AddSingleton<IAgentThreadStore, AgentThreadStore>();
+        services.AddSingleton<AgentThreadPersistenceCoordinator>();
+        services.AddSingleton<IAgentHistoryCatalog, AgentHistoryCatalog>();
+        // Local user profile (History dock footer / Usage panel). Plain user
+        // data beside the thread store — never part of psx.ini.
+        services.AddSingleton(sp => new AgentProfileStore(
+            Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "profile")));
+        // Global Usage aggregation (thread activity + provider exact-usage
+        // sources). Singleton so its short-TTL cache is shared across requests.
+        services.AddSingleton(sp => new AgentUsageService(
+            sp.GetRequiredService<IAgentThreadStore>(),
+            sp.GetRequiredService<IAgentProviderRegistry>()));
+        // Global Config aggregation for the Usage panel「配置」tab. Singleton
+        // so its short-TTL cache is shared across requests. Distinct from live
+        // ACP agent_config_options (session Composer).
+        services.AddSingleton(sp => new AgentConfigService(
+            sp.GetRequiredService<IAgentProviderRegistry>()));
         services.AddSingleton<IAgentDirectoryPicker, WpfAgentDirectoryPicker>();
 
         // Runtime / ACP install pipeline. RuntimeLocator remains shared by
@@ -57,10 +73,76 @@ public partial class App : Application
                 sp.GetRequiredService<RuntimeLocator>(),
                 Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "agent", "acp-logs")));
         services.AddSingleton<ClaudeAcpAgentProvider>();
+        services.AddSingleton<IAcpAgentProvider>(sp => sp.GetRequiredService<ClaudeAcpAgentProvider>());
+
+        // Kimi Code is MIT-licensed and pre-installed into tools/kimi/ at build
+        // time, so it uses its own bundled runtime (no npm ci / promote). Its
+        // logs land next to the ACP logs. Registering the provider is enough
+        // for it to appear in the New Agent menu / workspace creation / history
+        // filter / provider catalog. Default provider stays Claude.
+        services.AddSingleton<KimiCodeAcpRuntime>(sp =>
+            new KimiCodeAcpRuntime(
+                sp.GetRequiredService<RuntimeLocator>(),
+                Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "agent", "acp-logs")));
+        services.AddSingleton<KimiCodeAcpAgentProvider>();
+        services.AddSingleton<IAcpAgentProvider>(sp => sp.GetRequiredService<KimiCodeAcpAgentProvider>());
+
+        // Qwen Code is Apache-2.0 and pre-installed into tools/qwen/ at build
+        // time, so it uses its own bundled runtime (no npm ci / promote). Its
+        // logs land next to the ACP logs. Registering the provider is enough
+        // for it to appear in the New Agent menu / workspace creation / history
+        // filter / provider catalog. Default provider stays Claude.
+        services.AddSingleton<QwenCodeAcpRuntime>(sp =>
+            new QwenCodeAcpRuntime(
+                sp.GetRequiredService<RuntimeLocator>(),
+                Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "agent", "acp-logs")));
+        services.AddSingleton<QwenCodeAcpAgentProvider>();
+        services.AddSingleton<IAcpAgentProvider>(sp => sp.GetRequiredService<QwenCodeAcpAgentProvider>());
+
+        // OpenCode is MIT-licensed and pre-installed into tools/opencode/ at
+        // build time (a native Bun-compiled binary from the platform package,
+        // not the opencode-ai wrapper), so it uses its own bundled runtime
+        // with the same current/next self-update model as Kimi/Qwen. Machines
+        // without AVX2 install the baseline variant into
+        // runtime/opencode-current after user confirmation instead.
+        services.AddSingleton<OpencodeAcpRuntime>(sp =>
+            new OpencodeAcpRuntime(
+                sp.GetRequiredService<RuntimeLocator>(),
+                Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "agent", "acp-logs")));
+        services.AddSingleton<OpencodeAcpAgentProvider>();
+        services.AddSingleton<IAcpAgentProvider>(sp => sp.GetRequiredService<OpencodeAcpAgentProvider>());
+        services.AddSingleton(new AgentProviderOptions { DefaultProviderKey = "acp-claude" });
         services.AddSingleton<IAgentProviderRegistry, AgentProviderRegistry>();
+        services.AddSingleton<IAgentRuntimeCoordinator, AgentRuntimeCoordinator>();
         services.AddSingleton<RuntimePreflightService>();
 
-        services.AddSingleton<IAgentSessionService, AcpAgentSessionService>();
+        services.AddSingleton<IAgentWorkspaceFactory, AgentWorkspaceFactory>();
+        services.AddSingleton<IAgentWorkspaceCoordinator, AgentWorkspaceCoordinator>();
+        services.AddSingleton<IDshWebWorkspaceCoordinator, DshWebWorkspaceCoordinator>();
+        services.AddSingleton<DshWebRuntime>(sp =>
+            new DshWebRuntime(
+                sp.GetRequiredService<RuntimeLocator>(),
+                Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "dsh")));
+        services.AddSingleton<DshWebRuntimeSupervisor>(sp =>
+            new DshWebRuntimeSupervisor(
+                sp.GetRequiredService<DshWebRuntime>(),
+                sp.GetRequiredService<IAgentBridgeService>(),
+                Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "dsh"),
+                // Neutral default project directory for DSH sessions (DSH falls
+                // back to process.cwd()); never an internal PSX tree.
+                Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "dsh-workspace")));
+        services.AddSingleton<IKimiWebWorkspaceCoordinator, KimiWebWorkspaceCoordinator>();
+        services.AddSingleton<KimiWebRuntimeSupervisor>(sp =>
+            new KimiWebRuntimeSupervisor(
+                sp.GetRequiredService<KimiCodeAcpRuntime>(),
+                sp.GetRequiredService<IAgentBridgeService>(),
+                Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "kimi-web"),
+                // Neutral working directory for `kimi web` sessions (the
+                // server falls back to process.cwd()); never an internal PSX
+                // tree or a user's project directories.
+                Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "kimi-web-workspace")));
+        services.AddSingleton<WorkspaceLayoutService>();
+        services.AddSingleton<IWorkspaceManager, WorkspaceManager>();
 
         // ViewModels
         services.AddTransient<MainViewModel>();

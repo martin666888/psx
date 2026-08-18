@@ -1,0 +1,128 @@
+/* Plan card + the generic context-card column: a small, content-height card
+ * floating at the top-right of the canvas, BELOW the toolbar (open/closed
+ * never changes the canvas layout). Fixed width, no resizer; the user toggles
+ * visibility through the toolbar icon. History lives in the global dock. */
+
+.agent-context-cards {
+    position: absolute;
+    top: calc(var(--agent-toolbar-height) + var(--agent-space-2));
+    right: var(--agent-space-4);
+    z-index: var(--agent-layer-cards);
+    display: flex;
+    flex-direction: column;
+    width: var(--agent-plan-width);
+    min-width: 0;
+    /* The hidden card must not block the conversation underneath. */
+    pointer-events: none;
+}
+
+.agent-context-cards > * {
+    pointer-events: auto;
+}
+
+/* An empty / inactive Plan still occupies the top-right overlay slot, but it
+ * must not steal clicks from permission buttons and other thread controls
+ * underneath the reading column. Only an active plan needs hit-testing
+ * (scroll / text selection). */
+.agent-context-cards > .agent-plan-card:not([data-plan-active="true"]) {
+    pointer-events: none;
+}
+
+.agent-plan-card {
+    display: flex;
+    flex: 0 1 auto;
+    flex-direction: column;
+    max-height: min(60vh, 560px);
+    overflow: hidden;
+    border: 1px solid var(--agent-border-strong);
+    border-radius: var(--agent-radius-context-card);
+    background: var(--agent-surface-raised);
+    box-shadow: var(--agent-shadow-context-card);
+}
+
+.agent-plan-card[hidden] {
+    display: none;
+}
+
+/* Open transitions: opacity + a small slide only (reduced-motion zeroes them
+ * via the shell.css media block). */
+.agent-plan-card:not([hidden]) {
+    animation: agent-plan-card-in var(--agent-duration-state) var(--agent-ease-standard);
+}
+
+@keyframes agent-plan-card-in {
+    from {
+        opacity: 0;
+        transform: translateX(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* Toolbar toggle: base styling comes from the shared .agent-icon-toggle rule. */
+.agent-plan-toggle {
+    position: relative;
+}
+
+/* The card header ("Plan" title) renders inside the React island now; its
+ * styling moved onto shadcn CardHeader/CardTitle in PlanCard.tsx. */
+
+.agent-plan-panel {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    /* Scrolling and padding live on the Radix ScrollArea viewport inside
+     * (PlanCard.tsx); this frame only sizes and clips. */
+}
+
+.agent-plan-list {
+    display: grid;
+    gap: 9px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.agent-plan-item {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr);
+    align-items: start;
+    gap: 7px;
+    color: var(--muted-foreground);
+    font-size: var(--agent-font-size);
+    line-height: 1.45;
+}
+
+.agent-plan-content {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.agent-plan-item-in-progress .agent-plan-content {
+    color: var(--foreground);
+}
+
+.agent-plan-item-completed .agent-plan-content {
+    text-decoration: line-through;
+    text-decoration-thickness: 1px;
+}
+
+.agent-plan-document {
+    font-size: clamp(11px, calc(var(--agent-font-size) * 0.85), 18px);
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+@container agent-shell (max-width: 519px) {
+    .agent-context-cards {
+        right: var(--agent-space-3);
+        left: var(--agent-space-3);
+        width: auto;
+    }
+
+    .agent-plan-card {
+        max-height: calc(100cqh - var(--agent-toolbar-height) - 2 * var(--agent-space-4));
+    }
+}

@@ -1,0 +1,650 @@
+/* Hallmark · macrostructure: Workbench · pre-emit critique: P5 H5 E5 S5 R5 V4 · genre: modern-minimal · tone: technical-restrained · palette: inherited --agent-accent · contrast: pass (40–41) · tokens: pass (48) · responsive: pass (49) · mobile: pass (34, 49, 50–57) · icons: pass (30) · slop: pass */
+/* Global Usage panel: profile, aggregate + provider totals, and one filtered
+   annual exact-token heatmap. All roles reuse the shared --agent-* system. */
+
+.agent-usage-panel {
+    min-width: 0;
+    padding: 0;
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow: hidden;
+    border: 1px solid var(--agent-border-strong);
+    border-radius: var(--agent-radius-card);
+    box-shadow: var(--agent-shadow-dialog);
+}
+
+.agent-usage-title {
+    padding: var(--agent-space-5) var(--agent-space-8) var(--agent-space-2) var(--agent-space-5);
+}
+
+.agent-usage-panel-scroll {
+    min-width: 0;
+    min-height: 0;
+    padding: 0 var(--agent-space-5) var(--agent-space-5);
+    overflow-x: hidden;
+    overflow-y: auto;
+}
+
+/* --- Profile card ----------------------------------------------------------- */
+
+.agent-usage-profile {
+    display: flex;
+    align-items: center;
+    gap: var(--agent-space-3);
+    padding: var(--agent-space-2) 0 var(--agent-space-3);
+}
+
+.agent-usage-avatar-button {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    border-radius: 50%;
+    cursor: pointer;
+    line-height: 0;
+}
+
+.agent-usage-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.agent-usage-avatar-fallback {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--agent-accent);
+    color: var(--agent-canvas-surface);
+    font-size: 20px;
+    font-weight: 600;
+}
+
+.agent-usage-avatar-input {
+    display: none;
+}
+
+.agent-usage-name {
+    padding: 2px 6px;
+    border: 0;
+    border-radius: var(--agent-radius-control);
+    background: transparent;
+    color: var(--agent-text);
+    font-size: 15px;
+    font-weight: 600;
+    cursor: text;
+}
+
+@media (hover: hover) {
+    .agent-usage-name:hover {
+        background: var(--agent-surface-muted);
+    }
+}
+
+.agent-usage-name-input {
+    padding: 2px 6px;
+    border: 1px solid var(--agent-border-strong);
+    border-radius: var(--agent-radius-input);
+    background: var(--agent-canvas-surface);
+    color: var(--agent-text);
+    font-size: 15px;
+    font-weight: 600;
+}
+
+/* --- Toolbar: window switch + refresh --------------------------------------- */
+
+.agent-usage-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--agent-space-2);
+    padding-bottom: var(--agent-space-2);
+}
+
+.agent-usage-window-switch {
+    display: inline-flex;
+    gap: calc(var(--agent-space-1) / 2);
+    padding: calc(var(--agent-space-1) / 2);
+    border: 1px solid var(--agent-border);
+    border-radius: var(--agent-radius-control);
+}
+
+.agent-usage-window-switch button {
+    padding: calc(var(--agent-space-1) / 2) var(--agent-space-3);
+    border: 0;
+    border-radius: calc(var(--agent-radius-control) - var(--agent-space-1) / 2);
+    background: transparent;
+    color: var(--agent-text-muted);
+    font-size: 12px;
+    cursor: pointer;
+}
+
+@media (hover: hover) {
+    .agent-usage-window-switch button:hover {
+        background: var(--agent-surface-raised);
+        color: var(--agent-text);
+    }
+}
+
+.agent-usage-window-switch button:active {
+    transform: translateY(1px);
+}
+
+.agent-usage-window-switch button[aria-pressed="true"] {
+    background: var(--agent-surface-muted);
+    color: var(--agent-text);
+}
+
+/* Usage native controls (avatar / name / window switch) show the uniform
+ * keyboard focus ring like every other focusable Agent control. */
+.agent-usage-avatar-button:focus-visible,
+.agent-usage-name:focus-visible,
+.agent-usage-window-switch button:focus-visible {
+    outline: 2px solid var(--agent-focus-ring);
+    outline-offset: 2px;
+}
+
+/* --- Overview + status ------------------------------------------------------ */
+
+.agent-usage-overview {
+    min-width: 0;
+    padding: var(--agent-space-4) 0;
+    border-top: 1px solid var(--agent-border);
+    border-bottom: 1px solid var(--agent-border);
+}
+
+.agent-usage-overview-label {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: var(--agent-space-2);
+    color: var(--agent-text-muted);
+    font-size: 12px;
+}
+
+.agent-usage-total {
+    margin-top: var(--agent-space-1);
+    color: var(--agent-text);
+    font-size: 28px;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+}
+
+.agent-usage-overview-note {
+    max-width: 480px;
+    margin: var(--agent-space-1) 0 0;
+    color: var(--agent-text-muted);
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.agent-usage-loading,
+.agent-usage-error {
+    display: flex;
+    align-items: center;
+    gap: var(--agent-space-2);
+    padding: var(--agent-space-3) 0;
+    color: var(--agent-text-muted);
+    font-size: 12px;
+}
+
+/* --- Provider filter -------------------------------------------------------- */
+
+.agent-usage-providers {
+    min-width: 0;
+    padding-top: var(--agent-space-4);
+}
+
+.agent-usage-providers-heading {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--agent-space-2);
+    margin-bottom: var(--agent-space-1);
+}
+
+.agent-usage-providers h2 {
+    margin: 0;
+    color: var(--agent-text);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.agent-usage-all-provider {
+    height: auto;
+    min-height: var(--agent-space-6);
+    padding: var(--agent-space-1) var(--agent-space-2);
+    color: var(--agent-text-muted);
+    font-size: 11px;
+}
+
+.agent-usage-all-provider[aria-pressed="true"] {
+    background: var(--agent-surface-muted);
+    color: var(--agent-text);
+}
+
+.agent-usage-provider-list {
+    min-width: 0;
+    border-top: 1px solid var(--agent-border);
+    border-bottom: 1px solid var(--agent-border);
+}
+
+.agent-usage-provider-row {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    height: auto;
+    min-height: calc(var(--agent-space-8) + var(--agent-space-2));
+    justify-content: flex-start;
+    padding: var(--agent-space-2);
+    border-radius: var(--agent-radius-control);
+    color: var(--agent-text);
+}
+
+.agent-usage-provider-row + .agent-usage-provider-row {
+    border-top: 1px solid var(--agent-border);
+}
+
+.agent-usage-provider-row[aria-pressed="true"] {
+    background: var(--agent-surface-muted);
+}
+
+.agent-usage-provider-icon {
+    display: inline-flex;
+    width: var(--agent-space-5);
+    height: var(--agent-space-5);
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    color: var(--agent-text-muted);
+}
+
+.agent-usage-provider-icon svg {
+    width: var(--agent-space-4);
+    height: var(--agent-space-4);
+}
+
+.agent-usage-provider-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.agent-usage-provider-value {
+    min-width: 0;
+    margin-left: auto;
+    overflow: hidden;
+    color: var(--agent-text-muted);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.agent-usage-provider-value[data-status="unavailable"] {
+    color: var(--agent-text-dim);
+}
+
+/* --- Heatmap ------------------------------------------------------------------ */
+
+.agent-usage-heatmap {
+    min-width: 0;
+    padding-top: var(--agent-space-4);
+}
+
+.agent-usage-heatmap-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--agent-space-2);
+    margin-bottom: var(--agent-space-2);
+}
+
+.agent-usage-heatmap h2 {
+    margin: 0;
+    color: var(--agent-text);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.agent-usage-heatmap-heading span {
+    color: var(--agent-text-muted);
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.agent-usage-heatmap-grid {
+    display: grid;
+    min-width: 0;
+    width: 100%;
+    grid-template-columns: repeat(53, minmax(0, 1fr));
+    grid-template-rows: repeat(7, auto);
+    grid-auto-flow: column;
+    gap: calc(var(--agent-space-1) / 2);
+}
+
+.agent-usage-heatmap-cell,
+.agent-usage-heatmap-placeholder {
+    min-width: 0;
+    aspect-ratio: 1;
+    border-radius: calc(var(--agent-radius-control) / 4);
+}
+
+.agent-usage-heatmap-cell {
+    background: var(--agent-surface-muted);
+}
+
+.agent-usage-heatmap-cell[data-level="1"] {
+    background: color-mix(in srgb, var(--agent-accent) 30%, var(--agent-surface-muted));
+}
+
+.agent-usage-heatmap-cell[data-level="2"] {
+    background: color-mix(in srgb, var(--agent-accent) 55%, var(--agent-surface-muted));
+}
+
+.agent-usage-heatmap-cell[data-level="3"] {
+    background: color-mix(in srgb, var(--agent-accent) 80%, var(--agent-surface-muted));
+}
+
+.agent-usage-heatmap-cell[data-level="4"] {
+    background: var(--agent-accent);
+}
+
+.agent-usage-heatmap-empty {
+    display: grid;
+    min-height: calc(var(--agent-space-8) * 2);
+    place-items: center;
+    margin-top: var(--agent-space-2);
+    color: var(--agent-text-muted);
+    font-size: 12px;
+}
+
+/* --- Config tab ------------------------------------------------------------- */
+
+.agent-usage-tab-switch {
+    margin: 0 0 var(--agent-space-3);
+}
+
+.agent-config-toolbar-label {
+    color: var(--agent-text-muted);
+    font-size: 12px;
+}
+
+.agent-config-toolbar-side {
+    display: flex;
+    align-items: center;
+    gap: var(--agent-space-2);
+}
+
+.agent-config-toolbar-updated {
+    color: var(--agent-text-muted);
+    font-size: 12px;
+}
+
+.agent-config-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--agent-space-3);
+    min-width: 0;
+    padding-top: var(--agent-space-2);
+    /* Stable height across provider tabs: the card scrolls internally instead
+       of resizing the dialog. Tracks the viewport, never the content. */
+    height: clamp(320px, 55vh, 520px);
+}
+
+.agent-config-provider-switch {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    /* Hug the tabs instead of spanning the full panel width. */
+    width: fit-content;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+.agent-config-provider-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: calc(var(--agent-space-1) / 2);
+    min-width: 0;
+    max-width: 100%;
+}
+
+.agent-config-provider-tab-icon {
+    display: inline-flex;
+    flex: 0 0 auto;
+    width: 14px;
+    height: 14px;
+    color: currentColor;
+}
+
+.agent-config-provider-tab-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.agent-config-card {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: var(--agent-space-3);
+    border: 1px solid var(--agent-border);
+    border-radius: var(--agent-radius-card);
+    background: var(--agent-surface);
+}
+
+/* Provider-switch transition: a short fade + lateral slide, replayed by the
+   keyed remount in ConfigPanel. Reduced-motion is neutralized globally by the
+   .agent-ui media query in shell.css. */
+@keyframes agent-config-slide-forward {
+    from {
+        opacity: 0;
+        transform: translateX(16px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes agent-config-slide-back {
+    from {
+        opacity: 0;
+        transform: translateX(-16px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.agent-config-card[data-slide="forward"] {
+    animation: agent-config-slide-forward 180ms ease-out;
+}
+
+.agent-config-card[data-slide="back"] {
+    animation: agent-config-slide-back 180ms ease-out;
+}
+
+.agent-config-card-header {
+    display: flex;
+    align-items: center;
+    gap: var(--agent-space-2);
+    min-width: 0;
+}
+
+.agent-config-card-icon {
+    display: inline-flex;
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    color: var(--agent-text);
+}
+
+.agent-config-card-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+    color: var(--agent-text);
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.agent-config-state {
+    flex: 0 0 auto;
+    padding: 1px var(--agent-space-2);
+    border-radius: var(--agent-radius-control);
+    background: var(--agent-surface-muted);
+    color: var(--agent-text-muted);
+    font-size: 11px;
+}
+
+.agent-config-state[data-state="partial"] {
+    color: var(--agent-text);
+}
+
+.agent-config-state[data-state="unavailable"] {
+    opacity: 0.75;
+}
+
+.agent-config-notes {
+    margin: var(--agent-space-2) 0 0;
+    padding: 0;
+    list-style: none;
+    color: var(--agent-text-muted);
+    font-size: 12px;
+}
+
+.agent-config-facts {
+    display: flex;
+    flex-direction: column;
+    gap: var(--agent-space-1);
+    margin: var(--agent-space-3) 0 0;
+}
+
+.agent-config-fact-row {
+    display: grid;
+    grid-template-columns: minmax(72px, 28%) minmax(0, 1fr);
+    gap: var(--agent-space-2);
+    font-size: 12px;
+}
+
+.agent-config-fact-row dt {
+    color: var(--agent-text-muted);
+}
+
+.agent-config-fact-row dd {
+    margin: 0;
+    min-width: 0;
+    color: var(--agent-text);
+    overflow-wrap: anywhere;
+}
+
+.agent-config-section {
+    margin-top: var(--agent-space-3);
+}
+
+.agent-config-section h4 {
+    margin: 0 0 var(--agent-space-1);
+    color: var(--agent-text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+.agent-config-section ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.agent-config-section li {
+    margin: 0 0 var(--agent-space-1);
+    color: var(--agent-text);
+    font-size: 12px;
+}
+
+.agent-config-mono {
+    font-family: var(--agent-font-mono);
+    font-size: 12px;
+    overflow-wrap: anywhere;
+}
+
+.agent-config-muted {
+    color: var(--agent-text-muted);
+}
+
+.agent-config-mcp-list > li {
+    padding: var(--agent-space-2) 0;
+    border-top: 1px solid var(--agent-border);
+}
+
+.agent-config-mcp-list > li:first-child {
+    border-top: 0;
+    padding-top: 0;
+}
+
+.agent-config-mcp-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--agent-space-2);
+}
+
+.agent-config-transport {
+    padding: 0 var(--agent-space-2);
+    border-radius: var(--agent-radius-control);
+    background: var(--agent-surface-muted);
+    color: var(--agent-text-muted);
+    font-family: var(--agent-font-mono);
+    font-size: 10px;
+    text-transform: uppercase;
+}
+
+.agent-config-mcp-name {
+    font-weight: 600;
+}
+
+.agent-config-mcp-target {
+    margin-top: 2px;
+    color: var(--agent-text-muted);
+}
+
+.agent-config-masked-keys {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--agent-space-1);
+    margin-top: var(--agent-space-1);
+}
+
+.agent-config-masked-keys > span {
+    padding: 0 var(--agent-space-2);
+    border-radius: var(--agent-radius-control);
+    background: var(--agent-surface-muted);
+    color: var(--agent-text-muted);
+    font-family: var(--agent-font-mono);
+    font-size: 10px;
+}
+
+.agent-config-skills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--agent-space-1);
+}
+
+.agent-config-skill-chip {
+    padding: 1px var(--agent-space-2);
+    border-radius: var(--agent-radius-control);
+    background: var(--agent-surface-muted);
+    color: var(--agent-text);
+    font-size: 12px;
+}

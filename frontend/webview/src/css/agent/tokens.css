@@ -1,0 +1,100 @@
+/* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V4 · genre: modern-minimal · macrostructure: Workbench · design-system: design.md · designed-as-app */
+@font-face {
+    font-family: "PSX Maple Mono";
+    src: url("/vendor/fonts/maple-mono/MapleMonoNormal-CN-Regular.ttf") format("truetype");
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "PSX Maple Mono";
+    src: url("/vendor/fonts/maple-mono/MapleMonoNormal-CN-SemiBold.ttf") format("truetype");
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+}
+
+:root {
+    /* === 基础色 (来自 [theme]) === */
+    --agent-bg: #1d1d1a;
+    --agent-surface: #24231f;
+    --agent-surface-raised: #2b2a25;
+    --agent-surface-muted: #34332d;
+    --agent-hover: #35342e;
+    --agent-border: #3d3b34;
+    --agent-border-strong: #504d43;
+    --agent-text: #e8e3d6;
+    --agent-text-muted: #aaa396;
+    --agent-text-dim: #7f786d;
+    --agent-accent: #5aa6a0;
+    --agent-accent-hover: #6db9b2;
+    --agent-error: #df7c7c;
+    --agent-error-bg: #352220;
+    --agent-warning: #d3ae68;
+    --agent-warning-bg: #312a1c;
+    --agent-scrollbar: #565246;
+    --agent-scrollbar-hover: #6a6658;
+
+    /* === Agent 细节色 (来自 [agentTheme]) === */
+    /* 代码块 */
+    --agent-code-block-bg: #25251f;
+    --agent-code-block-text: #f3ead7;
+    --agent-code-block-border: #514d3f;
+    /* 决策按钮 */
+    /* 遮罩/阴影/focus */
+    --agent-overlay: #000000;
+    --agent-shadow: #000000;
+    --agent-focus-ring: #5aa6a0;
+
+    /* === 字体 === */
+    --agent-font-size: 15px;
+    --workspace-font-ui: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Segoe UI Emoji", sans-serif;
+    --workspace-font-mono: ui-monospace, "Cascadia Mono", "Cascadia Code", Consolas, monospace;
+    --agent-font-ui: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Segoe UI Emoji", sans-serif;
+    --agent-font-mono: "PSX Maple Mono", "Segoe UI Emoji", "Microsoft YaHei UI", monospace;
+    /* Tailwind's font theme variables also drive global Preflight. Keep their
+     * default resolution on workspace fonts; explicit Agent surfaces override
+     * only these indirection tokens, so Terminal-only DOM can never select the
+     * bundled Maple faces by merely containing code/pre/kbd elements. */
+    --psx-font-sans: var(--workspace-font-ui);
+    --psx-font-mono: var(--workspace-font-mono);
+    --agent-space-1: 4px;
+    --agent-space-2: 8px;
+    --agent-space-3: 12px;
+    --agent-space-4: 16px;
+    --agent-space-5: 20px;
+    --agent-space-6: 24px;
+    --agent-space-8: 32px;
+    --agent-radius-control: 8px;
+    --agent-radius-input: 10px;
+    --agent-radius-card: 14px;
+    --agent-layer-dock: 5;
+    --agent-layer-cards: 6;
+    --agent-layer-menu: 20;
+    --agent-layer-dialog: 100;
+    --agent-duration-fast: 120ms;
+    --agent-duration-state: 160ms;
+    --agent-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+    --agent-composer-input-min-height: 28px;
+}
+
+/* .agent-ui wraps the whole WebView shell, including Terminal and global
+ * chrome. Font ownership therefore lives on explicit Agent surfaces instead
+ * of inheriting from that structural boundary. */
+[data-agent-font-surface] {
+    font-family: var(--agent-font-ui);
+    font-synthesis: style;
+    --psx-font-sans: var(--agent-font-ui);
+    --psx-font-mono: var(--agent-font-mono);
+}
+
+[data-agent-font-surface] :is(strong, b),
+[data-agent-font-surface] .font-bold {
+    font-weight: 600;
+}
+
+/* Product-level focus policy: keyboard focus is visualized by one uniform
+ * outline ring (2px solid var(--agent-focus-ring), offset 2px) declared
+ * per component on :focus-visible. No global suppression and no global
+ * default ring; pointer clicks never show it. */

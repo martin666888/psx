@@ -11,335 +11,30 @@
 
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
-        <Style x:Key="ShellFocusVisualStyle">
-            <Setter Property="Control.Template">
-                <Setter.Value>
-                    <ControlTemplate>
-                        <Border Margin="1"
-                                BorderBrush="{DynamicResource AccentBrush}"
-                                BorderThickness="2"
-                                CornerRadius="4"/>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-        <Style x:Key="ModeButtonStyle" TargetType="Button">
-            <Setter Property="MinHeight" Value="32"/>
-            <Setter Property="Padding" Value="10,3"/>
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="FontFamily" Value="Segoe UI Variable"/>
-            <Setter Property="FontSize" Value="12"/>
-            <Setter Property="FocusVisualStyle" Value="{StaticResource ShellFocusVisualStyle}"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}" CornerRadius="3">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}"/>
-                                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Foreground" Value="{DynamicResource TextDimBrush}"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
     </Window.Resources>
 
     <Window.InputBindings>
         <KeyBinding Gesture="Ctrl+Shift+T" Command="{Binding NewTabCommand}"/>
         <KeyBinding Gesture="Ctrl+Shift+W" Command="{Binding CloseTabCommand}" CommandParameter="{Binding ActiveTab.SessionId}"/>
+        <KeyBinding Gesture="Ctrl+Alt+Right" Command="{Binding FocusAdjacentPaneCommand}" CommandParameter="1"/>
+        <KeyBinding Gesture="Ctrl+Alt+Left" Command="{Binding FocusAdjacentPaneCommand}" CommandParameter="-1"/>
+        <KeyBinding Gesture="Ctrl+Alt+Enter" Command="{Binding TogglePaneZoomCommand}"/>
     </Window.InputBindings>
 
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="0"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <Grid Grid.Row="0" Background="{DynamicResource WindowBackgroundBrush}">
+        <Grid Grid.Row="0" Visibility="Collapsed" Background="{DynamicResource WindowBackgroundBrush}">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
-            <controls:TabBar Grid.Column="0" DataContext="{Binding}"/>
-
-            <StackPanel Grid.Column="1" Margin="8,4,10,4" Orientation="Horizontal">
-                <Grid Margin="0,0,6,0">
-                    <ToggleButton x:Name="ThemeButton"
-                            Content="Theme"
-                            MinWidth="62"
-                            MinHeight="32"
-                            Padding="10,3"
-                            Background="{DynamicResource SurfaceBrush}"
-                            Foreground="{DynamicResource TextSecondaryBrush}"
-                            BorderBrush="{DynamicResource BorderBrush}"
-                            BorderThickness="1"
-                            Cursor="Hand"
-                            FontSize="12"
-                            FocusVisualStyle="{StaticResource ShellFocusVisualStyle}"
-                            IsChecked="{Binding ThemePicker.IsOpen, Mode=TwoWay}"/>
-                    <Popup x:Name="ThemePopup"
-                           PlacementTarget="{Binding ElementName=ThemeButton}"
-                           Placement="Bottom"
-                           HorizontalOffset="-218"
-                           VerticalOffset="6"
-                           AllowsTransparency="True"
-                           PopupAnimation="None"
-                           StaysOpen="False"
-                           IsOpen="{Binding ThemePicker.IsOpen, Mode=TwoWay}">
-                        <Border Width="300"
-                                MaxHeight="520"
-                                DataContext="{Binding PlacementTarget.DataContext, ElementName=ThemePopup}"
-                                Padding="8"
-                                Background="{DynamicResource SurfaceRaisedBrush}"
-                                BorderBrush="{DynamicResource BorderStrongBrush}"
-                                BorderThickness="1"
-                                CornerRadius="6">
-                            <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="*"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                </Grid.RowDefinitions>
-
-                                <Grid Margin="6,3,6,8">
-                                    <TextBlock Text="Theme"
-                                               Foreground="{DynamicResource TextPrimaryBrush}"
-                                               FontSize="13"
-                                               FontWeight="SemiBold"/>
-                                    <TextBlock Text="{Binding ThemePicker.CurrentLabel}"
-                                               HorizontalAlignment="Right"
-                                               Foreground="{DynamicResource TextSecondaryBrush}"
-                                               FontSize="10"/>
-                                </Grid>
-
-                                <ScrollViewer Grid.Row="1" MaxHeight="360" VerticalScrollBarVisibility="Auto">
-                                    <StackPanel>
-                                        <TextBlock Text="BUILT-IN"
-                                                   Margin="6,4,6,3"
-                                                   Foreground="{DynamicResource TextSecondaryBrush}"
-                                                   FontSize="9"
-                                                   FontWeight="SemiBold"/>
-                                        <ItemsControl ItemsSource="{Binding ThemePicker.BuiltInThemes}">
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-                                                    <Grid Margin="0,1">
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="*"/>
-                                                            <ColumnDefinition Width="Auto"/>
-                                                        </Grid.ColumnDefinitions>
-                                                        <Button Grid.Column="0"
-                                                                Padding="7,6"
-                                                                HorizontalContentAlignment="Stretch"
-                                                                Background="Transparent"
-                                                                BorderThickness="0"
-                                                                Cursor="Hand"
-                                                                IsEnabled="{Binding IsAvailable}"
-                                                                ToolTip="{Binding DiagnosticSummary}"
-                                                                Command="{Binding DataContext.ThemePicker.PreviewThemeCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                                CommandParameter="{Binding}">
-                                                            <Grid>
-                                                                <TextBlock Text="{Binding Name}"
-                                                                           Foreground="{DynamicResource TextPrimaryBrush}"
-                                                                           FontSize="12"
-                                                                           TextTrimming="CharacterEllipsis"/>
-                                                                <TextBlock Text="{Binding StatusText}"
-                                                                           HorizontalAlignment="Right"
-                                                                           Foreground="{DynamicResource TextSecondaryBrush}"
-                                                                           FontSize="10"/>
-                                                            </Grid>
-                                                        </Button>
-                                                        <Button Grid.Column="1"
-                                                                Margin="4,0,2,0"
-                                                                Padding="8,4"
-                                                                VerticalAlignment="Center"
-                                                                Content="Confirm"
-                                                                Background="{DynamicResource SurfaceMutedBrush}"
-                                                                Foreground="{DynamicResource TextPrimaryBrush}"
-                                                                BorderBrush="{DynamicResource AccentBrush}"
-                                                                BorderThickness="1"
-                                                                Cursor="Hand"
-                                                                Visibility="{Binding ShowConfirm, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                                                Command="{Binding DataContext.ThemePicker.ConfirmThemeCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                                CommandParameter="{Binding}"/>
-                                                    </Grid>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-
-                                        <TextBlock Text="CUSTOM"
-                                                   Margin="6,10,6,3"
-                                                   Foreground="{DynamicResource TextSecondaryBrush}"
-                                                   FontSize="9"
-                                                   FontWeight="SemiBold"/>
-                                        <TextBlock Text="No custom themes"
-                                                   Margin="7,6"
-                                                   Foreground="{DynamicResource TextSecondaryBrush}"
-                                                   FontSize="11">
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding ThemePicker.HasUserThemes}" Value="False">
-                                                            <Setter Property="Visibility" Value="Visible"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
-                                        <ItemsControl ItemsSource="{Binding ThemePicker.UserThemes}">
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-                                                    <Grid Margin="0,1">
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="*"/>
-                                                            <ColumnDefinition Width="Auto"/>
-                                                        </Grid.ColumnDefinitions>
-                                                        <Button Grid.Column="0"
-                                                                Padding="7,6"
-                                                                HorizontalContentAlignment="Stretch"
-                                                                Background="Transparent"
-                                                                BorderThickness="0"
-                                                                Cursor="Hand"
-                                                                IsEnabled="{Binding IsAvailable}"
-                                                                ToolTip="{Binding DiagnosticSummary}"
-                                                                Command="{Binding DataContext.ThemePicker.PreviewThemeCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                                CommandParameter="{Binding}">
-                                                            <Grid>
-                                                                <TextBlock Text="{Binding Name}"
-                                                                           Foreground="{DynamicResource TextPrimaryBrush}"
-                                                                           FontSize="12"
-                                                                           TextTrimming="CharacterEllipsis"/>
-                                                                <TextBlock Text="{Binding StatusText}"
-                                                                           HorizontalAlignment="Right"
-                                                                           Foreground="{DynamicResource TextSecondaryBrush}"
-                                                                           FontSize="10"/>
-                                                            </Grid>
-                                                        </Button>
-                                                        <Button Grid.Column="1"
-                                                                Margin="4,0,2,0"
-                                                                Padding="8,4"
-                                                                VerticalAlignment="Center"
-                                                                Content="Confirm"
-                                                                Background="{DynamicResource SurfaceMutedBrush}"
-                                                                Foreground="{DynamicResource TextPrimaryBrush}"
-                                                                BorderBrush="{DynamicResource AccentBrush}"
-                                                                BorderThickness="1"
-                                                                Cursor="Hand"
-                                                                Visibility="{Binding ShowConfirm, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                                                Command="{Binding DataContext.ThemePicker.ConfirmThemeCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                                CommandParameter="{Binding}"/>
-                                                    </Grid>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </StackPanel>
-                                </ScrollViewer>
-
-                                <Border Grid.Row="2" Margin="3,7,3,3" Padding="7,5" Background="{DynamicResource SurfaceMutedBrush}" CornerRadius="3">
-                                    <Border.Style>
-                                        <Style TargetType="Border">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding ThemePicker.Message}" Value="{x:Null}">
-                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Border.Style>
-                                    <TextBlock Text="{Binding ThemePicker.Message}"
-                                               FontSize="10"
-                                               TextWrapping="Wrap">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock">
-                                                <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding ThemePicker.IsMessageError}" Value="True">
-                                                        <Setter Property="Foreground" Value="{DynamicResource ErrorBrush}"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
-                                </Border>
-
-                                <Grid Grid.Row="3" Margin="2,6,2,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Button Content="Refresh"
-                                            Padding="8,4"
-                                            Background="Transparent"
-                                            Foreground="{DynamicResource TextSecondaryBrush}"
-                                            BorderThickness="0"
-                                            Cursor="Hand"
-                                            Command="{Binding ThemePicker.RefreshThemesCommand}"/>
-                                    <Button Grid.Column="1"
-                                            HorizontalAlignment="Right"
-                                            Content="Open theme folder"
-                                            Padding="8,4"
-                                            Background="Transparent"
-                                            Foreground="{DynamicResource TextSecondaryBrush}"
-                                            BorderThickness="0"
-                                            Cursor="Hand"
-                                            Command="{Binding ThemePicker.OpenThemeFolderCommand}"/>
-                                </Grid>
-                            </Grid>
-                        </Border>
-                    </Popup>
-                </Grid>
-
-                <Border Padding="2" Background="{DynamicResource SurfaceBrush}" CornerRadius="4">
-                    <StackPanel Orientation="Horizontal">
-                    <Button Content="Terminal"
-                            MinWidth="72"
-                            Margin="0"
-                            Command="{Binding ShowTerminalCommand}">
-                        <Button.Style>
-                            <Style TargetType="Button" BasedOn="{StaticResource ModeButtonStyle}">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsTerminalView}" Value="True">
-                                        <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}"/>
-                                        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
-                    <Button Content="Agent"
-                            MinWidth="62"
-                            Margin="2,0,0,0"
-                            Command="{Binding ShowAgentCommand}">
-                        <Button.Style>
-                            <Style TargetType="Button" BasedOn="{StaticResource ModeButtonStyle}">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsAgentView}" Value="True">
-                                        <Setter Property="Background" Value="{DynamicResource SurfaceMutedBrush}"/>
-                                        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
-                    </StackPanel>
-                </Border>
-            </StackPanel>
+            <controls:TabBar x:Name="WorkspaceTabBar" Grid.Column="0" DataContext="{Binding}"/>
         </Grid>
 
         <Border Grid.Row="1" Background="{DynamicResource WindowBackgroundBrush}">
@@ -376,18 +71,22 @@
                            FontSize="11"
                            TextTrimming="CharacterEllipsis"/>
                 <Button Grid.Column="1"
+                        Style="{StaticResource SoftWorkbenchIconButtonStyle}"
                         Width="22"
                         Height="20"
                         Margin="8,0,0,0"
-                        Padding="0"
-                        Content="×"
                         ToolTip="Dismiss warning"
-                        Background="Transparent"
-                        BorderThickness="0"
-                        Foreground="{DynamicResource TextSecondaryBrush}"
-                        Cursor="Hand"
                         Command="{Binding DismissPersistentWarningCommand}"
-                        Visibility="{Binding HasPersistentWarning, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                        Visibility="{Binding HasPersistentWarning, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <Path Data="M3,3 L9,9 M9,3 L3,9"
+                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                          StrokeThickness="1.5"
+                          StrokeStartLineCap="Round"
+                          StrokeEndLineCap="Round"
+                          Stretch="Uniform"
+                          Width="9"
+                          Height="9"/>
+                </Button>
             </Grid>
         </Border>
     </Grid>

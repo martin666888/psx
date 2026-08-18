@@ -17,12 +17,16 @@ public partial class MainWindow : Window
     private readonly ITabManagementService? _tabService;
     private readonly ITerminalBridgeService? _bridgeService;
     private readonly IAgentBridgeService? _agentBridgeService;
-    private readonly IAgentSessionService? _agentSessionService;
-    private readonly IAcpAgentRuntime? _agentRuntime;
+    private readonly IAgentWorkspaceCoordinator? _agentWorkspaceCoordinator;
+    private readonly IWorkspaceManager? _workspaceManager;
+    private readonly IAgentRuntimeCoordinator? _agentRuntimeCoordinator;
+    private readonly DshWebRuntimeSupervisor? _dshSupervisor;
+    private readonly KimiWebRuntimeSupervisor? _kimiWebSupervisor;
     private readonly RuntimePreflightService? _preflight;
     private readonly ISettingsService? _settingsService;
     private bool _isShuttingDown;
     private bool _shutdownCompleted;
+    private long _themeCatalogRevision;
 
     public MainWindow()
     {
@@ -34,8 +38,11 @@ public partial class MainWindow : Window
         ITabManagementService tabService,
         ITerminalBridgeService bridgeService,
         IAgentBridgeService agentBridgeService,
-        IAgentSessionService agentSessionService,
-        IAgentProviderRegistry providerRegistry,
+        IAgentWorkspaceCoordinator agentWorkspaceCoordinator,
+        IWorkspaceManager workspaceManager,
+        IAgentRuntimeCoordinator agentRuntimeCoordinator,
+        DshWebRuntimeSupervisor dshSupervisor,
+        KimiWebRuntimeSupervisor kimiWebSupervisor,
         RuntimePreflightService preflight,
         ISettingsService settingsService)
     {
@@ -45,16 +52,68 @@ public partial class MainWindow : Window
         _tabService = tabService;
         _bridgeService = bridgeService;
         _agentBridgeService = agentBridgeService;
-        _agentSessionService = agentSessionService;
-        _agentRuntime = providerRegistry.DefaultProvider.Runtime;
+        _agentWorkspaceCoordinator = agentWorkspaceCoordinator;
+        _workspaceManager = workspaceManager;
+        _agentRuntimeCoordinator = agentRuntimeCoordinator;
+        _dshSupervisor = dshSupervisor;
+        _kimiWebSupervisor = kimiWebSupervisor;
         _preflight = preflight;
         _settingsService = settingsService;
 
         DataContext = _viewModel;
+        _bridgeService.FrontendReady += OnFrontendReady;
+        _bridgeService.ThemeActionRequested += OnThemeActionRequested;
+
+        // Flash the taskbar button when a workspace newly needs attention
+        // while this window is inactive (split-pane attention signal).
+        _viewModel.AttentionAppeared += (_, _) =>
+        {
+            if (!IsActive)
+                PSX.Helpers.NativeMethods.FlashWindow(new WindowInteropHelper(this).Handle, true);
+        };
 
         Loaded += OnLoaded;
         Closing += OnClosing;
         Closed += OnClosed;
+    }
+
+    private void OnFrontendReady(object? sender, EventArgs e) =>
+        _ = Dispatcher.BeginInvoke(PublishThemeCatalogAsync);
+
+    private void OnThemeActionRequested(object? sender, ThemeActionEventArgs e) =>
+        _ = Dispatcher.BeginInvoke(async () =>
+        {
+            if (_viewModel == null)
+                return;
+            await _viewModel.ThemePicker.HandleWebActionAsync(e.Action, e.ThemeKey);
+            await PublishThemeCatalogAsync();
+        });
+
+    private Task PublishThemeCatalogAsync()
+    {
+        if (_viewModel == null || _agentBridgeService == null)
+            return Task.CompletedTask;
+
+        var picker = _viewModel.ThemePicker;
+        return _agentBridgeService.SendEventAsync(new
+        {
+            type = "theme_catalog",
+            revision = ++_themeCatalogRevision,
+            currentLabel = picker.CurrentLabel,
+            message = picker.Message,
+            isMessageError = picker.IsMessageError,
+            themes = picker.AllThemes.Select(item => new
+            {
+                key = item.Descriptor.Key,
+                name = item.Name,
+                source = item.Descriptor.Source.ToString().ToLowerInvariant(),
+                isAvailable = item.IsAvailable,
+                isCurrent = item.IsCurrent,
+                isUpdated = item.IsUpdated,
+                isPreview = item.IsPreview,
+                diagnostic = item.DiagnosticSummary
+            }).ToArray()
+        });
     }
 
     // 此方法在窗口句柄创建后、显示前触发，是调用 DWM API 的最佳时机
@@ -78,13 +137,6 @@ public partial class MainWindow : Window
             if (_bridgeService == null || TerminalHostControl.WebView == null)
                 return;
 
-            // Wire the default Agent runtime progress to the status bar. New installations
-            // only begin after the user confirms from Agent mode.
-            if (_agentRuntime != null)
-            {
-                _agentRuntime.StatusChanged += msg => _viewModel?.SetStatus(msg);
-            }
-
             // Run preflight before any WebView2-dependent service starts. The
             // big user-visible case here is Win10 systems without WebView2 —
             // the bootstrapper will install it (~30 seconds) and only then do
@@ -97,14 +149,28 @@ public partial class MainWindow : Window
             }
 
             await _bridgeService.InitializeAsync(TerminalHostControl.WebView);
+            if (_dshSupervisor != null && _bridgeService != null)
+            {
+                _dshSupervisor.ReadyUrlChanged = url =>
+                    _bridgeService.SetDshOrigin(DshWebRuntimeSupervisor.ToFrameOrigin(url));
+            }
+            if (_kimiWebSupervisor != null && _bridgeService != null)
+            {
+                // Only the fragment-stripped origin may enter the frame policy
+                // chain; the token-bearing ReadyUrl is never forwarded here.
+                _kimiWebSupervisor.FrameOriginPreparingAsync = origin =>
+                    _bridgeService.PrepareFrameOriginAsync(WebViewHostPolicy.KimiWebFrameKind, origin);
+                _kimiWebSupervisor.FrameOriginChanged += origin =>
+                    _bridgeService.SetFrameOrigin(WebViewHostPolicy.KimiWebFrameKind, origin);
+            }
             if (_agentBridgeService != null)
             {
                 await _agentBridgeService.InitializeAsync(TerminalHostControl.WebView);
             }
 
-            if (_agentSessionService != null)
+            if (_agentWorkspaceCoordinator != null)
             {
-                await _agentSessionService.PublishStateAsync();
+                await _agentWorkspaceCoordinator.PublishStateAsync();
             }
 
             await InitializeAgentRuntimeStatusAsync();
@@ -117,34 +183,26 @@ public partial class MainWindow : Window
 
     private async Task InitializeAgentRuntimeStatusAsync()
     {
-        if (_agentRuntime == null)
-            return;
-
         try
         {
-            await _agentRuntime.PrepareForStartupAsync().ConfigureAwait(false);
-            _viewModel?.SetStatus(_agentRuntime.BuildStatusText());
-
-            if (!_agentRuntime.IsReady())
-                return;
-
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await _agentRuntime.RefreshAsync().ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine("ACP runtime background refresh failed: " + ex);
-                    _viewModel?.SetStatus(_agentRuntime.BuildStatusText("更新失败，当前版本可继续使用，请下次重启尝试"));
-                }
-            });
+            // Startup only promotes locally staged updates into place. It must
+            // never touch npm or the network: runtime updates are strictly
+            // user-triggered from the Agent toolbar.
+            if (_agentRuntimeCoordinator != null)
+                await _agentRuntimeCoordinator.PrepareForStartupAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine("ACP runtime status initialization failed: " + ex);
-            _viewModel?.SetStatus(_agentRuntime.BuildStatusText("更新失败，当前版本可继续使用，请下次重启尝试"));
+        }
+
+        try
+        {
+            _dshSupervisor?.PrepareForStartup();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine("DSH runtime status initialization failed: " + ex);
         }
     }
 
@@ -172,7 +230,7 @@ public partial class MainWindow : Window
         });
     }
 
-    private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
+    private async void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         if (_shutdownCompleted)
             return;
@@ -184,14 +242,73 @@ public partial class MainWindow : Window
         _isShuttingDown = true;
         IsEnabled = false;
 
-        (_viewModel as IDisposable)?.Dispose();
-        (_tabService as IDisposable)?.Dispose();
-        (_bridgeService as IDisposable)?.Dispose();
-        (_agentBridgeService as IDisposable)?.Dispose();
-        (_agentSessionService as IDisposable)?.Dispose();
+        _workspaceManager?.BeginShutdown();
 
-        _shutdownCompleted = true;
-        Dispatcher.BeginInvoke(Close);
+        (_viewModel as IDisposable)?.Dispose();
+        try
+        {
+            if (_agentWorkspaceCoordinator != null)
+                await _agentWorkspaceCoordinator.ShutdownAsync().ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine("Agent Workspace shutdown failed: " + ex);
+        }
+
+        try
+        {
+            if (_tabService != null)
+                await _tabService.ShutdownAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine("Terminal Workspace shutdown failed: " + ex);
+        }
+        finally
+        {
+            // Reap the DSH process tree after Terminal/Agent shutdown, before
+            // the bridge is disposed. ShutdownAsync cancels any in-flight
+            // install and bounds its wait, so closing the window during an
+            // install never blocks the UI thread; the Job Object
+            // (KILL_ON_JOB_CLOSE) still ensures the full dsh web tree dies
+            // even on a crash.
+            try
+            {
+                if (_dshSupervisor != null)
+                    await _dshSupervisor.ShutdownAsync().ConfigureAwait(true);
+            }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine("DSH supervisor shutdown failed: " + ex); }
+            try { _dshSupervisor?.Dispose(); }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine("DSH supervisor dispose failed: " + ex); }
+
+            // Kimi Web supervisor teardown mirrors DSH: the coordinator gate
+            // (BeginShutdown) already ran through WorkspaceManager; closing
+            // the window must reap the `kimi web` process tree before the
+            // bridge is disposed. The Job Object (KILL_ON_JOB_CLOSE) still
+            // ensures the full tree dies even on a crash.
+            try
+            {
+                if (_kimiWebSupervisor != null)
+                    await _kimiWebSupervisor.ShutdownAsync().ConfigureAwait(true);
+            }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine("Kimi Web supervisor shutdown failed: " + ex); }
+            try { _kimiWebSupervisor?.Dispose(); }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine("Kimi Web supervisor dispose failed: " + ex); }
+
+            if (_bridgeService != null)
+            {
+                _bridgeService.FrontendReady -= OnFrontendReady;
+                _bridgeService.ThemeActionRequested -= OnThemeActionRequested;
+            }
+            (_agentWorkspaceCoordinator as IDisposable)?.Dispose();
+            (_workspaceManager as IDisposable)?.Dispose();
+            (_tabService as IDisposable)?.Dispose();
+            (_agentBridgeService as IDisposable)?.Dispose();
+            (_bridgeService as IDisposable)?.Dispose();
+
+            _shutdownCompleted = true;
+            _ = Dispatcher.BeginInvoke(Close);
+        }
     }
 
     private void OnClosed(object? sender, EventArgs e)

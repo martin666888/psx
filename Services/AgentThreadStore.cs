@@ -31,37 +31,20 @@ public sealed class AgentThreadStore : IAgentThreadStore
     public string AttachmentsDirectory { get; }
 
     public AgentThreadStore()
+        : this(Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".psx"))
     {
-        var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        RootDirectory = Path.Combine(userProfile, ".psx");
+    }
+
+    internal AgentThreadStore(string rootDirectory)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(rootDirectory);
+        RootDirectory = Path.GetFullPath(rootDirectory);
         _configPath = Path.Combine(RootDirectory, "config.json");
         _threadsDirectory = Path.Combine(RootDirectory, "agent", "threads");
         AttachmentsDirectory = Path.Combine(RootDirectory, "agent", "attachments");
         _indexPath = Path.Combine(RootDirectory, "agent", "index.json");
-    }
-
-    public AgentThread LoadOrCreateInitialThread(string defaultWorkingDirectory)
-    {
-        EnsureDirectories();
-        var config = LoadConfig();
-        var index = PruneMissingThreads();
-
-        if (config.Agent.RestoreLastThread && !string.IsNullOrWhiteSpace(config.Agent.LastThreadId))
-        {
-            var restored = LoadThread(config.Agent.LastThreadId);
-            if (restored != null)
-                return restored;
-
-            config.Agent.LastThreadId = index.Threads.FirstOrDefault()?.ThreadId;
-            SaveConfig(config);
-        }
-
-        var cwd = !string.IsNullOrWhiteSpace(config.Agent.LastWorkingDirectory)
-                  && Directory.Exists(config.Agent.LastWorkingDirectory)
-            ? config.Agent.LastWorkingDirectory
-            : defaultWorkingDirectory;
-
-        return CreateThread(cwd);
     }
 
     public AgentThread CreateThread(string workingDirectory)
@@ -131,6 +114,78 @@ public sealed class AgentThreadStore : IAgentThreadStore
         return visibleThreads;
     }
 
+    public int DeleteEmptyDrafts()
+    {
+        lock (FileIoLock)
+        {
+            EnsureDirectories();
+            var emptyThreadIds = Directory.EnumerateFiles(_threadsDirectory, "*.json")
+                .Select(Path.GetFileNameWithoutExtension)
+                .Where(threadId => !string.IsNullOrWhiteSpace(threadId))
+                .Where(threadId =>
+                {
+                    try
+                    {
+                        var thread = LoadThread(threadId!);
+                        return thread != null && IsEmptyDraft(thread);
+                    }
+                    catch
+                    {
+                        return false;
+                    }
+                })
+                .Cast<string>()
+                .ToArray();
+
+            foreach (var threadId in emptyThreadIds)
+                DeleteThreadCore(threadId);
+
+            return emptyThreadIds.Length;
+        }
+    }
+
+    /// <summary>
+    /// Read-only projection of every stored thread for usage aggregation.
+    /// Enumerates all thread files directly (not the 100-entry index) and never
+    /// rewrites the index. Corrupt/unreadable files are skipped and counted so
+    /// the caller can report partial completeness.
+    /// </summary>
+    public AgentThreadUsageSnapshot ReadUsageSnapshot()
+    {
+        lock (FileIoLock)
+        {
+            EnsureDirectories();
+            var snapshots = new List<AgentUsageThreadSnapshot>();
+            var scanned = 0;
+            var skipped = 0;
+
+            foreach (var path in Directory.EnumerateFiles(_threadsDirectory, "*.json"))
+            {
+                scanned++;
+                try
+                {
+                    var thread = ReadUsageProjectionWithRetry(path);
+                    if (thread == null)
+                    {
+                        skipped++;
+                        continue;
+                    }
+
+                    snapshots.Add(new AgentUsageThreadSnapshot(
+                        thread.Provider,
+                        thread.ClaudeSessionId,
+                        thread.AcpSessionId));
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+                {
+                    skipped++;
+                }
+            }
+
+            return new AgentThreadUsageSnapshot(snapshots, scanned, skipped);
+        }
+    }
+
     private AgentThread LoadThreadStrict(string threadId)
     {
         var path = GetThreadPath(threadId);
@@ -170,6 +225,12 @@ public sealed class AgentThreadStore : IAgentThreadStore
 
     public void DeleteThread(string threadId)
     {
+        lock (FileIoLock)
+            DeleteThreadCore(threadId);
+    }
+
+    private void DeleteThreadCore(string threadId)
+    {
         EnsureDirectories();
         var path = GetThreadPath(threadId);
         if (File.Exists(path))
@@ -203,33 +264,36 @@ public sealed class AgentThreadStore : IAgentThreadStore
 
     public AgentAttachment SaveAttachment(string threadId, string fileName, string mimeType, byte[] data)
     {
-        EnsureDirectories();
-        var attachmentId = Guid.NewGuid().ToString("N");
-        var safeName = string.IsNullOrWhiteSpace(fileName) ? "image" : Path.GetFileName(fileName);
-        var storedFileName = attachmentId + ExtensionForMimeType(mimeType);
-        var threadDirectory = GetAttachmentThreadDirectory(threadId);
-        Directory.CreateDirectory(threadDirectory);
-
-        var filePath = Path.Combine(threadDirectory, storedFileName);
-        File.WriteAllBytes(filePath, data);
-
-        var attachment = new AgentAttachment
+        lock (FileIoLock)
         {
-            Id = attachmentId,
-            FileName = safeName,
-            MimeType = mimeType,
-            Size = data.LongLength,
-            Path = filePath,
-            Url = BuildAttachmentUrl(threadId, storedFileName),
-            Uri = new Uri(filePath).AbsoluteUri,
-            CreatedAt = DateTimeOffset.Now
-        };
+            EnsureDirectories();
+            var attachmentId = Guid.NewGuid().ToString("N");
+            var safeName = string.IsNullOrWhiteSpace(fileName) ? "image" : Path.GetFileName(fileName);
+            var storedFileName = attachmentId + ExtensionForMimeType(mimeType);
+            var threadDirectory = GetAttachmentThreadDirectory(threadId);
+            Directory.CreateDirectory(threadDirectory);
 
-        WriteTextWithRetryAtomic(
-            GetAttachmentMetadataPath(threadId, attachmentId),
-            JsonSerializer.Serialize(attachment, JsonOptions),
-            "PSX agent attachment metadata");
-        return attachment;
+            var filePath = Path.Combine(threadDirectory, storedFileName);
+            File.WriteAllBytes(filePath, data);
+
+            var attachment = new AgentAttachment
+            {
+                Id = attachmentId,
+                FileName = safeName,
+                MimeType = mimeType,
+                Size = data.LongLength,
+                Path = filePath,
+                Url = BuildAttachmentUrl(threadId, storedFileName),
+                Uri = new Uri(filePath).AbsoluteUri,
+                CreatedAt = DateTimeOffset.Now
+            };
+
+            WriteTextWithRetryAtomic(
+                GetAttachmentMetadataPath(threadId, attachmentId),
+                JsonSerializer.Serialize(attachment, JsonOptions),
+                "PSX agent attachment metadata");
+            return attachment;
+        }
     }
 
     public AgentAttachment? LoadAttachment(string threadId, string attachmentId)
@@ -263,12 +327,15 @@ public sealed class AgentThreadStore : IAgentThreadStore
 
     public void DeleteThreadAttachments(string threadId)
     {
-        if (string.IsNullOrWhiteSpace(threadId))
-            return;
+        lock (FileIoLock)
+        {
+            if (string.IsNullOrWhiteSpace(threadId))
+                return;
 
-        var directory = GetAttachmentThreadDirectory(threadId);
-        if (Directory.Exists(directory))
-            Directory.Delete(directory, recursive: true);
+            var directory = GetAttachmentThreadDirectory(threadId);
+            if (Directory.Exists(directory))
+                Directory.Delete(directory, recursive: true);
+        }
     }
 
     private void UpsertIndex(AgentThread thread)
@@ -396,6 +463,29 @@ public sealed class AgentThreadStore : IAgentThreadStore
         }
     }
 
+    private static AgentUsageThreadProjection? ReadUsageProjectionWithRetry(string path)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                using var stream = new FileStream(
+                    path,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete,
+                    bufferSize: 64 * 1024,
+                    FileOptions.SequentialScan);
+                return JsonSerializer.Deserialize<AgentUsageThreadProjection>(stream, JsonOptions);
+            }
+            catch (Exception ex) when (
+                IsTransientFileAccessError(ex) && attempt < FileRetryDelays.Length)
+            {
+                Thread.Sleep(FileRetryDelays[attempt]);
+            }
+        }
+    }
+
     private static void WriteTextWithRetryAtomic(string path, string content, string description)
     {
         lock (FileIoLock)
@@ -457,7 +547,14 @@ public sealed class AgentThreadStore : IAgentThreadStore
 
     private string GetThreadPath(string threadId)
     {
-        return Path.Combine(_threadsDirectory, $"{threadId}.json");
+        var safeThreadId = RequireSafeThreadId(threadId);
+        var path = Path.GetFullPath(Path.Combine(_threadsDirectory, safeThreadId + ".json"));
+        var root = Path.GetFullPath(_threadsDirectory)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        if (!path.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Invalid thread id.");
+        return path;
     }
 
     private string GetAttachmentThreadDirectory(string threadId)
@@ -467,6 +564,15 @@ public sealed class AgentThreadStore : IAgentThreadStore
             throw new InvalidOperationException("Invalid thread id.");
 
         return Path.Combine(AttachmentsDirectory, safeThreadId);
+    }
+
+    private static string RequireSafeThreadId(string threadId)
+    {
+        if (!Guid.TryParse(threadId, out var guid))
+            throw new InvalidOperationException("Invalid thread id.");
+
+        // Canonical form matches CreateThread (Guid.NewGuid().ToString()).
+        return guid.ToString();
     }
 
     private string GetAttachmentMetadataPath(string threadId, string attachmentId)
@@ -508,5 +614,12 @@ public sealed class AgentThreadStore : IAgentThreadStore
     {
         var name = Path.GetFileName(workingDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
         return string.IsNullOrWhiteSpace(name) ? "Agent Chat" : name;
+    }
+
+    private sealed class AgentUsageThreadProjection
+    {
+        public string Provider { get; set; } = "";
+        public string? ClaudeSessionId { get; set; }
+        public string? AcpSessionId { get; set; }
     }
 }

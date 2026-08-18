@@ -1,0 +1,215 @@
+.agent-composer {
+    grid-area: composer;
+    position: relative;
+    /* Breathing room between the card and the panel's rounded bottom edge. */
+    padding: 0 0 var(--agent-composer-bottom-space);
+    background: transparent;
+}
+
+/* The composer island renders the whole composer straight into the grid area
+ * (same display:contents contract as the toolbar/conversation hosts). */
+.agent-composer-host {
+    display: contents;
+}
+
+/* The card follows exactly the same conversation-panel-centred reading
+ * column as the thread. It deliberately lives inside the canvas instead of
+ * creating another full-width application bar. */
+.agent-composer-main {
+    position: relative;
+    z-index: 1;
+    min-width: 0;
+    width: var(--agent-reading-column-max);
+    max-width: 100%;
+    box-sizing: border-box;
+    margin-left: max(0px, var(--agent-reading-column-start));
+    margin-right: auto;
+}
+
+.agent-composer-card {
+    min-width: 0;
+    overflow: visible;
+    border: 1px solid var(--agent-border-strong);
+    border-radius: var(--agent-radius-composer);
+    background: var(--card);
+    box-shadow: var(--agent-shadow-composer);
+    transition: box-shadow var(--agent-duration-fast) var(--agent-ease-standard);
+}
+
+.agent-composer-footer,
+.agent-composer-actions,
+.agent-hints,
+.agent-composer-controls,
+.agent-config-popover,
+.agent-config-controls,
+.agent-config-options {
+    min-width: 0;
+}
+
+.agent-config-toggle {
+    display: none;
+}
+
+.agent-config-popover {
+    display: contents;
+}
+
+.agent-config-controls {
+    display: contents;
+}
+
+.agent-composer-card:has([data-role="input"]:focus-visible) {
+    outline: 2px solid var(--agent-focus-ring);
+    outline-offset: 2px;
+}
+
+/* Context usage retains its custom ring visualization; its surrounding
+ * Composer layout and interactive controls are React utility-owned. */
+.agent-context-usage {
+    position: relative;
+    display: grid;
+    width: 20px;
+    height: 20px;
+    place-items: center;
+    color: var(--primary);
+    cursor: help;
+    outline: 0;
+}
+
+.agent-context-usage:focus-visible {
+    border-radius: 50%;
+    outline: 2px solid var(--agent-focus-ring);
+    outline-offset: 2px;
+}
+
+.agent-context-ring {
+    display: block;
+    width: 20px;
+    height: 20px;
+    transform: rotate(-90deg);
+}
+
+.agent-context-ring-track,
+.agent-context-ring-progress {
+    fill: none;
+    stroke-width: 2.5;
+}
+
+.agent-context-ring-track {
+    stroke: var(--border);
+}
+
+.agent-context-ring-progress {
+    stroke: currentColor;
+    stroke-dasharray: 100;
+    stroke-dashoffset: 100;
+    stroke-linecap: round;
+    transition: stroke-dashoffset var(--agent-duration-state) var(--agent-ease-standard);
+}
+
+.agent-context-usage[data-context-state="warning"] {
+    color: var(--agent-warning);
+}
+
+.agent-context-usage[data-context-state="error"] {
+    color: var(--destructive);
+}
+
+.agent-context-usage[data-context-state="unknown"]::before {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--muted-foreground);
+    content: "";
+}
+
+.agent-context-usage[data-context-state="unknown"] .agent-context-ring {
+    display: none;
+}
+
+.agent-mode-control[hidden],
+.agent-config-control[hidden] {
+    display: none;
+}
+
+/* PromptInput attachment pills share the reading-column text inset. */
+.agent-attachments-strip {
+    margin: 0 18px;
+    padding-top: var(--agent-space-3);
+}
+
+@container agent-shell (max-width: 719px) {
+    /* At ≤719px the configuration controls fold into a popover anchored to
+       the composer controls row; the context usage hint keeps its footer slot
+       until the 519px band hides it. */
+    .agent-composer-controls {
+        position: relative;
+    }
+
+    .agent-config-toggle {
+        display: inline-flex;
+        width: 30px;
+        height: 30px;
+        align-items: center;
+        justify-content: center;
+        border: 0;
+        border-radius: var(--agent-radius-control);
+        color: var(--agent-text-muted);
+        background: transparent;
+    }
+
+    .agent-config-popover {
+        position: absolute;
+        right: 0;
+        bottom: calc(100% + 8px);
+        z-index: var(--agent-layer-menu);
+        display: none;
+        width: min(320px, 82cqw);
+        padding: var(--agent-space-2);
+        border: 1px solid var(--agent-border-strong);
+        border-radius: var(--agent-radius-card);
+        background: var(--agent-surface-raised);
+        box-shadow: var(--agent-shadow-popover);
+    }
+
+    .agent-config-popover[data-open="true"] {
+        display: block;
+    }
+
+    .agent-config-popover .agent-config-controls {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: var(--agent-space-1);
+    }
+
+    .agent-config-popover .agent-config-options {
+        display: contents;
+    }
+
+    .agent-config-popover .agent-mode-control,
+    .agent-config-popover .agent-config-control {
+        width: 100%;
+        min-height: 36px;
+    }
+}
+
+@container agent-shell (max-width: 519px) {
+    .agent-hints {
+        display: none;
+    }
+
+    .agent-composer-footer {
+        flex-wrap: nowrap;
+    }
+
+    .agent-composer-controls {
+        flex: 1 1 auto;
+        justify-content: flex-end;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .agent-composer-card {
+        transition: none;
+    }
+}

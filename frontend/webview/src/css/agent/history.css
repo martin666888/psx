@@ -1,0 +1,198 @@
+/* History dock chrome renders through HistoryDockView.tsx: the top bar
+   controls are shadcn components (Input, Select, Button) and the content
+   scroller's box model is Tailwind. This file keeps what utilities do not
+   express — the dock's absolute frame, the two-row bar grid, the rounded
+   corners of the Radix ScrollArea viewport, the resizer affordance and the
+   open animation. */
+
+/* --- Global History dock (singleton, left column) -------------------------- */
+
+.agent-history-dock {
+    position: absolute;
+    /* A free-standing rounded panel: workbench gutter on top/bottom/left,
+     * with the main panel a --agent-panel-gap away on the right. */
+    top: calc(40px + var(--agent-workbench-gutter));
+    bottom: var(--agent-workbench-gutter);
+    left: calc(40px + var(--agent-workbench-gutter));
+    z-index: var(--agent-layer-dock);
+    display: flex;
+    flex-direction: column;
+    width: var(--agent-history-width, 280px);
+    min-width: 0;
+    border: 1px solid var(--agent-border);
+    border-radius: var(--agent-workspace-radius);
+    background: var(--agent-canvas-surface);
+    color: var(--agent-text);
+    pointer-events: auto;
+}
+
+.agent-history-dock[hidden] {
+    display: none;
+}
+
+.agent-history-dock-bar {
+    /* Always two rows: the search field spans the full width, the provider
+     * filter and the refresh button share the second row — no wrap reflow. */
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--agent-space-2);
+    padding: var(--agent-space-2);
+    border-bottom: 1px solid var(--agent-border);
+}
+
+.agent-history-dock-content {
+    /* This class sits on the Radix ScrollArea viewport (HistoryDockView.tsx).
+     * The footer now owns the panel's bottom corners; the scroll node only
+     * needs to stay clipped inside the frame. */
+    min-height: 0;
+}
+
+/* Radix ScrollArea inserts a display:table measurement wrapper directly
+ * inside the viewport. An unbroken thread title can otherwise enlarge that
+ * table to its intrinsic width, leaving the viewport to hard-clip the row
+ * before the title's own fade boundary is reached. History is vertical-only,
+ * so constrain that internal wrapper to the viewport width. */
+.agent-history-dock-content > div {
+    display: block !important;
+    width: 100%;
+    min-width: 0 !important;
+    max-width: 100%;
+}
+
+/* The list is a one-column grid. Its implicit auto track otherwise keeps the
+ * title's min-content width even after the Radix wrapper is constrained. */
+.agent-history-list {
+    width: 100%;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.agent-history-group,
+.agent-history-group-threads {
+    min-width: 0;
+}
+
+/* Long thread titles dissolve before the dock edge instead of ending on a
+ * hard clip. A mask follows text alpha rather than painting a surface-colored
+ * overlay, so the fade remains seamless on default, hover and selected rows
+ * in every theme. Short titles end before the masked region and stay intact. */
+.agent-history-title {
+    overflow: hidden;
+    text-overflow: clip;
+    white-space: nowrap;
+    -webkit-mask-image: linear-gradient(
+        to right,
+        #000 0,
+        #000 calc(100% - var(--agent-space-6)),
+        transparent calc(100% - var(--agent-space-1))
+    );
+    mask-image: linear-gradient(
+        to right,
+        #000 0,
+        #000 calc(100% - var(--agent-space-6)),
+        transparent calc(100% - var(--agent-space-1))
+    );
+}
+
+/* --- Profile footer (opens the global Usage panel) ------------------------- */
+
+.agent-history-dock-footer {
+    display: flex;
+    align-items: center;
+    gap: var(--agent-space-2);
+    height: 44px;
+    flex: none;
+    padding: 0 var(--agent-space-2);
+    border: 0;
+    border-top: 1px solid var(--agent-border);
+    /* The footer reaches the panel's bottom corners: it inherits the radius
+     * the scroll content used to carry. */
+    border-bottom-left-radius: calc(var(--agent-workspace-radius) - 1px);
+    border-bottom-right-radius: calc(var(--agent-workspace-radius) - 1px);
+    background: transparent;
+    color: var(--agent-text);
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.agent-history-dock-footer:hover {
+    background: var(--agent-surface-muted);
+}
+
+.agent-history-dock-footer:focus-visible {
+    outline: 2px solid var(--agent-focus-ring);
+    outline-offset: 2px;
+}
+
+.agent-history-dock-footer-avatar {
+    width: 24px;
+    height: 24px;
+    flex: none;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.agent-history-dock-footer-avatar-fallback {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--agent-accent);
+    color: var(--agent-canvas-surface, #1e1d19);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.agent-history-dock-footer-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.agent-history-dock-footer-icon {
+    flex: none;
+    color: var(--agent-text-muted);
+}
+
+/* The resizer straddles the dock's right border into the panel gap; it must
+ * never be clipped by the rounded corners (the dock keeps overflow visible).
+ * It draws no affordance line of its own — the dock's border already marks
+ * the edge and the col-resize cursor signals draggability. */
+.agent-history-dock-resizer {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: -4px;
+    width: 7px;
+    cursor: col-resize;
+}
+
+.agent-history-dock-resizer:focus-visible {
+    outline: 2px solid var(--agent-focus-ring);
+    outline-offset: 2px;
+}
+
+.agent-history-dock-resizing {
+    cursor: col-resize;
+    user-select: none;
+}
+
+/* Open transitions: opacity + a small slide only (reduced-motion zeroes them
+ * via the shell.css media block). */
+.agent-history-dock:not([hidden]) {
+    animation: agent-history-in var(--agent-duration-state) var(--agent-ease-standard);
+}
+
+@keyframes agent-history-in {
+    from {
+        opacity: 0;
+        transform: translateX(-8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}

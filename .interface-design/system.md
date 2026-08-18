@@ -1,6 +1,6 @@
 # PSX Interface Design System
 
-本文档是 PSX 桌面界面的项目级设计约束。新增或修改 WPF、WebView2、Terminal、Agent 界面时，应优先复用这里定义的原则和模式。
+本文档是 PSX 桌面界面的项目级设计约束。新增或修改 WPF、WebView2、Terminal、Agent 界面时，应优先复用这里定义的原则和模式。正式的组件级设计规范见根目录 `design.md`，本文档作为辅助设计记忆与其保持一致。
 
 ## 1. 产品方向
 
@@ -37,7 +37,7 @@ PSX 的标志模式是“即时反馈、确认持久化”：例如 Theme 条目
 
 ### 深度策略：边框与表面色差
 
-PSX 使用 borders-only 与轻微表面色差建立层级，不混入明显投影。
+PSX 使用 borders-only 与轻微表面色差建立层级，不混入明显投影；例外是五类浮起层——Agent 分层壳层的 canvas、无边框软面的 Composer 卡片、context 卡片（如 Plan）、浮动菜单/弹层（popover）和模态媒体（dialog）——允许使用 token 化的克制柔和阴影表达上下层关系（见 Agent 壳层布局）。Tool、Decision、Runtime、Recovery 等内容卡只用 surface + hairline，不加阴影。
 
 表面顺序：
 
@@ -48,7 +48,7 @@ PSX 使用 borders-only 与轻微表面色差建立层级，不混入明显投�
 
 规则：
 
-- 普通分隔使用 `border`，焦点或弹层边界使用 `borderStrong`。
+- 普通分隔使用 `border`，弹层边界使用 `borderStrong`。
 - 边框用于说明结构，不应成为画面中最醒目的元素。
 - 不使用厚装饰边框、强投影或跨层级的大幅明度跳变。
 
@@ -66,9 +66,13 @@ PSX 使用 borders-only 与轻微表面色差建立层级，不混入明显投�
 
 ### 圆角
 
-- 小型按钮和提示：3–4px。
-- 弹层和卡片：6px。
-- 不在小控件上使用大圆角，也不混用胶囊形和锐利矩形。
+圆角使用五级语义阶梯（Soft Workbench），组件不得定义阶梯外的任意值；WPF 侧对应 `Themes/Dark.xaml` 的 `ControlCornerRadius` / `InputCornerRadius` / `CardCornerRadius`：
+
+- `--agent-radius-control`（8px）：按钮、图标按钮、chip、列表行、菜单项、行内代码。
+- `--agent-radius-input`（10px）：输入框、搜索框、下拉触发器。
+- `--agent-radius-card`（14px）：Tool / Decision / Runtime / Recovery / Plan 卡片、弹层、菜单、tooltip、图片预览、代码块。
+- `--agent-radius-structure`（24px，结构 token）：Workspace 面板 / History dock / Composer 卡片共享的结构圆角；Composer 发送按钮为正圆，圆心与卡片右下角圆弧圆心重合（footer 右/下 padding = 24 − 17 = 7px）。
+- 胶囊/正圆（50%、999px）只用于天然圆形或胶囊元素：发送按钮、开关、状态点、滚动条滑块。
 
 ### 字体
 
@@ -93,15 +97,16 @@ PSX 使用 borders-only 与轻微表面色差建立层级，不混入明显投�
 - 八位颜色统一使用 CSS `#RRGGBBAA` 语义；进入 WPF 时才转换为 `#AARRGGBB`。
 - 新增颜色时必须同步更新模型、核心配置、全部内置主题、WPF 应用层和对应 CSS token。
 - 一个组件只使用一个主要 accent。错误、警告等语义颜色不能作为装饰色。
-- 深色和浅色主题都必须保持清晰的文本、边框、hover、focus 和 disabled 状态。
+- 深色和浅色主题都必须保持清晰的文本、边框、hover 和 disabled 状态。
 
 ## 4. 组件模式
 
 ### 全局工具栏
 
-- 跨 Terminal 和 Agent 生效的操作放在 WPF 顶部全局栏。
+- 跨 Terminal 和 Agent 生效的可见操作放在 WebView activity rail（History / Create / Theme）或对应的 WebView 全局浮层；WPF 顶栏仅保留隐藏的兼容投影，不得成为第二套导航。
 - 按钮高度、字号和密度应与 Terminal / Agent 切换控件一致。
 - 图标只有在能减少理解成本时使用；文字已经足够清楚时不添加装饰图标。
+- WPF 按钮统一使用 `Themes/Dark.xaml` 的 `SoftWorkbenchButtonStyle` / `SoftWorkbenchToggleButtonStyle` / `SoftWorkbenchIconButtonStyle`；图标使用 XAML `Path` 几何，不使用字体字形。
 
 ### 锚定弹层
 
@@ -127,6 +132,20 @@ Theme 弹层是全局选择器的参考实现：
 - 错误使用 Error token，并说明对象、字段和恢复方法。
 - 空状态应说明为什么为空以及用户下一步可以做什么。
 - 长诊断放在 tooltip、详情或可滚动区域，不把主界面无限撑高。
+- 全局未捕获错误只显示一条可关闭、已脱敏的恢复提示；不得把 JavaScript 堆栈、
+  资源 URL、工作目录或会话内容直接打印到界面。Chromium 的两条已知
+  ResizeObserver 交付通知属于非致命浏览器诊断，不进入用户错误表面。
+- WebView 原生右键只服务于编辑和复制：可编辑区域保留撤销、剪切、复制、粘贴、
+  全选等本地化命令，选中文本保留复制；页面另存、打印、查看源代码、刷新和浏览器
+  下载不属于 PSX 产品界面。
+
+### Workspace Tab 运行时菜单
+
+- 嵌入式第三方运行时的宿主操作放在对应 Tab 的右键菜单，不向跨域内容页注入按钮，也不占用全局 activity rail。
+- 菜单先显示产品名与当前版本，再按“布局 / 运行时”分组；普通行只容纳一个短主操作和一个短状态，长说明不得挤压主操作。
+- 需要重启的更新在菜单原位展开确认块，明确显示“当前版本 → 目标版本”、重启影响及数据保留语义；取消不会改变运行时。
+- 检查、最新、可更新、更新中和失败均在同一菜单位置切换，禁用态保持可读且不响应 hover；失败只显示脱敏恢复文案。
+- 运行时状态刷新只替换菜单内对应分区；popover 外层节点、锚点和合成表面在整个交互期间保持不变，避免以关闭/重开的方式制造闪烁或焦点跳动。
 
 ### 长内容
 
@@ -141,12 +160,16 @@ Theme 弹层是全局选择器的参考实现：
 - default
 - hover
 - active / selected
-- keyboard focus
+- keyboard navigation（使用统一的 `:focus-visible` 焦点环）
 - disabled
 - loading（适用时）
 - empty / error（数据组件适用时）
 
+焦点规范：键盘导航、程序化 focus 与 Esc 关闭后的焦点恢复必须保持正常。WebView 交互控件仅在 `:focus-visible` 时显示统一的 `2px solid var(--agent-focus-ring)`，`outline-offset: 2px`；指针点击不显示焦点环，Composer 输入通过 `:has([data-role="input"]:focus-visible)`在卡片外框显示同一焦点环。菜单项可保留 focused surface，Pane 焦点只由 tab/nameplate 强度与下划线表达。WPF 隐藏兼容投影不得形成第二套可见焦点表面。
+
 交互反馈应快速、平稳，不使用弹跳或夸张动画。普通 hover 和状态切换控制在短时微交互范围；尊重系统减少动画设置。
+
+紧凑元数据行中，普通文本与文字操作按钮按字形基线对齐；纯图标操作组按几何中心对齐。不得用单项 margin、translate 或相对定位补偿视觉错位。
 
 持久化操作遵循以下顺序：
 
@@ -175,15 +198,18 @@ Theme 弹层是全局选择器的参考实现：
 - 未在目录中的命令必须在 Composer 就地提示，不得发送 ACP、写入历史或进入 busy。
 - 不维护 Claude Code 命令黑名单；需要原生交互界面的命令统一引导用户通过 `/terminal` 使用。
 
-### Agent Inspector
+### Agent 壳层布局
 
-- Agent 右侧区域是可调整宽度的 Inspector，不是 Plan 专用侧栏；固定使用同级的 `Plan / History` 标签。
-- Plan 只展示当前任务计划，History 只负责全局 Thread 导航。历史列表、加载状态和错误不得写入主对话流。
-- 两个标签保留各自的 DOM 与滚动位置；隐藏标签仍可接收状态更新，但不能抢焦点或强制切换。
-- History 每次打开或再次点击当前标签时从磁盘刷新，并明确展示 Loading、Empty、Error 与 Current 状态。
-- 新建 Thread 回到 Plan；从 History 加载 Thread 时保持 History 打开。隐藏期间的新 Plan 使用轻量状态点提示，打开 Plan 后清除。
-- Inspector 宽度限制为 260–380px，并兼容旧的 `psx.agent.planPanelWidth` 本地设置；新设置使用 `psx.agent.inspectorWidth`。
-- 标签必须使用 `tablist`、`tab`、`tabpanel` 语义，支持左右方向键、Home 和 End 切换。
+- Agent 界面是分层壳层：History 是页面唯一的底层 dock（左侧），Conversation canvas 位于上层并连接窗口顶/右/底边缘，Plan 是浮在 canvas 右上角（工具栏下方）的内容高度小卡片；层级观感 canvas 在上、dock 在下、Plan 最高，靠 background < canvas-surface < surface-raised 的明度阶梯加左缘圆角/细边/阴影表达。
+- 结构 token：`--agent-history-width`（默认 280px，可拖拽，控制器约束在 220–420px）、`--agent-plan-width`（固定 320px，不可调）、`--agent-reading-max-width`（920px）、`--agent-reading-min-width`（320px）、`--agent-toolbar-height`（44px）、`--agent-composer-bottom-space`（24px，所有 Pane 和响应式档位共享）、`--agent-radius-context-card`（映射到 `--agent-radius-card`，14px）、`--agent-radius-structure`（24px，Workspace 面板 / History dock / Composer 卡片共享；`--agent-workspace-radius` 与 `--agent-radius-composer` 映射到它）、`--agent-shadow-canvas`、`--agent-shadow-context-card`、`--agent-shadow-composer`、`--agent-shadow-popover`、`--agent-shadow-dialog`、`--agent-canvas-surface`（由 surface/surface-raised color-mix 推导）；阴影从 `--agent-shadow` 推导，不硬编码颜色。
+- 阅读列在 History 推挤后的每个 Pane 实际内容矩形中居中，并保持 `--agent-reading-max-width`；空间不足时各列继续按纯比例压缩，History 不因阅读列碰撞而自动收起。Plan overlay 不参与布局计算；消息条目不卡片化。
+- 响应式只按 Agent Pane 宽度改变 Pane 内部呈现：Plan 在 ≥520px 为内容高度卡片，<520px 为 Pane 内 overlay；Composer 与工具栏使用各自的 container query。Plan / Update 在 ≥520px 直接显示，<520px 移入受控的 ⋯ 弹层；不得用关闭状态的原生 disclosure 承载宽档必须可见的操作。History 是进程级全局 dock，不复用 Pane narrow 状态控制宽度、可见性或拖拽能力。
+- 多 Pane 的 Composer 底边始终锚定到面板底部上方 24px 的同一基线；窄 Pane 的 placeholder、草稿、附件或决策提示增加固有高度时只向上生长，响应式档位不得改写底部 inset，也不通过 JS 同步不同 Workspace 的内容高度。
+- History 在任何窗口和 Pane 宽度下都保持持久化宽度并可拖拽（220–420px）；用户保存的 `--agent-history-width` 不被任一响应式状态改写。空间不足时右侧列缩窄，History 不回落固定宽度也不覆盖列内容。
+- Plan 卡片两态：visible/hidden，workspace 运行时偏好不持久化且默认显示；窄模式以临时覆盖收起，离开窄模式时恢复偏好。工具栏图标切换，隐藏期间新计划在图标上显示未读点。runtime 安装卡等内容卡片使用与对话、Composer 相同的阅读列宽度和位置规则。
+- History 只负责全局 Thread 导航：列表、加载状态和错误只在 dock 内展示，不得写入主对话流；行高亮使用整行圆角背景（`--agent-radius-control`），不使用左侧强调条。线程行是单行结构：标题承担截断，`Current`/`Open` 文字徽标与右侧短时间不收缩，完整的 provider|时间放 tooltip；分组折叠 affordance 用文件夹开合两态图标。
+- 持久化键：`psx.agent.historyDockOpen`、`psx.agent.historyDockWidth`；`psx.agent.planWidth`、`psx.agent.inspectorWidth`、`psx.agent.planPanelWidth` 均已退役（不再读取）。
+- 动画限制在 120–160ms，只用 opacity 和小距离 translate，并尊重 prefers-reduced-motion。
 
 ## 6. WPF 与 WebView2 一致性
 
@@ -200,11 +226,11 @@ Theme 弹层是全局选择器的参考实现：
 - 是否解决了开发者当前任务，而不是增加无关装饰？
 - 是否使用现有 token、4px 间距和边框层级？
 - 模糊观察时，主次层级是否仍清楚且没有突兀边界？
-- 是否具备 hover、focus、disabled、empty 和 error 状态？
+- 是否具备 hover、disabled、empty、error 状态和正常的键盘导航行为？
 - 临时操作是否可撤销，持久化操作是否明确确认？
 - 长内容是否会无限拉高主界面？
 - 深色、浅色主题和字体变化下是否仍可用？
 - WPF 与 WebView2 是否同步？
-- 是否避免了厚边框、强投影、大圆角、无意义图标和装饰渐变？
+- 是否避免了厚边框、强投影、阶梯外任意圆角、无意义图标和装饰渐变？
 
 当新的组件模式被复用两次以上，或形成稳定尺寸与状态规则时，应更新本文档。

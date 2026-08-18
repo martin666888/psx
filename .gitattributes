@@ -4,6 +4,28 @@
 * text=auto
 
 ###############################################################################
+# Deterministic LF for the Agent TS sources.
+#
+# The verify:web gate compares the committed wwwroot/app output byte-for-byte
+# against a fresh Vite build. Pinning LF here prevents Windows CRLF checkouts
+# from producing spurious diffs.
+###############################################################################
+frontend/agent/src/**/*.ts text eol=lf
+frontend/agent/src/**/*.tsx text eol=lf
+Services/BridgeProtocolLimits.g.cs text eol=lf
+tools/*-seed/package-lock.json text eol=lf
+licenses/maple-mono/LICENSE.txt text eol=lf
+
+###############################################################################
+# Vite build output committed at checkpoint boundaries only.
+#
+# verify:web rebuilds and byte-compares these files, so git must never apply
+# any eol conversion to them (-text); mark them generated so review diffs and
+# language stats skip them.
+###############################################################################
+wwwroot/app/** -text linguist-generated -diff
+
+###############################################################################
 # Set default behavior for command prompt diff.
 #
 # This is need for earlier builds of msysgit that does not have it on by

@@ -1,0 +1,96 @@
+/* Neutral pane layout (split panes).
+   Stacking model: the terminal layer sits at the bottom, the Agent overlay
+   above it, and #workspace-panes floats on top with pointer-events disabled —
+   pane slots are transparent frames that only draw the focused-pane ring (and
+   later the drop highlight + divider hit area). Workspace CONTENT is never
+   inside a slot: the geometry engine (PaneLayoutController) projects pane
+   rects onto the visible terminal wrappers and agent panels as inline styles,
+   so both render systems keep their existing single-layer DOM. */
+
+#workspace-stack {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+#terminal-container,
+#agent-workspace-container,
+#dsh-workspace-container,
+#kimi-web-workspace-container {
+    position: absolute;
+    inset: 0;
+}
+
+#workspace-panes {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    /* Agent cards, Plan and History have their own local z-index values.
+       Keep pane frames above every workspace layer so the divider remains a
+       reliable hit target instead of being swallowed by Agent content. */
+    z-index: 10;
+    pointer-events: none;
+    /* Divider handles re-enable hit-testing on themselves (Phase 1). */
+}
+
+.workspace-pane {
+    position: relative;
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 0;
+}
+
+/* The terminal layer must not paint its own background over inactive panes:
+ * each visible wrapper carries the background within its rect. */
+#terminal-container {
+    background: transparent;
+}
+
+/* Divider between panes: an 8px hit strip centred on the boundary. It is the
+ * only element in the slot row that takes pointer events. Dragging previews
+ * ratios locally (no bridge traffic); one intent goes out on pointerup. */
+.workspace-pane-divider {
+    position: relative;
+    flex: 0 0 8px;
+    margin: 0 -4px;
+    cursor: col-resize;
+    touch-action: none;
+    user-select: none;
+    pointer-events: auto;
+    z-index: 1;
+}
+
+.workspace-pane-divider::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 3px;
+    width: 2px;
+    background: transparent;
+}
+
+.workspace-pane-divider:hover::after,
+.workspace-pane-divider[data-dragging="true"]::after {
+    background: var(--agent-border);
+}
+
+/* Sash state (columns at their pixel floors): the cursor is the only hint.
+   Both sides pinned to their floors disable the divider entirely (default
+   cursor, no line); a single side at its floor stays draggable away from
+   the floor, so no visual change applies. */
+.workspace-pane-divider[data-sash-disabled="true"],
+.workspace-pane-divider[aria-disabled="true"] {
+    cursor: default;
+}
+
+.workspace-pane-divider[aria-disabled="true"]::after {
+    background: transparent;
+}
+
+/* Tab drag-in target: the pane under the pointer shows a dashed inset ring
+ * until the drop lands or the pointer leaves. */
+.workspace-pane[data-drop-target="true"] {
+    outline: 2px dashed var(--agent-focus-ring);
+    outline-offset: -6px;
+}

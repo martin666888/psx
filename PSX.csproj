@@ -1,14 +1,17 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
-    <Version>1.1.2</Version>
+    <Version>1.2.0</Version>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationIcon>Assets\Icons\psx.ico</ApplicationIcon>
+    <!-- TestResults may contain unpacked runtimes and arbitrary source files.
+         Exclude the entire artifact tree from every SDK default item glob. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);TestResults\**</DefaultItemExcludes>
   <!--
     Note: self-contained / single-file publish settings live in
     Properties/PublishProfiles/win-x64-self-contained.pubxml and are
@@ -21,7 +24,13 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The SDK project at the repository root would otherwise compile test sources into PSX. -->
+    <Compile Remove="tests\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -37,6 +46,13 @@
       supplies release-only artifacts such as Portable Node and WebView2.
     -->
     <Content Include="tools\acp-seed\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!--
+      DSH seed mirrors acp-seed: manifests only. User confirmation installs
+      @deepseek-ai/dsh into runtime/dsh-current (npm with lifecycle scripts;
+      native modules node-pty/koffi). The release ZIP carries the seed, never
+      the ~246MiB node_modules, mirroring acp-seed packaging.
+    -->
+    <Content Include="tools\dsh-seed\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Resource Include="Assets\Icons\psx.ico" />
   </ItemGroup>
 

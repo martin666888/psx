@@ -1,0 +1,339 @@
+using System.Diagnostics;
+using System.Text.Json;
+using PSX.Models;
+using PSX.Services;
+
+namespace PSX.Tests.Support;
+
+internal sealed class FakeNpmFixture : IDisposable
+{
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = true
+    };
+
+    private readonly TestWorkspace _workspace;
+
+    public FakeNpmFixture(string scope, TimeSpan? processTimeout = null)
+    {
+        _workspace = TestWorkspace.Create(scope);
+        InstallDirectory = _workspace.Path;
+        InvocationLogPath = Path.Combine(InstallDirectory, "fake-npm-invocations.jsonl");
+        Configure();
+        InstallFakeNode();
+        InstallSeedFiles();
+        Locator = new RuntimeLocator(InstallDirectory);
+        Manager = new AcpRuntimeManager(
+            Locator,
+            Path.Combine(InstallDirectory, "logs"),
+            processTimeout ?? TimeSpan.FromSeconds(10));
+    }
+
+    public string InstallDirectory { get; }
+    public string InvocationLogPath { get; }
+    public RuntimeLocator Locator { get; }
+    public AcpRuntimeManager Manager { get; }
+    public RuntimePaths Paths => Locator.Locate();
+
+    public void Configure(params FakeNpmScenario[] scenarios)
+    {
+        var configuration = new
+        {
+            invocationLogPath = InvocationLogPath,
+            scenarios,
+            defaultScenario = new FakeNpmScenario
+            {
+                ExitCode = 99,
+                StandardError = "Unexpected Fake npm invocation.",
+                CreateAdapter = false,
+                CreateClaude = false
+            }
+        };
+        var path = NpmCliPath();
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, JsonSerializer.Serialize(configuration, JsonOptions));
+    }
+
+    public void CreateCompleteRuntime(string directory, string adapterVersion, string claudeVersion = "2.0.0-test")
+    {
+        WriteFile(
+            Path.Combine(directory, "node_modules", "@agentclientprotocol", "claude-agent-acp", "dist", "index.js"),
+            "fake adapter");
+        WriteJson(
+            Path.Combine(directory, "node_modules", "@agentclientprotocol", "claude-agent-acp", "package.json"),
+            new { version = adapterVersion });
+        WriteJson(
+            Path.Combine(directory, "node_modules", "@anthropic-ai", "claude-agent-sdk", "package.json"),
+            new { version = "0.0.0-test", claudeCodeVersion = claudeVersion });
+        WriteFile(
+            Path.Combine(directory, "node_modules", "@anthropic-ai", "claude-agent-sdk-win32-x64", "claude.exe"),
+            "fake claude");
+    }
+
+    public void WritePointer(string value)
+    {
+        Directory.CreateDirectory(Paths.RuntimeRoot);
+        File.WriteAllText(Paths.AcpActivePointerFile, value);
+    }
+
+    /// <summary>Creates a Kimi runtime that shares this fixture's fake node/npm.</summary>
+    public KimiCodeAcpRuntime CreateKimiRuntime(TimeSpan? processTimeout = null) =>
+        new(Locator, Path.Combine(InstallDirectory, "logs"), processTimeout ?? TimeSpan.FromSeconds(10));
+
+    /// <summary>Installs a structurally valid bundled Kimi baseline under tools/kimi.</summary>
+    public void InstallKimiBundle(string version = "0.29.1")
+    {
+        var bundleRoot = Path.Combine(InstallDirectory, "tools", "kimi");
+        WriteJson(
+            Path.Combine(bundleRoot, "package.json"),
+            new
+            {
+                name = "psx-kimi-runtime",
+                dependencies = new Dictionary<string, string> { ["@moonshot-ai/kimi-code"] = version }
+            });
+        WriteFile(Path.Combine(bundleRoot, ".npmrc"), "os=win32\ncpu=x64\n");
+        WriteFile(Path.Combine(bundleRoot, "package-lock.json"), "{}");
+        CreateKimiInstall(bundleRoot, version);
+    }
+
+    /// <summary>Writes a valid Kimi package tree (manifest + entry) into a root.</summary>
+    public void CreateKimiInstall(string directory, string version)
+    {
+        WriteJson(
+            Path.Combine(directory, "node_modules", "@moonshot-ai", "kimi-code", "package.json"),
+            new
+            {
+                name = "@moonshot-ai/kimi-code",
+                version,
+                bin = new Dictionary<string, string> { ["kimi"] = "dist/main.mjs" }
+            });
+        WriteFile(
+            Path.Combine(directory, "node_modules", "@moonshot-ai", "kimi-code", "dist", "main.mjs"),
+            "// fake kimi acp entry");
+    }
+
+    /// <summary>Creates a Qwen runtime that shares this fixture's fake node/npm.</summary>
+    public QwenCodeAcpRuntime CreateQwenRuntime(TimeSpan? processTimeout = null) =>
+        new(Locator, Path.Combine(InstallDirectory, "logs"), processTimeout ?? TimeSpan.FromSeconds(10));
+
+    /// <summary>Installs a structurally valid bundled Qwen baseline under tools/qwen.</summary>
+    public void InstallQwenBundle(string version = "0.21.5")
+    {
+        var bundleRoot = Path.Combine(InstallDirectory, "tools", "qwen");
+        WriteJson(
+            Path.Combine(bundleRoot, "package.json"),
+            new
+            {
+                name = "psx-qwen-runtime",
+                dependencies = new Dictionary<string, string> { ["@qwen-code/qwen-code"] = version }
+            });
+        WriteFile(Path.Combine(bundleRoot, ".npmrc"), "os=win32\ncpu=x64\n");
+        WriteFile(Path.Combine(bundleRoot, "package-lock.json"), "{}");
+        CreateQwenInstall(bundleRoot, version);
+    }
+
+    /// <summary>Writes a valid Qwen package tree (manifest + entry) into a root.</summary>
+    public void CreateQwenInstall(string directory, string version)
+    {
+        WriteJson(
+            Path.Combine(directory, "node_modules", "@qwen-code", "qwen-code", "package.json"),
+            new
+            {
+                name = "@qwen-code/qwen-code",
+                version,
+                bin = new Dictionary<string, string> { ["qwen"] = "cli-entry.js" }
+            });
+        WriteFile(
+            Path.Combine(directory, "node_modules", "@qwen-code", "qwen-code", "cli-entry.js"),
+            "// fake qwen acp entry");
+    }
+
+    /// <summary>Creates an OpenCode runtime that shares this fixture's fake node/npm.</summary>
+    public OpencodeAcpRuntime CreateOpencodeRuntime(bool supportsAvx2 = true, TimeSpan? processTimeout = null) =>
+        new(Locator, Path.Combine(InstallDirectory, "logs"), processTimeout ?? TimeSpan.FromSeconds(10), () => supportsAvx2);
+
+    /// <summary>Installs a structurally valid bundled OpenCode baseline under tools/opencode.</summary>
+    public void InstallOpencodeBundle(string version = OpencodeAcpRuntime.MinimumCompatibleVersion)
+    {
+        var bundleRoot = Path.Combine(InstallDirectory, "tools", "opencode");
+        WriteJson(
+            Path.Combine(bundleRoot, "package.json"),
+            new
+            {
+                name = "psx-opencode-runtime",
+                dependencies = new Dictionary<string, string> { ["opencode-windows-x64"] = version }
+            });
+        WriteFile(Path.Combine(bundleRoot, ".npmrc"), "os=win32\ncpu=x64\n");
+        WriteFile(Path.Combine(bundleRoot, "package-lock.json"), "{}");
+        CreateOpencodeInstall(bundleRoot, version);
+    }
+
+    /// <summary>
+    /// Writes a valid OpenCode platform package tree (manifest + native exe)
+    /// into a root. The exe is the fake npm process (plus its managed
+    /// siblings): invoked as <c>opencode.exe --version</c> it answers from the
+    /// sibling package.json.
+    /// </summary>
+    public void CreateOpencodeInstall(
+        string directory,
+        string version,
+        string packageName = OpencodeAcpRuntime.ModernPackageName)
+    {
+        WriteJson(
+            Path.Combine(directory, "node_modules", packageName, "package.json"),
+            new { name = packageName, version });
+        var binDirectory = Path.Combine(directory, "node_modules", packageName, "bin");
+        Directory.CreateDirectory(binDirectory);
+        var nodeDirectory = Path.Combine(InstallDirectory, "tools", "node");
+        foreach (var source in Directory.EnumerateFiles(nodeDirectory, "PSX.TestNpm.*"))
+            File.Copy(source, Path.Combine(binDirectory, Path.GetFileName(source)), overwrite: true);
+        File.Copy(
+            Path.Combine(nodeDirectory, "node.exe"),
+            Path.Combine(binDirectory, "opencode.exe"),
+            overwrite: true);
+    }
+
+    public IReadOnlyList<FakeNpmInvocation> ReadInvocations()
+    {
+        if (!File.Exists(InvocationLogPath))
+            return [];
+
+        // The fake process appends this marker immediately after startup while
+        // the test polls it to learn the process id. Open it as an actual IPC
+        // log: concurrent reads must not depend on the writer having already
+        // closed its short-lived append handle. A final partial line is simply
+        // not an invocation yet and will be observed on the next poll.
+        using var stream = new FileStream(
+            InvocationLogPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd()
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+            .Where(line => !string.IsNullOrWhiteSpace(line))
+            .Select(line =>
+            {
+                try
+                {
+                    return JsonSerializer.Deserialize<FakeNpmInvocation>(line, JsonOptions);
+                }
+                catch (JsonException)
+                {
+                    return null;
+                }
+            })
+            .Where(invocation => invocation != null)
+            .Select(invocation => invocation!)
+            .ToArray();
+    }
+
+    public static bool IsProcessRunning(int processId)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(processId);
+            return !process.HasExited;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    public void Dispose()
+    {
+        Manager.Dispose();
+        _workspace.Dispose();
+    }
+
+    private void InstallFakeNode()
+    {
+        var configuration = AppContext.BaseDirectory.Contains(
+            $"{Path.DirectorySeparatorChar}Debug{Path.DirectorySeparatorChar}",
+            StringComparison.OrdinalIgnoreCase)
+            ? "Debug"
+            : "Release";
+        var outputDirectory = Path.Combine(
+            TestWorkspace.RepositoryRoot,
+            "tests",
+            "PSX.TestNpm",
+            "bin",
+            configuration,
+            "net10.0");
+        var sourceExecutable = Path.Combine(outputDirectory, "PSX.TestNpm.exe");
+        if (!File.Exists(sourceExecutable))
+            throw new FileNotFoundException("The Fake npm process was not built.", sourceExecutable);
+
+        var nodeDirectory = Path.Combine(InstallDirectory, "tools", "node");
+        Directory.CreateDirectory(nodeDirectory);
+        foreach (var source in Directory.EnumerateFiles(outputDirectory, "PSX.TestNpm.*"))
+            File.Copy(source, Path.Combine(nodeDirectory, Path.GetFileName(source)), overwrite: true);
+        File.Copy(sourceExecutable, Path.Combine(nodeDirectory, "node.exe"), overwrite: true);
+    }
+
+    private void InstallSeedFiles()
+    {
+        var destination = Path.Combine(InstallDirectory, "tools", "acp-seed");
+        Directory.CreateDirectory(destination);
+        foreach (var name in new[] { "package.json", ".npmrc" })
+        {
+            File.Copy(
+                Path.Combine(TestWorkspace.RepositoryRoot, "tools", "acp-seed", name),
+                Path.Combine(destination, name),
+                overwrite: true);
+        }
+    }
+
+    private string NpmCliPath() => Path.Combine(
+        InstallDirectory,
+        "tools",
+        "node",
+        "node_modules",
+        "npm",
+        "bin",
+        "npm-cli.js");
+
+    private static void WriteJson(string path, object value) =>
+        WriteFile(path, JsonSerializer.Serialize(value));
+
+    private static void WriteFile(string path, string contents)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, contents);
+    }
+}
+
+internal sealed class FakeNpmScenario
+{
+    public string Command { get; set; } = "";
+    public string WorkingDirectoryName { get; set; } = "";
+    public int ExitCode { get; set; }
+    public string StandardOutput { get; set; } = "";
+    public string StandardError { get; set; } = "";
+    public int DelayMilliseconds { get; set; }
+    public bool Hang { get; set; }
+    public bool CreateAdapter { get; set; } = true;
+    public bool CreateClaude { get; set; } = true;
+    public bool CreateKimi { get; set; }
+    public bool KimiSmokeFails { get; set; }
+    public bool CreateQwen { get; set; }
+    public bool QwenSmokeFails { get; set; }
+    public bool CreateOpencode { get; set; }
+    public bool OpencodeSmokeFails { get; set; }
+    public string? AdapterVersion { get; set; }
+    public string? ClaudeCodeVersion { get; set; }
+    public string? KimiVersion { get; set; }
+    public string? QwenVersion { get; set; }
+    public string? OpencodeVersion { get; set; }
+    public string? OpencodePackageName { get; set; }
+}
+
+internal sealed class FakeNpmInvocation
+{
+    public int ProcessId { get; set; }
+    public string WorkingDirectory { get; set; } = "";
+    public string[] Arguments { get; set; } = [];
+    public string Command { get; set; } = "";
+}

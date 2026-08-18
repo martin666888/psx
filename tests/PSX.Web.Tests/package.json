@@ -1,0 +1,14 @@
+{
+  "name": "psx-web-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "powershell -ExecutionPolicy Bypass -File ../../tools/run-web-tests.ps1",
+    "test:watch": "vitest",
+    "test:coverage": "powershell -ExecutionPolicy Bypass -File ../../tools/run-web-tests.ps1 -Coverage"
+  },
+  "devDependencies": {
+    "jsdom": "29.1.1",
+    "typescript": "5.9.3"
+  }
+}

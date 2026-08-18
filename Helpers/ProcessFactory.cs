@@ -53,7 +53,7 @@ internal static class ProcessFactory
                 commandLine,
                 IntPtr.Zero,
                 IntPtr.Zero,
-                true,
+                false, // ConPTY already owns duplicated pipe handles; do not inherit the host's stdio.
                 EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
                 environmentBlock,
                 profile.StartingDirectory,

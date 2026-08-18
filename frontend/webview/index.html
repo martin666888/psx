@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="__PSX_CSP__">
+    <link rel="icon" href="data:,">
+    <title>PSX Terminal</title>
+</head>
+<body>
+    <div id="workspace-stack" class="agent-ui">
+        <nav id="activity-rail" aria-label="全局操作">
+            <button type="button" class="workspace-chrome-button" data-role="history-toggle" aria-label="历史记录" title="历史记录">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+                    <path d="M3 3v5h5"></path>
+                    <path d="M12 7v5l4 2"></path>
+                </svg>
+            </button>
+            <button type="button" class="workspace-chrome-button" data-role="workspace-create-toggle" aria-label="新建工作区" aria-haspopup="dialog" aria-expanded="false">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M5 12h14"></path>
+                    <path d="M12 5v14"></path>
+                </svg>
+            </button>
+            <button type="button" class="workspace-chrome-button" data-role="theme-toggle" aria-label="主题" title="Theme" aria-haspopup="dialog" aria-expanded="false">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"></path>
+                    <circle cx="13.5" cy="6.5" r=".5" fill="currentColor"></circle>
+                    <circle cx="17.5" cy="10.5" r=".5" fill="currentColor"></circle>
+                    <circle cx="6.5" cy="12.5" r=".5" fill="currentColor"></circle>
+                    <circle cx="8.5" cy="7.5" r=".5" fill="currentColor"></circle>
+                </svg>
+            </button>
+        </nav>
+        <header id="workspace-chrome" aria-label="工作区导航">
+            <div class="workspace-tab-strips" data-role="pane-nameplates"></div>
+        </header>
+        <div id="terminal-container"></div>
+        <div id="agent-workspace-container"></div>
+        <div id="dsh-workspace-container"></div>
+        <div id="kimi-web-workspace-container"></div>
+        <div id="workspace-panes"></div>
+        <div id="workspace-popover-root"></div>
+        <div id="global-portal-root" class="agent-ui"></div>
+        <div id="workspace-notices" role="status" aria-live="polite"></div>
+    </div>
+    <template id="agent-workspace-template">
+    <section class="agent-panel" data-agent-font-surface hidden>
+        <header class="agent-toolbar">
+            <div data-role="toolbar-host" class="agent-toolbar-host"></div>
+        </header>
+        <div data-role="runtime-host" class="agent-runtime-react-host"></div>
+        <div class="agent-workspace">
+            <div data-role="conversation-host" class="agent-conversation-host"></div>
+        </div>
+
+                <aside data-role="context-cards" class="agent-context-cards" aria-label="Agent context cards">
+            <section data-role="plan-card" class="agent-plan-card" aria-label="Agent plan"></section>
+        </aside>
+        <footer class="agent-composer">
+            <div data-role="composer-host" class="agent-composer-host"></div>
+        </footer>
+    </section>
+    </template>
+
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>

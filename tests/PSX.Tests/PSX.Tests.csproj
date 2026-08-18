@@ -1,0 +1,28 @@
+<Project Sdk="MSTest.Sdk/4.0.2">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>PSX.Tests</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\PSX.csproj" />
+    <ProjectReference Include="..\PSX.DesktopProbe\PSX.DesktopProbe.csproj"
+                      ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\PSX.TestAgent\PSX.TestAgent.csproj"
+                      ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\PSX.TestNpm\PSX.TestNpm.csproj"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Fixtures\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,94 @@
+/* Message region (CP4 area 2): layout/visuals live on the AI Elements
+   Message/MessageContent Tailwind classes. This file keeps only what those
+   cannot express: the appearance-settings font contract and the PSX
+   collapsible user-message machinery. */
+
+.agent-turn {
+    width: 100%;
+    box-sizing: border-box;
+    /* Free DOM slimming for long threads: off-screen turns skip layout and
+     * paint while keeping their measured size (auto) or a 240px estimate. */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 240px;
+}
+
+/* appearance_settings drives the Agent font size; unlayered CSS outranks
+   Tailwind's layered utilities, so this wins over text-sm / text-xs. */
+.agent-message-body {
+    color: var(--agent-text);
+    font-size: var(--agent-font-size);
+    line-height: 1.6;
+    white-space: normal;
+}
+
+/* Tool chrome stays a step below body, but shares the agent font contract
+   (not a fixed Tailwind 14px) so appearance_settings scales it too. */
+.agent-run-group-header,
+.agent-tool-title {
+    font-size: calc(var(--agent-font-size) * 0.93);
+    line-height: 1.5;
+}
+
+/* Tool mono output matches markdown fenced-code sizing: tighter than body,
+   still keyed off --agent-font-size. */
+.agent-tool-card-input-content,
+.agent-tool-card-content,
+.agent-tool-output {
+    font-family: var(--agent-font-mono);
+    font-size: clamp(11px, calc(var(--agent-font-size) * 0.8), 18px);
+    line-height: 1.5;
+}
+
+/* The collapse toggle is a plain in-flow row now, so the collapsible body
+   needs no positioning context of its own; the fade ::after anchors to the
+   relative .agent-message-content above. */
+
+.agent-message-collapsed .agent-message-content {
+    position: relative;
+    max-height: var(--agent-user-message-collapsed-height);
+    overflow: hidden;
+}
+
+/* Fade the clipped text out into the user-bubble background (--secondary,
+   see MessageContent's group-[.is-user]:bg-secondary) instead of covering
+   it with a hard line. */
+.agent-message-collapsed .agent-message-content::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 48px;
+    pointer-events: none;
+    background: linear-gradient(to bottom, transparent, var(--secondary));
+}
+
+/* One toggle position for both states: an in-flow, left-aligned text +
+   chevron row under the (possibly clipped) content, exactly where the
+   expanded "收起" already sat — the collapsed state no longer floats a
+   centred pill over the fade. */
+.agent-message-collapse-toggle {
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin: 2px 0 0;
+    padding: 3px 6px;
+    border: 0;
+    border-radius: calc(var(--radius) - 4px);
+    background: var(--card);
+    color: var(--primary);
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.86em;
+}
+
+.agent-message-collapse-toggle:hover {
+    color: var(--foreground);
+    background: var(--accent);
+}
+
+.agent-message-collapse-toggle:focus-visible {
+    outline: 2px solid var(--agent-focus-ring);
+    outline-offset: 2px;
+}

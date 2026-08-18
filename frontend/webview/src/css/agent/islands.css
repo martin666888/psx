@@ -1,0 +1,26 @@
+.agent-island-error {
+    box-sizing: border-box;
+    display: grid;
+    gap: 8px;
+    width: min(100%, 720px);
+    margin: 12px auto;
+    padding: 12px 14px;
+    color: var(--agent-text);
+    background: color-mix(in srgb, var(--agent-error) 8%, var(--agent-surface));
+    border: 1px solid color-mix(in srgb, var(--agent-error) 42%, var(--agent-border));
+    border-radius: 10px;
+}
+
+.agent-island-error-title,
+.agent-island-error-message {
+    margin: 0;
+}
+
+.agent-island-error-message {
+    color: var(--agent-text-muted);
+    line-height: 1.45;
+}
+
+.agent-island-error-retry {
+    justify-self: start;
+}

@@ -15,9 +15,39 @@ public sealed class RuntimeLocator
     private const string AcpActivePointerFileName = "acp-active.txt";
     private const string NodeSubdirectoryName = "node";
     private const string NodeExecutableName = "node.exe";
+    private const string KimiSubdirectoryName = "kimi";
+    private const string KimiCurrentSubdirectoryName = "kimi-current";
+    private const string KimiNextSubdirectoryName = "kimi-next";
+    private const string KimiActivePointerFileName = "kimi-active.txt";
+    private const string QwenSubdirectoryName = "qwen";
+    private const string QwenCurrentSubdirectoryName = "qwen-current";
+    private const string QwenNextSubdirectoryName = "qwen-next";
+    private const string QwenActivePointerFileName = "qwen-active.txt";
+    private const string OpencodeSubdirectoryName = "opencode";
+    private const string OpencodeCurrentSubdirectoryName = "opencode-current";
+    private const string OpencodeNextSubdirectoryName = "opencode-next";
+    private const string OpencodeActivePointerFileName = "opencode-active.txt";
+    private const string DshSeedSubdirectoryName = "dsh-seed";
+    private const string DshCurrentSubdirectoryName = "dsh-current";
+    private const string DshNextSubdirectoryName = "dsh-next";
+    private const string DshActivePointerFileName = "dsh-active.txt";
+    private const string DshInstallingSubdirectoryName = "dsh-installing";
+    private const string DshRollbackSubdirectoryName = "dsh-rollback";
     private const string NpmCliRelativePath = "node_modules/npm/bin/npm-cli.js";
     private const string WebView2FixedRuntimeSubdirectoryName = "webview2-fixed";
     private const string WebView2ExecutableName = "msedgewebview2.exe";
+    private readonly string _installDirectory;
+
+    public RuntimeLocator()
+        : this(AppContext.BaseDirectory)
+    {
+    }
+
+    internal RuntimeLocator(string installDirectory)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(installDirectory);
+        _installDirectory = Path.GetFullPath(installDirectory);
+    }
 
     /// <summary>
     /// Compute all runtime paths for the current process. Call once at startup.
@@ -33,12 +63,13 @@ public sealed class RuntimeLocator
     /// collapse current and next onto the same path and let
     /// <c>AcpRuntimeManager</c> delete the in-use runtime.
     /// Agent mode populates <c>runtime/acp-current</c> only after the user
-    /// confirms installation (npm ci from <c>tools/acp-seed</c>); there is no
+    /// confirms installation (npm install of the registry's latest adapter,
+    /// using platform policy from <c>tools/acp-seed</c>); there is no
     /// pre-installed fallback or first-message installation path.
     /// </summary>
     public RuntimePaths Locate()
     {
-        var installDirectory = AppContext.BaseDirectory;
+        var installDirectory = _installDirectory;
 
         var nodeDirectory = Path.Combine(installDirectory, "tools", NodeSubdirectoryName);
         var nodePath = Path.Combine(nodeDirectory, NodeExecutableName);
@@ -69,6 +100,24 @@ public sealed class RuntimeLocator
             WebView2FixedRuntimePath = webView2FixedRuntimePath,
             AcpSeedDirectory = Path.Combine(installDirectory, "tools", "acp-seed"),
             InstallDirectory = installDirectory,
+            BundledKimiDirectory = Path.Combine(installDirectory, "tools", KimiSubdirectoryName),
+            KimiCurrentDirectory = Path.Combine(runtimeRoot, KimiCurrentSubdirectoryName),
+            KimiNextDirectory = Path.Combine(runtimeRoot, KimiNextSubdirectoryName),
+            KimiActivePointerFile = Path.Combine(runtimeRoot, KimiActivePointerFileName),
+            BundledQwenDirectory = Path.Combine(installDirectory, "tools", QwenSubdirectoryName),
+            QwenCurrentDirectory = Path.Combine(runtimeRoot, QwenCurrentSubdirectoryName),
+            QwenNextDirectory = Path.Combine(runtimeRoot, QwenNextSubdirectoryName),
+            QwenActivePointerFile = Path.Combine(runtimeRoot, QwenActivePointerFileName),
+            BundledOpencodeDirectory = Path.Combine(installDirectory, "tools", OpencodeSubdirectoryName),
+            OpencodeCurrentDirectory = Path.Combine(runtimeRoot, OpencodeCurrentSubdirectoryName),
+            OpencodeNextDirectory = Path.Combine(runtimeRoot, OpencodeNextSubdirectoryName),
+            OpencodeActivePointerFile = Path.Combine(runtimeRoot, OpencodeActivePointerFileName),
+            DshSeedDirectory = Path.Combine(installDirectory, "tools", DshSeedSubdirectoryName),
+            DshCurrentDirectory = Path.Combine(runtimeRoot, DshCurrentSubdirectoryName),
+            DshNextDirectory = Path.Combine(runtimeRoot, DshNextSubdirectoryName),
+            DshActivePointerFile = Path.Combine(runtimeRoot, DshActivePointerFileName),
+            DshInstallingDirectory = Path.Combine(runtimeRoot, DshInstallingSubdirectoryName),
+            DshRollbackDirectory = Path.Combine(runtimeRoot, DshRollbackSubdirectoryName),
         };
     }
 

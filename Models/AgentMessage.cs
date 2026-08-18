@@ -16,6 +16,7 @@ public sealed class AgentMessage
     public string? Summary { get; set; }
     public List<AgentPlanEntry>? PlanEntries { get; set; }
     public string? RequestId { get; set; }
+    public string? DecisionSnapshotId { get; set; }
     public string? DecisionState { get; set; }
     public string? SelectedOptionId { get; set; }
     public List<AgentDecisionOption>? DecisionOptions { get; set; }

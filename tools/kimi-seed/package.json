@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "name": "psx-kimi-runtime",
+  "version": "0.1.0",
+  "description": "PSX Kimi Code ACP runtime — build-time staging installs this pinned lockfile into tools/kimi so the bundled Kimi Code CLI ships inside the PSX release.",
+  "dependencies": {
+    "@moonshot-ai/kimi-code": "0.36.1"
+  }
+}

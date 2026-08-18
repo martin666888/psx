@@ -4,18 +4,20 @@ Hallmark profile: `modern-minimal / technical restrained / Workbench`.
 
 ## Product character
 
-PSX is a developer workbench. The conversation is the primary work surface, the Inspector is persistent context, and the Composer is the fixed command surface. The UI should feel dense, calm, and operational: warm neutral surfaces, teal emphasis, direct hierarchy, and terminal-grade detail without terminal typography everywhere.
+PSX is a developer workbench. The conversation is the primary work surface, the Plan card is floating context, and the Composer is the fixed command surface. The UI should feel dense, calm, and operational: warm neutral surfaces, teal emphasis, direct hierarchy, and terminal-grade detail without terminal typography everywhere.
 
-Avoid gradients, glow, decorative illustration, card walls, nested cards, animated focus rings, and color-only status indicators. Prefer dividers, spacing, typography, and explicit state labels.
+The shape language is **Soft Workbench**: continuous, generous corner radii on a borders-and-fill hierarchy — macOS-grade smoothness without decorative chrome. Avoid gradients, glow, decorative illustration, card walls, nested cards, animated focus rings, and color-only status indicators. Prefer dividers, spacing, typography, and explicit state labels.
 
 ## Layout
 
-- Shell: tab strip and a compact Terminal / Agent mode switch.
-- Agent toolbar: one 44px status row with working directory and thread actions.
-- Workbench: conversation fills the flexible column; Inspector stays between 260px and 380px.
-- Conversation: every turn uses one centered responsive column. It fills the available conversation pane up to `1120px`, then stops growing; user prompts, Thinking, tools, decisions, prose, code, and tables share this width.
-- Composer: the attachment button, input, Send/Stop button, hints, and configuration row use the same centered `1120px` column as the conversation above. Status hints and configuration controls share one compact toolbar whenever that width is available; narrow windows wrap before controls become unreadable. The input action row remains 44px high and the command list opens directly above it.
-- Supported minimum window: 900x560. At narrow widths, metadata wraps before primary controls shrink.
+- Shell: the WebView owns a permanent 40px full-height activity rail at the left holding only global History, create, and Theme buttons, plus a 40px workspace chrome row above the pane contents carrying the tab strips/nameplates aligned to each visible column. There is no workspace list in the rail and no second WPF tab or theme row.
+- Pane nameplates: the focused pane uses an accent underline and stronger text. Provider/Terminal icon, truncated title, explicit attention text, close, and More occupy the pane's exact top rect, never colliding with the activity rail.
+- Agent toolbar: a pane-local status row with working directory and thread actions. At 720px it is complete, at 520–719px metadata truncates, and at 400–519px only the cwd basename and a ⋯ overflow entry remain. The Plan and Update actions remain directly reachable at ≥520px and move into the controlled ⋯ popover below 520px; responsive presentation must never place visible state behind a closed native disclosure.
+- Layered shell: History is one global left dock (default 280px, draggable 220–420px) opened from the permanent rail and pushes every pane. Plan is a workspace-local card; below 520px it opens as a pane-local overlay from a summary entry.
+- Conversation: one centered reading column per pane, max 920px. Its containing block is the pane rect after the History inset, never the application viewport.
+- Composer: shares the reading column. The composer card shares the 24px structure radius with the panels; the circular send button's center lands on the card's corner arc center (footer right/bottom padding = card radius − send radius = 7px). Every Pane keeps the card anchored 24px above the panel bottom at every container width; wrapped placeholder text, drafts, attachments, and decisions grow the card upward instead of changing that cross-pane baseline.
+- Pane minimums: existing Agent columns display at a 320px floor; the 400px figure is only the capacity-preview gate for a brand-new Agent column. Terminal `max(400px, 60 measured columns + horizontal padding)`, with a 480px fallback before measurement. When the sum does not fit, columns squeeze proportionally below their pixel floors rather than ever being collected, hidden, or dropped.
+- Composer response: at 720px all configuration stays on one row; at 520–719px session mode and provider config controls move into the configuration overlay while Context usage stays in the footer; at 400–519px the Composer keeps controls in the configuration overlay with context hints hidden while attachment, input, configuration, and send remain. Every width-bearing flex ancestor permits shrinkage and no pane paints into its neighbor.
 
 ## Typography
 
@@ -27,9 +29,31 @@ Avoid gradients, glow, decorative illustration, card walls, nested cards, animat
 ## Spacing and shape
 
 - Base unit: 4px. Use only the `--agent-space-*` tokens.
-- Compact controls use a 4px radius; input surfaces and bounded content use 6px; overlays use 8px.
-- Borders are 1px. A 2px outline is reserved for `:focus-visible`.
-- Shadows are reserved for floating command menus and modal media.
+- Corner radii use the five-step semantic ladder, never ad-hoc values:
+
+  | Token | Value | Used for |
+  |---|---|---|
+  | `--agent-radius-control` | 8px | buttons, icon buttons, chips, list rows, menu items, inline code |
+  | `--agent-radius-input` | 10px | text inputs, search fields, select triggers |
+  | `--agent-radius-card` | 14px | tool/decision/runtime/recovery/Plan cards, popovers, menus, tooltips, image previews, code blocks |
+  | `--agent-radius-structure` | 24px | the structural panels: Workspace panel + History dock + Composer card (structural, shell.css) |
+
+- The structural shell token `--agent-radius-structure` (24px) stays in shell.css; `--agent-workspace-radius` / `--agent-radius-composer` map onto it and `--agent-radius-context-card` maps onto `--agent-radius-card`. Component CSS never defines its own radius values. The Agent page is a soft workbench: both the History dock and the main panel are free-standing rounded blocks floating on the `--agent-bg` backdrop, spaced by `--agent-workbench-gutter` / `--agent-panel-gap`.
+- Pills (`50%` / `999px`) are reserved for genuinely circular or capsule elements: the send button, switches, status dots, badge dots, scrollbar thumbs.
+- WPF chrome mirrors the ladder through `ControlCornerRadius` (8), `InputCornerRadius` (10), `CardCornerRadius` (14) in `Themes/Dark.xaml`.
+- Borders are 1px. Focus indication uses the single uniform outline ring defined in Interaction states.
+
+## Depth doctrine: borders, fills, and five floating layers
+
+PSX builds hierarchy with borders and surface lightness steps. Shadows are reserved for exactly five floating layers:
+
+1. the workspace canvas edge (`--agent-shadow-canvas`),
+2. the composer card (`--agent-shadow-composer`),
+3. context cards such as Plan (`--agent-shadow-context-card`),
+4. floating menus and popovers (`--agent-shadow-popover`),
+5. modal media (`--agent-shadow-dialog`).
+
+Content cards (tool, decision, runtime, recovery) are `surface` + hairline border with **no** shadow. Controls (buttons, inputs, list rows) are hairline-only. All shadows derive from `--agent-shadow` via color-mix; never hardcode shadow colors.
 
 ## Color roles
 
@@ -42,27 +66,34 @@ The existing INI theme schema is authoritative; CSS variables are semantic alias
 - `text`: primary copy.
 - `textMuted`: every readable status, label, Plan item, and helper line.
 - `textDim`: disabled or decorative marks only.
-- `accent`: focus, selection, running state, and links.
+- `accent`: selection, running state, and links.
 - `error` and `warning`: paired with an icon/marker or explicit text.
 
-Primary and small secondary text must be at least 4.5:1 against their rendered surface. Focus indicators must be at least 3:1 against adjacent colors. Theme validation reports all relevant failures without adding INI fields.
+Primary and small secondary text must be at least 4.5:1 against their rendered surface. Theme validation reports all relevant failures without adding INI fields.
 
 ## Interaction states
 
-Every interactive element provides default, hover, focus-visible, active, and disabled states. Running, success, warning, and error states use a marker or label in addition to color.
+Every interactive element provides default, hover, active, and disabled states. Running, success, warning, and error states use a marker or label in addition to color.
 
 - Hover changes surface or border only on hover-capable devices.
 - Active controls move by at most 1px or use a stronger surface.
-- Focus uses a static 2px `--agent-focus-ring` outline with 2px offset (inset where clipping requires it).
+- Compact metadata rows that pair text with a textual action align the glyphs by baseline; icon-only action groups align by geometric center. Do not compensate individual labels with margins or transforms.
+- Focus uses one uniform outline ring: `2px solid var(--agent-focus-ring)` with `outline-offset: 2px`. It shows only on keyboard focus (`:focus-visible`; the Composer card rings via `:has([data-role="input"]:focus-visible)` so inner buttons keep their own ring), never on pointer click, and appears instantly. Pane focus is represented only by the nameplate accent underline and foreground strength; never draw a persistent pane border or dim an unfocused pane.
+- Attention is never color-only and never a dot. Pane nameplates use the short labels `需确认`, `待回复`, `出错`, and `已完成`. Same-worktree risk is a themed non-blocking notification emitted only when a conflict forms.
 - Disabled controls remain legible, use `textDim` only for nonessential copy, and expose an explanation through their title or adjacent status.
-- Motion is limited to the running spinner and disclosure chevrons. `prefers-reduced-motion` disables both.
+- Motion is limited to the running spinner, disclosure chevrons, and 120–150ms overlay/History entrances using opacity and a short translate. Pane widths, chrome slots, dividers, reading columns, and Terminal geometry never animate. Divider previews update at most once per animation frame; xterm fit and ConPTY resize happen after release. `prefers-reduced-motion` disables every nonessential effect at the `.agent-ui` root.
 
 ## Component rules
 
+- **Buttons have one component contract.** Agent React surfaces use the shadcn `Button` primitive and its named variants; component files may add layout geometry but must not recreate hover/active/disabled skins. Remaining non-React shell controls use their local semantic selectors until their owning surface migrates.
+- The visible workspace, create, and Theme menus are WebView surfaces and use the active CSS theme tokens. The hidden WPF chrome remains compatibility-only and must not reappear as a parallel navigation surface.
+- Host-owned maintenance for an embedded third-party runtime lives in that workspace tab's context menu, never inside the cross-origin product page or the global activity rail. The menu shows product/version, separates layout from runtime actions, keeps row metadata short, and expands restart-requiring updates into an in-place current-to-target confirmation with cancel and a single primary action.
+- Native WebView context menus are editing surfaces, not browser chrome. Editable fields retain the localized undo/cut/copy/paste/select-all family, selected text retains copy/select-all, and ordinary page/image/link targets expose no browser menu. Page export, print, source inspection, reload and browser-owned downloads are never available from the workbench.
+- An uncaught shell error may show one compact, dismissible, token-based notice with recovery wording. It never prints raw JavaScript stacks, resource URLs, workspace paths or conversation content into the workbench; Chromium's two known ResizeObserver delivery warnings are non-fatal and remain invisible to users.
 - Assistant responses are not cards. User prompts use one low-contrast bounded surface and never form left/right chat bubbles.
 - Tool activity is one disclosure region containing a flat divided list. Each row includes an explicit state label; no colored side rail.
 - Thinking is a single disclosure row. Completed thinking closes by default.
-- Plan and History retain separate DOM, scroll position, and selection state. Completed Plan items keep readable text and pair a check marker with completion styling.
+- Plan and History retain separate DOM, scroll position, and selection state. Completed Plan items keep readable text and pair a check marker with completion styling. History rows highlight with a full-row rounded fill — no inset accent stripes.
 - Commands use combobox/listbox/option semantics and synchronize `aria-activedescendant`.
 - Image preview uses a native modal dialog with Escape, backdrop click, explicit close, and focus restoration.
 - Existing DOM IDs, command bindings, bridge payloads, ACP protocol, and provider boundaries are compatibility contracts.

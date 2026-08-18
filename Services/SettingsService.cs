@@ -26,8 +26,14 @@ public sealed class SettingsService : ISettingsService
     public string? StartupWarning { get; private set; }
 
     public SettingsService()
+        : this(Path.Combine(AppContext.BaseDirectory, "psx.ini"))
     {
-        _configPath = Path.Combine(AppContext.BaseDirectory, "psx.ini");
+    }
+
+    internal SettingsService(string configPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(configPath);
+        _configPath = Path.GetFullPath(configPath);
     }
 
     public AppSettings GetSettings()
@@ -290,6 +296,7 @@ public sealed class SettingsService : ISettingsService
             case "overlay": a.Overlay = ValidateColor(value, a.Overlay); break;
             case "shadow": a.Shadow = ValidateColor(value, a.Shadow); break;
             case "focusring": a.FocusRing = ValidateColor(value, a.FocusRing); break;
+            case "workbenchtint": a.WorkbenchTint = ValidateColor(value, a.WorkbenchTint); break;
         }
     }
 
@@ -337,7 +344,7 @@ public sealed class SettingsService : ISettingsService
     {
         if (string.IsNullOrWhiteSpace(settings.AgentMonoFontFamily))
         {
-            settings.AgentMonoFontFamily = settings.FontFamily;
+            settings.AgentMonoFontFamily = AppSettings.BundledAgentMonoFontFamily;
         }
     }
 
@@ -415,6 +422,7 @@ public sealed class SettingsService : ISettingsService
         builder.AppendLine($"overlay={a.Overlay}");
         builder.AppendLine($"shadow={a.Shadow}");
         builder.AppendLine($"focusRing={a.FocusRing}");
+        builder.AppendLine($"workbenchTint={a.WorkbenchTint}");
         builder.AppendLine();
 
         // Terminal Colors
