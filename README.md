@@ -26,13 +26,17 @@ The core value of PSX is:
   and Portable Node; no installer or administrator access is required.
 - **Explicit Agent setup**: when a Provider needs a downloaded runtime, PSX
   contacts npm only after the user confirms the installation or update.
-- **One workspace for both modes**: mix Terminal and Agent tabs across as many
-  as three side-by-side columns, without hiding background workspaces.
+- **One workspace for every mode**: mix Terminal, ACP Agent, and Web App tabs
+  across as many as three side-by-side columns, without hiding background
+  workspaces.
 - **Clear Agent workflow**: conversations, tool calls, permission prompts, and
   task plans are separated in the interface.
 - **Four managed providers**: Claude Code, Kimi Code, Qwen Code, and OpenCode
   use curated runtime adapters rather than arbitrary
   executables.
+- **Managed Web Apps**: Kimi Code Web and DeepSeek Harness run in dedicated
+  local WebView workspaces while keeping their own application data and
+  settings.
 - **Global history and configuration**: History, profile, exact usage where a
   provider supports it, and sanitized user-level configuration remain available
   even when the workspace contains only Terminal tabs.
@@ -46,13 +50,20 @@ PSX is for people who want to run Claude Code / ACP Agent / node / npm / git and
 other command-line tools on Windows, while keeping the experience lightweight,
 controllable, and easy to distribute on work machines.
 
-![PSX multi-column Agent workbench](tests/PSX.Web.Tests/visual-baselines/windows-chromium/split-agents--light.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/psx-web-app-workspaces-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/psx-web-app-workspaces-light.png">
+  <img alt="PSX with DeepSeek Harness, Kimi Code Web, and a Qwen Agent in three columns" src="docs/assets/psx-web-app-workspaces-light.png">
+</picture>
 
 ## Features
 
 - Terminal mode with real Windows ConPTY sessions.
-- Mixed Terminal and Agent tab stacks in up to three resizable columns.
+- Mixed Terminal, Agent, and Web App tab stacks in up to three resizable
+  columns.
 - Managed ACP sessions for Claude Code, Kimi Code, Qwen Code, and OpenCode.
+- Embedded Kimi Code Web and DeepSeek Harness workspaces, each limited to one
+  running workspace per PSX process.
 - Process-wide History plus profile, Usage, and sanitized Config views.
 - Workspace-local task Plan card/overlay with completed items checked and
   struck through.
@@ -61,12 +72,18 @@ controllable, and easy to distribute on work machines.
 - Theme and font configuration through `psx.ini` and `theme-presets/`.
 - Portable Windows x64 release with .NET and Node included.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/psx-web-app-terminal-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/psx-web-app-terminal-light.png">
+  <img alt="PSX running DeepSeek Harness, Kimi Code Web, and a PowerShell terminal side by side" src="docs/assets/psx-web-app-terminal-light.png">
+</picture>
+
 ## Download
 
 Download the latest Windows build from GitHub Releases:
 
 ```text
-PSX-1.1.2-win-x64-portable.zip
+PSX-1.2.0-win-x64-portable.zip
 ```
 
 Usage:
@@ -79,12 +96,12 @@ PSX currently targets Windows x64. Microsoft Edge WebView2 Runtime is required.
 If WebView2 is not installed, PSX will show a prompt instead of opening a blank
 window.
 
-The release package includes the .NET runtime, Portable Node, the Claude seed
-manifest, and curated bundled baselines for Kimi, Qwen, and OpenCode. It
-deliberately does **not** include `claude.exe` or a user-installed runtime under
-`runtime/`.
+The release package includes the .NET runtime, Portable Node, the Claude and
+DeepSeek Harness seed manifests, and curated bundled baselines for Kimi, Qwen,
+and OpenCode. It deliberately does **not** include `claude.exe`, DeepSeek
+Harness, or a user-installed runtime under `runtime/`.
 
-## First-time Agent Setup
+## First-time Runtime Setup
 
 Terminal mode works immediately and startup never starts an npm download.
 Kimi Code, Qwen Code, and OpenCode can use the curated baseline shipped in the
@@ -92,6 +109,11 @@ portable package. Claude Code requires explicit install confirmation before PSX
 downloads its managed runtime from the official npm registry. Installation and
 user-triggered updates show progress and support
 cancellation/retry; cancelling does not leave the runtime directory locked.
+
+Kimi Code Web uses the bundled Kimi runtime. DeepSeek Harness is a separate Web
+App workspace: its first install is pinned to the audited seed version and is
+started only after an explicit in-app confirmation. DeepSeek Harness updates are
+also manual; PSX never checks for or applies them automatically.
 
 Downloaded or updated runtimes are stored under `runtime/` beside `PSX.exe` and
 reused by that extracted copy. Keep the PSX directory writable and preserve it
@@ -217,7 +239,8 @@ PSX is built with:
 - WebView2 for the terminal and Agent frontend.
 - xterm.js for terminal rendering, ANSI sequences, input, and scrollback.
 - Windows ConPTY for real pseudo-console sessions.
-- ACP runtimes for the six managed Agent providers.
+- ACP runtimes for the four managed Agent providers.
+- Managed local Web App workspaces for Kimi Code Web and DeepSeek Harness.
 
 These technologies are implementation details. The goal of PSX is to provide a
 lightweight Windows desktop entry point for AI Agent CLI workflows, especially
@@ -234,6 +257,8 @@ in environments where installing a heavier application is inconvenient.
 - `theme-presets/` - preset theme configuration files
 - `tools/build-release.ps1` - portable release builder
 - `tools/acp-seed/` - manifest and Windows platform policy used for the user-confirmed latest Agent install
+- `tools/dsh-seed/` - pinned DeepSeek Harness manifest used for its
+  user-confirmed first install
 
 ## Release Notes For Maintainers
 
