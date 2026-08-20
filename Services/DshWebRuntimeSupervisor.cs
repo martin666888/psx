@@ -42,6 +42,8 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
     private DshUpdateState _updateState = DshUpdateState.Idle;
     private DshUpdatePhase? _updatePhase;
     private string? _availableVersion;
+    private IReadOnlyList<DshAvailableVersion> _availableVersions = DshUpdateCheckResult.EmptyVersions;
+    private string? _requestedUpdateVersion;
     private string? _updateError;
     private CancellationTokenSource? _runCts;   // live lifecycle operation; guarded by _sync
     private Task? _operation;                   // single-flight lifecycle operation; guarded by _sync
@@ -149,7 +151,8 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
 
     public Task CheckForUpdateAsync() => BeginOperationAsync(DshOperationKind.CheckUpdate);
 
-    public Task UpdateAndRestartAsync() => BeginOperationAsync(DshOperationKind.Update);
+    public Task UpdateAndRestartAsync(string? version = null) =>
+        BeginOperationAsync(DshOperationKind.Update, version);
 
     /// <summary>
     /// Cancel only while the candidate is being downloaded or validated. The
@@ -175,7 +178,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         return Task.CompletedTask;
     }
 
-    private Task BeginOperationAsync(DshOperationKind kind)
+    private Task BeginOperationAsync(DshOperationKind kind, string? version = null)
     {
         lock (_sync)
         {
@@ -196,6 +199,13 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
             _runCts = runCts;
             _operation = completion.Task;
             _operationKind = kind;
+            // Capture the requested update version only when winning the
+            // single-flight slot. A later concurrent Update with a different
+            // version joins the same task and must not steal the target.
+            _requestedUpdateVersion = kind == DshOperationKind.Update
+                && !string.IsNullOrWhiteSpace(version)
+                ? version.Trim()
+                : null;
             _ = ExecuteOperationAsync(completion, runCts, kind);
             return completion.Task;
         }
@@ -266,6 +276,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
                 {
                     _operation = null;
                     _operationKind = null;
+                    _requestedUpdateVersion = null;
                 }
                 if (ReferenceEquals(_runCts, runCts))
                     _runCts = null;
@@ -392,27 +403,69 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
 
         lock (_sync)
         {
-            _availableVersion = result.UpdateAvailable ? result.AvailableVersion : null;
-            _updateError = result.Success ? null : result.ErrorMessage;
-            _updateState = !result.Success
-                ? DshUpdateState.Failed
-                : result.UpdateAvailable ? DshUpdateState.Available : DshUpdateState.UpToDate;
+            if (!result.Success)
+            {
+                // Failed checks clear the allowlist so Failed UI never sits
+                // next to a stale list the supervisor would still accept.
+                _availableVersions = DshUpdateCheckResult.EmptyVersions;
+                _availableVersion = null;
+                _updateError = result.ErrorMessage;
+                _updateState = DshUpdateState.Failed;
+            }
+            else
+            {
+                _availableVersions = result.AvailableVersions ?? DshUpdateCheckResult.EmptyVersions;
+                _availableVersion = result.AvailableVersion;
+                _updateError = null;
+                _updateState = result.UpdateAvailable
+                    ? DshUpdateState.Available
+                    : DshUpdateState.UpToDate;
+            }
         }
         PublishCurrentState();
     }
 
     private async Task UpdateAndRestartHoldingLockAsync(CancellationTokenSource runCts)
     {
-        string? candidate;
+        string? requested;
+        IReadOnlyList<DshAvailableVersion> allowlist;
         lock (_sync)
-            candidate = _updateState == DshUpdateState.Available ? _availableVersion : null;
-        if (string.IsNullOrWhiteSpace(candidate))
         {
-            await CheckForUpdateHoldingLockAsync(runCts.Token).ConfigureAwait(false);
+            requested = _requestedUpdateVersion;
+            allowlist = _availableVersions;
+        }
+
+        string? candidate;
+        if (!string.IsNullOrWhiteSpace(requested))
+        {
+            // An explicit version must already sit in the last successful
+            // check allowlist. Never re-check to bypass that gate.
+            if (!allowlist.Any(entry =>
+                    string.Equals(entry.Version, requested, StringComparison.Ordinal)))
+            {
+                ClearAllowlist();
+                SetUpdateState(
+                    DshUpdateState.Failed,
+                    null,
+                    "更新版本无效，请重新检查更新。");
+                return;
+            }
+            candidate = requested;
+        }
+        else
+        {
             lock (_sync)
                 candidate = _updateState == DshUpdateState.Available ? _availableVersion : null;
             if (string.IsNullOrWhiteSpace(candidate))
-                return;
+            {
+                // Compatible path: no version and empty cache — re-check and
+                // take the highest candidate.
+                await CheckForUpdateHoldingLockAsync(runCts.Token).ConfigureAwait(false);
+                lock (_sync)
+                    candidate = _updateState == DshUpdateState.Available ? _availableVersion : null;
+                if (string.IsNullOrWhiteSpace(candidate))
+                    return;
+            }
         }
 
         SetUpdateState(DshUpdateState.Updating, candidate, phase: DshUpdatePhase.Downloading);
@@ -443,9 +496,10 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
                 return;
             }
             _runtime.DiscardStagedUpdate();
+            ClearAllowlist();
             SetUpdateState(
                 DshUpdateState.Failed,
-                candidate,
+                null,
                 staged.ErrorMessage ?? "更新失败，当前版本可继续使用。");
             return;
         }
@@ -475,7 +529,8 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         if (!_runtime.ApplyStagedUpdate(candidate))
         {
             _runtime.RollbackAppliedUpdate();
-            SetUpdateState(DshUpdateState.Failed, candidate, "更新切换失败，已保留原版本。");
+            ClearAllowlist();
+            SetUpdateState(DshUpdateState.Failed, null, "更新切换失败，已保留原版本。");
             await EnsureRunningHoldingLockAsync().ConfigureAwait(false);
             return;
         }
@@ -484,7 +539,8 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         if (spec == null)
         {
             _runtime.RollbackAppliedUpdate();
-            SetUpdateState(DshUpdateState.Failed, candidate, "更新无法启动，已恢复原版本。");
+            ClearAllowlist();
+            SetUpdateState(DshUpdateState.Failed, null, "更新无法启动，已恢复原版本。");
             await EnsureRunningHoldingLockAsync().ConfigureAwait(false);
             return;
         }
@@ -507,6 +563,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
             _runtime.CommitAppliedUpdate();
             lock (_sync)
             {
+                _availableVersions = DshUpdateCheckResult.EmptyVersions;
                 _availableVersion = null;
                 _updateError = null;
                 _updateState = DshUpdateState.UpToDate;
@@ -519,7 +576,8 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         // TryCommitProcessState already rolls back an uncommitted candidate
         // on Failed. Calling this again is harmless and covers a stale start.
         _runtime.RollbackAppliedUpdate();
-        SetUpdateState(DshUpdateState.Failed, candidate, "新版本启动失败，已恢复原版本。");
+        ClearAllowlist();
+        SetUpdateState(DshUpdateState.Failed, null, "新版本启动失败，已恢复原版本。");
         await StartRecoveredRuntimeHoldingLockAsync().ConfigureAwait(false);
     }
 
@@ -528,15 +586,13 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         bool stopped;
         lock (_sync)
             stopped = _stopRequested || _lifetimeCts.IsCancellationRequested;
+        // Cancellation during download/validate keeps the allowlist so the
+        // user can confirm again without re-checking.
         SetUpdateState(stopped ? DshUpdateState.Idle : DshUpdateState.Available, candidate);
     }
 
     private async Task RecoverUnexpectedUpdateFailureHoldingLockAsync(Exception exception)
     {
-        string? candidate;
-        lock (_sync)
-            candidate = _availableVersion;
-
         Log($"Unexpected DSH update failure ({exception.GetType().Name}): {exception}");
         var switched = _runtime.HasUncommittedUpdate;
         if (switched)
@@ -551,9 +607,10 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
             _runtime.DiscardStagedUpdate();
         }
 
+        ClearAllowlist();
         SetUpdateState(
             DshUpdateState.Failed,
-            candidate,
+            null,
             "更新未能完成，当前版本可继续使用。");
 
         bool needsStart;
@@ -878,6 +935,15 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         }
     }
 
+    private void ClearAllowlist()
+    {
+        lock (_sync)
+        {
+            _availableVersions = DshUpdateCheckResult.EmptyVersions;
+            _availableVersion = null;
+        }
+    }
+
     private void SetUpdateState(
         DshUpdateState state,
         string? availableVersion = null,
@@ -921,6 +987,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         string updateState;
         string? updatePhase;
         string? availableVersion;
+        object[] availableVersions;
         string? updateError;
         lock (_sync)
         {
@@ -929,6 +996,15 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
                 ? ToWireUpdatePhase(_updatePhase.Value)
                 : null;
             availableVersion = _availableVersion;
+            // Always emit an array (empty when unknown) so the frontend never
+            // has to branch on a missing field.
+            availableVersions = _availableVersions
+                .Select(entry => (object)new
+                {
+                    version = entry.Version,
+                    tags = entry.Tags.ToArray()
+                })
+                .ToArray();
             updateError = _updateState == DshUpdateState.Failed ? _updateError : null;
         }
         var wireError = state == DshRuntimeState.Failed ? (error ?? "运行时不可用") : (string?)null;
@@ -942,6 +1018,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
             updateState,
             updatePhase,
             availableVersion,
+            availableVersions,
             updateError
         });
     }

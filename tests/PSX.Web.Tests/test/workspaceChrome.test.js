@@ -593,7 +593,11 @@ test('dsh_web tab menu matches chrome hierarchy and confirms an available update
     state: 'ready',
     currentVersion: '0.1.0-rc.6',
     updateState: 'available',
-    availableVersion: '0.1.0-rc.7'
+    availableVersion: '0.1.0-rc.8',
+    availableVersions: [
+      { version: '0.1.0-rc.8', tags: ['next'] },
+      { version: '0.1.0-rc.7', tags: ['latest'] }
+    ]
   });
 
   document.querySelector('.workspace-tab')
@@ -604,7 +608,7 @@ test('dsh_web tab menu matches chrome hierarchy and confirms an available update
     ['布局', '运行时']
   );
   const updateRow = [...document.querySelectorAll('.workspace-menu-row')].find(
-    (row) => row.querySelector('.workspace-menu-primary').textContent === '更新到 v0.1.0-rc.7'
+    (row) => row.querySelector('.workspace-menu-primary').textContent === '更新到 v0.1.0-rc.8'
   );
   assert.ok(updateRow);
   assert.equal(updateRow.querySelector('.workspace-menu-secondary').textContent, '后台更新');
@@ -612,8 +616,39 @@ test('dsh_web tab menu matches chrome hierarchy and confirms an available update
 
   assert.equal(
     document.querySelector('.workspace-update-versions').textContent,
+    '0.1.0-rc.6 → 0.1.0-rc.8'
+  );
+  const options = [...document.querySelectorAll('.workspace-update-version-option')];
+  assert.equal(options.length, 2);
+  assert.equal(options[0].querySelector('.workspace-menu-primary').textContent, 'v0.1.0-rc.8');
+  assert.equal(options[0].getAttribute('aria-selected'), 'true');
+  options[1].click();
+  assert.equal(
+    document.querySelector('.workspace-update-versions').textContent,
     '0.1.0-rc.6 → 0.1.0-rc.7'
   );
+  assert.equal(
+    document.querySelector('.workspace-update-version-option[data-selected="true"] .workspace-menu-primary').textContent,
+    'v0.1.0-rc.7'
+  );
+
+  // A status push that keeps the same catalog must not reset the selection.
+  chrome.applyDshRuntimeStatus({
+    state: 'ready',
+    currentVersion: '0.1.0-rc.6',
+    updateState: 'available',
+    availableVersion: '0.1.0-rc.8',
+    availableVersions: [
+      { version: '0.1.0-rc.8', tags: ['next'] },
+      { version: '0.1.0-rc.7', tags: ['latest'] }
+    ]
+  });
+  assert.equal(
+    document.querySelector('.workspace-update-versions').textContent,
+    '0.1.0-rc.6 → 0.1.0-rc.7',
+    'selected version survives status rebuild'
+  );
+
   assert.match(document.querySelector('.workspace-update-confirmation p').textContent, /无需重启 PSX/);
   assert.match(document.querySelector('.workspace-update-confirmation p').textContent, /配置和会话不会被删除/);
   assert.match(document.querySelector('.workspace-update-confirmation p').textContent, /可能需要几分钟/);
@@ -621,7 +656,11 @@ test('dsh_web tab menu matches chrome hierarchy and confirms an available update
     (button) => button.textContent === '开始后台更新'
   );
   confirm.click();
-  assert.deepEqual(runtime.postedMessages.at(-1), { type: 'dsh_command', name: 'update' });
+  assert.deepEqual(runtime.postedMessages.at(-1), {
+    type: 'dsh_command',
+    name: 'update',
+    version: '0.1.0-rc.7'
+  });
   assert.equal(
     document.querySelector('.workspace-menu-row:disabled .workspace-menu-primary').textContent,
     '正在后台下载 v0.1.0-rc.7…'
@@ -637,7 +676,7 @@ test('dsh_web tab menu matches chrome hierarchy and confirms an available update
 
   chrome.applyDshRuntimeStatus({
     state: 'ready', currentVersion: '0.1.0-rc.6', updateState: 'updating',
-    updatePhase: 'validating', availableVersion: '0.1.0-rc.7'
+    updatePhase: 'validating', availableVersion: '0.1.0-rc.7', availableVersions: []
   });
   assert.equal(document.querySelector('.workspace-menu-row:disabled .workspace-menu-primary').textContent,
     '正在校验 v0.1.0-rc.7…');
@@ -650,7 +689,7 @@ test('dsh_web tab menu matches chrome hierarchy and confirms an available update
 
   chrome.applyDshRuntimeStatus({
     state: 'ready', currentVersion: '0.1.0-rc.6', updateState: 'updating',
-    updatePhase: 'restarting', availableVersion: '0.1.0-rc.7'
+    updatePhase: 'restarting', availableVersion: '0.1.0-rc.7', availableVersions: []
   });
   assert.equal(document.querySelector('.workspace-menu-row:disabled .workspace-menu-primary').textContent,
     '正在切换到 v0.1.0-rc.7…');

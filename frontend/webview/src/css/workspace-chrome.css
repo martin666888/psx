@@ -451,6 +451,40 @@
     white-space: nowrap;
 }
 
+.workspace-update-version-list {
+    display: grid;
+    gap: 2px;
+    max-height: calc(8 * 28px);
+    overflow: auto;
+    margin: 0 -2px;
+    padding: 2px;
+}
+
+.workspace-update-version-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    min-height: 28px;
+    padding: 4px 8px;
+    border: 1px solid transparent;
+    border-radius: var(--agent-radius-control);
+    color: var(--agent-text);
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+}
+
+.workspace-update-version-option:hover {
+    background: var(--agent-surface);
+}
+
+.workspace-update-version-option[data-selected="true"] {
+    border-color: var(--agent-border-strong, var(--agent-border));
+    background: var(--agent-surface);
+}
+
 .workspace-update-confirmation p {
     margin: 0;
     line-height: 1.5;

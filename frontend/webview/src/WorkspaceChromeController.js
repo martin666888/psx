@@ -25,6 +25,25 @@ function safeDshVersion(value) {
     return /^[0-9A-Za-z.+-]{1,64}$/.test(text) ? text : '';
 }
 
+function safeDshTag(value) {
+    const text = typeof value === 'string' ? value.trim() : '';
+    return /^[0-9A-Za-z._-]{1,32}$/.test(text) ? text : '';
+}
+
+function normalizeDshAvailableVersions(message) {
+    const raw = Array.isArray(message?.availableVersions) ? message.availableVersions : [];
+    const versions = [];
+    for (const entry of raw) {
+        const version = safeDshVersion(entry?.version);
+        if (!version) continue;
+        const tags = Array.isArray(entry?.tags)
+            ? entry.tags.map(safeDshTag).filter(Boolean)
+            : [];
+        versions.push({ version, tags });
+    }
+    return versions;
+}
+
 export class WorkspaceChromeController {
     constructor(root, portalRoot) {
         if (!root || !portalRoot) throw new Error('WorkspaceChromeController requires chrome and portal roots');
@@ -47,9 +66,10 @@ export class WorkspaceChromeController {
         this.openMenu = null;
         this.openTrigger = null;
         this.paneMenuWorkspace = null;
-        this.dshRuntimeStatus = { state: 'not_installed', updateState: 'idle' };
+        this.dshRuntimeStatus = { state: 'not_installed', updateState: 'idle', availableVersions: [] };
         this.kimiWebRuntimeStatus = { state: 'stopped', errorClass: null, reason: null };
         this.dshUpdateConfirmation = false;
+        this.dshSelectedVersion = '';
         this.createPlacement = 'focused';
         this.capacityChecker = null;
         this.historyButton.disabled = false;
@@ -137,18 +157,22 @@ export class WorkspaceChromeController {
 
     applyDshRuntimeStatus(message) {
         const availableVersion = safeDshVersion(message?.availableVersion);
+        const availableVersions = normalizeDshAvailableVersions(message);
         const next = {
             state: typeof message?.state === 'string' ? message.state : 'not_installed',
             currentVersion: safeDshVersion(message?.currentVersion),
             updateState: DSH_UPDATE_STATES.has(message?.updateState) ? message.updateState : 'idle',
             updatePhase: DSH_UPDATE_PHASES.has(message?.updatePhase) ? message.updatePhase : '',
             availableVersion,
+            availableVersions,
             updateError: typeof message?.updateError === 'string'
                 ? message.updateError.trim().slice(0, 240) : ''
         };
         this.dshRuntimeStatus = next;
-        if (next.updateState !== 'available' || !next.availableVersion)
+        if (next.updateState !== 'available' || (!next.availableVersion && availableVersions.length === 0))
             this.dshUpdateConfirmation = false;
+        // Keep dshSelectedVersion across status pushes when it remains in the
+        // published catalog; resolveSelection falls back to the highest item.
         if (this.openMenu === 'pane' && this.paneMenuWorkspace?.kind === 'dsh_web') {
             const version = this.portalRoot.querySelector('[data-role="dsh-current-version"]');
             if (version) version.textContent = next.currentVersion ? `v${next.currentVersion}` : '';
@@ -615,18 +639,66 @@ export class WorkspaceChromeController {
         this.renderDshRuntimeMenu(runtimeSection);
     }
 
+    resolveDshSelectedVersion(status = this.dshRuntimeStatus) {
+        const versions = Array.isArray(status?.availableVersions) ? status.availableVersions : [];
+        const selected = safeDshVersion(this.dshSelectedVersion);
+        if (selected && versions.some((entry) => entry.version === selected))
+            return selected;
+        const fallback = safeDshVersion(status?.availableVersion) || versions[0]?.version || '';
+        this.dshSelectedVersion = fallback;
+        return fallback;
+    }
+
     renderDshRuntimeMenu(menu) {
         const status = this.dshRuntimeStatus;
         menu.appendChild(this.subheading('运行时'));
 
+        const selectedVersion = this.resolveDshSelectedVersion(status);
         if (this.dshUpdateConfirmation
             && status.updateState === 'available'
-            && status.availableVersion) {
+            && selectedVersion) {
             const confirmation = document.createElement('div');
             confirmation.className = 'workspace-update-confirmation';
             const versions = document.createElement('div');
             versions.className = 'workspace-update-versions';
-            versions.textContent = `${status.currentVersion || '当前版本'} → ${status.availableVersion}`;
+            versions.textContent = `${status.currentVersion || '当前版本'} → ${selectedVersion}`;
+            confirmation.appendChild(versions);
+
+            const catalog = Array.isArray(status.availableVersions) ? status.availableVersions : [];
+            if (catalog.length > 1) {
+                const list = document.createElement('div');
+                list.className = 'workspace-update-version-list';
+                list.setAttribute('role', 'listbox');
+                list.setAttribute('aria-label', '可选更新版本');
+                for (const entry of catalog) {
+                    const option = document.createElement('button');
+                    option.type = 'button';
+                    option.className = 'workspace-update-version-option';
+                    option.setAttribute('role', 'option');
+                    option.setAttribute('aria-selected', entry.version === selectedVersion ? 'true' : 'false');
+                    if (entry.version === selectedVersion)
+                        option.dataset.selected = 'true';
+                    const primary = document.createElement('span');
+                    primary.className = 'workspace-menu-primary';
+                    primary.textContent = `v${entry.version}`;
+                    const secondary = document.createElement('span');
+                    secondary.className = 'workspace-menu-secondary';
+                    secondary.textContent = entry.tags.length > 0 ? entry.tags.join(', ') : '';
+                    option.append(primary, secondary);
+                    option.addEventListener('click', () => {
+                        this.dshSelectedVersion = entry.version;
+                        this.refreshDshRuntimeMenu();
+                    });
+                    list.appendChild(option);
+                }
+                confirmation.appendChild(list);
+            } else if (catalog.length === 1 && catalog[0].tags.length > 0) {
+                const tagHint = document.createElement('div');
+                tagHint.className = 'workspace-update-versions';
+                tagHint.textContent = catalog[0].tags.join(', ');
+                confirmation.appendChild(tagHint);
+            }
+
             const copy = document.createElement('p');
             copy.textContent = 'PSX 将在后台下载并校验新版本，然后自动切换并重启 DeepSeek Harness 本地服务。无需重启 PSX；配置和会话不会被删除。下载可能需要几分钟。';
             const actions = document.createElement('div');
@@ -636,19 +708,21 @@ export class WorkspaceChromeController {
                 this.refreshDshRuntimeMenu();
             });
             const confirm = this.actionButton('开始后台更新', () => {
+                const version = this.resolveDshSelectedVersion(status);
                 this.dshUpdateConfirmation = false;
                 this.dshRuntimeStatus = {
                     ...status,
                     updateState: 'updating',
                     updatePhase: 'downloading',
+                    availableVersion: version,
                     updateError: ''
                 };
                 this.refreshDshRuntimeMenu();
-                Bridge.sendDshCommand('update');
+                Bridge.sendDshCommand('update', version);
             });
             confirm.dataset.primary = 'true';
             actions.append(cancel, confirm);
-            confirmation.append(versions, copy, actions);
+            confirmation.append(copy, actions);
             menu.appendChild(confirmation);
         } else {
             this.renderDshUpdateAction(menu, status);
@@ -689,17 +763,19 @@ export class WorkspaceChromeController {
             case 'checking':
                 menu.appendChild(this.menuRow('正在检查更新…', '', () => {}, true));
                 break;
-            case 'available':
+            case 'available': {
+                const target = this.resolveDshSelectedVersion(status);
                 menu.appendChild(this.menuRow(
-                    `更新到 v${status.availableVersion}`,
+                    target ? `更新到 v${target}` : '检查更新',
                     '后台更新',
                     () => {
                         this.dshUpdateConfirmation = true;
                         this.refreshDshRuntimeMenu();
                     },
-                    !status.availableVersion
+                    !target
                 ));
                 break;
+            }
             case 'updating':
                 this.renderDshUpdatingAction(menu, status);
                 break;

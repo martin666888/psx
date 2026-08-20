@@ -145,8 +145,19 @@ export const Bridge = {
         });
     },
 
-    /** @param {'install'|'retry'|'stop'|'check_update'|'update'|'cancel_update'} name */
-    sendDshCommand(name) {
+    /**
+     * @param {'install'|'retry'|'stop'|'check_update'|'update'|'cancel_update'} name
+     * @param {string} [version] Exact package version for `update` only.
+     */
+    sendDshCommand(name, version) {
+        if (typeof version === 'string' && version.trim()) {
+            this.sendToHost({
+                type: BridgeSendType.DshCommand,
+                name,
+                version: version.trim()
+            });
+            return;
+        }
         this.sendToHost({
             type: BridgeSendType.DshCommand,
             name

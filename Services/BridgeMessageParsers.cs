@@ -348,10 +348,23 @@ internal static class TerminalBridgeMessageParser
 
             case "dsh_command" when source.Name is "install" or "retry" or "stop"
                                                 or "check_update" or "update" or "cancel_update":
+            {
+                // version is meaningful only for update. Other commands may
+                // carry it on the wire; it is ignored rather than rejected.
+                string? version = null;
+                if (source.Name == "update" && !string.IsNullOrWhiteSpace(source.Version))
+                {
+                    var trimmed = source.Version.Trim();
+                    if (!IsSafeDshVersion(trimmed) || !DshSemanticVersion.TryParse(trimmed, out _))
+                        return false;
+                    version = trimmed;
+                }
+
                 message = new TerminalBridgeMessage(
                     TerminalBridgeMessageKind.DshCommand,
-                    DshCommand: new DshCommandEventArgs { Name = source.Name });
+                    DshCommand: new DshCommandEventArgs { Name = source.Name, Version = version });
                 return true;
+            }
 
             case "kimi_web_command" when source.Name is "stop" or "retry":
                 message = new TerminalBridgeMessage(
@@ -391,5 +404,26 @@ internal static class TerminalBridgeMessageParser
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Matches the frontend <c>safeDshVersion</c> allowlist: short printable
+    /// version tokens only. SemVer precedence is enforced later by the
+    /// supervisor allowlist and <c>StageUpdateAsync</c>.
+    /// </summary>
+    internal static bool IsSafeDshVersion(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+        var text = value.Trim();
+        if (text.Length is < 1 or > 64)
+            return false;
+        foreach (var c in text)
+        {
+            if (char.IsAsciiLetterOrDigit(c) || c is '.' or '+' or '-')
+                continue;
+            return false;
+        }
+        return true;
     }
 }

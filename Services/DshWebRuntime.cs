@@ -118,8 +118,10 @@ public sealed class DshWebRuntime
     }
 
     /// <summary>
-    /// Query the official npm registry for the current latest tag. This is a
-    /// metadata-only operation: it never changes the active or staged tree.
+    /// Query the official npm registry for published versions and dist-tags.
+    /// This is a metadata-only operation: it never changes the active or staged tree.
+    /// Dist-tags are annotations only; the candidate set is every published
+    /// version that is &gt;= the seed and strictly newer than the installed tree.
     /// </summary>
     public async Task<DshUpdateCheckResult> CheckForUpdateAsync(CancellationToken cancellationToken)
     {
@@ -128,10 +130,10 @@ public sealed class DshWebRuntime
         {
             var paths = Paths;
             var current = CurrentVersion;
-            if (!IsInstalled() || !DshSemanticVersion.TryParse(current, out var currentVersion))
-                return new(false, false, current, null, "请先安装 DeepSeek Harness。");
+            if (!IsInstalled() || !DshSemanticVersion.TryParse(current, out _))
+                return DshUpdateCheckResult.Failed(current, "请先安装 DeepSeek Harness。");
             if (paths.PortableNodePath == null || paths.PortableNpmCliPath == null)
-                return new(false, false, current, null, "缺少便携 Node.js，无法检查更新。");
+                return DshUpdateCheckResult.Failed(current, "缺少便携 Node.js，无法检查更新。");
 
             Directory.CreateDirectory(paths.RuntimeRoot);
             var view = await _npmRunner.RunAsync(
@@ -141,7 +143,7 @@ public sealed class DshWebRuntime
                 "DSH update check",
                 new[]
                 {
-                    "view", $"{DshPackageName}@latest", "version", "--json",
+                    "view", DshPackageName, "versions", "dist-tags", "--json",
                     $"--registry={OfficialRegistry}", "--prefer-online"
                 },
                 cancellationToken).ConfigureAwait(false);
@@ -151,20 +153,18 @@ public sealed class DshWebRuntime
                 var error = view.Kind == AcpRuntimeOperationKind.NetworkUnavailable
                     ? "无法连接 npm 仓库，请检查网络后重试。"
                     : "检查更新失败，当前版本可继续使用。";
-                return new(false, false, current, null, error);
+                return DshUpdateCheckResult.Failed(current, error);
             }
 
-            var candidate = ParseNpmViewVersion(view.Stdout);
-            if (!DshSemanticVersion.TryParse(candidate, out var candidateVersion))
+            if (!TryBuildUpdateCatalog(view.Stdout, current, out var catalog, out var parseError))
             {
-                Log($"DSH registry returned an invalid version: '{candidate}'.");
-                return new(false, false, current, null, "npm 仓库返回了无效版本，未执行更新。");
+                Log($"DSH registry catalog parse failed: {parseError}");
+                return DshUpdateCheckResult.Failed(current, "npm 仓库返回了无效版本，未执行更新。");
             }
 
-            var comparison = candidateVersion.CompareTo(currentVersion);
-            if (comparison <= 0)
-                return new(true, false, current, null, null);
-            return new(true, true, current, candidate, null);
+            if (catalog.Count == 0)
+                return DshUpdateCheckResult.UpToDate(current);
+            return DshUpdateCheckResult.Available(current, catalog);
         }
         finally { _installLock.Release(); }
     }
@@ -638,6 +638,134 @@ public sealed class DshWebRuntime
     }
 
     /// <summary>
+    /// Build the strictly-newer catalog from an <c>npm view</c> payload.
+    /// Accepts either a JSON string (legacy single-version fixture) or an
+    /// object with <c>versions</c> + <c>dist-tags</c>. Dist-tags annotate
+    /// versions only; they never gate which versions appear.
+    /// </summary>
+    internal static bool TryBuildUpdateCatalog(
+        string stdout,
+        string? currentVersion,
+        out IReadOnlyList<DshAvailableVersion> catalog,
+        out string? error)
+    {
+        catalog = DshUpdateCheckResult.EmptyVersions;
+        error = null;
+        if (string.IsNullOrWhiteSpace(stdout))
+        {
+            error = "empty registry response";
+            return false;
+        }
+
+        if (!DshSemanticVersion.TryParse(SeededPackageVersion, out var seeded))
+        {
+            error = "seed version is invalid";
+            return false;
+        }
+
+        DshSemanticVersion? current = null;
+        if (DshSemanticVersion.TryParse(currentVersion, out var parsedCurrent))
+            current = parsedCurrent;
+
+        try
+        {
+            using var document = JsonDocument.Parse(stdout);
+            var root = document.RootElement;
+            var tagsByVersion = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+
+            if (root.ValueKind == JsonValueKind.String)
+            {
+                var single = root.GetString();
+                if (!DshSemanticVersion.TryParse(single, out var singleVersion)
+                    || singleVersion.CompareTo(seeded) < 0
+                    || (current.HasValue && singleVersion.CompareTo(current.Value) <= 0))
+                {
+                    catalog = DshUpdateCheckResult.EmptyVersions;
+                    return true;
+                }
+
+                catalog = new[] { new DshAvailableVersion(single!, Array.Empty<string>()) };
+                return true;
+            }
+
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                error = "registry response is not an object or string";
+                return false;
+            }
+
+            if (root.TryGetProperty("dist-tags", out var distTags)
+                && distTags.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var tag in distTags.EnumerateObject())
+                {
+                    if (tag.Value.ValueKind != JsonValueKind.String)
+                        continue;
+                    var taggedVersion = tag.Value.GetString();
+                    if (string.IsNullOrWhiteSpace(taggedVersion))
+                        continue;
+                    if (!tagsByVersion.TryGetValue(taggedVersion, out var list))
+                    {
+                        list = new List<string>();
+                        tagsByVersion[taggedVersion] = list;
+                    }
+                    list.Add(tag.Name);
+                }
+            }
+
+            if (!root.TryGetProperty("versions", out var versionsElement))
+            {
+                error = "versions array is missing";
+                return false;
+            }
+
+            var versions = new List<string>();
+            if (versionsElement.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var entry in versionsElement.EnumerateArray())
+                {
+                    if (entry.ValueKind == JsonValueKind.String
+                        && !string.IsNullOrWhiteSpace(entry.GetString()))
+                        versions.Add(entry.GetString()!);
+                }
+            }
+            else if (versionsElement.ValueKind == JsonValueKind.Object)
+            {
+                // npm sometimes returns versions as an object keyed by version.
+                foreach (var entry in versionsElement.EnumerateObject())
+                    versions.Add(entry.Name);
+            }
+            else
+            {
+                error = "versions field has an unexpected shape";
+                return false;
+            }
+
+            var filtered = new List<(DshSemanticVersion Parsed, DshAvailableVersion Item)>();
+            foreach (var version in versions)
+            {
+                if (!DshSemanticVersion.TryParse(version, out var parsed)
+                    || parsed.CompareTo(seeded) < 0
+                    || (current.HasValue && parsed.CompareTo(current.Value) <= 0))
+                    continue;
+                tagsByVersion.TryGetValue(version, out var tags);
+                filtered.Add((parsed, new DshAvailableVersion(
+                    version,
+                    tags is { Count: > 0 } ? tags.ToArray() : Array.Empty<string>())));
+            }
+
+            filtered.Sort((left, right) => right.Parsed.CompareTo(left.Parsed));
+            catalog = filtered.Select(entry => entry.Item).ToArray();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = ex.GetType().Name;
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Copy every seed manifest or report the first missing one: an
     /// incomplete seed must hard-fail instead of letting npm ci run without
     /// the lockfile or the registry-pinning .npmrc.
@@ -706,12 +834,38 @@ public sealed class DshWebRuntime
 
 public sealed record DshLaunchSpec(string NodePath, string EntryPath);
 public sealed record DshInstallResult(bool Success, string? ErrorMessage, int? ExitCode);
+public sealed record DshAvailableVersion(string Version, IReadOnlyList<string> Tags);
 public sealed record DshUpdateCheckResult(
     bool Success,
     bool UpdateAvailable,
     string? CurrentVersion,
     string? AvailableVersion,
-    string? ErrorMessage);
+    IReadOnlyList<DshAvailableVersion> AvailableVersions,
+    string? ErrorMessage)
+{
+    public static IReadOnlyList<DshAvailableVersion> EmptyVersions { get; } =
+        Array.Empty<DshAvailableVersion>();
+
+    public static DshUpdateCheckResult Failed(string? current, string error) =>
+        new(false, false, current, null, EmptyVersions, error);
+
+    public static DshUpdateCheckResult UpToDate(string? current) =>
+        new(true, false, current, null, EmptyVersions, null);
+
+    public static DshUpdateCheckResult Available(
+        string? current,
+        IReadOnlyList<DshAvailableVersion> catalog)
+    {
+        var list = catalog ?? EmptyVersions;
+        return new(
+            true,
+            list.Count > 0,
+            current,
+            list.Count > 0 ? list[0].Version : null,
+            list,
+            null);
+    }
+}
 public sealed record DshUpdateResult(
     bool Success,
     string? PreviousVersion,

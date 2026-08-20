@@ -57,6 +57,8 @@ public interface ITerminalBridgeService
 public sealed class DshCommandEventArgs : EventArgs
 {
     public required string Name { get; init; }
+    /// <summary>Exact package version for <c>update</c> only; ignored on other commands.</summary>
+    public string? Version { get; init; }
 }
 
 public sealed class KimiWebCommandEventArgs : EventArgs

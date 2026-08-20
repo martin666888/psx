@@ -292,6 +292,7 @@ public sealed class TerminalBridgeMessageParserTests
             out var dshCommand));
         Assert.AreEqual(TerminalBridgeMessageKind.DshCommand, dshCommand!.Kind);
         Assert.AreEqual("install", dshCommand.DshCommand!.Name);
+        Assert.IsNull(dshCommand.DshCommand.Version);
 
         foreach (var command in new[] { "retry", "stop", "check_update", "update", "cancel_update" })
         {
@@ -299,7 +300,33 @@ public sealed class TerminalBridgeMessageParserTests
                 $$"""{"type":"dsh_command","name":"{{command}}"}""",
                 out var parsedDshCommand));
             Assert.AreEqual(command, parsedDshCommand!.DshCommand!.Name);
+            Assert.IsNull(parsedDshCommand.DshCommand.Version);
         }
+
+        Assert.IsTrue(TerminalBridgeMessageParser.TryParse(
+            """{"type":"dsh_command","name":"update","version":"0.1.0-rc.8"}""",
+            out var updateWithVersion));
+        Assert.AreEqual("update", updateWithVersion!.DshCommand!.Name);
+        Assert.AreEqual("0.1.0-rc.8", updateWithVersion.DshCommand.Version);
+
+        Assert.IsFalse(TerminalBridgeMessageParser.TryParse(
+            """{"type":"dsh_command","name":"update","version":"../../../etc/passwd"}""",
+            out _));
+        Assert.IsFalse(TerminalBridgeMessageParser.TryParse(
+            """{"type":"dsh_command","name":"update","version":"v0.1.0"}""",
+            out _), "unsafe tokens that fail the safeDshVersion shape are rejected");
+
+        // Non-update commands ignore a version field rather than failing.
+        Assert.IsTrue(TerminalBridgeMessageParser.TryParse(
+            """{"type":"dsh_command","name":"check_update","version":"0.1.0-rc.8"}""",
+            out var checkWithVersion));
+        Assert.AreEqual("check_update", checkWithVersion!.DshCommand!.Name);
+        Assert.IsNull(checkWithVersion.DshCommand.Version);
+        Assert.IsTrue(TerminalBridgeMessageParser.TryParse(
+            """{"type":"dsh_command","name":"stop","version":"0.1.0-rc.8"}""",
+            out var stopWithVersion));
+        Assert.AreEqual("stop", stopWithVersion!.DshCommand!.Name);
+        Assert.IsNull(stopWithVersion.DshCommand.Version);
 
         Assert.IsFalse(TerminalBridgeMessageParser.TryParse(
             """{"type":"dsh_command","name":"rm -rf"}""",

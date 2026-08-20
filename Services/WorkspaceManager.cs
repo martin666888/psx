@@ -449,13 +449,13 @@ public sealed class WorkspaceManager : IWorkspaceManager
     }
 
     private void OnDshCommandRequested(object? sender, DshCommandEventArgs args) =>
-        _ = RunDshCommandAsync(args.Name);
+        _ = RunDshCommandAsync(args.Name, args.Version);
 
-    private async Task RunDshCommandAsync(string name)
+    private async Task RunDshCommandAsync(string name, string? version = null)
     {
         try
         {
-            await _dsh.HandleCommandAsync(name).ConfigureAwait(false);
+            await _dsh.HandleCommandAsync(name, version).ConfigureAwait(false);
         }
         catch (Exception ex)
         {

@@ -64,6 +64,64 @@ public sealed class DshRuntimeWireTests
     }
 
     [TestMethod]
+    public void TryBuildUpdateCatalog_PrefersNextOverLatestWhenStrictlyNewer()
+    {
+        var stdout = """
+            {
+              "versions": ["0.1.0-rc.6", "0.1.0-rc.7", "0.1.0-rc.8"],
+              "dist-tags": { "latest": "0.1.0-rc.7", "next": "0.1.0-rc.8" }
+            }
+            """;
+        Assert.IsTrue(DshWebRuntime.TryBuildUpdateCatalog(
+            stdout, "0.1.0-rc.7", out var catalog, out var error), error);
+        Assert.AreEqual(1, catalog.Count);
+        Assert.AreEqual("0.1.0-rc.8", catalog[0].Version);
+        CollectionAssert.AreEqual(new[] { "next" }, catalog[0].Tags.ToArray());
+    }
+
+    [TestMethod]
+    public void TryBuildUpdateCatalog_ListsEveryStrictlyNewerVersionDescending()
+    {
+        var stdout = """
+            {
+              "versions": ["0.1.0-rc.6", "0.1.0-rc.7", "0.1.0-rc.8"],
+              "dist-tags": { "latest": "0.1.0-rc.7", "next": "0.1.0-rc.8" }
+            }
+            """;
+        Assert.IsTrue(DshWebRuntime.TryBuildUpdateCatalog(
+            stdout, "0.1.0-rc.6", out var catalog, out var error), error);
+        Assert.AreEqual(2, catalog.Count);
+        Assert.AreEqual("0.1.0-rc.8", catalog[0].Version);
+        Assert.AreEqual("0.1.0-rc.7", catalog[1].Version);
+        CollectionAssert.AreEqual(new[] { "next" }, catalog[0].Tags.ToArray());
+        CollectionAssert.AreEqual(new[] { "latest" }, catalog[1].Tags.ToArray());
+    }
+
+    [TestMethod]
+    public void TryBuildUpdateCatalog_AcceptsLegacyStringFixture()
+    {
+        Assert.IsTrue(DshWebRuntime.TryBuildUpdateCatalog(
+            "\"0.1.0-rc.7\"", "0.1.0-rc.6", out var catalog, out var error), error);
+        Assert.AreEqual(1, catalog.Count);
+        Assert.AreEqual("0.1.0-rc.7", catalog[0].Version);
+        Assert.AreEqual(0, catalog[0].Tags.Count);
+    }
+
+    [TestMethod]
+    public void TryBuildUpdateCatalog_DropsVersionsAtOrBelowCurrentAndBelowSeed()
+    {
+        var stdout = """
+            {
+              "versions": ["0.0.1-rc.5", "0.1.0-rc.6", "0.1.0-rc.7"],
+              "dist-tags": { "latest": "0.1.0-rc.7" }
+            }
+            """;
+        Assert.IsTrue(DshWebRuntime.TryBuildUpdateCatalog(
+            stdout, "0.1.0-rc.7", out var catalog, out var error), error);
+        Assert.AreEqual(0, catalog.Count);
+    }
+
+    [TestMethod]
     [DataRow("")]
     [DataRow("v0.1.0")]
     [DataRow("0.1")]

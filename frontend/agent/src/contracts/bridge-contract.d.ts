@@ -87,6 +87,8 @@ interface WorkspaceCreatePayload {
 interface DshCommandPayload {
     type: 'dsh_command';
     name: 'install' | 'retry' | 'stop' | 'check_update' | 'update' | 'cancel_update';
+    /** Exact package version for `update` only; ignored on other commands. */
+    version?: string;
 }
 
 interface KimiWebCommandPayload {

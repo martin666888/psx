@@ -22,7 +22,7 @@ public interface IDshWebWorkspaceCoordinator
     Task ActivateAsync(Guid workspaceId);
     Task CloseAsync(Guid workspaceId, WorkspaceCloseReason reason);
     /// <summary>Handle a dsh_command (install | retry | stop | check_update | update | cancel_update).</summary>
-    Task HandleCommandAsync(string name);
+    Task HandleCommandAsync(string name, string? version = null);
     /// <summary>Mediate a DSH session-log export: validate the URL against the
     /// current ready origin + /api/session.export path, fetch it host-side, and
     /// save via a Windows SaveFileDialog. The browser download path is never
@@ -100,7 +100,7 @@ public sealed class DshWebWorkspaceCoordinator : IDshWebWorkspaceCoordinator
         return Task.CompletedTask;
     }
 
-    public async Task HandleCommandAsync(string name)
+    public async Task HandleCommandAsync(string name, string? version = null)
     {
         // Shutdown gate: once BeginShutdown ran, no new DSH operation may
         // start; MainWindow's shutdown path owns the supervisor teardown.
@@ -125,7 +125,7 @@ public sealed class DshWebWorkspaceCoordinator : IDshWebWorkspaceCoordinator
                 await _supervisor.CheckForUpdateAsync().ConfigureAwait(false);
                 break;
             case "update":
-                await _supervisor.UpdateAndRestartAsync().ConfigureAwait(false);
+                await _supervisor.UpdateAndRestartAsync(version).ConfigureAwait(false);
                 break;
             case "cancel_update":
                 await _supervisor.CancelUpdateAsync().ConfigureAwait(false);
