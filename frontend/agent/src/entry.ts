@@ -23,6 +23,10 @@ export interface AgentAppOptions {
   paneLayout?: {
     setDockInset(px: number, options?: { interactiveResize?: boolean }): void;
   };
+  /** Pass false when the app is lazily loaded for a non-History surface
+   * (the rail settings dialog): mounting then must not restore the dock's
+   * persisted open preference as a side effect. Defaults to true. */
+  restoreHistoryDock?: boolean;
 }
 
 export interface AgentApp {
@@ -70,7 +74,7 @@ export function createAgentApp(options: AgentAppOptions): AgentApp {
   // panel; the registry owns its data seam, the host its view visibility.
   const historyDock = new HistoryDockController(registry.createHistoryDockHost());
   registry.attachHistoryDock(historyDock);
-  historyDock.mount(options.container);
+  historyDock.mount(options.container, options.restoreHistoryDock !== false);
   // The global Usage panel dialog is a second singleton beside the dock: the
   // rail settings menu opens it through the registry, the store's panelOpen drives it.
   const usagePanel = new UsagePanelController(registry.createUsagePanelHost());

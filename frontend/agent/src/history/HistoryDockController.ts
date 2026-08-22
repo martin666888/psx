@@ -88,7 +88,7 @@ export class HistoryDockController {
     this.host = host;
   }
 
-  mount(parent: HTMLElement): void {
+  mount(parent: HTMLElement, restorePreferredOpen = true): void {
     if (this.dockHost || !parent) return;
 
     const dockHost = document.createElement('div');
@@ -101,7 +101,9 @@ export class HistoryDockController {
 
     this.width = this.readWidth();
     this.applyWidth(this.width);
-    this.preferredOpen = this.readOpen();
+    // A settings-triggered lazy load must not pop the dock open as a side
+    // effect; only an explicit History entry restores the persisted choice.
+    this.preferredOpen = restorePreferredOpen ? this.readOpen() : false;
     this.unsubscribeStore = this.host.subscribe(() => this.render());
     // The open/close control is the history-toggle rendered by every
     // workspace's toolbar island; clicks arrive through toggleFromToolbar.

@@ -248,7 +248,11 @@ installRuntimeDiagnostics();
                     terminalManager,
                     container: document.getElementById('agent-workspace-container'),
                     template: document.getElementById('agent-workspace-template'),
-                    paneLayout
+                    paneLayout,
+                    // A settings-triggered lazy load must not restore the
+                    // History dock's persisted open preference; an explicit
+                    // History entry (or a workspace-driven load) still does.
+                    restoreHistoryDock: !pendingSettingsOpen || pendingHistoryOpen
                 });
                 agentApp = app;
                 // Ordering contract: createAgentApp has already called
