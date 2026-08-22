@@ -825,7 +825,9 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         // the supervisor log; the wire only carries the fixed safe key.
         var launch = SuspendedJobProcessLauncher.TryStartInJob(
             spec.NodePath,
-            new[] { spec.EntryPath, "web", "--host", "127.0.0.1", "--port", "0" },
+            // --no-open: the server is embedded in PSX's own iframe; letting
+            // dsh also open a system-browser tab would duplicate the surface.
+            new[] { spec.EntryPath, "web", "--host", "127.0.0.1", "--port", "0", "--no-open" },
             _workspaceDirectory,
             Log);
         if (!launch.Succeeded || launch.Process == null)
