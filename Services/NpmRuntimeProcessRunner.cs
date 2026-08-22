@@ -3,11 +3,22 @@ using System.Text;
 
 namespace PSX.Services;
 
+internal enum NpmRuntimeFailureKind
+{
+    None,
+    Timeout,
+    DnsOrConnection,
+    NotFound,
+    Integrity,
+    ProcessFailed
+}
+
 internal sealed record NpmRuntimeProcessResult(
     AcpRuntimeOperationKind Kind,
     string Message,
     int? ExitCode,
-    string Stdout);
+    string Stdout,
+    NpmRuntimeFailureKind FailureKind = NpmRuntimeFailureKind.None);
 
 /// <summary>
 /// Runs the portable npm CLI with uniform timeout, cancellation, redirected
@@ -83,7 +94,12 @@ internal sealed class NpmRuntimeProcessRunner
             await RuntimeProcessCleanup.TerminateAndDrainAsync(process, stdoutTask, stderrTask, _log)
                 .ConfigureAwait(false);
             _log($"{label} timed out after {_timeout.TotalMinutes:0.##} minutes.");
-            return new(AcpRuntimeOperationKind.Failed, $"{label} timed out.", null, "");
+            return new(
+                AcpRuntimeOperationKind.Failed,
+                $"{label} timed out.",
+                null,
+                "",
+                NpmRuntimeFailureKind.Timeout);
         }
         catch (OperationCanceledException)
         {
@@ -104,25 +120,45 @@ internal sealed class NpmRuntimeProcessRunner
 
         if (exitCode != 0)
         {
-            var kind = LooksLikeNetworkError(stderr)
+            var failure = ClassifyFailure(stderr);
+            var kind = failure is NpmRuntimeFailureKind.Timeout
+                    or NpmRuntimeFailureKind.DnsOrConnection
                 ? AcpRuntimeOperationKind.NetworkUnavailable
                 : AcpRuntimeOperationKind.Failed;
-            return new(kind, $"{label} failed with exit code {exitCode}.", exitCode, stdout);
+            return new(kind, $"{label} failed with exit code {exitCode}.", exitCode, stdout, failure);
         }
 
-        return new(AcpRuntimeOperationKind.Success, $"{label} completed successfully.", exitCode, stdout);
+        return new(
+            AcpRuntimeOperationKind.Success,
+            $"{label} completed successfully.",
+            exitCode,
+            stdout);
     }
 
-    internal static bool LooksLikeNetworkError(string stderr)
+    internal static bool LooksLikeNetworkError(string stderr) =>
+        ClassifyFailure(stderr) is NpmRuntimeFailureKind.Timeout
+            or NpmRuntimeFailureKind.DnsOrConnection;
+
+    internal static NpmRuntimeFailureKind ClassifyFailure(string stderr)
     {
         if (string.IsNullOrEmpty(stderr))
-            return false;
+            return NpmRuntimeFailureKind.ProcessFailed;
         var lowered = stderr.ToLowerInvariant();
-        return lowered.Contains("etimedout")
-            || lowered.Contains("enotfound")
+        if (lowered.Contains("eintegrity") || lowered.Contains("integrity checksum"))
+            return NpmRuntimeFailureKind.Integrity;
+        if (lowered.Contains("e404")
+            || lowered.Contains("code 404")
+            || lowered.Contains("enotarget")
+            || lowered.Contains("404 not found"))
+            return NpmRuntimeFailureKind.NotFound;
+        if (lowered.Contains("etimedout"))
+            return NpmRuntimeFailureKind.Timeout;
+        if (lowered.Contains("enotfound")
             || lowered.Contains("econnrefused")
-            || lowered.Contains("network")
-            || lowered.Contains("registry.npmjs.org")
-            || lowered.Contains("getaddrinfo");
+            || lowered.Contains("econnreset")
+            || lowered.Contains("getaddrinfo")
+            || lowered.Contains("network"))
+            return NpmRuntimeFailureKind.DnsOrConnection;
+        return NpmRuntimeFailureKind.ProcessFailed;
     }
 }

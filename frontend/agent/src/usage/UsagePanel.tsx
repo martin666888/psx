@@ -1,12 +1,13 @@
-// UsagePanel.tsx — the global Usage panel dialog (profile + usage report).
+// UsagePanel.tsx — the global settings dialog (left nav + section content).
 //
-// One singleton Dialog for the whole process, opened from the History dock
-// footer. The selected window exposes backend-owned aggregate and per-Provider
-// totals. The fixed annual heatmap is built from exact daily token totals;
-// model/thread/parser detail never crosses the public contract.
+// One singleton Dialog for the whole process, opened from PSX 设置. Left-nav
+// sections are profile, usage, config and the npm download source; more
+// settings can land here later. Usage numbers stay backend-owned: aggregate
+// and per-Provider totals plus a 365-day exact-token heatmap. Model / thread
+// / parser detail never crosses the public contract.
 
 import { useEffect, useRef, useState, type JSX, type KeyboardEvent } from 'react';
-import { RefreshCwIcon } from 'lucide-react';
+import { BarChart3Icon, GlobeIcon, RefreshCwIcon, SlidersHorizontalIcon, UserRoundIcon } from 'lucide-react';
 import { ProviderIcon } from '../components/ProviderIcon.js';
 import { Button } from '../components/ui/button.js';
 import {
@@ -17,31 +18,56 @@ import {
 } from '../components/ui/dialog.js';
 import type {
   ProviderUsageReport,
+  SettingsSection,
   UsageCompleteness,
   UsageGapReason,
-  UsagePanelTab,
   UsageState,
   UsageWindowKey
 } from '../contracts/agent-usage.js';
 import { ConfigPanel } from './ConfigPanel.js';
+import {
+  DSH_REGISTRY_KEYS,
+  DSH_REGISTRY_LABELS,
+  DSH_REGISTRY_NOTES,
+  type DshRegistryKey
+} from './settingsRegistry.js';
 
 export interface UsagePanelProps {
   state: UsageState;
   onOpenChange(open: boolean): void;
+  onSelectSection(section: SettingsSection): void;
   /** Usage Refresh button: bypasses the backend cache. */
   onRefresh(): void;
   /** Usage error retry: an ordinary cached load. */
   onRetry(): void;
-  /** Switch between 用量 / 配置 tabs (host persists activeTab). */
-  onSelectTab(tab: UsagePanelTab): void;
   /** Config Refresh / first lazy load. */
   onRequestConfig(force: boolean): void;
   onSetDisplayName(name: string): void;
   /** Raw base64 PNG (no data: prefix) produced by the canvas resize. */
   onSetAvatar(base64Png: string): void;
+  onSetSettingsDraft(registry: DshRegistryKey): void;
+  onApplyRegistry(registry: DshRegistryKey): void;
   /** Controlled Dialogs have no Radix Trigger; restore the real opener explicitly. */
   onRestoreFocus(): void;
 }
+
+const SETTINGS_SECTIONS: Array<{
+  id: SettingsSection;
+  label: string;
+  Icon: typeof UserRoundIcon;
+}> = [
+  { id: 'profile', label: '个人主页', Icon: UserRoundIcon },
+  { id: 'usage', label: '用量', Icon: BarChart3Icon },
+  { id: 'config', label: '配置', Icon: SlidersHorizontalIcon },
+  { id: 'registry', label: '下载源', Icon: GlobeIcon }
+];
+
+const SECTION_HEADINGS: Record<SettingsSection, string> = {
+  profile: '个人主页',
+  usage: '用量',
+  config: '配置',
+  registry: '下载源'
+};
 
 const WINDOW_LABELS: Array<{ key: UsageWindowKey; label: string }> = [
   { key: 'today', label: '今日' },
@@ -344,14 +370,20 @@ function ProfileCard({
   };
 
   return (
-    <div className="agent-usage-profile" data-role="usage-profile">
-      <button
-        type="button"
-        className="agent-usage-avatar-button"
-        data-role="usage-avatar-button"
-        aria-label="更换头像"
-        onClick={() => fileRef.current?.click()}
-      >
+    <div
+      className="agent-settings-profile"
+      data-role="usage-profile"
+      aria-busy={state.profileSaving || undefined}
+    >
+      <div className="agent-usage-profile">
+        <button
+          type="button"
+          className="agent-usage-avatar-button"
+          data-role="usage-avatar-button"
+          aria-label="更换头像"
+          disabled={state.profileSaving}
+          onClick={() => fileRef.current?.click()}
+        >
         {profile.avatarDataUrl ? (
           <img className="agent-usage-avatar" src={profile.avatarDataUrl} alt="" />
         ) : (
@@ -368,35 +400,47 @@ function ProfileCard({
         data-role="usage-avatar-input"
         aria-hidden="true"
         tabIndex={-1}
+        disabled={state.profileSaving}
         onChange={(event) => {
           const file = event.target.files?.[0];
           if (file) processAvatarFile(file, onSetAvatar);
           event.target.value = '';
         }}
       />
-      {editing ? (
-        <input
-          className="agent-usage-name-input"
-          data-role="usage-profile-name-input"
-          aria-label="显示名"
-          value={draft}
-          maxLength={32}
-          autoFocus
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={onNameKeyDown}
-          onBlur={commit}
-        />
-      ) : (
-        <button
-          type="button"
-          className="agent-usage-name"
-          data-role="usage-profile-name"
-          aria-label="编辑显示名"
-          onClick={() => setEditing(true)}
-        >
-          {profile.displayName || '未命名'}
-        </button>
-      )}
+      <div className="agent-settings-profile-copy">
+        {editing ? (
+          <input
+            className="agent-usage-name-input"
+            data-role="usage-profile-name-input"
+            aria-label="显示名"
+            value={draft}
+            maxLength={32}
+            autoFocus
+            disabled={state.profileSaving}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={onNameKeyDown}
+            onBlur={commit}
+          />
+        ) : (
+          <button
+            type="button"
+            className="agent-usage-name"
+            data-role="usage-profile-name"
+            aria-label="编辑显示名"
+            disabled={state.profileSaving}
+            onClick={() => setEditing(true)}
+          >
+            {profile.displayName || '未命名'}
+          </button>
+        )}
+        <p className="agent-settings-note">目前可修改显示名称。点击名称即可编辑。</p>
+      </div>
+      </div>
+      {state.profileError ? (
+        <p className="agent-usage-error" data-role="usage-profile-error" role="alert">
+          {state.profileError}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -438,69 +482,81 @@ export function UsagePanel(props: UsagePanelProps): JSX.Element {
   const heatmapScope = selectedProvider?.displayName ?? '全部 Agent';
   const heatmapUnavailable = !selectedProvider && !overallAvailable;
 
-  const selectTab = (tab: UsagePanelTab): void => {
-    props.onSelectTab(tab);
+    const ignoreSettingsToggle = (event: { preventDefault(): void; target: EventTarget | null }): void => {
+    const target = event.target;
+    if (target instanceof Element && target.closest('[data-role="app-settings-toggle"]'))
+      event.preventDefault();
   };
 
   return (
     <Dialog open={state.panelOpen} onOpenChange={props.onOpenChange}>
       <DialogContent
-        className="agent-usage-panel max-h-[85vh] gap-0 sm:max-w-[640px]"
+        className="agent-usage-panel agent-settings-panel flex flex-col max-h-[min(640px,calc(100vh-2rem))] w-[min(880px,calc(100vw-2rem))] gap-0 p-0 sm:max-w-[min(880px,calc(100vw-2rem))]"
         data-role="usage-panel"
+        data-tab={activeTab}
         data-agent-font-surface=""
         onCloseAutoFocus={(event) => {
           event.preventDefault();
           props.onRestoreFocus();
         }}
+        onInteractOutside={ignoreSettingsToggle}
+        onPointerDownOutside={ignoreSettingsToggle}
       >
-        <DialogTitle className="agent-usage-title">用量与配置</DialogTitle>
+        <DialogTitle className="sr-only">设置</DialogTitle>
         <DialogDescription className="sr-only">
-          全局用户资料、各 Agent 用量报告与只读用户级配置
+          用户资料、用量、只读配置与 npm 下载源
         </DialogDescription>
 
-        <div className="agent-usage-panel-scroll">
-          <ProfileCard
-            state={state}
-            onSetDisplayName={props.onSetDisplayName}
-            onSetAvatar={props.onSetAvatar}
-          />
-
-          <div
-            className="agent-usage-window-switch agent-usage-tab-switch"
-            role="tablist"
-            aria-label="面板页签"
-            data-role="usage-tab-switch"
-          >
+        <div className="agent-settings-shell">
+        <nav className="agent-settings-nav agent-native-scroll" data-role="settings-nav" aria-label="设置分类">
+          <p className="agent-settings-nav-title">设置</p>
+          {SETTINGS_SECTIONS.map((entry) => (
             <button
+              key={entry.id}
               type="button"
-              role="tab"
-              data-role="usage-tab"
-              data-tab="usage"
-              aria-selected={activeTab === 'usage'}
-              onClick={() => selectTab('usage')}
+              className="agent-settings-nav-item"
+              data-role="settings-nav-item"
+              data-section={entry.id}
+              aria-current={activeTab === entry.id ? 'page' : undefined}
+              onClick={() => props.onSelectSection(entry.id)}
             >
-              用量
+              <entry.Icon className="size-4" aria-hidden="true" />
+              {entry.label}
             </button>
-            <button
-              type="button"
-              role="tab"
-              data-role="usage-tab"
-              data-tab="config"
-              aria-selected={activeTab === 'config'}
-              onClick={() => selectTab('config')}
-            >
-              配置
-            </button>
-          </div>
+          ))}
+        </nav>
 
-          {activeTab === 'config' ? (
-            <ConfigPanel
-              state={state}
-              onRefresh={() => props.onRequestConfig(true)}
-              onRetry={() => props.onRequestConfig(false)}
-            />
-          ) : (
-            <>
+        <div className="agent-settings-main">
+          <h2 className="agent-settings-heading" data-role="settings-heading">
+            {SECTION_HEADINGS[activeTab]}
+          </h2>
+          <div className="agent-usage-panel-scroll agent-settings-body">
+            {activeTab === 'profile' ? (
+              <ProfileCard
+                state={state}
+                onSetDisplayName={props.onSetDisplayName}
+                onSetAvatar={props.onSetAvatar}
+              />
+            ) : null}
+
+            {activeTab === 'config' ? (
+              <ConfigPanel
+                state={state}
+                onRefresh={() => props.onRequestConfig(true)}
+                onRetry={() => props.onRequestConfig(false)}
+              />
+            ) : null}
+
+            {activeTab === 'registry' ? (
+              <RegistrySection
+                state={state}
+                onSelect={props.onSetSettingsDraft}
+                onApply={props.onApplyRegistry}
+              />
+            ) : null}
+
+            {activeTab === 'usage' ? (
+              <>
               <div className="agent-usage-toolbar">
                 <div className="agent-usage-window-switch" role="group" aria-label="统计窗口">
                   {WINDOW_LABELS.map((entry) => (
@@ -579,10 +635,58 @@ export function UsagePanel(props: UsagePanelProps): JSX.Element {
                   />
                 </>
               ) : null}
-            </>
-          )}
+              </>
+            ) : null}
+          </div>
+        </div>
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function RegistrySection({
+  state,
+  onSelect,
+  onApply
+}: {
+  state: UsageState;
+  onSelect(registry: DshRegistryKey): void;
+  onApply(registry: DshRegistryKey): void;
+}): JSX.Element {
+  return (
+    <div className="agent-settings-registry" data-role="settings-registry">
+      <p className="agent-settings-lede">
+        选择 npm 包下载源。淘宝 npmmirror 更新前仍会核验 npmjs.org 上的根包。
+      </p>
+      {DSH_REGISTRY_KEYS.map((key) => (
+        <button
+          key={key}
+          type="button"
+          className="agent-settings-choice"
+          data-role="settings-registry-choice"
+          data-registry={key}
+          data-selected={state.settingsDraft === key ? 'true' : 'false'}
+          aria-pressed={state.settingsDraft === key}
+          onClick={() => onSelect(key)}
+        >
+          <span className="agent-settings-choice-label">{DSH_REGISTRY_LABELS[key]}</span>
+          <span className="agent-settings-choice-note">{DSH_REGISTRY_NOTES[key]}</span>
+        </button>
+      ))}
+      {state.settingsError ? (
+        <p className="agent-usage-error" data-role="settings-registry-error" role="alert">
+          {state.settingsError}
+        </p>
+      ) : null}
+      <Button
+        size="sm"
+        data-role="settings-registry-apply"
+        disabled={state.settingsDraft === state.dshRegistry}
+        onClick={() => onApply(state.settingsDraft)}
+      >
+        应用
+      </Button>
+    </div>
   );
 }

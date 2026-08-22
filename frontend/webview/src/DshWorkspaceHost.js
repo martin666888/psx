@@ -5,6 +5,7 @@
 
 import { Bridge } from './Bridge.js';
 import { createProviderIconSvg } from './ProviderIcons.js';
+import { dshSwitchCta } from './DshRegistryUi.js';
 
 function isSameFrameUrl(iframe, readyUrl) {
     try {
@@ -254,6 +255,17 @@ export class DshWorkspaceHost {
             button.textContent = copy.action;
             button.addEventListener('click', () => Bridge.sendDshCommand(copy.command));
             actions.appendChild(button);
+            const switchCta = dshSwitchCta(status);
+            if (switchCta) {
+                const alternate = document.createElement('button');
+                alternate.type = 'button';
+                alternate.className = 'dsh-card-action';
+                alternate.dataset.role = 'dsh-switch-registry';
+                alternate.textContent = switchCta.label;
+                alternate.addEventListener('click', () =>
+                    Bridge.sendDshCommand(switchCta.command, undefined, switchCta.registry));
+                actions.appendChild(alternate);
+            }
             card.appendChild(actions);
         }
 

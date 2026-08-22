@@ -173,7 +173,8 @@ internal enum TerminalBridgeMessageKind
     DshExport,
     KimiWebCommand,
     KimiWebExport,
-    ThemeAction
+    ThemeAction,
+    AppSettingsCommand
 }
 
 internal sealed record TerminalBridgeMessage(
@@ -191,7 +192,8 @@ internal sealed record TerminalBridgeMessage(
     DshExportEventArgs? DshExport = null,
     KimiWebCommandEventArgs? KimiWebCommand = null,
     KimiWebExportEventArgs? KimiWebExport = null,
-    ThemeActionEventArgs? ThemeAction = null);
+    ThemeActionEventArgs? ThemeAction = null,
+    AppSettingsCommandEventArgs? AppSettingsCommand = null);
 
 internal sealed record TerminalPasteRequest(Guid SessionId, Guid RequestId);
 
@@ -347,24 +349,36 @@ internal static class TerminalBridgeMessageParser
                 return true;
 
             case "dsh_command" when source.Name is "install" or "retry" or "stop"
-                                                or "check_update" or "update" or "cancel_update":
-            {
-                // version is meaningful only for update. Other commands may
-                // carry it on the wire; it is ignored rather than rejected.
-                string? version = null;
-                if (source.Name == "update" && !string.IsNullOrWhiteSpace(source.Version))
+                                                or "check_update" or "update" or "cancel_update"
+                                                or "recheck_with_registry" or "retry_install_with_registry":
                 {
-                    var trimmed = source.Version.Trim();
-                    if (!IsSafeDshVersion(trimmed) || !DshSemanticVersion.TryParse(trimmed, out _))
-                        return false;
-                    version = trimmed;
-                }
+                    string? version = null;
+                    if (source.Name == "update" && !string.IsNullOrWhiteSpace(source.Version))
+                    {
+                        var trimmed = source.Version.Trim();
+                        if (!IsSafeDshVersion(trimmed) || !DshSemanticVersion.TryParse(trimmed, out _))
+                            return false;
+                        version = trimmed;
+                    }
 
-                message = new TerminalBridgeMessage(
-                    TerminalBridgeMessageKind.DshCommand,
-                    DshCommand: new DshCommandEventArgs { Name = source.Name, Version = version });
-                return true;
-            }
+                    string? registry = null;
+                    if (source.Name is "recheck_with_registry" or "retry_install_with_registry")
+                    {
+                        if (!DshRegistryDescriptor.TryGet(source.Registry, out var descriptor))
+                            return false;
+                        registry = descriptor.Key;
+                    }
+
+                    message = new TerminalBridgeMessage(
+                        TerminalBridgeMessageKind.DshCommand,
+                        DshCommand: new DshCommandEventArgs
+                        {
+                            Name = source.Name,
+                            Version = version,
+                            Registry = registry
+                        });
+                    return true;
+                }
 
             case "kimi_web_command" when source.Name is "stop" or "retry":
                 message = new TerminalBridgeMessage(
@@ -401,6 +415,30 @@ internal static class TerminalBridgeMessageParser
                         ThemeKey = source.ThemeKey
                     });
                 return true;
+
+            case "app_settings_command" when source.Action is "get" or "set_dsh_registry":
+                {
+                    var requestId = source.RequestId?.Trim();
+                    if (string.IsNullOrWhiteSpace(requestId) || requestId.Length > 128)
+                        return false;
+                    string? registry = null;
+                    if (source.Action == "set_dsh_registry")
+                    {
+                        if (!DshRegistryDescriptor.TryGet(source.Registry, out var descriptor))
+                            return false;
+                        registry = descriptor.Key;
+                    }
+
+                    message = new TerminalBridgeMessage(
+                        TerminalBridgeMessageKind.AppSettingsCommand,
+                        AppSettingsCommand: new AppSettingsCommandEventArgs
+                        {
+                            RequestId = requestId,
+                            Action = source.Action,
+                            Registry = registry
+                        });
+                    return true;
+                }
         }
 
         return false;

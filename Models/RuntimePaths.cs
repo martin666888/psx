@@ -185,6 +185,11 @@ public sealed record RuntimePaths
     /// <summary>Read-only DeepSeek Harness seed manifests shipped under tools/dsh-seed.</summary>
     public required string DshSeedDirectory { get; init; }
 
+    /// <summary>Repository-trusted pre-generated DSH update locks shipped under
+    /// tools/dsh-locks (catalog.json + locks/&lt;version&gt;/). Read by
+    /// <c>BundledDshLockSource</c>; the update path never resolves dependencies.</summary>
+    public required string DshLocksDirectory { get; init; }
+
     /// <summary>Validated DSH web runtime used by the live `dsh web` server.</summary>
     public required string DshCurrentDirectory { get; init; }
 

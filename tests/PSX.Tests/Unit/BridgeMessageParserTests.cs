@@ -333,6 +333,37 @@ public sealed class TerminalBridgeMessageParserTests
             out _));
 
         Assert.IsTrue(TerminalBridgeMessageParser.TryParse(
+            """{"type":"dsh_command","name":"recheck_with_registry","registry":"npmmirror"}""",
+            out var recheck));
+        Assert.AreEqual("recheck_with_registry", recheck!.DshCommand!.Name);
+        Assert.AreEqual("npmmirror", recheck.DshCommand.Registry);
+
+        Assert.IsFalse(TerminalBridgeMessageParser.TryParse(
+            """{"type":"dsh_command","name":"recheck_with_registry"}""",
+            out _));
+        Assert.IsFalse(TerminalBridgeMessageParser.TryParse(
+            """{"type":"dsh_command","name":"retry_install_with_registry","registry":"https://evil.example/"}""",
+            out _));
+
+        Assert.IsTrue(TerminalBridgeMessageParser.TryParse(
+            """{"type":"app_settings_command","action":"get","requestId":"req-1"}""",
+            out var settingsGet));
+        Assert.AreEqual("get", settingsGet!.AppSettingsCommand!.Action);
+        Assert.AreEqual("req-1", settingsGet.AppSettingsCommand.RequestId);
+
+        Assert.IsTrue(TerminalBridgeMessageParser.TryParse(
+            """{"type":"app_settings_command","action":"set_dsh_registry","requestId":"req-2","registry":"npmmirror"}""",
+            out var settingsSet));
+        Assert.AreEqual("npmmirror", settingsSet!.AppSettingsCommand!.Registry);
+
+        Assert.IsFalse(TerminalBridgeMessageParser.TryParse(
+            """{"type":"app_settings_command","action":"set_dsh_registry","requestId":"req-3"}""",
+            out _));
+        Assert.IsFalse(TerminalBridgeMessageParser.TryParse(
+            """{"type":"app_settings_command","action":"get"}""",
+            out _));
+
+        Assert.IsTrue(TerminalBridgeMessageParser.TryParse(
             """{"type":"dsh_export","url":"http://127.0.0.1:1234/api/session.export?sessionId=s1","filename":"s1.zip"}""",
             out var dshExport));
         Assert.AreEqual(TerminalBridgeMessageKind.DshExport, dshExport!.Kind);

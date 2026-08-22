@@ -33,9 +33,29 @@ public sealed class DshRuntimeWireTests
     [DataRow(DshUpdateState.Available, "available")]
     [DataRow(DshUpdateState.Updating, "updating")]
     [DataRow(DshUpdateState.Failed, "failed")]
+    [DataRow(DshUpdateState.RequiresPsxUpdate, "requires_psx_update")]
     public void ToWireUpdateState_UsesExplicitMapping(DshUpdateState state, string expected)
     {
         Assert.AreEqual(expected, DshWebRuntimeSupervisor.ToWireUpdateState(state));
+    }
+
+    [TestMethod]
+    public void DshErrorClass_WireSet_AddsLockAndCatalogClasses_DropsCrossCheck()
+    {
+        Assert.IsTrue(DshErrorClass.IsKnown(DshErrorClass.LockUnavailable));
+        Assert.IsTrue(DshErrorClass.IsKnown(DshErrorClass.CatalogCorrupt));
+        Assert.IsNull(typeof(DshErrorClass).GetField(
+            "CrossCheckUnavailable", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static));
+        Assert.IsFalse(DshErrorClass.IsKnown("cross_check_unavailable"),
+            "the removed class must no longer pass the wire whitelist");
+        Assert.IsFalse(DshErrorClass.IsKnown("lock_unavailable" + "_x"),
+            "unknown classes never pass the whitelist");
+    }
+
+    [TestMethod]
+    public void ToWireLockSource_MapsBundled()
+    {
+        Assert.AreEqual("bundled", DshWebRuntime.ToWireLockSource(DshLockSourceKind.Bundled));
     }
 
     [TestMethod]
@@ -74,7 +94,7 @@ public sealed class DshRuntimeWireTests
             """;
         Assert.IsTrue(DshWebRuntime.TryBuildUpdateCatalog(
             stdout, "0.1.0-rc.7", out var catalog, out var error), error);
-        Assert.AreEqual(1, catalog.Count);
+        Assert.HasCount(1, catalog);
         Assert.AreEqual("0.1.0-rc.8", catalog[0].Version);
         CollectionAssert.AreEqual(new[] { "next" }, catalog[0].Tags.ToArray());
     }
@@ -90,7 +110,7 @@ public sealed class DshRuntimeWireTests
             """;
         Assert.IsTrue(DshWebRuntime.TryBuildUpdateCatalog(
             stdout, "0.1.0-rc.6", out var catalog, out var error), error);
-        Assert.AreEqual(2, catalog.Count);
+        Assert.HasCount(2, catalog);
         Assert.AreEqual("0.1.0-rc.8", catalog[0].Version);
         Assert.AreEqual("0.1.0-rc.7", catalog[1].Version);
         CollectionAssert.AreEqual(new[] { "next" }, catalog[0].Tags.ToArray());
@@ -102,9 +122,9 @@ public sealed class DshRuntimeWireTests
     {
         Assert.IsTrue(DshWebRuntime.TryBuildUpdateCatalog(
             "\"0.1.0-rc.7\"", "0.1.0-rc.6", out var catalog, out var error), error);
-        Assert.AreEqual(1, catalog.Count);
+        Assert.HasCount(1, catalog);
         Assert.AreEqual("0.1.0-rc.7", catalog[0].Version);
-        Assert.AreEqual(0, catalog[0].Tags.Count);
+        Assert.IsEmpty(catalog[0].Tags);
     }
 
     [TestMethod]
@@ -118,7 +138,7 @@ public sealed class DshRuntimeWireTests
             """;
         Assert.IsTrue(DshWebRuntime.TryBuildUpdateCatalog(
             stdout, "0.1.0-rc.7", out var catalog, out var error), error);
-        Assert.AreEqual(0, catalog.Count);
+        Assert.IsEmpty(catalog);
     }
 
     [TestMethod]

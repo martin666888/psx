@@ -42,8 +42,11 @@
 }
 
 .dsh-card[data-state="failed"] {
-    background: var(--agent-error-bg);
-    border-color: color-mix(in srgb, var(--agent-error) 50%, var(--agent-border));
+    /* Derive the tint from --agent-error instead of --agent-error-bg: the
+       shell theme mapper only overrides --agent-error, so the -bg token
+       keeps its dark default and turns unreadable under light themes. */
+    background: color-mix(in srgb, var(--agent-error) 10%, var(--agent-surface));
+    border-color: color-mix(in srgb, var(--agent-error) 45%, var(--agent-border));
 }
 
 .dsh-card-mark {

@@ -12,6 +12,11 @@ declare global {
     onHostMessage(callback: (message: BridgeInboundMessage) => void): void;
     sendReady(): void;
     sendAgentGlobalCommand(command: string, value?: string | boolean, requestId?: string): void;
+    sendAppSettingsCommand(
+      action: 'get' | 'set_dsh_registry',
+      requestId: string,
+      registry?: 'official' | 'npmmirror'
+    ): void;
     createAgentScope(
       workspaceId: string
     ): import('./bridge-port.js').AgentBridgePort;

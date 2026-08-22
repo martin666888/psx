@@ -5,23 +5,172 @@
 .agent-usage-panel {
     min-width: 0;
     padding: 0;
-    grid-template-rows: auto minmax(0, 1fr);
     overflow: hidden;
     border: 1px solid var(--agent-border-strong);
     border-radius: var(--agent-radius-card);
     box-shadow: var(--agent-shadow-dialog);
 }
 
-.agent-usage-title {
-    padding: var(--agent-space-5) var(--agent-space-8) var(--agent-space-2) var(--agent-space-5);
+.agent-settings-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    height: min(640px, calc(100vh - 2rem));
 }
 
-.agent-usage-panel-scroll {
+.agent-settings-shell {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: row;
+    align-items: stretch;
+    min-width: 0;
+    min-height: 0;
+}
+
+.agent-settings-nav {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    width: 168px;
+    flex: 0 0 168px;
+    min-height: 0;
+    padding: var(--agent-space-4) var(--agent-space-2);
+    border-right: 1px solid var(--agent-border);
+    background: var(--agent-surface-muted);
+    overflow-x: hidden;
+    overflow-y: auto;
+}
+
+.agent-settings-nav-title {
+    margin: 0;
+    padding: var(--agent-space-1) var(--agent-space-3) var(--agent-space-3);
+    color: var(--agent-text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+}
+
+.agent-settings-nav-item {
+    display: flex;
+    align-items: center;
+    gap: var(--agent-space-2);
+    width: 100%;
+    padding: 7px var(--agent-space-3);
+    border: 0;
+    border-radius: var(--agent-radius-control);
+    background: transparent;
+    color: var(--agent-text);
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.agent-settings-nav-item[aria-current="page"] {
+    background: var(--agent-canvas-surface);
+    font-weight: 600;
+}
+
+@media (hover: hover) {
+    .agent-settings-nav-item:hover {
+        background: color-mix(in srgb, var(--agent-canvas-surface) 70%, transparent);
+    }
+
+    .agent-settings-nav-item[aria-current="page"]:hover {
+        background: var(--agent-canvas-surface);
+    }
+}
+
+.agent-settings-main {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+}
+
+.agent-settings-heading {
+    margin: 0;
+    padding: var(--agent-space-5) var(--agent-space-8) var(--agent-space-2) var(--agent-space-5);
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.agent-usage-panel-scroll,
+.agent-settings-body {
     min-width: 0;
     min-height: 0;
     padding: 0 var(--agent-space-5) var(--agent-space-5);
     overflow-x: hidden;
     overflow-y: auto;
+}
+
+.agent-settings-profile-copy {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--agent-space-1);
+    min-width: 0;
+}
+
+.agent-settings-profile {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--agent-space-2);
+    min-width: 0;
+}
+
+.agent-settings-profile .agent-usage-error {
+    color: var(--agent-error);
+}
+
+.agent-settings-note,
+.agent-settings-lede {
+    margin: 0;
+    color: var(--agent-text-muted);
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.agent-settings-lede {
+    margin-bottom: var(--agent-space-3);
+}
+
+.agent-settings-registry {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--agent-space-2);
+}
+
+.agent-settings-choice {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--agent-space-3);
+    width: 100%;
+    padding: var(--agent-space-3);
+    border: 1px solid var(--agent-border);
+    border-radius: var(--agent-radius-control);
+    background: var(--agent-canvas-surface);
+    color: var(--agent-text);
+    cursor: pointer;
+}
+
+.agent-settings-choice[data-selected="true"] {
+    border-color: var(--agent-border-strong);
+    background: var(--agent-surface-muted);
+}
+
+.agent-settings-choice-label {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.agent-settings-choice-note {
+    color: var(--agent-text-muted);
+    font-size: 12px;
 }
 
 /* --- Profile card ----------------------------------------------------------- */
@@ -363,11 +512,7 @@
     font-size: 12px;
 }
 
-/* --- Config tab ------------------------------------------------------------- */
-
-.agent-usage-tab-switch {
-    margin: 0 0 var(--agent-space-3);
-}
+/* --- Config panel ----------------------------------------------------------- */
 
 .agent-config-toolbar-label {
     color: var(--agent-text-muted);

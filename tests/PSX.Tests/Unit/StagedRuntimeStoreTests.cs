@@ -80,7 +80,9 @@ public sealed class StagedRuntimeStoreTests
     public void NetworkClassification_RecognizesRegistryFailuresWithoutGuessingOtherErrors()
     {
         Assert.IsTrue(NpmRuntimeProcessRunner.LooksLikeNetworkError("npm ERR! code ENOTFOUND"));
-        Assert.IsTrue(NpmRuntimeProcessRunner.LooksLikeNetworkError("request to registry.npmjs.org failed"));
+        Assert.IsTrue(NpmRuntimeProcessRunner.LooksLikeNetworkError("npm ERR! code ETIMEDOUT"));
         Assert.IsFalse(NpmRuntimeProcessRunner.LooksLikeNetworkError("npm ERR! invalid package"));
+        Assert.AreEqual(NpmRuntimeFailureKind.NotFound, NpmRuntimeProcessRunner.ClassifyFailure("npm ERR! code E404"));
+        Assert.AreEqual(NpmRuntimeFailureKind.Integrity, NpmRuntimeProcessRunner.ClassifyFailure("npm ERR! code EINTEGRITY"));
     }
 }

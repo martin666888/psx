@@ -238,18 +238,16 @@ test('thread-open error remains local and supports dismiss', async () => {
   assert.equal(content().querySelector('.agent-history-open-error'), null);
 });
 
-test('dock footer anchors the profile button between the list and the resizer', async () => {
+test('dock list sits above the resizer without a profile footer', async () => {
   await fixture();
   const dock = document.querySelector('[data-role="history-dock"]');
-  const footer = dock.querySelector('[data-role="history-profile"]');
-  assert.ok(footer, 'footer renders inside the dock');
-  assert.equal(footer.tagName, 'BUTTON');
-  assert.equal(footer.getAttribute('aria-label'), '打开用量面板');
-  // DOM order: bar → scroll content → footer → resizer.
+  assert.equal(dock.querySelector('[data-role="history-profile"]'), null);
+  const content = dock.querySelector('[data-role="history-content"]');
   const resizer = dock.querySelector('[data-role="history-dock-resizer"]');
+  assert.ok(content, 'history list renders');
   assert.ok(
-    footer.compareDocumentPosition(resizer) & Node.DOCUMENT_POSITION_FOLLOWING,
-    'footer precedes the resizer'
+    content.compareDocumentPosition(resizer) & Node.DOCUMENT_POSITION_FOLLOWING,
+    'list precedes the resizer'
   );
 });
 

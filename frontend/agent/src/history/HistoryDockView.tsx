@@ -18,7 +18,7 @@ import {
   type KeyboardEvent,
   type PointerEvent
 } from 'react';
-import { ChartColumnIcon, RefreshCwIcon } from 'lucide-react';
+import { RefreshCwIcon } from 'lucide-react';
 import { Button } from '../components/ui/button.js';
 import { Input } from '../components/ui/input.js';
 import { ScrollArea } from '../components/ui/scroll-area.js';
@@ -47,10 +47,6 @@ export interface HistoryDockProps {
   onWidthCommit(width: number): void;
   /** Monotonic; whenever it changes the list viewport scrolls back to top. */
   resetScrollToken: number;
-  /** The global user profile shown in the dock footer. */
-  profile: { displayName: string; avatarDataUrl: string | null };
-  /** Opens the global Usage panel (footer click). */
-  onOpenUsage(): void;
 }
 
 export interface HistoryDockViewProps extends HistoryDockProps {
@@ -66,12 +62,6 @@ const KEYBOARD_STEP_FAST = 40;
 
 function clampWidth(width: number): number {
   return Math.max(HISTORY_DOCK_MIN_WIDTH, Math.min(HISTORY_DOCK_MAX_WIDTH, Math.round(width)));
-}
-
-/** First visible character for the no-avatar fallback circle. */
-function profileInitial(displayName: string): string {
-  const trimmed = displayName.trim();
-  return trimmed ? Array.from(trimmed)[0].toUpperCase() : '?';
 }
 
 export function HistoryDockView(props: HistoryDockViewProps): JSX.Element {
@@ -263,27 +253,6 @@ export function HistoryDockView(props: HistoryDockViewProps): JSX.Element {
       >
         <HistoryList {...props.list} />
       </ScrollArea>
-      <button
-        type="button"
-        className="agent-history-dock-footer"
-        data-role="history-profile"
-        aria-label="打开用量面板"
-        onClick={props.onOpenUsage}
-      >
-        {props.profile.avatarDataUrl ? (
-          <img
-            className="agent-history-dock-footer-avatar"
-            src={props.profile.avatarDataUrl}
-            alt=""
-          />
-        ) : (
-          <span className="agent-history-dock-footer-avatar agent-history-dock-footer-avatar-fallback" aria-hidden="true">
-            {profileInitial(props.profile.displayName)}
-          </span>
-        )}
-        <span className="agent-history-dock-footer-name">{props.profile.displayName}</span>
-        <ChartColumnIcon className="agent-history-dock-footer-icon size-4" aria-hidden="true" />
-      </button>
       <div
         ref={resizerRef}
         className="agent-history-dock-resizer"

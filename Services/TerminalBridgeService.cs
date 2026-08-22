@@ -48,6 +48,7 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
     public event EventHandler<DshExportEventArgs>? DshExportRequested;
     public event EventHandler<KimiWebExportEventArgs>? KimiWebExportRequested;
     public event EventHandler<ThemeActionEventArgs>? ThemeActionRequested;
+    public event EventHandler<AppSettingsCommandEventArgs>? AppSettingsCommandRequested;
 
     public TerminalBridgeService(ISettingsService settingsService, RuntimeLocator runtimeLocator)
     {
@@ -297,6 +298,9 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
             case TerminalBridgeMessageKind.ThemeAction:
                 ThemeActionRequested?.Invoke(this, message.ThemeAction!);
                 break;
+            case TerminalBridgeMessageKind.AppSettingsCommand:
+                AppSettingsCommandRequested?.Invoke(this, message.AppSettingsCommand!);
+                break;
         }
     }
 
@@ -424,6 +428,7 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
         WorkspaceLayoutIntentRequested = null;
         WorkspaceCreateRequested = null;
         ThemeActionRequested = null;
+        AppSettingsCommandRequested = null;
         _terminalSessionIds.Clear();
 
         _coreWebView = null;

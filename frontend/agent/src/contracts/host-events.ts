@@ -58,6 +58,7 @@ export type AgentGlobalEventType =
   | 'agent_profile'
   | 'agent_usage_report'
   | 'agent_config_report'
+  | 'app_settings_snapshot'
   | 'agent_workspace_limit_reached';
 
 export interface AgentGlobalEvent {
@@ -146,6 +147,7 @@ const AGENT_GLOBAL_EVENT_TYPES: ReadonlySet<string> = new Set<AgentGlobalEventTy
   'agent_profile',
   'agent_usage_report',
   'agent_config_report',
+  'app_settings_snapshot',
   'agent_workspace_limit_reached'
 ]);
 

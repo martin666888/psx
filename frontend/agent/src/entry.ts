@@ -12,6 +12,7 @@ import { HistoryDockController } from './history/HistoryDockController.js';
 import { UsagePanelController } from './usage/UsagePanelController.js';
 import { AgentShellLayoutController } from './shell/AgentShellLayoutController.js';
 import type { RawHostMessage } from './contracts/host-events.js';
+import type { SettingsSection } from './contracts/agent-usage.js';
 
 export interface AgentAppOptions {
   terminalManager: { setViewVisible(visible: boolean): void };
@@ -45,6 +46,10 @@ export interface AgentApp {
   /** Opens the process-wide History dock. Used by the always-loaded rail when
    * it is the action that lazily starts the Agent app. */
   openHistory(): void;
+  /** Opens the settings dialog on a section. Used by tests and pending-open. */
+  openUsage(tab?: SettingsSection): void;
+  openSettings(section?: SettingsSection): void;
+  toggleSettings(): void;
   /** Tears down every controller, global broker, island and layout listener.
    * The shipped app runs for the process lifetime; tests call this in
    * afterEach so no app instance, subscription or pending timer survives. */
@@ -67,7 +72,7 @@ export function createAgentApp(options: AgentAppOptions): AgentApp {
   registry.attachHistoryDock(historyDock);
   historyDock.mount(options.container);
   // The global Usage panel dialog is a second singleton beside the dock: the
-  // footer opens it through the registry, the store's panelOpen drives it.
+  // rail settings menu opens it through the registry, the store's panelOpen drives it.
   const usagePanel = new UsagePanelController(registry.createUsagePanelHost());
   usagePanel.mount(options.container);
   // Shell layout: responsive narrow collapse + one-visible-panel rule.
@@ -107,9 +112,12 @@ export function createAgentApp(options: AgentAppOptions): AgentApp {
   }
 
   const onGlobalHistoryToggle = (): void => historyDock.toggleFromToolbar();
-  document.addEventListener('psx-history-toggle', onGlobalHistoryToggle);
-
+  const onOpenSettings = (): void => {
+    if (!disposed) registry.toggleSettingsPanel();
+  };
   let disposed = false;
+  document.addEventListener('psx-history-toggle', onGlobalHistoryToggle);
+  document.addEventListener('psx-open-settings', onOpenSettings);
 
   return {
     handle(message: RawHostMessage): void {
@@ -123,6 +131,15 @@ export function createAgentApp(options: AgentAppOptions): AgentApp {
     openHistory(): void {
       if (!disposed) historyDock.requestOpen('');
     },
+    openUsage(tab = 'usage'): void {
+      if (!disposed) registry.openSettingsPanel(tab);
+    },
+    openSettings(section = 'profile'): void {
+      if (!disposed) registry.openSettingsPanel(section);
+    },
+    toggleSettings(): void {
+      if (!disposed) registry.toggleSettingsPanel();
+    },
     dispose(): void {
       if (disposed) return;
       disposed = true;
@@ -131,6 +148,7 @@ export function createAgentApp(options: AgentAppOptions): AgentApp {
       // state to the live dock), and finally unmount the global React islands.
       shellLayout.dispose();
       document.removeEventListener('psx-history-toggle', onGlobalHistoryToggle);
+      document.removeEventListener('psx-open-settings', onOpenSettings);
       registry.dispose();
       usagePanel.dispose();
       historyDock.dispose();

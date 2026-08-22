@@ -44,8 +44,9 @@
 
 .kimi-web-card[data-state="failed"],
 .kimi-web-card[data-state="unavailable"] {
-    background: var(--agent-error-bg);
-    border-color: color-mix(in srgb, var(--agent-error) 50%, var(--agent-border));
+    /* Same light-theme-safe derivation as .dsh-card[data-state="failed"]. */
+    background: color-mix(in srgb, var(--agent-error) 10%, var(--agent-surface));
+    border-color: color-mix(in srgb, var(--agent-error) 45%, var(--agent-border));
 }
 
 .kimi-web-card-mark {

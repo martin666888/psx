@@ -21,8 +21,8 @@ public interface IDshWebWorkspaceCoordinator
     Task<Guid?> CreateAsync();
     Task ActivateAsync(Guid workspaceId);
     Task CloseAsync(Guid workspaceId, WorkspaceCloseReason reason);
-    /// <summary>Handle a dsh_command (install | retry | stop | check_update | update | cancel_update).</summary>
-    Task HandleCommandAsync(string name, string? version = null);
+    /// <summary>Handle a dsh_command (install | retry | stop | check_update | update | cancel_update | recheck_with_registry | retry_install_with_registry).</summary>
+    Task HandleCommandAsync(string name, string? version = null, string? registry = null);
     /// <summary>Mediate a DSH session-log export: validate the URL against the
     /// current ready origin + /api/session.export path, fetch it host-side, and
     /// save via a Windows SaveFileDialog. The browser download path is never
@@ -100,10 +100,8 @@ public sealed class DshWebWorkspaceCoordinator : IDshWebWorkspaceCoordinator
         return Task.CompletedTask;
     }
 
-    public async Task HandleCommandAsync(string name, string? version = null)
+    public async Task HandleCommandAsync(string name, string? version = null, string? registry = null)
     {
-        // Shutdown gate: once BeginShutdown ran, no new DSH operation may
-        // start; MainWindow's shutdown path owns the supervisor teardown.
         lock (_sync)
         {
             if (_shuttingDown)
@@ -129,6 +127,14 @@ public sealed class DshWebWorkspaceCoordinator : IDshWebWorkspaceCoordinator
                 break;
             case "cancel_update":
                 await _supervisor.CancelUpdateAsync().ConfigureAwait(false);
+                break;
+            case "recheck_with_registry":
+                if (!string.IsNullOrWhiteSpace(registry))
+                    await _supervisor.RecheckWithRegistryAsync(registry).ConfigureAwait(false);
+                break;
+            case "retry_install_with_registry":
+                if (!string.IsNullOrWhiteSpace(registry))
+                    await _supervisor.RetryInstallWithRegistryAsync(registry).ConfigureAwait(false);
                 break;
         }
     }

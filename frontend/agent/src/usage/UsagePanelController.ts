@@ -4,12 +4,13 @@
 // mounts it once into the app container; the registry provides the host seam
 // (UsageStore reads + broker actions). The React island renders the Dialog;
 // this controller only re-renders on store changes and owns the island's
-// lifecycle. Opening the panel is the registry's job (footer click →
-// setPanelOpen(true) + a cached usage_report).
+// lifecycle. Opening the panel is the registry's job (PSX 设置 →
+// setPanelOpen(true) + a cached usage_report / config_report).
 
-import type { UsagePanelTab, UsageState } from '../contracts/agent-usage.js';
+import type { SettingsSection, UsageState } from '../contracts/agent-usage.js';
 import { createIslandLoader, type IslandLoader } from '../core/islandHost.js';
 import type { UsagePanelProps } from './UsagePanel.js';
+import type { DshRegistryKey } from './settingsRegistry.js';
 
 /** Everything the panel needs from the registry (usage store + broker). */
 export interface UsagePanelHost {
@@ -18,9 +19,11 @@ export interface UsagePanelHost {
   /** force=false → cached (open/retry); force=true → Refresh button. */
   requestUsage(force: boolean): void;
   requestConfig(force: boolean): void;
-  setActiveTab(tab: UsagePanelTab): void;
   setDisplayName(name: string): void;
   setAvatar(base64Png: string): void;
+  setActiveTab(section: SettingsSection): void;
+  setSettingsDraft(registry: DshRegistryKey): void;
+  applyRegistry(registry: DshRegistryKey): void;
   close(): void;
 }
 
@@ -77,12 +80,14 @@ export class UsagePanelController {
       },
       onRefresh: () => this.host.requestUsage(true),
       onRetry: () => this.host.requestUsage(false),
-      onSelectTab: (tab) => this.host.setActiveTab(tab),
       onRequestConfig: (force) => this.host.requestConfig(force),
+      onSelectSection: (section) => this.host.setActiveTab(section),
       onSetDisplayName: (name) => this.host.setDisplayName(name),
       onSetAvatar: (base64Png) => this.host.setAvatar(base64Png),
+      onSetSettingsDraft: (registry) => this.host.setSettingsDraft(registry),
+      onApplyRegistry: (registry) => this.host.applyRegistry(registry),
       onRestoreFocus: () => {
-        document.querySelector<HTMLElement>('[data-role="history-profile"]')?.focus();
+        document.querySelector<HTMLElement>('[data-role="app-settings-toggle"]')?.focus();
       }
     });
   }

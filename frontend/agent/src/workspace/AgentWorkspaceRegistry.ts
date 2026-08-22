@@ -34,6 +34,7 @@ import { AgentHistoryRequestBroker } from '../history/AgentHistoryRequestBroker.
 import { UsageStore } from '../usage/UsageStore.js';
 import { UsageRequestBroker } from '../usage/UsageRequestBroker.js';
 import type { UsagePanelHost } from '../usage/UsagePanelController.js';
+import type { SettingsSection } from '../contracts/agent-usage.js';
 import type { HistoryDockController, HistoryDockHost } from '../history/HistoryDockController.js';
 import type { AgentShellLayoutHost } from '../shell/AgentShellLayoutController.js';
 
@@ -85,7 +86,9 @@ export class AgentWorkspaceRegistry {
     this.usageBroker = new UsageRequestBroker(
       {
         sendGlobalCommand: (command, value, requestId) =>
-          Bridge.sendAgentGlobalCommand(command, value, requestId)
+          Bridge.sendAgentGlobalCommand(command, value, requestId),
+        sendAppSettingsCommand: (action, requestId, registry) =>
+          Bridge.sendAppSettingsCommand(action, requestId, registry)
       },
       this.usageStore
     );
@@ -104,10 +107,7 @@ export class AgentWorkspaceRegistry {
       },
       dismissThreadOpenError: () => this.historyStore.clearThreadOpenError(),
       activeWorkspaceId: () => this.activeAgentWorkspace(),
-      openWorkspaceThreadIds: () => this.openWorkspaceThreadIds(),
-      getProfile: () => this.usageStore.getState().profile,
-      subscribeProfile: (listener) => this.usageStore.subscribe(() => listener()),
-      openUsagePanel: () => this.openUsagePanel()
+      openWorkspaceThreadIds: () => this.openWorkspaceThreadIds()
     };
   }
 
@@ -118,26 +118,44 @@ export class AgentWorkspaceRegistry {
       subscribe: (listener) => this.usageStore.subscribe(() => listener()),
       requestUsage: (force) => this.usageBroker.requestUsage(force),
       requestConfig: (force) => this.usageBroker.requestConfig(force),
-      setActiveTab: (tab) => {
-        this.usageStore.setActiveTab(tab);
-        // Lazy-load config the first time the「配置」tab is selected.
-        if (tab === 'config') {
-          const state = this.usageStore.getState();
-          if (!state.configLoadedOnce && state.configStatus !== 'loading') {
-            this.usageBroker.requestConfig(false);
-          }
-        }
-      },
       setDisplayName: (name) => this.usageBroker.setDisplayName(name),
       setAvatar: (base64Png) => this.usageBroker.setAvatar(base64Png),
+      setActiveTab: (section) => this.selectSettingsSection(section),
+      setSettingsDraft: (registry) => this.usageStore.setSettingsDraft(registry),
+      applyRegistry: (registry) => this.usageBroker.setDshRegistry(registry),
       close: () => this.usageStore.setPanelOpen(false)
     };
   }
 
-  /** Footer click: open the global panel and kick off a cached usage load. */
-  private openUsagePanel(): void {
+  /** Settings rail: one dialog with a left nav (profile / usage / config / registry). */
+  openSettingsPanel(section: SettingsSection = 'profile'): void {
+    this.usageStore.setActiveTab(section);
     this.usageStore.setPanelOpen(true);
-    this.usageBroker.requestUsage(false);
+    this.ensureSettingsSectionData(section);
+  }
+
+  toggleSettingsPanel(): void {
+    if (this.usageStore.getState().panelOpen) {
+      this.usageStore.setPanelOpen(false);
+      return;
+    }
+    this.openSettingsPanel('profile');
+  }
+
+  /** Kept for tests and the pending-open path that still names a section. */
+  openUsagePanel(tab: SettingsSection = 'usage'): void {
+    this.openSettingsPanel(tab);
+  }
+
+  private selectSettingsSection(section: SettingsSection): void {
+    this.usageStore.setActiveTab(section);
+    this.ensureSettingsSectionData(section);
+  }
+
+  private ensureSettingsSectionData(section: SettingsSection): void {
+    if (section === 'usage') this.usageBroker.requestUsage(false);
+    else if (section === 'config') this.usageBroker.requestConfig(false);
+    else if (section === 'registry') this.usageBroker.requestSettings();
   }
 
   /** Called by entry.ts once the global dock exists (before any workspace is
@@ -209,12 +227,6 @@ export class AgentWorkspaceRegistry {
             this.historyBroker.activateWorkspace(event.workspaceId);
             // The active workspace changed: re-evaluate the narrow rule.
             this.notifyPlanVisibility(event.workspaceId);
-          } else {
-            // The Usage dialog must never float over a pure terminal view;
-            // with an agent pane still visible beside it, the dialog stays.
-            if (!this.host.anyAgentWorkspaceVisible()) {
-              this.usageStore.setPanelOpen(false);
-            }
           }
           this.historyDock?.updateOpenState();
         } else if (event.type === 'agent_workspace_created') {
@@ -248,6 +260,8 @@ export class AgentWorkspaceRegistry {
           this.usageBroker.handleUsageReport(event.raw);
         } else if (event.type === 'agent_config_report') {
           this.usageBroker.handleConfigReport(event.raw);
+        } else if (event.type === 'app_settings_snapshot') {
+          this.usageBroker.handleAppSettings(event.raw);
         } else if (event.type === 'agent_workspace_limit_reached') {
           this.showNotice(event.text ?? '');
         }

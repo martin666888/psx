@@ -243,6 +243,10 @@
     opacity: 0.45;
 }
 
+#activity-rail .workspace-chrome-button-end {
+    margin-top: auto;
+}
+
 .workspace-tab-close {
     flex: 0 0 24px;
     width: 24px;

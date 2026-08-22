@@ -99,7 +99,11 @@ export interface ConfigReport {
   providers: ProviderConfigReport[];
 }
 
-export type UsagePanelTab = 'usage' | 'config';
+export type SettingsSection = 'profile' | 'usage' | 'config' | 'registry';
+/** @deprecated Use SettingsSection. Kept so openUsage('usage'|'config') stays typed. */
+export type UsagePanelTab = SettingsSection;
+
+export type DshRegistryKey = 'official' | 'npmmirror';
 
 export interface UsageState {
   profile: AgentUserProfile;
@@ -110,13 +114,19 @@ export interface UsageState {
   status: 'idle' | 'loading' | 'error';
   errorText: string;
   panelOpen: boolean;
-  activeTab: UsagePanelTab;
+  activeTab: SettingsSection;
   configReport: ConfigReport | null;
   configGeneratedAt: string;
   configStatus: 'idle' | 'loading' | 'error';
   configErrorText: string;
   /** True after the first successful or failed config load in this process. */
   configLoadedOnce: boolean;
+  settingsRevision: number;
+  dshRegistry: DshRegistryKey;
+  settingsDraft: DshRegistryKey;
+  settingsError: string;
+  profileError: string;
+  profileSaving: boolean;
 }
 
 export type UsageListener = (state: UsageState) => void;
@@ -131,11 +141,17 @@ export function createInitialUsageState(): UsageState {
     status: 'idle',
     errorText: '',
     panelOpen: false,
-    activeTab: 'usage',
+    activeTab: 'profile',
     configReport: null,
     configGeneratedAt: '',
     configStatus: 'idle',
     configErrorText: '',
-    configLoadedOnce: false
+    configLoadedOnce: false,
+    settingsRevision: -1,
+    dshRegistry: 'official',
+    settingsDraft: 'official',
+    settingsError: '',
+    profileError: '',
+    profileSaving: false
   };
 }

@@ -301,6 +301,7 @@ internal sealed class NullTerminalBridgeService : ITerminalBridgeService
     public event EventHandler<DshExportEventArgs>? DshExportRequested { add { } remove { } }
     public event EventHandler<KimiWebExportEventArgs>? KimiWebExportRequested { add { } remove { } }
     public event EventHandler<ThemeActionEventArgs>? ThemeActionRequested { add { } remove { } }
+    public event EventHandler<AppSettingsCommandEventArgs>? AppSettingsCommandRequested { add { } remove { } }
 
     public Task InitializeAsync(WebView2 webView) => Task.CompletedTask;
     public Task CreateTerminalAsync(Guid sessionId) => Task.CompletedTask;

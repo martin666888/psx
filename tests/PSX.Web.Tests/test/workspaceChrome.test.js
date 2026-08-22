@@ -36,6 +36,11 @@ function mountChrome() {
           <path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"></path>
         </svg>
       </button>
+      <button data-role="app-settings-toggle">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <circle cx="12" cy="12" r="3"></circle>
+        </svg>
+      </button>
     </nav>
     <header id="workspace-chrome">
       <div data-role="pane-nameplates"></div>
@@ -756,6 +761,79 @@ test('dsh_web update menu reports checking, latest and safe errors without long 
   chrome.dispose();
 });
 
+test('dsh_web menu separates deferred and blocked versions from installable ones', async () => {
+  const runtime = installAgentRuntime();
+  mountChrome();
+  const { WorkspaceChromeController } = await import(controllerUrl);
+  const chrome = new WorkspaceChromeController(
+    document.getElementById('workspace-chrome'),
+    document.getElementById('workspace-popover-root')
+  );
+  chrome.applyLayout(columnSnapshot([
+    { columnId: 'column-1', tabs: [{ workspaceId: 'dsh1', kind: 'dsh_web' }], activeTabId: 'dsh1', ratio: 1 }
+  ]), new Map([['column-1', { left: 40, top: 40, width: 960, height: 700 }]]));
+  chrome.applyCatalog({
+    revision: 1,
+    providers: [], maxColumns: 3,
+    workspaces: [{
+      workspaceId: 'dsh1', kind: 'dsh_web', title: 'DeepSeek Harness', iconKey: 'dsh',
+      columnId: 'column-1', isActiveTab: true, canSplitRight: true, canCollapse: false
+    }]
+  });
+
+  // Everything newer is deferred or blocked: the state must not pretend the
+  // user is up to date, and no update entry may appear.
+  chrome.applyDshRuntimeStatus({
+    state: 'ready',
+    currentVersion: '0.1.0-rc.6',
+    updateState: 'requires_psx_update',
+    availableVersions: [],
+    deferredVersions: [
+      { version: '0.1.1', tags: [] },
+      { version: '../../evil', tags: [] },
+      { version: 42, tags: [] }
+    ],
+    blockedVersions: [{ version: '0.1.2', tags: ['latest'] }],
+    updateError: '请先更新 PSX。'
+  });
+  document.querySelector('.workspace-tab')
+    .dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+  const primaries = () => [...document.querySelectorAll('.workspace-menu-row .workspace-menu-primary')]
+    .map((node) => node.textContent);
+  assert.ok(!primaries().some((text) => text.startsWith('更新到')),
+    'requires_psx_update must not offer an update entry');
+  assert.ok(primaries().includes('发现新版本'));
+  const notices = [...document.querySelectorAll('.workspace-popover-message[data-muted="true"]')]
+    .map((node) => node.textContent);
+  assert.equal(notices.length, 2);
+  assert.match(notices[0], /当前 PSX 不支持此版本：v0\.1\.2/);
+  assert.match(notices[1], /已发布但暂不可安装：v0\.1\.1（将随 PSX 更新提供）/);
+  assert.ok(!notices.some((text) => text.includes('evil')),
+    'path-shaped or non-string versions are dropped by normalization');
+  assert.ok(primaries().includes('重新检查'));
+
+  // Mixed state: installable entries stay selectable while deferred and
+  // blocked versions render as notices inside the update confirmation.
+  chrome.applyDshRuntimeStatus({
+    state: 'ready',
+    currentVersion: '0.1.0-rc.6',
+    updateState: 'available',
+    availableVersion: '0.1.1',
+    availableVersions: [{ version: '0.1.1', tags: [] }],
+    deferredVersions: [{ version: '0.2.0', tags: [] }],
+    blockedVersions: [{ version: '0.1.2', tags: [] }]
+  });
+  const updateRow = [...document.querySelectorAll('.workspace-menu-row')].find(
+    (row) => row.querySelector('.workspace-menu-primary').textContent === '更新到 v0.1.1'
+  );
+  updateRow.click();
+  const confirmationNotices = [...document.querySelectorAll('.workspace-update-confirmation .workspace-popover-message[data-muted="true"]')]
+    .map((node) => node.textContent);
+  assert.match(confirmationNotices[0], /当前 PSX 不支持此版本：v0\.1\.2/);
+  assert.match(confirmationNotices[1], /已发布但暂不可安装：v0\.2\.0（将随 PSX 更新提供）/);
+  chrome.dispose();
+});
+
 test('create menu gates the Kimi Code Web row with its own fitsKimiWeb capacity', async () => {
   installAgentRuntime();
   mountChrome();
@@ -847,7 +925,7 @@ test('kimi_web tab menu switches the runtime action by status', async () => {
   chrome.dispose();
 });
 
-test('activity rail owns the three global buttons and the chrome row keeps only tab strips', async () => {
+test('activity rail owns the global buttons and the chrome row keeps only tab strips', async () => {
   installAgentRuntime();
   mountChrome();
   const { WorkspaceChromeController } = await import(controllerUrl);
@@ -859,8 +937,9 @@ test('activity rail owns the three global buttons and the chrome row keeps only 
   assert.deepEqual(roles, [
     'history-toggle',
     'workspace-create-toggle',
-    'theme-toggle'
-  ], 'the three global buttons live in the activity rail in order');
+    'theme-toggle',
+    'app-settings-toggle'
+  ], 'the global buttons live in the activity rail in order');
   const header = document.getElementById('workspace-chrome');
   assert.equal(header.querySelectorAll('button').length, 0, 'chrome row owns no global buttons');
   assert.ok(header.querySelector('[data-role="pane-nameplates"]'), 'chrome row keeps the tab-strip host');
@@ -885,7 +964,7 @@ test('rail buttons render inline SVG icons and expose no workspace-list entry', 
     document.getElementById('workspace-popover-root')
   );
   const buttons = [...document.querySelectorAll('#activity-rail button')];
-  assert.equal(buttons.length, 3);
+  assert.equal(buttons.length, 4);
   for (const button of buttons) {
     const svg = button.querySelector('svg');
     assert.ok(svg, 'each rail button renders an inline SVG icon');
@@ -920,6 +999,25 @@ test('global menus anchor to the trigger button top beside the activity rail', a
     'max-height keeps the menu inside the viewport (CSSOM may reorder calc terms)'
   );
   assert.equal(menu.style.left, '', 'left stays CSS-owned (rail edge + gap), not inline');
+  chrome.dispose();
+});
+
+test('PSX settings opens the Agent settings dialog instead of a rail popover', async () => {
+  installAgentRuntime();
+  mountChrome();
+  const { WorkspaceChromeController } = await import(controllerUrl);
+  const chrome = new WorkspaceChromeController(
+    document.getElementById('workspace-chrome'),
+    document.getElementById('workspace-popover-root')
+  );
+  let opened = 0;
+  document.addEventListener('psx-open-settings', () => {
+    opened += 1;
+  });
+  const trigger = document.querySelector('[data-role="app-settings-toggle"]');
+  trigger.click();
+  assert.equal(opened, 1, 'settings button must dispatch the settings page event');
+  assert.equal(document.querySelector('.workspace-popover'), null, 'settings must not use the rail popover');
   chrome.dispose();
 });
 

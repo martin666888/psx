@@ -86,9 +86,18 @@ interface WorkspaceCreatePayload {
 
 interface DshCommandPayload {
     type: 'dsh_command';
-    name: 'install' | 'retry' | 'stop' | 'check_update' | 'update' | 'cancel_update';
+    name: 'install' | 'retry' | 'stop' | 'check_update' | 'update' | 'cancel_update' | 'recheck_with_registry' | 'retry_install_with_registry';
     /** Exact package version for `update` only; ignored on other commands. */
     version?: string;
+    /** Required for `recheck_with_registry` / `retry_install_with_registry`. */
+    registry?: 'official' | 'npmmirror';
+}
+
+interface AppSettingsCommandPayload {
+    type: 'app_settings_command';
+    requestId: string;
+    action: 'get' | 'set_dsh_registry';
+    registry?: 'official' | 'npmmirror';
 }
 
 interface KimiWebCommandPayload {
@@ -185,6 +194,7 @@ type BridgeOutboundMessage =
     | WorkspaceLayoutIntentPayload
     | WorkspaceCreatePayload
     | DshCommandPayload
+    | AppSettingsCommandPayload
     | KimiWebCommandPayload
     | DshExportPayload
     | KimiWebExportPayload
@@ -395,6 +405,34 @@ interface KimiWebRuntimeStatusEvent extends BridgeInboundMessageBase {
     reason?: 'portable_node_missing' | 'runtime_missing' | 'runtime_invalid' | null;
 }
 
+/** dsh_runtime_status — process-wide DeepSeek Harness runtime state
+ * (documentation-only; the shell consumes it in WorkspaceChromeController
+ * and DshWorkspaceHost, never the Agent chunk). availableVersions are
+ * installable from this PSX build's pre-generated lock catalog; deferred
+ * versions ship with a future PSX, blocked versions were rejected by a
+ * review decision and may never be offered. errorClass is a user-facing
+ * localized message, unlike the fixed-enum runtimeErrorClass/
+ * updateErrorClass. */
+interface DshRuntimeStatusEvent extends BridgeInboundMessageBase {
+    type: 'dsh_runtime_status';
+    state: 'not_installed' | 'installing' | 'starting' | 'ready' | 'exited' | 'failed';
+    readyUrl?: string | null;
+    errorClass?: string | null;
+    currentVersion?: string | null;
+    updateState: 'idle' | 'checking' | 'up_to_date' | 'available' | 'updating' | 'failed' | 'requires_psx_update';
+    updatePhase?: 'downloading' | 'validating' | 'restarting' | null;
+    availableVersion?: string | null;
+    availableVersions: Array<{ version: string; tags: string[] }>;
+    deferredVersions?: Array<{ version: string; tags: string[] }>;
+    blockedVersions?: Array<{ version: string; tags: string[] }>;
+    updateError?: string | null;
+    registryKey: 'official' | 'npmmirror';
+    operationRegistryKey?: 'official' | 'npmmirror' | null;
+    catalogRegistryKey?: 'official' | 'npmmirror' | null;
+    runtimeErrorClass?: string | null;
+    updateErrorClass?: string | null;
+}
+
 interface AgentThreadOpenErrorEvent extends BridgeInboundMessageBase {
     type: 'agent_thread_open_error';
     threadId: string;
@@ -512,12 +550,22 @@ interface AgentConfigReportEvent extends BridgeInboundMessageBase {
     error: string | null;
 }
 
+interface AppSettingsSnapshotEvent extends BridgeInboundMessageBase {
+    type: 'app_settings_snapshot';
+    revision: number;
+    dshRegistry: 'official' | 'npmmirror';
+    requestId?: string;
+    errorClass?: string | null;
+    errorMessage?: string | null;
+}
+
 /** Agent-global events that deliberately do not belong to a workspace. */
 type AgentGlobalHostEvent =
     | AgentThreadOpenErrorEvent
     | AgentProfileEvent
     | AgentUsageReportEvent
-    | AgentConfigReportEvent;
+    | AgentConfigReportEvent
+    | AppSettingsSnapshotEvent;
 
 /** Every event AgentThreadManager.handleEvent may receive. Narrowing on
  * `type === 'permission_request'` yields the concrete presentation variants
@@ -535,5 +583,6 @@ type BridgeInboundMessage =
     | BridgeTerminalEvent
     | WorkspaceHostEvent
     | KimiWebRuntimeStatusEvent
+    | DshRuntimeStatusEvent
     | AgentGlobalHostEvent
     | AgentEvent;

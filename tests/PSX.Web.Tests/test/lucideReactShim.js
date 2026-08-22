@@ -38,6 +38,7 @@ function createTestIcon(name) {
 }
 
 export const ArrowDownIcon = createTestIcon('arrow-down');
+export const BarChart3Icon = createTestIcon('bar-chart-3');
 export const BrainIcon = createTestIcon('brain');
 export const ChartColumnIcon = createTestIcon('chart-column');
 export const CheckCircle2Icon = createTestIcon('circle-check');
@@ -54,6 +55,7 @@ export const CornerDownLeftIcon = createTestIcon('corner-down-left');
 export const EllipsisIcon = createTestIcon('ellipsis');
 export const FolderIcon = createTestIcon('folder');
 export const FolderOpenIcon = createTestIcon('folder-open');
+export const GlobeIcon = createTestIcon('globe');
 export const ImageIcon = createTestIcon('image');
 export const InfoIcon = createTestIcon('info');
 export const Loader2Icon = createTestIcon('loader-circle');
@@ -66,6 +68,7 @@ export const SearchIcon = createTestIcon('search');
 export const SlidersHorizontalIcon = createTestIcon('sliders-horizontal');
 export const SquareIcon = createTestIcon('square');
 export const TriangleAlertIcon = createTestIcon('triangle-alert');
+export const UserRoundIcon = createTestIcon('user-round');
 export const WrenchIcon = createTestIcon('wrench');
 export const XCircleIcon = createTestIcon('circle-x');
 export const XIcon = createTestIcon('x');

@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     private readonly KimiWebRuntimeSupervisor? _kimiWebSupervisor;
     private readonly RuntimePreflightService? _preflight;
     private readonly ISettingsService? _settingsService;
+    private readonly PsxEnvironmentSettingsCoordinator? _environmentSettings;
     private bool _isShuttingDown;
     private bool _shutdownCompleted;
     private long _themeCatalogRevision;
@@ -44,7 +45,8 @@ public partial class MainWindow : Window
         DshWebRuntimeSupervisor dshSupervisor,
         KimiWebRuntimeSupervisor kimiWebSupervisor,
         RuntimePreflightService preflight,
-        ISettingsService settingsService)
+        ISettingsService settingsService,
+        PsxEnvironmentSettingsCoordinator environmentSettings)
     {
         InitializeComponent();
 
@@ -59,10 +61,12 @@ public partial class MainWindow : Window
         _kimiWebSupervisor = kimiWebSupervisor;
         _preflight = preflight;
         _settingsService = settingsService;
+        _environmentSettings = environmentSettings;
 
         DataContext = _viewModel;
         _bridgeService.FrontendReady += OnFrontendReady;
         _bridgeService.ThemeActionRequested += OnThemeActionRequested;
+        _bridgeService.AppSettingsCommandRequested += OnAppSettingsCommandRequested;
 
         // Flash the taskbar button when a workspace newly needs attention
         // while this window is inactive (split-pane attention signal).
@@ -78,7 +82,12 @@ public partial class MainWindow : Window
     }
 
     private void OnFrontendReady(object? sender, EventArgs e) =>
-        _ = Dispatcher.BeginInvoke(PublishThemeCatalogAsync);
+        _ = Dispatcher.BeginInvoke(async () =>
+        {
+            await PublishThemeCatalogAsync();
+            if (_environmentSettings != null)
+                await _environmentSettings.PublishSnapshotAsync();
+        });
 
     private void OnThemeActionRequested(object? sender, ThemeActionEventArgs e) =>
         _ = Dispatcher.BeginInvoke(async () =>
@@ -87,6 +96,14 @@ public partial class MainWindow : Window
                 return;
             await _viewModel.ThemePicker.HandleWebActionAsync(e.Action, e.ThemeKey);
             await PublishThemeCatalogAsync();
+        });
+
+    private void OnAppSettingsCommandRequested(object? sender, AppSettingsCommandEventArgs e) =>
+        _ = Dispatcher.BeginInvoke(async () =>
+        {
+            if (_environmentSettings == null)
+                return;
+            await _environmentSettings.HandleCommandAsync(e.RequestId, e.Action, e.Registry);
         });
 
     private Task PublishThemeCatalogAsync()
@@ -299,6 +316,7 @@ public partial class MainWindow : Window
             {
                 _bridgeService.FrontendReady -= OnFrontendReady;
                 _bridgeService.ThemeActionRequested -= OnThemeActionRequested;
+                _bridgeService.AppSettingsCommandRequested -= OnAppSettingsCommandRequested;
             }
             (_agentWorkspaceCoordinator as IDisposable)?.Dispose();
             (_workspaceManager as IDisposable)?.Dispose();

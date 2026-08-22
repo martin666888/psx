@@ -1,4 +1,4 @@
-// reactUsagePanel.test.js — dock footer semantics + the global Usage panel.
+// reactUsagePanel.test.js — settings-opened Usage panel + profile/usage seam.
 //
 // Drives the real app so the footer, Usage island, request broker and host
 // event seam are exercised together. The report fixture mirrors the compact
@@ -16,7 +16,9 @@ import {
   providerReport,
   report,
   settle,
-  usageCommands
+  usageCommands,
+  configCommands,
+  settingsCommands
 } from './usagePanelFixture.js';
 
 beforeEach(() => {
@@ -27,13 +29,8 @@ afterEach(() => {
 });
 
 
-test('footer: terminal-only startup fetches the saved profile and renders its avatar fallback', async () => {
+test('terminal-only startup fetches the saved profile without waiting for History', async () => {
   const rig = await fixture({ withWorkspace: false });
-  const footer = rig.footer();
-
-  assert.equal(footer.tagName, 'BUTTON');
-  assert.ok(footer.getAttribute('aria-label'));
-  assert.ok(footer.querySelector('svg[aria-hidden="true"]'));
 
   const bootstrap = rig.posted.find(
     (message) => message.type === 'agent_global_command' && message.command === 'profile_get'
@@ -46,12 +43,16 @@ test('footer: terminal-only startup fetches the saved profile and renders its av
       revision: 1,
       displayName: 'neo wang'
     }),
-    () => rig.footer().textContent.includes('neo wang')
+    () => true
   );
-  const fallback = rig.footer().querySelector('.agent-history-dock-footer-avatar-fallback');
+  await settle(
+    () => rig.app.openSettings('profile'),
+    () => document.querySelector('[data-role="usage-panel"]')
+  );
+  const fallback = document.querySelector('.agent-usage-avatar-fallback');
   assert.ok(fallback);
   assert.equal(fallback.textContent, 'N');
-  assert.equal(rig.footer().querySelector('img'), null);
+  assert.equal(document.querySelector('[data-role="usage-panel"] img'), null);
 
   const avatar = 'data:image/png;base64,iVBORw0KGgo=';
   await settle(
@@ -62,14 +63,76 @@ test('footer: terminal-only startup fetches the saved profile and renders its av
         displayName: 'neo wang',
         avatarDataUrl: avatar
       }),
-    () => rig.footer().querySelector('img')
+    () => document.querySelector('[data-role="usage-panel"] img')
   );
-  const image = rig.footer().querySelector('img');
+  const image = document.querySelector('[data-role="usage-panel"] img');
   assert.equal(image.getAttribute('src'), avatar);
   assert.equal(image.getAttribute('alt'), '');
 });
 
-test('panel: Escape restores focus to the global History profile button', async () => {
+test('panel: a failed profile save stays on the homepage as an alert', async () => {
+  const rig = await fixture({ withWorkspace: false });
+  const bootstrap = rig.posted.find(
+    (message) => message.type === 'agent_global_command' && message.command === 'profile_get'
+  );
+  await settle(
+    () => rig.app.handle({
+      type: 'agent_profile',
+      requestId: bootstrap.requestId,
+      revision: 1,
+      displayName: 'neo wang'
+    }),
+    () => true
+  );
+  await settle(
+    () => rig.app.openSettings('profile'),
+    () => document.querySelector('[data-role="usage-profile-name"]')
+  );
+
+  await settle(
+    () => document.querySelector('[data-role="usage-profile-name"]').click(),
+    () => document.querySelector('[data-role="usage-profile-name-input"]')
+  );
+  const input = document.querySelector('[data-role="usage-profile-name-input"]');
+  const setValue = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+  await settle(
+    () => {
+      setValue.call(input, 'trinity');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    },
+    () => input.value === 'trinity'
+  );
+  await settle(
+    () => input.blur(),
+    () => rig.posted.some(
+      (message) => message.type === 'agent_global_command' && message.command === 'profile_set_name'
+    ),
+    'profile_set_name command'
+  );
+  const mutation = rig.posted.find(
+    (message) => message.type === 'agent_global_command' && message.command === 'profile_set_name'
+  );
+  assert.equal(mutation.value, 'trinity');
+  assert.equal(document.querySelector('[data-role="usage-profile-error"]'), null);
+
+  await settle(
+    () =>
+      rig.app.handle({
+        type: 'agent_profile',
+        requestId: mutation.requestId,
+        error: 'Unable to write profile.',
+        revision: 9,
+        displayName: ''
+      }),
+    () => document.querySelector('[data-role="usage-profile-error"]')
+  );
+  const alert = document.querySelector('[data-role="usage-profile-error"]');
+  assert.equal(alert.getAttribute('role'), 'alert');
+  assert.equal(alert.textContent, 'Unable to write profile.');
+  assert.equal(document.querySelector('[data-role="usage-profile-name"]').textContent, 'neo wang');
+});
+
+test('panel: Escape closes the usage panel', async () => {
   const rig = await fixture({ withWorkspace: false });
   await openPanelWith(rig, {
     report: report(),
@@ -83,7 +146,6 @@ test('panel: Escape restores focus to the global History profile button', async 
   });
 
   assert.equal(document.querySelector('[data-role="usage-panel"]'), null);
-  assert.equal(document.activeElement, rig.footer());
 });
 
 test('panel: window switching changes only the backend-owned total', async () => {
@@ -322,34 +384,25 @@ test('panel: refresh forces a rescan and accepts the matching reply', async () =
   );
 });
 
-test('panel: config tab lazy-loads config_report and switches agent sub-tabs', async () => {
+test('panel: config opens as its own surface without a usage/config switch', async () => {
   const rig = await fixture();
-  await openPanelWith(rig, {
-    report: report(),
-    completeness: completeness()
-  });
-
-  const title = document.querySelector('.agent-usage-title');
-  assert.ok(title);
-  assert.equal(title.textContent, '用量与配置');
-
-  const configTab = () =>
-    document.querySelector('[data-role="usage-tab"][data-tab="config"]');
-  assert.ok(configTab());
-
-  function configCommands(posted) {
-    return posted.filter(
-      (message) => message.type === 'agent_global_command' && message.command === 'config_report'
-    );
-  }
-
   await settle(
-    () => configTab().click(),
+    () => rig.app.openUsage('config'),
     () => configCommands(rig.posted).length > 0,
     'config_report command'
   );
   const request = configCommands(rig.posted).at(-1);
   assert.equal(request.value, 'cached');
+
+  const title = document.querySelector('[data-role="settings-heading"]');
+  assert.ok(title);
+  assert.equal(title.textContent, '配置');
+  assert.equal(document.querySelector('[data-role="usage-tab-switch"]'), null);
+  assert.equal(document.querySelector('[data-role="usage-avatar-button"]'), null);
+  const nav = [...document.querySelectorAll('[data-role="settings-nav-item"]')].map(
+    (node) => node.getAttribute('data-section')
+  );
+  assert.deepEqual(nav, ['profile', 'usage', 'config', 'registry']);
 
   await settle(
     () =>
@@ -417,4 +470,87 @@ test('panel: config tab lazy-loads config_report and switches agent sub-tabs', a
   assert.match(card.textContent, /kimi-k2/);
   assert.doesNotMatch(card.textContent, /sonnet/);
   assert.equal(document.querySelector('[data-role="usage-overview"]'), null);
+});
+
+test('panel: settings dialog uses a left nav for profile, usage, config and registry', async () => {
+  const rig = await fixture({ withWorkspace: false });
+  await settle(
+    () => rig.app.openSettings(),
+    () => document.querySelector('[data-role="usage-panel"]')
+  );
+  const nav = [...document.querySelectorAll('[data-role="settings-nav-item"]')];
+  assert.deepEqual(
+    nav.map((node) => node.getAttribute('data-section')),
+    ['profile', 'usage', 'config', 'registry']
+  );
+  assert.equal(nav[0].getAttribute('aria-current'), 'page');
+  assert.equal(document.querySelector('[data-role="settings-heading"]').textContent, '个人主页');
+  assert.ok(document.querySelector('[data-role="usage-avatar-button"]'));
+  assert.match(document.body.textContent, /目前可修改显示名称/);
+});
+
+test('panel: registry apply stays disabled until the npm source changes', async () => {
+  const rig = await fixture({ withWorkspace: false });
+  await settle(
+    () => rig.app.openSettings('registry'),
+    () => settingsCommands(rig.posted).some((message) => message.action === 'get'),
+    'app_settings get'
+  );
+  const get = settingsCommands(rig.posted).find((message) => message.action === 'get');
+  await settle(
+    () =>
+      rig.app.handle({
+        type: 'app_settings_snapshot',
+        revision: 1,
+        dshRegistry: 'official',
+        requestId: get.requestId
+      }),
+    () => document.querySelector('[data-role="settings-registry-apply"]')
+  );
+  const apply = document.querySelector('[data-role="settings-registry-apply"]');
+  assert.equal(apply.disabled, true);
+  assert.ok([...document.querySelectorAll('[data-role="settings-registry-choice"]')]
+    .some((button) => button.textContent.includes('npmmirror.com')));
+
+  await settle(
+    () => document.querySelector('[data-registry="npmmirror"]').click(),
+    () => document.querySelector('[data-role="settings-registry-apply"]')?.disabled === false
+  );
+});
+
+test('panel: registry abandons a stale GET when a newer broadcast lands first', async () => {
+  const rig = await fixture({ withWorkspace: false });
+  await settle(
+    () => rig.app.openSettings('registry'),
+    () => settingsCommands(rig.posted).some((message) => message.action === 'get'),
+    'app_settings get'
+  );
+  const getId = settingsCommands(rig.posted).find((message) => message.action === 'get').requestId;
+
+  await settle(
+    () =>
+      rig.app.handle({
+        type: 'app_settings_snapshot',
+        revision: 2,
+        dshRegistry: 'npmmirror'
+      }),
+    () => document.querySelector('[data-registry="npmmirror"]')?.getAttribute('data-selected') === 'true'
+  );
+
+  await settle(
+    () =>
+      rig.app.handle({
+        type: 'app_settings_snapshot',
+        revision: 1,
+        dshRegistry: 'official',
+        requestId: getId
+      }),
+    () => true
+  );
+  assert.equal(
+    document.querySelector('[data-registry="npmmirror"]').getAttribute('data-selected'),
+    'true',
+    'stale GET must not revive the old draft'
+  );
+  assert.equal(document.querySelector('[data-role="settings-registry-apply"]').disabled, true);
 });

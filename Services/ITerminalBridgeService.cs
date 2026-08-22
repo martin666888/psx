@@ -52,6 +52,7 @@ public interface ITerminalBridgeService
     /// from the supervisor's in-memory token.</summary>
     event EventHandler<KimiWebExportEventArgs>? KimiWebExportRequested;
     event EventHandler<ThemeActionEventArgs>? ThemeActionRequested;
+    event EventHandler<AppSettingsCommandEventArgs>? AppSettingsCommandRequested;
 }
 
 public sealed class DshCommandEventArgs : EventArgs
@@ -59,6 +60,15 @@ public sealed class DshCommandEventArgs : EventArgs
     public required string Name { get; init; }
     /// <summary>Exact package version for <c>update</c> only; ignored on other commands.</summary>
     public string? Version { get; init; }
+    /// <summary>Required for <c>recheck_with_registry</c> / <c>retry_install_with_registry</c>.</summary>
+    public string? Registry { get; init; }
+}
+
+public sealed class AppSettingsCommandEventArgs : EventArgs
+{
+    public required string RequestId { get; init; }
+    public required string Action { get; init; }
+    public string? Registry { get; init; }
 }
 
 public sealed class KimiWebCommandEventArgs : EventArgs

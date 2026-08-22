@@ -22,6 +22,9 @@ function makeRig({ timeoutMs = 5000 } = {}) {
   const host = {
     sendGlobalCommand(command, value, requestId) {
       commands.push({ command, value, requestId });
+    },
+    sendAppSettingsCommand(action, requestId, registry) {
+      commands.push({ action, requestId, registry });
     }
   };
   const broker = new UsageRequestBroker(host, store, { timeoutMs });
@@ -205,13 +208,97 @@ test('broker: a profile reply carrying an error leaves the stored revision untou
   // A failed set echoes the requestId with an error: the store must not apply
   // its payload (which would otherwise jump the revision forward).
   rig.broker.setDisplayName('   ');
+  assert.equal(rig.store.getState().profileSaving, true);
   const mutation = rig.commands.at(-1);
   assert.equal(mutation.command, 'profile_set_name');
   rig.broker.handleProfile({ requestId: mutation.requestId, error: 'blank name', revision: 9, displayName: '' });
 
+  const state = rig.store.getState();
+  assert.equal(state.profile.displayName, 'Trinity');
+  assert.equal(state.profile.revision, 3);
+  assert.equal(state.profileSaving, false);
+  assert.equal(state.profileError, 'blank name');
+});
+
+test('broker: unmatched profile errors stay silent and never apply', () => {
+  const rig = makeRig();
+  rig.broker.handleProfile({ revision: 1, displayName: 'Neo' });
+  rig.broker.setDisplayName('Trinity');
+  const first = rig.commands.at(-1);
+  rig.broker.setDisplayName('Morpheus');
+  assert.equal(rig.store.getState().profileSaving, true);
+
+  rig.broker.handleProfile({
+    requestId: 'stale-profile',
+    error: 'Access to the path C:\\Users\\neo\\.psx is denied.',
+    revision: 9,
+    displayName: ''
+  });
+  let state = rig.store.getState();
+  assert.equal(state.profile.displayName, 'Neo');
+  assert.equal(state.profileError, '', 'unmatched errors must not fill the homepage');
+  assert.equal(state.profileSaving, true, 'an in-flight save stays saving');
+
+  rig.broker.handleProfile({
+    requestId: first.requestId,
+    error: 'first failed',
+    revision: 9
+  });
+  state = rig.store.getState();
+  assert.equal(state.profileError, 'first failed');
+  assert.equal(state.profileSaving, true, 'a newer in-flight save keeps the busy state');
+
+  const second = rig.commands.at(-1);
+  rig.broker.handleProfile({
+    requestId: second.requestId,
+    error: 'Access to the path C:\\Users\\neo\\.psx is denied.',
+    revision: 9
+  });
+  state = rig.store.getState();
+  assert.equal(state.profile.displayName, 'Neo');
+  assert.equal(state.profileSaving, false);
+  assert.equal(state.profileError, '无法保存个人资料，请重试。');
+});
+
+test('broker: a late profile read cannot clear a newer mutation error', () => {
+  const rig = makeRig();
+  const bootstrap = rig.commands.find((entry) => entry.command === 'profile_get');
+  assert.ok(bootstrap?.requestId);
+
+  rig.broker.handleProfile({ revision: 3, displayName: 'Trinity' });
+  rig.broker.setDisplayName('Neo');
+  const mutation = rig.commands.at(-1);
+  rig.broker.handleProfile({
+    requestId: mutation.requestId,
+    error: 'Unable to write profile.',
+    revision: 3,
+    displayName: 'Trinity'
+  });
+  assert.equal(rig.store.getState().profileError, 'Unable to write profile.');
+
+  rig.broker.handleProfile({
+    requestId: bootstrap.requestId,
+    revision: 3,
+    displayName: 'Trinity'
+  });
+  const state = rig.store.getState();
+  assert.equal(state.profile.displayName, 'Trinity');
+  assert.equal(state.profileError, 'Unable to write profile.');
+  assert.equal(state.profileSaving, false);
+});
+
+test('broker: unmatched successful profile replies are dropped', () => {
+  const rig = makeRig();
+  rig.broker.handleProfile({ revision: 2, displayName: 'Neo' });
+  rig.broker.handleProfile({
+    requestId: 'never-issued',
+    revision: 9,
+    displayName: 'Mallory'
+  });
+
   const profile = rig.store.getState().profile;
-  assert.equal(profile.displayName, 'Trinity');
-  assert.equal(profile.revision, 3);
+  assert.equal(profile.displayName, 'Neo');
+  assert.equal(profile.revision, 2);
 });
 
 // --- timeout + retry -----------------------------------------------------------
@@ -307,4 +394,23 @@ test('broker: config error payload surfaces in the config slice', () => {
   assert.equal(state.configStatus, 'error');
   assert.match(state.configErrorText, /无法读取配置/);
   assert.equal(state.configLoadedOnce, true);
+});
+
+test('broker: a newer settings broadcast drops a stale GET reply', () => {
+  const rig = makeRig();
+  rig.broker.requestSettings();
+  const get = rig.commands.find((entry) => entry.action === 'get');
+  assert.ok(get?.requestId);
+
+  rig.broker.handleAppSettings({ revision: 2, dshRegistry: 'npmmirror' });
+  assert.equal(rig.store.getState().dshRegistry, 'npmmirror');
+  assert.equal(rig.store.getState().settingsDraft, 'npmmirror');
+
+  rig.broker.handleAppSettings({
+    revision: 1,
+    dshRegistry: 'official',
+    requestId: get.requestId
+  });
+  assert.equal(rig.store.getState().dshRegistry, 'npmmirror');
+  assert.equal(rig.store.getState().settingsDraft, 'npmmirror');
 });

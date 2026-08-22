@@ -146,21 +146,30 @@ export const Bridge = {
     },
 
     /**
-     * @param {'install'|'retry'|'stop'|'check_update'|'update'|'cancel_update'} name
+     * @param {'install'|'retry'|'stop'|'check_update'|'update'|'cancel_update'|'recheck_with_registry'|'retry_install_with_registry'} name
      * @param {string} [version] Exact package version for `update` only.
+     * @param {'official'|'npmmirror'} [registry] Required for the two `*_with_registry` commands.
      */
-    sendDshCommand(name, version) {
-        if (typeof version === 'string' && version.trim()) {
-            this.sendToHost({
-                type: BridgeSendType.DshCommand,
-                name,
-                version: version.trim()
-            });
-            return;
-        }
+    sendDshCommand(name, version, registry) {
         this.sendToHost({
             type: BridgeSendType.DshCommand,
-            name
+            name,
+            ...(typeof version === 'string' && version.trim() ? { version: version.trim() } : {}),
+            ...(registry === 'official' || registry === 'npmmirror' ? { registry } : {})
+        });
+    },
+
+    /**
+     * @param {'get'|'set_dsh_registry'} action
+     * @param {string} requestId
+     * @param {'official'|'npmmirror'} [registry]
+     */
+    sendAppSettingsCommand(action, requestId, registry) {
+        this.sendToHost({
+            type: BridgeSendType.AppSettingsCommand,
+            action,
+            requestId,
+            ...(registry === 'official' || registry === 'npmmirror' ? { registry } : {})
         });
     },
 

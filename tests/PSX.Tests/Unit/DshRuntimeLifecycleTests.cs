@@ -163,7 +163,7 @@ public sealed class DshRuntimeLifecycleTests
         var error = DshWebRuntime.ValidateStagedUpdate(paths.DshNextDirectory, "0.1.0-rc.7");
 
         Assert.IsNotNull(error);
-        StringAssert.Contains(error, "official registry");
+        StringAssert.Contains(error, "registry/integrity");
     }
 
     [TestMethod]
@@ -223,7 +223,9 @@ public sealed class DshRuntimeLifecycleTests
     public async Task CheckForUpdateAsync_UsesRegistryResultWithoutChangingCurrent()
     {
         using var workspace = TestWorkspace.Create(nameof(CheckForUpdateAsync_UsesRegistryResultWithoutChangingCurrent));
-        var (runtime, paths) = CreateRuntime(workspace);
+        var locks = new FakeDshLockSource();
+        locks.Bundle("0.1.0-rc.7");
+        var (runtime, paths) = CreateRuntime(workspace, locks);
         SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
         SeedScriptedNpm(paths, "console.log(JSON.stringify('0.1.0-rc.7'));\n");
 
@@ -233,7 +235,7 @@ public sealed class DshRuntimeLifecycleTests
         Assert.IsTrue(result.UpdateAvailable);
         Assert.AreEqual(DshWebRuntime.SeededPackageVersion, result.CurrentVersion);
         Assert.AreEqual("0.1.0-rc.7", result.AvailableVersion);
-        Assert.AreEqual(1, result.AvailableVersions.Count);
+        Assert.HasCount(1, result.AvailableVersions);
         Assert.AreEqual("0.1.0-rc.7", result.AvailableVersions[0].Version);
         Assert.AreEqual(DshWebRuntime.SeededPackageVersion, runtime.CurrentVersion,
             "a metadata check must never modify dsh-current");
@@ -244,7 +246,9 @@ public sealed class DshRuntimeLifecycleTests
     public async Task CheckForUpdateAsync_UsesVersionsAndDistTagsCatalog()
     {
         using var workspace = TestWorkspace.Create(nameof(CheckForUpdateAsync_UsesVersionsAndDistTagsCatalog));
-        var (runtime, paths) = CreateRuntime(workspace);
+        var locks = new FakeDshLockSource();
+        locks.Bundle("0.1.0-rc.8");
+        var (runtime, paths) = CreateRuntime(workspace, locks);
         SeedAuthorizedDshUpdateTree(paths.DshCurrentDirectory, "0.1.0-rc.7");
         SeedScriptedNpm(
             paths,
@@ -260,7 +264,7 @@ public sealed class DshRuntimeLifecycleTests
         Assert.IsTrue(result.Success, result.ErrorMessage);
         Assert.IsTrue(result.UpdateAvailable);
         Assert.AreEqual("0.1.0-rc.8", result.AvailableVersion);
-        Assert.AreEqual(1, result.AvailableVersions.Count);
+        Assert.HasCount(1, result.AvailableVersions);
         Assert.AreEqual("0.1.0-rc.8", result.AvailableVersions[0].Version);
         CollectionAssert.AreEqual(new[] { "next" }, result.AvailableVersions[0].Tags.ToArray());
         Assert.AreEqual("0.1.0-rc.7", runtime.CurrentVersion);
@@ -271,30 +275,20 @@ public sealed class DshRuntimeLifecycleTests
     public async Task StageUpdateAsync_WritesValidatedNextWithoutTouchingCurrent()
     {
         using var workspace = TestWorkspace.Create(nameof(StageUpdateAsync_WritesValidatedNextWithoutTouchingCurrent));
-        var (runtime, paths) = CreateRuntime(workspace);
+        var locks = new FakeDshLockSource();
+        locks.Bundle("0.1.0-rc.7");
+        var (runtime, paths) = CreateRuntime(workspace, locks);
         SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
         SeedScriptedNpm(
             paths,
             """
             const fs = require('fs');
             const path = require('path');
-            const spec = process.argv.find((arg) => arg.startsWith('@deepseek-ai/dsh@'));
-            const version = spec.slice(spec.lastIndexOf('@') + 1);
+            const version = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8')).dependencies['@deepseek-ai/dsh'];
             const packageDir = path.join(process.cwd(), 'node_modules', '@deepseek-ai', 'dsh');
             fs.mkdirSync(path.join(packageDir, 'lib'), { recursive: true });
             fs.writeFileSync(path.join(packageDir, 'lib', 'bin.js'), '// staged dsh');
             fs.writeFileSync(path.join(packageDir, 'package.json'), JSON.stringify({ version }));
-            fs.writeFileSync(path.join(process.cwd(), 'package-lock.json'), JSON.stringify({
-              lockfileVersion: 3,
-              packages: {
-                '': { dependencies: { '@deepseek-ai/dsh': version } },
-                'node_modules/@deepseek-ai/dsh': {
-                  version,
-                  resolved: `https://registry.npmjs.org/@deepseek-ai/dsh/-/dsh-${version}.tgz`,
-                  integrity: 'sha512-test'
-                }
-              }
-            }));
             """);
 
         var result = await runtime.StageUpdateAsync("0.1.0-rc.7", CancellationToken.None);
@@ -327,7 +321,7 @@ public sealed class DshRuntimeLifecycleTests
         var (runtime, _) = CreateRuntime(workspace);
         var bridge = new RecordingAgentBridgeService();
         using var supervisor = new DshWebRuntimeSupervisor(
-            runtime, bridge, Path.Combine(workspace.Path, "supervisor"), Path.Combine(workspace.Path, "dsh-workspace"));
+            runtime, bridge, Path.Combine(workspace.Path, "supervisor"), Path.Combine(workspace.Path, "dsh-workspace"), CreateSettings(workspace, bridge));
         Uri? origin = new Uri("http://127.0.0.1:1/");
         supervisor.ReadyUrlChanged = url => origin = url;
         var ready = new Uri("http://127.0.0.1:4321/");
@@ -352,7 +346,7 @@ public sealed class DshRuntimeLifecycleTests
         var (runtime, _) = CreateRuntime(workspace);
         var bridge = new RecordingAgentBridgeService();
         using var supervisor = new DshWebRuntimeSupervisor(
-            runtime, bridge, Path.Combine(workspace.Path, "supervisor"), Path.Combine(workspace.Path, "dsh-workspace"));
+            runtime, bridge, Path.Combine(workspace.Path, "supervisor"), Path.Combine(workspace.Path, "dsh-workspace"), CreateSettings(workspace, bridge));
         var coordinator = new DshWebWorkspaceCoordinator(supervisor, bridge);
 
         await coordinator.HandleCommandAsync("install");
@@ -374,7 +368,7 @@ public sealed class DshRuntimeLifecycleTests
         var (runtime, _) = CreateRuntime(workspace);
         var bridge = new RecordingAgentBridgeService();
         using var supervisor = new DshWebRuntimeSupervisor(
-            runtime, bridge, Path.Combine(workspace.Path, "supervisor"), Path.Combine(workspace.Path, "dsh-workspace"));
+            runtime, bridge, Path.Combine(workspace.Path, "supervisor"), Path.Combine(workspace.Path, "dsh-workspace"), CreateSettings(workspace, bridge));
         var coordinator = new DshWebWorkspaceCoordinator(supervisor, bridge);
 
         var install = coordinator.HandleCommandAsync("install");
@@ -397,7 +391,7 @@ public sealed class DshRuntimeLifecycleTests
         var (runtime, _) = CreateRuntime(workspace);
         var bridge = new RecordingAgentBridgeService();
         using var supervisor = new DshWebRuntimeSupervisor(
-            runtime, bridge, Path.Combine(workspace.Path, "supervisor"), Path.Combine(workspace.Path, "dsh-workspace"));
+            runtime, bridge, Path.Combine(workspace.Path, "supervisor"), Path.Combine(workspace.Path, "dsh-workspace"), CreateSettings(workspace, bridge));
         var coordinator = new DshWebWorkspaceCoordinator(supervisor, bridge);
 
         await Task.WhenAll(
@@ -416,7 +410,7 @@ public sealed class DshRuntimeLifecycleTests
         var (runtime, _) = CreateRuntime(workspace);
         var bridge = new RecordingAgentBridgeService();
         using var supervisor = new DshWebRuntimeSupervisor(
-            runtime, bridge, Path.Combine(workspace.Path, "supervisor"), Path.Combine(workspace.Path, "dsh-workspace"));
+            runtime, bridge, Path.Combine(workspace.Path, "supervisor"), Path.Combine(workspace.Path, "dsh-workspace"), CreateSettings(workspace, bridge));
         var entered = new ManualResetEventSlim(false);
         var release = new ManualResetEventSlim(false);
         supervisor.ReadyUrlChanged = url =>
@@ -536,7 +530,7 @@ public sealed class DshRuntimeLifecycleTests
         SeedRealProcessToolchain(paths);
         var bridge = new RecordingAgentBridgeService();
         using var supervisor = new DshWebRuntimeSupervisor(
-            runtime, bridge, Path.Combine(workspace.Path, "supervisor"), Path.Combine(workspace.Path, "dsh-workspace"));
+            runtime, bridge, Path.Combine(workspace.Path, "supervisor"), Path.Combine(workspace.Path, "dsh-workspace"), CreateSettings(workspace, bridge));
 
         // Single-flight: while one install is in flight, concurrent requests
         // join it instead of queueing repeated npm ci executions. The fake
@@ -564,7 +558,7 @@ public sealed class DshRuntimeLifecycleTests
         var (runtime, _) = CreateRuntime(workspace);
         var bridge = new RecordingAgentBridgeService();
         using var supervisor = new DshWebRuntimeSupervisor(
-            runtime, bridge, Path.Combine(workspace.Path, "supervisor"), Path.Combine(workspace.Path, "dsh-workspace"));
+            runtime, bridge, Path.Combine(workspace.Path, "supervisor"), Path.Combine(workspace.Path, "dsh-workspace"), CreateSettings(workspace, bridge));
 
         await supervisor.StopAsync();
 
@@ -706,7 +700,8 @@ public sealed class DshRuntimeLifecycleTests
             runtime,
             bridge,
             Path.Combine(workspace.Path, "supervisor"),
-            Path.Combine(workspace.Path, "dsh-workspace"));
+            Path.Combine(workspace.Path, "dsh-workspace"),
+            CreateSettings(workspace, bridge));
 
         await supervisor.EnsureRunningAsync();
         await TestWorkspace.WaitUntilAsync(
@@ -728,50 +723,17 @@ public sealed class DshRuntimeLifecycleTests
     public async Task Supervisor_UserUpdate_StagesRestartsAndCommitsOnlyAfterReady()
     {
         using var workspace = TestWorkspace.Create(nameof(Supervisor_UserUpdate_StagesRestartsAndCommitsOnlyAfterReady));
-        var (runtime, paths) = CreateRuntime(workspace);
-        SeedScriptedNpm(
-            paths,
-            """
-            const fs = require('fs');
-            const path = require('path');
-            if (process.argv.includes('view')) {
-              console.log(JSON.stringify('0.1.0-rc.7'));
-              return;
-            }
-            const spec = process.argv.find((arg) => arg.startsWith('@deepseek-ai/dsh@'));
-            const version = spec.slice(spec.lastIndexOf('@') + 1);
-            const packageDir = path.join(process.cwd(), 'node_modules', '@deepseek-ai', 'dsh');
-            fs.mkdirSync(path.join(packageDir, 'lib'), { recursive: true });
-            fs.writeFileSync(path.join(packageDir, 'lib', 'bin.js'), `
-            const http = require('http');
-            const server = http.createServer((_request, response) => {
-              response.writeHead(200, { 'content-type': 'text/html' });
-              response.end('<!doctype html><title>DeepSeek Harness</title>');
-            });
-            server.listen(0, '127.0.0.1', () => {
-              const address = server.address();
-              console.log('dsh web: http://127.0.0.1:' + address.port);
-            });`);
-            fs.writeFileSync(path.join(packageDir, 'package.json'), JSON.stringify({ version }));
-            fs.writeFileSync(path.join(process.cwd(), 'package-lock.json'), JSON.stringify({
-              lockfileVersion: 3,
-              packages: {
-                '': { dependencies: { '@deepseek-ai/dsh': version } },
-                'node_modules/@deepseek-ai/dsh': {
-                  version,
-                  resolved: `https://registry.npmjs.org/@deepseek-ai/dsh/-/dsh-${version}.tgz`,
-                  integrity: 'sha512-test'
-                }
-              }
-            }));
-            """);
+        var locks = new FakeDshLockSource();
+        locks.Bundle("0.1.0-rc.7");
+        var (runtime, paths) = CreateRuntime(workspace, locks);
+        SeedViewAndCiServerNpm(paths, "console.log(JSON.stringify('0.1.0-rc.7'));");
         SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
         WriteFakeDshServer(Path.Combine(
             paths.DshCurrentDirectory, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js"));
 
         var bridge = new RecordingAgentBridgeService();
         using var supervisor = new DshWebRuntimeSupervisor(
-            runtime, bridge, Path.Combine(workspace.Path, "supervisor"), Path.Combine(workspace.Path, "dsh-workspace"));
+            runtime, bridge, Path.Combine(workspace.Path, "supervisor"), Path.Combine(workspace.Path, "dsh-workspace"), CreateSettings(workspace, bridge));
         await supervisor.EnsureRunningAsync();
         await TestWorkspace.WaitUntilAsync(
             () => supervisor.State == DshRuntimeState.Ready,
@@ -803,6 +765,8 @@ public sealed class DshRuntimeLifecycleTests
             "the update wire should expose each meaningful background phase");
         Assert.AreEqual("up_to_date", LastRuntimeStatus(bridge).GetProperty("updateState").GetString());
         Assert.AreEqual(0, LastRuntimeStatus(bridge).GetProperty("availableVersions").GetArrayLength());
+        Assert.AreEqual(0, LastRuntimeStatus(bridge).GetProperty("deferredVersions").GetArrayLength());
+        Assert.AreEqual(0, LastRuntimeStatus(bridge).GetProperty("blockedVersions").GetArrayLength());
         await supervisor.StopAsync();
     }
 
@@ -811,7 +775,9 @@ public sealed class DshRuntimeLifecycleTests
     {
         using var workspace = TestWorkspace.Create(
             nameof(Supervisor_UpdateWithVersionOutsideAllowlist_FailsWithoutTouchingCurrent));
-        var (runtime, paths) = CreateRuntime(workspace);
+        var locks = new FakeDshLockSource();
+        locks.Bundle("0.1.0-rc.7");
+        var (runtime, paths) = CreateRuntime(workspace, locks);
         SeedScriptedNpm(paths, "console.log(JSON.stringify('0.1.0-rc.7'));\n");
         SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
         WriteFakeDshServer(Path.Combine(
@@ -819,7 +785,7 @@ public sealed class DshRuntimeLifecycleTests
 
         var bridge = new RecordingAgentBridgeService();
         using var supervisor = new DshWebRuntimeSupervisor(
-            runtime, bridge, Path.Combine(workspace.Path, "supervisor"), Path.Combine(workspace.Path, "dsh-workspace"));
+            runtime, bridge, Path.Combine(workspace.Path, "supervisor"), Path.Combine(workspace.Path, "dsh-workspace"), CreateSettings(workspace, bridge));
         await supervisor.EnsureRunningAsync();
         await TestWorkspace.WaitUntilAsync(
             () => supervisor.State == DshRuntimeState.Ready,
@@ -844,44 +810,15 @@ public sealed class DshRuntimeLifecycleTests
         // even if the registry later published a newer tip the user never saw.
         using var workspace = TestWorkspace.Create(
             nameof(Supervisor_CachedAllowlistVersion_StillAcceptedAfterCatalogWouldHaveGrown));
-        var (runtime, paths) = CreateRuntime(workspace);
-        SeedScriptedNpm(
+        var locks = new FakeDshLockSource();
+        locks.Bundle("0.1.0-rc.8");
+        var (runtime, paths) = CreateRuntime(workspace, locks);
+        SeedViewAndCiServerNpm(
             paths,
             """
-            const fs = require('fs');
-            const path = require('path');
-            if (process.argv.includes('view')) {
-              console.log(JSON.stringify({
-                versions: ['0.1.0-rc.6', '0.1.0-rc.7', '0.1.0-rc.8'],
-                'dist-tags': { latest: '0.1.0-rc.7', next: '0.1.0-rc.8' }
-              }));
-              return;
-            }
-            const spec = process.argv.find((arg) => arg.startsWith('@deepseek-ai/dsh@'));
-            const version = spec.slice(spec.lastIndexOf('@') + 1);
-            const packageDir = path.join(process.cwd(), 'node_modules', '@deepseek-ai', 'dsh');
-            fs.mkdirSync(path.join(packageDir, 'lib'), { recursive: true });
-            fs.writeFileSync(path.join(packageDir, 'lib', 'bin.js'), `
-            const http = require('http');
-            const server = http.createServer((_request, response) => {
-              response.writeHead(200, { 'content-type': 'text/html' });
-              response.end('<!doctype html><title>DeepSeek Harness</title>');
-            });
-            server.listen(0, '127.0.0.1', () => {
-              const address = server.address();
-              console.log('dsh web: http://127.0.0.1:' + address.port);
-            });`);
-            fs.writeFileSync(path.join(packageDir, 'package.json'), JSON.stringify({ version }));
-            fs.writeFileSync(path.join(process.cwd(), 'package-lock.json'), JSON.stringify({
-              lockfileVersion: 3,
-              packages: {
-                '': { dependencies: { '@deepseek-ai/dsh': version } },
-                'node_modules/@deepseek-ai/dsh': {
-                  version,
-                  resolved: `https://registry.npmjs.org/@deepseek-ai/dsh/-/dsh-${version}.tgz`,
-                  integrity: 'sha512-test'
-                }
-              }
+            console.log(JSON.stringify({
+              versions: ['0.1.0-rc.6', '0.1.0-rc.7', '0.1.0-rc.8'],
+              'dist-tags': { latest: '0.1.0-rc.7', next: '0.1.0-rc.8' }
             }));
             """);
         SeedAuthorizedDshUpdateTree(paths.DshCurrentDirectory, "0.1.0-rc.7");
@@ -890,7 +827,7 @@ public sealed class DshRuntimeLifecycleTests
 
         var bridge = new RecordingAgentBridgeService();
         using var supervisor = new DshWebRuntimeSupervisor(
-            runtime, bridge, Path.Combine(workspace.Path, "supervisor"), Path.Combine(workspace.Path, "dsh-workspace"));
+            runtime, bridge, Path.Combine(workspace.Path, "supervisor"), Path.Combine(workspace.Path, "dsh-workspace"), CreateSettings(workspace, bridge));
         await supervisor.EnsureRunningAsync();
         await TestWorkspace.WaitUntilAsync(
             () => supervisor.State == DshRuntimeState.Ready,
@@ -911,7 +848,9 @@ public sealed class DshRuntimeLifecycleTests
     {
         using var workspace = TestWorkspace.Create(
             nameof(Supervisor_CheckFailure_ClearsAllowlistAndEmitsEmptyArray));
-        var (runtime, paths) = CreateRuntime(workspace);
+        var locks = new FakeDshLockSource();
+        locks.Bundle("0.1.0-rc.7");
+        var (runtime, paths) = CreateRuntime(workspace, locks);
         SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
         WriteFakeDshServer(Path.Combine(
             paths.DshCurrentDirectory, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js"));
@@ -919,7 +858,7 @@ public sealed class DshRuntimeLifecycleTests
 
         var bridge = new RecordingAgentBridgeService();
         using var supervisor = new DshWebRuntimeSupervisor(
-            runtime, bridge, Path.Combine(workspace.Path, "supervisor"), Path.Combine(workspace.Path, "dsh-workspace"));
+            runtime, bridge, Path.Combine(workspace.Path, "supervisor"), Path.Combine(workspace.Path, "dsh-workspace"), CreateSettings(workspace, bridge));
         await supervisor.EnsureRunningAsync();
         await TestWorkspace.WaitUntilAsync(
             () => supervisor.State == DshRuntimeState.Ready,
@@ -947,7 +886,9 @@ public sealed class DshRuntimeLifecycleTests
     {
         using var workspace = TestWorkspace.Create(
             nameof(Supervisor_CancelUpdateWhileDownloadingKeepsCurrentServerAndCandidateAvailable));
-        var (runtime, paths) = CreateRuntime(workspace);
+        var locks = new FakeDshLockSource();
+        locks.Bundle("0.1.0-rc.7");
+        var (runtime, paths) = CreateRuntime(workspace, locks);
         var updateStarted = Path.Combine(workspace.Path, "update-started");
         SeedScriptedNpm(
             paths,
@@ -969,7 +910,8 @@ public sealed class DshRuntimeLifecycleTests
             runtime,
             bridge,
             Path.Combine(workspace.Path, "supervisor"),
-            Path.Combine(workspace.Path, "dsh-workspace"));
+            Path.Combine(workspace.Path, "dsh-workspace"),
+            CreateSettings(workspace, bridge));
         await supervisor.EnsureRunningAsync();
         await TestWorkspace.WaitUntilAsync(
             () => supervisor.State == DshRuntimeState.Ready,
@@ -996,6 +938,106 @@ public sealed class DshRuntimeLifecycleTests
             "the checked candidate remains available for a later retry");
         Assert.AreEqual(System.Text.Json.JsonValueKind.Null, status.GetProperty("updatePhase").ValueKind);
         await supervisor.StopAsync();
+    }
+
+    [TestMethod]
+    public async Task Supervisor_PartialDeferred_AvailableCarriesBothLists()
+    {
+        using var workspace = TestWorkspace.Create(nameof(Supervisor_PartialDeferred_AvailableCarriesBothLists));
+        var locks = new FakeDshLockSource();
+        locks.Bundle("0.1.0-rc.8");
+        locks.Block("0.1.0-rc.9");
+        var (runtime, paths) = CreateRuntime(workspace, locks);
+        SeedAuthorizedDshUpdateTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedScriptedNpm(
+            paths,
+            """
+            console.log(JSON.stringify({
+              versions: ['0.1.0-rc.6', '0.1.0-rc.7', '0.1.0-rc.8', '0.1.0-rc.9'],
+              'dist-tags': { latest: '0.1.0-rc.9' }
+            }));
+            """);
+        var bridge = new RecordingAgentBridgeService();
+        using var supervisor = new DshWebRuntimeSupervisor(
+            runtime, bridge, Path.Combine(workspace.Path, "supervisor"),
+            Path.Combine(workspace.Path, "dsh-workspace"), CreateSettings(workspace, bridge));
+
+        await supervisor.CheckForUpdateAsync();
+
+        var status = LastRuntimeStatus(bridge);
+        Assert.AreEqual("available", status.GetProperty("updateState").GetString());
+        Assert.AreEqual(1, status.GetProperty("availableVersions").GetArrayLength());
+        Assert.AreEqual("0.1.0-rc.8", status.GetProperty("availableVersions")[0].GetProperty("version").GetString());
+        Assert.AreEqual(1, status.GetProperty("deferredVersions").GetArrayLength());
+        Assert.AreEqual("0.1.0-rc.7", status.GetProperty("deferredVersions")[0].GetProperty("version").GetString());
+        Assert.AreEqual(1, status.GetProperty("blockedVersions").GetArrayLength());
+        Assert.AreEqual("0.1.0-rc.9", status.GetProperty("blockedVersions")[0].GetProperty("version").GetString());
+    }
+
+    [TestMethod]
+    public async Task Supervisor_AllNewerDeferredOrBlocked_ReportsRequiresPsxUpdate()
+    {
+        using var workspace = TestWorkspace.Create(
+            nameof(Supervisor_AllNewerDeferredOrBlocked_ReportsRequiresPsxUpdate));
+        var locks = new FakeDshLockSource();
+        locks.Block("0.1.0-rc.8");
+        var (runtime, paths) = CreateRuntime(workspace, locks);
+        SeedAuthorizedDshUpdateTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedScriptedNpm(
+            paths,
+            """
+            console.log(JSON.stringify({
+              versions: ['0.1.0-rc.6', '0.1.0-rc.7', '0.1.0-rc.8'],
+              'dist-tags': { latest: '0.1.0-rc.8' }
+            }));
+            """);
+        var bridge = new RecordingAgentBridgeService();
+        using var supervisor = new DshWebRuntimeSupervisor(
+            runtime, bridge, Path.Combine(workspace.Path, "supervisor"),
+            Path.Combine(workspace.Path, "dsh-workspace"), CreateSettings(workspace, bridge));
+
+        await supervisor.CheckForUpdateAsync();
+
+        var status = LastRuntimeStatus(bridge);
+        Assert.AreEqual("requires_psx_update", status.GetProperty("updateState").GetString());
+        Assert.AreEqual(0, status.GetProperty("availableVersions").GetArrayLength());
+        Assert.AreEqual(1, status.GetProperty("deferredVersions").GetArrayLength());
+        Assert.AreEqual(1, status.GetProperty("blockedVersions").GetArrayLength());
+    }
+
+    [TestMethod]
+    public async Task Supervisor_UpdateCommandUnderRequiresPsxUpdate_RejectedKeepsState()
+    {
+        using var workspace = TestWorkspace.Create(
+            nameof(Supervisor_UpdateCommandUnderRequiresPsxUpdate_RejectedKeepsState));
+        var locks = new FakeDshLockSource();
+        locks.Block("0.1.0-rc.8");
+        var (runtime, paths) = CreateRuntime(workspace, locks);
+        SeedAuthorizedDshUpdateTree(paths.DshCurrentDirectory, "0.1.0-rc.7");
+        SeedScriptedNpm(
+            paths,
+            """
+            console.log(JSON.stringify({
+              versions: ['0.1.0-rc.7', '0.1.0-rc.8'],
+              'dist-tags': { latest: '0.1.0-rc.8' }
+            }));
+            """);
+        var bridge = new RecordingAgentBridgeService();
+        using var supervisor = new DshWebRuntimeSupervisor(
+            runtime, bridge, Path.Combine(workspace.Path, "supervisor"),
+            Path.Combine(workspace.Path, "dsh-workspace"), CreateSettings(workspace, bridge));
+        await supervisor.CheckForUpdateAsync();
+        Assert.AreEqual("requires_psx_update", LastRuntimeStatus(bridge).GetProperty("updateState").GetString());
+
+        // Forged or racing explicit-version update commands must not degrade
+        // the state to a plain failure.
+        await supervisor.UpdateAndRestartAsync("0.1.0-rc.8");
+
+        var status = LastRuntimeStatus(bridge);
+        Assert.AreEqual("requires_psx_update", status.GetProperty("updateState").GetString());
+        Assert.AreEqual("请先更新 PSX。", status.GetProperty("updateError").GetString());
+        Assert.AreEqual("0.1.0-rc.7", runtime.CurrentVersion);
+        Assert.IsFalse(Directory.Exists(paths.DshNextDirectory));
     }
 
     [TestMethod]
@@ -1055,7 +1097,7 @@ public sealed class DshRuntimeLifecycleTests
         SeedCountingSlowNpm(paths, runsPath, delayMs: 60_000);
         var bridge = new RecordingAgentBridgeService();
         using var supervisor = new DshWebRuntimeSupervisor(
-            runtime, bridge, Path.Combine(workspace.Path, "supervisor"), Path.Combine(workspace.Path, "dsh-workspace"));
+            runtime, bridge, Path.Combine(workspace.Path, "supervisor"), Path.Combine(workspace.Path, "dsh-workspace"), CreateSettings(workspace, bridge));
         try
         {
             // Reviewer repro: retry #1 installs; retry #2 arrives while #1 holds
@@ -1096,7 +1138,7 @@ public sealed class DshRuntimeLifecycleTests
         SeedCountingSlowNpm(paths, runsPath, delayMs: 60_000);
         var bridge = new RecordingAgentBridgeService();
         using var supervisor = new DshWebRuntimeSupervisor(
-            runtime, bridge, Path.Combine(workspace.Path, "supervisor"), Path.Combine(workspace.Path, "dsh-workspace"));
+            runtime, bridge, Path.Combine(workspace.Path, "supervisor"), Path.Combine(workspace.Path, "dsh-workspace"), CreateSettings(workspace, bridge));
         try
         {
             var installing = supervisor.RetryAsync();
@@ -1165,7 +1207,7 @@ public sealed class DshRuntimeLifecycleTests
         var (runtime, _) = CreateRuntime(workspace);
         var bridge = new RecordingAgentBridgeService();
         using var supervisor = new DshWebRuntimeSupervisor(
-            runtime, bridge, Path.Combine(workspace.Path, "supervisor"), Path.Combine(workspace.Path, "dsh-workspace"));
+            runtime, bridge, Path.Combine(workspace.Path, "supervisor"), Path.Combine(workspace.Path, "dsh-workspace"), CreateSettings(workspace, bridge));
         var coordinator = new DshWebWorkspaceCoordinator(supervisor, bridge);
 
         coordinator.BeginShutdown();
@@ -1306,18 +1348,42 @@ public sealed class DshRuntimeLifecycleTests
 
     private static void WriteFakeDshServer(string entryPath)
     {
-        File.WriteAllText(
-            entryPath,
-            """
-            const http = require('http');
-            const server = http.createServer((_request, response) => {
-              response.writeHead(200, { 'content-type': 'text/html' });
-              response.end('<!doctype html><title>DeepSeek Harness</title>');
-            });
-            server.listen(0, '127.0.0.1', () => {
-              const address = server.address();
-              console.log(`dsh web: http://127.0.0.1:${address.port}`);
-            });
+        File.WriteAllText(entryPath, FakeDshServerSource);
+    }
+
+    private const string FakeDshServerSource = """
+        const http = require('http');
+        const server = http.createServer((_request, response) => {
+          response.writeHead(200, { 'content-type': 'text/html' });
+          response.end('<!doctype html><title>DeepSeek Harness</title>');
+        });
+        server.listen(0, '127.0.0.1', () => {
+          const address = server.address();
+          console.log(`dsh web: http://127.0.0.1:${address.port}`);
+        });
+        """;
+
+    /// <summary>Scripted npm for update flows: `view` prints the given
+    /// registry payload, `ci` installs a fake tree whose bin.js is a working
+    /// loopback server (so the supervisor's restart reaches Ready). The
+    /// lockfile itself comes from the bundled artifact, so ci never rewrites
+    /// it.</summary>
+    private static void SeedViewAndCiServerNpm(RuntimePaths paths, string viewStatement)
+    {
+        SeedScriptedNpm(
+            paths,
+            $$"""
+            const fs = require('fs');
+            const path = require('path');
+            if (process.argv.includes('view')) {
+              {{viewStatement}}
+              return;
+            }
+            const version = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8')).dependencies['@deepseek-ai/dsh'];
+            const packageDir = path.join(process.cwd(), 'node_modules', '@deepseek-ai', 'dsh');
+            fs.mkdirSync(path.join(packageDir, 'lib'), { recursive: true });
+            fs.writeFileSync(path.join(packageDir, 'lib', 'bin.js'), {{System.Text.Json.JsonSerializer.Serialize(FakeDshServerSource)}});
+            fs.writeFileSync(path.join(packageDir, 'package.json'), JSON.stringify({ version }));
             """);
     }
 
@@ -1340,7 +1406,7 @@ public sealed class DshRuntimeLifecycleTests
                 "node_modules/@deepseek-ai/dsh": {
                   "version": "{{version}}",
                   "resolved": "{{resolved ?? $"https://registry.npmjs.org/@deepseek-ai/dsh/-/dsh-{version}.tgz"}}",
-                  "integrity": "sha512-test"
+                  "integrity": "{{DshSri.TestIntegrity}}"
                 }
               }
             }
@@ -1383,12 +1449,22 @@ public sealed class DshRuntimeLifecycleTests
     private static System.Text.Json.JsonElement LastRuntimeStatus(RecordingAgentBridgeService bridge) =>
         bridge.Events.Last(message => message.GetProperty("type").GetString() == "dsh_runtime_status");
 
-    private static (DshWebRuntime Runtime, RuntimePaths Paths) CreateRuntime(TestWorkspace workspace)
+    private static (DshWebRuntime Runtime, RuntimePaths Paths) CreateRuntime(
+        TestWorkspace workspace, FakeDshLockSource? locks = null)
     {
         var locator = new RuntimeLocator(workspace.Path);
-        var runtime = new DshWebRuntime(locator, Path.Combine(workspace.Path, "logs"));
+        var runtime = new DshWebRuntime(
+            locator,
+            Path.Combine(workspace.Path, "logs"),
+            TimeSpan.FromMinutes(20),
+            locks);
         return (runtime, locator.Locate());
     }
+
+    private static PsxEnvironmentSettingsCoordinator CreateSettings(
+        TestWorkspace workspace,
+        RecordingAgentBridgeService bridge) =>
+        new(new PsxEnvironmentSettingsStore(Path.Combine(workspace.Path, "env")), bridge);
 
     private sealed class OneByteAtATimeStream(byte[] data) : Stream
     {

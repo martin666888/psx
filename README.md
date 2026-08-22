@@ -259,6 +259,11 @@ in environments where installing a heavier application is inconvenient.
 - `tools/acp-seed/` - manifest and Windows platform policy used for the user-confirmed latest Agent install
 - `tools/dsh-seed/` - pinned DeepSeek Harness manifest used for its
   user-confirmed first install
+- `tools/dsh-locks/` - hash-pinned pre-generated DSH update lockfiles
+  (`catalog.json` plus per-version `package.json`/`package-lock.json`) that
+  the update path installs with `npm ci`; produced by
+  `tools/generate-dsh-lock.ps1` under its isolation contract and gated by
+  `DshLockCatalogTests` plus the release verifier
 
 ## Release Notes For Maintainers
 

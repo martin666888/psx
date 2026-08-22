@@ -264,6 +264,11 @@ installRuntimeDiagnostics();
                     pendingHistoryOpen = false;
                     app.openHistory();
                 }
+                if (pendingSettingsOpen) {
+                    const section = pendingSettingsOpen;
+                    pendingSettingsOpen = null;
+                    app.openSettings(section);
+                }
             })
             .catch((error) => {
                 agentDisabled = true;
@@ -274,9 +279,15 @@ installRuntimeDiagnostics();
     }
 
     let pendingHistoryOpen = false;
+    let pendingSettingsOpen = null;
     document.addEventListener('psx-history-toggle', () => {
         if (agentApp || agentDisabled) return;
         pendingHistoryOpen = true;
+        loadAgentApp();
+    });
+    document.addEventListener('psx-open-settings', () => {
+        if (agentApp || agentDisabled) return;
+        pendingSettingsOpen = 'profile';
         loadAgentApp();
     });
 
@@ -341,6 +352,10 @@ installRuntimeDiagnostics();
                 // Agent chunk.
                 dshWorkspaceHost.applyRuntimeStatus(message);
                 workspaceChrome.applyDshRuntimeStatus(message);
+                return;
+            case BridgeEventType.AppSettingsSnapshot:
+                workspaceChrome.applyAppSettingsSnapshot(message);
+                forwardToAgent(message);
                 return;
             case BridgeEventType.KimiWebRuntimeStatus:
                 // Kimi Web runtime state is shell-owned: never staged into

@@ -7,6 +7,8 @@
 // matching reply resolves it:
 //   - profile_get / profile_set_* replies echo the requestId; profile
 //     broadcasts (no requestId) still apply through the revision guard.
+//     Matching profile_set_* errors write profileError for the settings page;
+//     unmatched or broadcast errors are dropped and never apply the payload.
 //   - usage_report / config_report replies must match the in-flight requestId
 //     or are dropped (late scans, superseded refreshes).
 // One 30s timeout per attempt plus one retry on the root bridge, then an inline
@@ -28,9 +30,15 @@ import type {
   UsageWindow
 } from '../contracts/agent-usage.js';
 import { UsageStore } from './UsageStore.js';
+import { safeDshRegistry, type DshRegistryKey } from './settingsRegistry.js';
 
 export interface UsageRequestHost {
   sendGlobalCommand(command: string, value?: string | boolean, requestId?: string): void;
+  sendAppSettingsCommand(
+    action: 'get' | 'set_dsh_registry',
+    requestId: string,
+    registry?: 'official' | 'npmmirror'
+  ): void;
 }
 
 export interface UsageRequestBrokerOptions {
@@ -54,6 +62,7 @@ const TIMEOUT_TEXT = 'Loading usage timed out.';
 const DEFAULT_ERROR_TEXT = 'Unable to load usage.';
 const TIMEOUT_CONFIG_TEXT = 'Loading config timed out.';
 const DEFAULT_CONFIG_ERROR_TEXT = 'Unable to load config.';
+const DEFAULT_PROFILE_ERROR_TEXT = '无法保存个人资料，请重试。';
 
 function num(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
@@ -73,6 +82,13 @@ function str(value: unknown): string {
 
 function strOrNull(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+function safeProfileError(value: string): string {
+  const text = value.trim();
+  if (!text || text.length > 160 || /[\\/]|[A-Za-z]:[\\/]/.test(text) || text.includes('\n'))
+    return DEFAULT_PROFILE_ERROR_TEXT;
+  return text;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -241,7 +257,8 @@ export class UsageRequestBroker {
   private readonly host: UsageRequestHost;
 
   private counter = 0;
-  private readonly pendingProfileRequests = new Set<string>();
+  private readonly pendingProfileRequests = new Map<string, 'read' | 'mutation'>();
+  private profileMutationId = '';
 
   private usageRequestId = '';
   private usageValue: 'cached' | 'force' = 'cached';
@@ -253,13 +270,15 @@ export class UsageRequestBroker {
   private configRetried = false;
   private configTimer: ReturnType<typeof setTimeout> | null = null;
 
+  private settingsRequestId = '';
+
   private disposed = false;
 
   constructor(host: UsageRequestHost, store: UsageStore, options?: UsageRequestBrokerOptions) {
     this.host = host;
     this.store = store;
     this.timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-    // The History footer exists during terminal-only startup, so its profile
+    // The Usage panel exists during terminal-only startup, so its profile
     // bootstrap cannot wait for an Agent workspace lifecycle event.
     this.requestProfile();
   }
@@ -269,7 +288,7 @@ export class UsageRequestBroker {
   requestProfile(): void {
     if (this.disposed) return;
     const requestId = this.nextId('p');
-    this.pendingProfileRequests.add(requestId);
+    this.pendingProfileRequests.set(requestId, 'read');
     this.host.sendGlobalCommand('profile_get', undefined, requestId);
   }
 
@@ -300,15 +319,51 @@ export class UsageRequestBroker {
     this.sendConfig();
   }
 
+  requestSettings(): void {
+    if (this.disposed) return;
+    const requestId = this.nextId('s');
+    this.settingsRequestId = requestId;
+    this.host.sendAppSettingsCommand('get', requestId);
+  }
+
+  setDshRegistry(registry: DshRegistryKey): void {
+    if (this.disposed) return;
+    const requestId = this.nextId('s');
+    this.settingsRequestId = requestId;
+    this.store.setSettingsDraft(registry);
+    this.host.sendAppSettingsCommand('set_dsh_registry', requestId, registry);
+  }
+
   // --- Response handlers ------------------------------------------------------
 
   handleProfile(raw: RawHostMessage): void {
     if (this.disposed) return;
     const requestId = str(raw.requestId);
+    const requestKind = requestId ? this.pendingProfileRequests.get(requestId) : undefined;
+    const matchedPending = requestKind !== undefined;
+    // Profile broadcasts intentionally omit requestId. A reply carrying an id
+    // must belong to this broker; late, duplicate and never-issued replies are
+    // not allowed to resolve state.
+    if (requestId && !matchedPending) return;
     if (requestId) this.pendingProfileRequests.delete(requestId);
-    // A server-side error leaves the stored revision unchanged; do not apply.
-    if (strOrNull(raw.error)) return;
-    this.store.applyProfile(normalizeProfile(raw));
+    const matchedMutation = Boolean(requestId && requestId === this.profileMutationId);
+    if (matchedMutation) this.profileMutationId = '';
+
+    const error = strOrNull(raw.error);
+    if (error) {
+      // Only a matching in-flight request may surface an error; broadcasts and
+      // late replies stay silent so a superseded save cannot clobber a newer one.
+      if (matchedPending) {
+        this.store.applyProfileError(safeProfileError(error), {
+          saving: Boolean(this.profileMutationId)
+        });
+      }
+      return;
+    }
+    this.store.applyProfile(normalizeProfile(raw), {
+      saving: Boolean(this.profileMutationId),
+      clearError: requestKind === 'mutation'
+    });
   }
 
   handleUsageReport(raw: RawHostMessage): void {
@@ -347,6 +402,39 @@ export class UsageRequestBroker {
     this.store.applyConfigReport(normalizeConfigReport(raw.report), str(raw.generatedAt));
   }
 
+  handleAppSettings(raw: RawHostMessage): void {
+    if (this.disposed) return;
+    const requestId = str(raw.requestId);
+    const matchesPending = Boolean(requestId && this.settingsRequestId && requestId === this.settingsRequestId);
+    if (requestId && this.settingsRequestId && !matchesPending) return;
+
+    const revision = Number(raw.revision);
+    const currentRevision = this.store.getState().settingsRevision;
+    const errorClass = strOrNull(raw.errorClass);
+    const errorMessage = str(raw.errorMessage);
+    const error = matchesPending && errorClass ? (errorMessage || '无法保存下载源设置。') : '';
+
+    if (matchesPending) this.settingsRequestId = '';
+
+    if (!Number.isFinite(revision) || revision < 0) return;
+    if (revision < currentRevision) return;
+
+    const isBroadcast = !requestId;
+    const hadPending = Boolean(this.settingsRequestId);
+    if (isBroadcast && hadPending) this.settingsRequestId = '';
+
+    if (revision === currentRevision && isBroadcast && !errorClass && !hadPending) return;
+
+    const registry = safeDshRegistry(raw.dshRegistry);
+    const syncDraft = (matchesPending && !errorClass) || isBroadcast;
+    this.store.applyAppSettings({
+      revision,
+      dshRegistry: registry,
+      draft: syncDraft ? registry : undefined,
+      error
+    });
+  }
+
   dispose(): void {
     this.disposed = true;
     this.clearUsageTimer();
@@ -358,7 +446,9 @@ export class UsageRequestBroker {
   private sendProfileMutation(command: string, value: string): void {
     if (this.disposed) return;
     const requestId = this.nextId('p');
-    this.pendingProfileRequests.add(requestId);
+    this.pendingProfileRequests.set(requestId, 'mutation');
+    this.profileMutationId = requestId;
+    this.store.beginProfileSave();
     this.host.sendGlobalCommand(command, value, requestId);
   }
 

@@ -138,6 +138,7 @@ powershell -ExecutionPolicy Bypass -File tools/test.ps1 -Suite Full
 - `tools/build-release.ps1`：便携发布包构建脚本
 - `tools/acp-seed/`：用户确认安装 Agent 时使用的依赖清单与 Windows 平台策略；实际安装解析 npm 官方源的最新兼容版本
 - `tools/dsh-seed/`：DeepSeek Harness 首次安装时使用的固定依赖清单，必须由用户确认后执行
+- `tools/dsh-locks/`：DSH 更新使用的预生成、SHA 锚定 lock 目录（`catalog.json` + 各版本 `package.json`/`package-lock.json`），客户端更新只执行 `npm ci`、永不求解依赖；由 `tools/generate-dsh-lock.ps1` 按其隔离契约产出，`DshLockCatalogTests` 与发布校验双门禁把关
 
 ## 维护者发布说明
 

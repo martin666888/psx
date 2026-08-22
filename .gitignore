@@ -385,6 +385,7 @@ FodyWeavers.xsd
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+CONOUT$
 
 # PSX downloaded runtimes and local WebView2 user data
 /runtime/

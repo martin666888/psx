@@ -52,7 +52,7 @@ export async function fixture({ withWorkspace = true } = {}) {
   await appModule('history/historyIsland.js');
   await appModule('usage/usageIsland.js');
   installBreakpoint(true);
-  document.body.innerHTML = `<div id="agents"></div>${agentTemplateMarkup()}`;
+  document.body.innerHTML = `<div id="agents"></div>${agentTemplateMarkup()}<button type="button" data-role="app-settings-toggle">设置</button>`;
   window.localStorage.setItem('psx.agent.historyDockOpen', '1');
   const { createAgentApp } = await appModule('entry.js');
   const app = createAgentApp({
@@ -62,12 +62,9 @@ export async function fixture({ withWorkspace = true } = {}) {
   });
   registerAgentCleanup(() => app.dispose());
   if (withWorkspace) createAgentWorkspace(app, WS);
-  const footer = () => document.querySelector('[data-role="history-profile"]');
-  for (let index = 0; index < 100 && !footer(); index++) {
-    await act(async () => new Promise((resolve) => setTimeout(resolve, 5)));
-  }
-  assert.ok(footer(), 'history dock footer did not mount');
-  return { app, posted: runtime.postedMessages, footer };
+  const settings = () => document.querySelector('[data-role="app-settings-toggle"]');
+  settings().addEventListener('click', () => app.toggleSettings());
+  return { app, posted: runtime.postedMessages, settings };
 }
 
 export async function settle(run, predicate, what = 'usage island') {
@@ -87,9 +84,19 @@ export function usageCommands(posted) {
   );
 }
 
+export function configCommands(posted) {
+  return posted.filter(
+    (message) => message.type === 'agent_global_command' && message.command === 'config_report'
+  );
+}
+
+export function settingsCommands(posted) {
+  return posted.filter((message) => message.type === 'app_settings_command');
+}
+
 export async function openPanelWith(rig, payload) {
   await settle(
-    () => rig.footer().click(),
+    () => rig.app.openSettings('usage'),
     () => usageCommands(rig.posted).length > 0,
     'usage_report command'
   );

@@ -52,6 +52,9 @@ public partial class App : Application
         // data beside the thread store — never part of psx.ini.
         services.AddSingleton(sp => new AgentProfileStore(
             Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "profile")));
+        services.AddSingleton(sp => new PsxEnvironmentSettingsStore(
+            sp.GetRequiredService<IAgentThreadStore>().RootDirectory));
+        services.AddSingleton<PsxEnvironmentSettingsCoordinator>();
         // Global Usage aggregation (thread activity + provider exact-usage
         // sources). Singleton so its short-TTL cache is shared across requests.
         services.AddSingleton(sp => new AgentUsageService(
@@ -128,9 +131,8 @@ public partial class App : Application
                 sp.GetRequiredService<DshWebRuntime>(),
                 sp.GetRequiredService<IAgentBridgeService>(),
                 Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "dsh"),
-                // Neutral default project directory for DSH sessions (DSH falls
-                // back to process.cwd()); never an internal PSX tree.
-                Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "dsh-workspace")));
+                Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "dsh-workspace"),
+                sp.GetRequiredService<PsxEnvironmentSettingsCoordinator>()));
         services.AddSingleton<IKimiWebWorkspaceCoordinator, KimiWebWorkspaceCoordinator>();
         services.AddSingleton<KimiWebRuntimeSupervisor>(sp =>
             new KimiWebRuntimeSupervisor(

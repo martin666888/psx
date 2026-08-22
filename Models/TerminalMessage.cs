@@ -55,6 +55,9 @@ public sealed class TerminalMessage
     [JsonPropertyName("version")]
     public string? Version { get; set; }
 
+    [JsonPropertyName("registry")]
+    public string? Registry { get; set; }
+
     [JsonPropertyName("url")]
     public string? Url { get; set; }
 

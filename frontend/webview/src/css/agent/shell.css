@@ -83,7 +83,8 @@
     width: min(520px, 100%);
     border: 1px solid var(--agent-error);
     border-radius: var(--agent-radius-card);
-    background: var(--agent-error-bg);
+    /* Same light-theme-safe derivation as .dsh-card[data-state="failed"]. */
+    background: color-mix(in srgb, var(--agent-error) 10%, var(--agent-surface));
     padding: var(--agent-space-5);
 }
 

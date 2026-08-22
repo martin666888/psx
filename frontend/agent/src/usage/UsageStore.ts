@@ -9,9 +9,10 @@
 import type {
   AgentUserProfile,
   ConfigReport,
+  DshRegistryKey,
+  SettingsSection,
   UsageCompleteness,
   UsageListener,
-  UsagePanelTab,
   UsageReport,
   UsageState
 } from '../contracts/agent-usage.js';
@@ -34,9 +35,31 @@ export class UsageStore {
 
   /** Apply a profile snapshot, but only if its revision is not older than the
    * one already shown (monotonic guard for out-of-order broadcasts). */
-  applyProfile(profile: AgentUserProfile): void {
-    if (profile.revision < this.state.profile.revision) return;
-    this.set({ ...this.state, profile });
+  applyProfile(
+    profile: AgentUserProfile,
+    options?: { saving?: boolean; clearError?: boolean }
+  ): void {
+    const acceptedProfile = profile.revision < this.state.profile.revision
+      ? this.state.profile
+      : profile;
+    this.set({
+      ...this.state,
+      profile: acceptedProfile,
+      profileError: options?.clearError ? '' : this.state.profileError,
+      profileSaving: options?.saving ?? false
+    });
+  }
+
+  beginProfileSave(): void {
+    this.set({ ...this.state, profileSaving: true, profileError: '' });
+  }
+
+  applyProfileError(text: string, options?: { saving?: boolean }): void {
+    this.set({
+      ...this.state,
+      profileError: text,
+      profileSaving: options?.saving ?? false
+    });
   }
 
   applyUsageLoading(): void {
@@ -88,7 +111,7 @@ export class UsageStore {
     });
   }
 
-  setActiveTab(tab: UsagePanelTab): void {
+  setActiveTab(tab: SettingsSection): void {
     if (this.state.activeTab === tab) return;
     this.set({ ...this.state, activeTab: tab });
   }
@@ -96,6 +119,27 @@ export class UsageStore {
   setPanelOpen(open: boolean): void {
     if (this.state.panelOpen === open) return;
     this.set({ ...this.state, panelOpen: open });
+    document.dispatchEvent(new CustomEvent('psx-settings-state', { detail: { open } }));
+  }
+
+  setSettingsDraft(draft: DshRegistryKey): void {
+    if (this.state.settingsDraft === draft && !this.state.settingsError) return;
+    this.set({ ...this.state, settingsDraft: draft, settingsError: '' });
+  }
+
+  applyAppSettings(snapshot: {
+    revision: number;
+    dshRegistry: DshRegistryKey;
+    draft?: DshRegistryKey;
+    error: string;
+  }): void {
+    this.set({
+      ...this.state,
+      settingsRevision: snapshot.revision,
+      dshRegistry: snapshot.dshRegistry,
+      settingsDraft: snapshot.draft ?? this.state.settingsDraft,
+      settingsError: snapshot.error
+    });
   }
 
   private set(next: UsageState): void {

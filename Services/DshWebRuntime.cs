@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using PSX.Models;
@@ -16,7 +17,7 @@ public sealed class DshWebRuntime
     public const string DshPackageName = "@deepseek-ai/dsh";
     public const string SeededPackageVersion = "0.1.0-rc.6";
 
-    private const string OfficialRegistry = "https://registry.npmjs.org/";
+    private const string OfficialRegistry = DshRegistryDescriptor.OfficialOrigin;
 
     private const string ActiveCurrentToken = "current";
     private const string ActiveNextToken = "next";
@@ -38,18 +39,27 @@ public sealed class DshWebRuntime
     private readonly string _logPath;
     private readonly NpmRuntimeProcessRunner _npmRunner;
     private readonly StagedRuntimeStore _stagedStore;
+    private readonly IDshLockSource _lockSource;
     private readonly SemaphoreSlim _installLock = new(1, 1);
 
     public DshWebRuntime(RuntimeLocator locator, string logDirectory)
         : this(locator, logDirectory, DefaultInstallTimeout) { }
 
     internal DshWebRuntime(RuntimeLocator locator, string logDirectory, TimeSpan installTimeout)
+        : this(locator, logDirectory, installTimeout, null) { }
+
+    internal DshWebRuntime(
+        RuntimeLocator locator,
+        string logDirectory,
+        TimeSpan installTimeout,
+        IDshLockSource? lockSource)
     {
         _locator = locator ?? throw new ArgumentNullException(nameof(locator));
         Directory.CreateDirectory(logDirectory);
         _logPath = Path.Combine(logDirectory, "dsh-runtime.log");
         _npmRunner = new NpmRuntimeProcessRunner(installTimeout, Log);
         _stagedStore = new StagedRuntimeStore("DSH", Log);
+        _lockSource = lockSource ?? new BundledDshLockSource(_locator.Locate().DshLocksDirectory);
     }
 
     public string LogPath => _logPath;
@@ -110,24 +120,35 @@ public sealed class DshWebRuntime
             Path.Combine(paths.DshCurrentDirectory, DshEntryPath));
     }
 
-    public async Task<DshInstallResult> InstallAsync(CancellationToken cancellationToken)
+    public Task<DshInstallResult> InstallAsync(CancellationToken cancellationToken) =>
+        InstallAsync(DshRegistryDescriptor.Official, cancellationToken);
+
+    public async Task<DshInstallResult> InstallAsync(
+        DshRegistryDescriptor registry,
+        CancellationToken cancellationToken)
     {
         await _installLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try { return await InstallCoreAsync(cancellationToken).ConfigureAwait(false); }
+        try { return await InstallCoreAsync(registry, cancellationToken).ConfigureAwait(false); }
         finally { _installLock.Release(); }
     }
 
     /// <summary>
-    /// Query the official npm registry for published versions and dist-tags.
+    /// Query the selected npm registry for published versions and dist-tags.
     /// This is a metadata-only operation: it never changes the active or staged tree.
     /// Dist-tags are annotations only; the candidate set is every published
     /// version that is &gt;= the seed and strictly newer than the installed tree.
     /// </summary>
-    public async Task<DshUpdateCheckResult> CheckForUpdateAsync(CancellationToken cancellationToken)
+    public Task<DshUpdateCheckResult> CheckForUpdateAsync(CancellationToken cancellationToken) =>
+        CheckForUpdateAsync(DshRegistryDescriptor.Official, cancellationToken);
+
+    public async Task<DshUpdateCheckResult> CheckForUpdateAsync(
+        DshRegistryDescriptor registry,
+        CancellationToken cancellationToken)
     {
         await _installLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            ArgumentNullException.ThrowIfNull(registry);
             var paths = Paths;
             var current = CurrentVersion;
             if (!IsInstalled() || !DshSemanticVersion.TryParse(current, out _))
@@ -144,16 +165,16 @@ public sealed class DshWebRuntime
                 new[]
                 {
                     "view", DshPackageName, "versions", "dist-tags", "--json",
-                    $"--registry={OfficialRegistry}", "--prefer-online"
+                    $"--registry={registry.Origin}", "--prefer-online"
                 },
                 cancellationToken).ConfigureAwait(false);
             if (view.Kind != AcpRuntimeOperationKind.Success)
             {
                 Log($"DSH update check failed: {view.Kind} exit={view.ExitCode} detail={view.Message}");
-                var error = view.Kind == AcpRuntimeOperationKind.NetworkUnavailable
-                    ? "无法连接 npm 仓库，请检查网络后重试。"
-                    : "检查更新失败，当前版本可继续使用。";
-                return DshUpdateCheckResult.Failed(current, error);
+                return DshUpdateCheckResult.Failed(
+                    current,
+                    MapCheckErrorMessage(view),
+                    MapNpmErrorClass(view, forCheck: true));
             }
 
             if (!TryBuildUpdateCatalog(view.Stdout, current, out var catalog, out var parseError))
@@ -164,17 +185,73 @@ public sealed class DshWebRuntime
 
             if (catalog.Count == 0)
                 return DshUpdateCheckResult.UpToDate(current);
-            return DshUpdateCheckResult.Available(current, catalog);
+
+            // Partition the published catalog through the trusted lock
+            // source: Found versions are installable; misses split into
+            // blocked (review decision) and deferred (bundled with a future
+            // PSX); a corrupt catalog or artifact fails the whole check —
+            // the installation itself is damaged, not the version set.
+            var snapshot = _lockSource.LoadCatalog();
+            if (!snapshot.Valid)
+            {
+                Log("DSH bundled lock catalog is invalid; update check reported catalog_corrupt.");
+                return DshUpdateCheckResult.Failed(
+                    current, "PSX 安装文件损坏，请重新安装。", DshErrorClass.CatalogCorrupt);
+            }
+
+            var blockedSet = new HashSet<string>(snapshot.BlockedVersions, StringComparer.Ordinal);
+            var installable = new List<DshAvailableVersion>();
+            var deferred = new List<DshAvailableVersion>();
+            var blocked = new List<DshAvailableVersion>();
+            foreach (var entry in catalog)
+            {
+                var lookup = _lockSource.Find(entry.Version);
+                switch (lookup.Kind)
+                {
+                    case DshLockLookup.Found:
+                        installable.Add(entry);
+                        break;
+                    case DshLockLookup.VersionNotBundled:
+                        if (blockedSet.Contains(entry.Version))
+                            blocked.Add(entry);
+                        else
+                            deferred.Add(entry);
+                        break;
+                    default:
+                        Log($"DSH bundled lock for {entry.Version} is corrupt; update check reported catalog_corrupt.");
+                        return DshUpdateCheckResult.Failed(
+                            current, "PSX 安装文件损坏，请重新安装。", DshErrorClass.CatalogCorrupt);
+                }
+            }
+
+            if (installable.Count == 0)
+                return DshUpdateCheckResult.DeferredOnly(
+                    current, CapWireList(deferred), CapWireList(blocked));
+            return DshUpdateCheckResult.Available(
+                current, installable, CapWireList(deferred), CapWireList(blocked));
         }
         finally { _installLock.Release(); }
     }
 
+    private static DshAvailableVersion[] CapWireList(List<DshAvailableVersion> versions) =>
+        versions.Count > 5 ? [.. versions.GetRange(0, 5)] : [.. versions];
+
     /// <summary>
-    /// Install an exact, previously checked version into dsh-next. The live
-    /// server keeps reading dsh-current until the supervisor explicitly
-    /// applies the staged tree after user confirmation.
+    /// Install into dsh-next from the repo-trusted bundled lock: copy the
+    /// verbatim package.json/package-lock.json, re-verify their hashes,
+    /// validate the lock, then npm ci (lifecycle scripts enabled; the
+    /// download registry may be a mirror but every tarball byte is checked
+    /// against the lock's SRI). No network access happens before the lock
+    /// artifact has been found and verified.
     /// </summary>
+    public Task<DshUpdateResult> StageUpdateAsync(
+        string candidate,
+        CancellationToken cancellationToken,
+        Action? validationStarted = null) =>
+        StageUpdateAsync(DshRegistryDescriptor.Official, candidate, cancellationToken, validationStarted);
+
     public async Task<DshUpdateResult> StageUpdateAsync(
+        DshRegistryDescriptor registry,
         string candidate,
         CancellationToken cancellationToken,
         Action? validationStarted = null)
@@ -182,6 +259,7 @@ public sealed class DshWebRuntime
         await _installLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            ArgumentNullException.ThrowIfNull(registry);
             var paths = Paths;
             var current = CurrentVersion;
             if (!IsInstalled()
@@ -194,6 +272,17 @@ public sealed class DshWebRuntime
             if (paths.PortableNodePath == null || paths.PortableNpmCliPath == null)
                 return new(false, current, candidate, "缺少便携 Node.js，无法下载更新。", null);
 
+            var lookup = _lockSource.Find(candidate);
+            if (lookup.Kind != DshLockLookup.Found)
+            {
+                var (lockMessage, lockErrorClass) = lookup.Kind == DshLockLookup.VersionNotBundled
+                    ? ("该版本暂不可安装，请更新 PSX 后重试。", DshErrorClass.LockUnavailable)
+                    : ("PSX 安装文件损坏，请重新安装。", DshErrorClass.CatalogCorrupt);
+                Log($"DSH update refused with {lockErrorClass}: lock lookup for {candidate} returned {lookup.Kind}.");
+                return new(false, current, candidate, lockMessage, null, lockErrorClass);
+            }
+            var artifact = lookup.Artifact!;
+
             try
             {
                 DeleteDirectory(paths.DshNextDirectory);
@@ -202,13 +291,35 @@ public sealed class DshWebRuntime
                 if (!File.Exists(seedNpmrc))
                     return new(false, current, candidate, "缺少 DSH Registry 配置，无法安全更新。", null);
                 File.Copy(seedNpmrc, Path.Combine(paths.DshNextDirectory, ".npmrc"), overwrite: true);
-                WriteUpdatePackageJson(paths.DshNextDirectory, candidate);
+                File.WriteAllText(Path.Combine(paths.DshNextDirectory, "package.json"), artifact.PackageJson);
+                File.WriteAllText(Path.Combine(paths.DshNextDirectory, "package-lock.json"), artifact.LockJson);
             }
             catch (Exception ex)
             {
                 Log($"Failed to prepare dsh-next: {ex}");
                 return new(false, current, candidate, "无法准备 DSH 更新目录。", null);
             }
+
+            // The source verified the artifact bytes it read; this verifies
+            // what actually landed in dsh-next (copy corruption, disk damage).
+            var lockPath = Path.Combine(paths.DshNextDirectory, "package-lock.json");
+            var packagePath = Path.Combine(paths.DshNextDirectory, "package.json");
+            if (!string.Equals(HashFile(lockPath), artifact.LockSha256, StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(HashFile(packagePath), artifact.PackageSha256, StringComparison.OrdinalIgnoreCase))
+            {
+                Log("DSH update staged file SHA does not match the bundled artifact.");
+                return IntegrityFailure(current, candidate);
+            }
+
+            var lockError = DshLockValidator.ValidateLockFile(
+                paths.DshNextDirectory, candidate, OfficialRegistry, artifact.DshSri);
+            if (lockError != null)
+            {
+                Log($"DSH update lock validation failed: {lockError}");
+                return IntegrityFailure(current, candidate);
+            }
+
+            var lockHash = HashFile(lockPath);
 
             var install = await _npmRunner.RunAsync(
                 paths.PortableNodePath,
@@ -217,36 +328,51 @@ public sealed class DshWebRuntime
                 $"DSH update {candidate}",
                 new[]
                 {
-                    "install", $"{DshPackageName}@{candidate}", "--save-exact",
-                    "--omit=dev", "--include=optional", "--engine-strict",
-                    "--no-audit", "--no-fund", $"--registry={OfficialRegistry}"
+                    "ci", "--omit=dev", "--include=optional", "--engine-strict",
+                    "--no-audit", "--no-fund",
+                    $"--registry={registry.Origin}",
+                    "--replace-registry-host=npmjs"
                 },
                 cancellationToken).ConfigureAwait(false);
             if (install.Kind != AcpRuntimeOperationKind.Success)
             {
-                Log($"DSH update npm result: {install.Kind} exit={install.ExitCode} detail={install.Message}");
-                var error = install.Kind switch
-                {
-                    AcpRuntimeOperationKind.NetworkUnavailable => "更新下载失败，请检查网络后重试。",
-                    AcpRuntimeOperationKind.Cancelled => "更新已停止，当前版本未改变。",
-                    _ => "更新安装失败，当前版本可继续使用。"
-                };
-                return new(false, current, candidate, error, install.ExitCode);
+                Log($"DSH update npm ci result: {install.Kind} exit={install.ExitCode} detail={install.Message}");
+                return NpmUpdateFailure(current, candidate, install);
             }
 
             validationStarted?.Invoke();
             cancellationToken.ThrowIfCancellationRequested();
-            try { WriteUpdateReceipt(paths.DshNextDirectory, candidate); }
+
+            if (!string.Equals(HashFile(lockPath), lockHash, StringComparison.Ordinal))
+            {
+                Log("DSH update lock hash changed during npm ci.");
+                return IntegrityFailure(current, candidate);
+            }
+
+            var rootSri = DshLockValidator.ReadRootPackageIntegrity(paths.DshNextDirectory, candidate);
+            if (rootSri == null || !DshSri.Equal(rootSri, artifact.DshSri))
+            {
+                return IntegrityFailure(current, candidate);
+            }
+
+            try { WriteUpdateReceiptV3(paths.DshNextDirectory, artifact, registry); }
             catch (Exception ex)
             {
                 Log($"Failed to write DSH update receipt: {ex}");
                 return new(false, current, candidate, "无法记录更新来源，当前版本未改变。", null);
             }
+
             var validationError = ValidateStagedUpdate(paths.DshNextDirectory, candidate);
             if (validationError != null)
             {
                 Log($"DSH staged update validation failed: {validationError}");
-                return new(false, current, candidate, "下载的更新未通过完整性校验，当前版本未改变。", null);
+                return new(
+                    false,
+                    current,
+                    candidate,
+                    "下载的更新未通过完整性校验，当前版本未改变。",
+                    null,
+                    DshErrorClass.IntegrityFailed);
             }
             if (!_stagedStore.TryWriteActivePointer(
                     paths.RuntimeRoot, paths.DshActivePointerFile, ActiveNextToken))
@@ -258,8 +384,11 @@ public sealed class DshWebRuntime
         finally { _installLock.Release(); }
     }
 
-    private async Task<DshInstallResult> InstallCoreAsync(CancellationToken cancellationToken)
+    private async Task<DshInstallResult> InstallCoreAsync(
+        DshRegistryDescriptor registry,
+        CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(registry);
         var paths = Paths;
         if (paths.PortableNodePath == null || paths.PortableNpmCliPath == null)
             return new(false, "缺少便携 Node.js 运行时，无法安装。", null);
@@ -278,20 +407,24 @@ public sealed class DshWebRuntime
 
         var result = await _npmRunner.RunAsync(
             paths.PortableNodePath, paths.PortableNpmCliPath, scratch,
-            "DSH install", new[] { "ci" }, cancellationToken).ConfigureAwait(false);
+            "DSH install",
+            new[]
+            {
+                "ci",
+                $"--registry={registry.Origin}",
+                "--replace-registry-host=npmjs",
+                "--include=optional"
+            },
+            cancellationToken).ConfigureAwait(false);
 
         if (result.Kind != AcpRuntimeOperationKind.Success)
         {
-            // The npm runner's message is diagnostic and may carry paths; it
-            // stays in the log. The wire error is a fixed safe string.
             Log($"DSH install npm result: {result.Kind} exit={result.ExitCode} detail={result.Message}");
-            var message = result.Kind switch
-            {
-                AcpRuntimeOperationKind.NetworkUnavailable => "网络不可用，无法连接 npm 仓库。请检查网络后重试。",
-                AcpRuntimeOperationKind.Cancelled => "安装已停止。",
-                _ => "安装失败：npm ci 没有成功完成。"
-            };
-            return new(false, message, result.ExitCode);
+            return new(
+                false,
+                MapInstallErrorMessage(result),
+                result.ExitCode,
+                MapNpmErrorClass(result, forCheck: false));
         }
         return ValidateInstalledTree(paths, scratch);
     }
@@ -481,36 +614,52 @@ public sealed class DshWebRuntime
             && candidateVersion.CompareTo(currentVersion) > 0;
     }
 
-    private static void WriteUpdatePackageJson(string directory, string candidate)
-    {
-        var manifest = new
-        {
-            name = "psx-dsh-runtime",
-            version = "0.1.0",
-            @private = true,
-            description = "PSX-managed DeepSeek Harness runtime update.",
-            dependencies = new Dictionary<string, string>
-            {
-                [DshPackageName] = candidate
-            }
-        };
-        File.WriteAllText(
-            Path.Combine(directory, "package.json"),
-            JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }));
-    }
+    private static DshUpdateResult IntegrityFailure(string? current, string candidate) =>
+        new(
+            false,
+            current,
+            candidate,
+            "下载的更新未通过完整性校验，当前版本未改变。",
+            null,
+            DshErrorClass.IntegrityFailed);
 
-    private static void WriteUpdateReceipt(string directory, string candidate)
+    private static void WriteUpdateReceiptV3(
+        string directory,
+        DshLockArtifact artifact,
+        DshRegistryDescriptor registry)
     {
         var receipt = new
         {
+            schemaVersion = 3,
             package = DshPackageName,
-            version = candidate,
-            registry = OfficialRegistry
+            version = artifact.Version,
+            lockSource = ToWireLockSource(artifact.Kind),
+            lockSha256 = artifact.LockSha256,
+            dshSri = artifact.DshSri,
+            downloadRegistryKey = registry.Key,
+            downloadRegistryOrigin = registry.Origin
         };
         File.WriteAllText(
             Path.Combine(directory, UpdateReceiptName),
             JsonSerializer.Serialize(receipt));
+        using var document = JsonDocument.Parse(File.ReadAllText(Path.Combine(directory, UpdateReceiptName)));
+        if (!TryReadUpdateReceipt(document.RootElement, out var parsed)
+            || parsed.SchemaVersion != 3
+            || !string.Equals(parsed.Version, artifact.Version, StringComparison.Ordinal)
+            || !string.Equals(parsed.LockSource, ToWireLockSource(artifact.Kind), StringComparison.Ordinal)
+            || !string.Equals(parsed.LockSha256, artifact.LockSha256, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(parsed.RegistryKey, registry.Key, StringComparison.Ordinal)
+            || !DshSri.Equal(parsed.Integrity, artifact.DshSri))
+        {
+            throw new InvalidOperationException("DSH update receipt round-trip failed.");
+        }
     }
+
+    internal static string ToWireLockSource(DshLockSourceKind kind) => kind switch
+    {
+        DshLockSourceKind.Bundled => "bundled",
+        _ => throw new ArgumentOutOfRangeException(nameof(kind))
+    };
 
     private static string? ReadUpdateReceiptVersion(string directory)
     {
@@ -518,26 +667,100 @@ public sealed class DshWebRuntime
         {
             using var document = JsonDocument.Parse(
                 File.ReadAllText(Path.Combine(directory, UpdateReceiptName)));
-            var root = document.RootElement;
-            if (!root.TryGetProperty("package", out var package)
-                || package.ValueKind != JsonValueKind.String
-                || !string.Equals(package.GetString(), DshPackageName, StringComparison.Ordinal)
-                || !root.TryGetProperty("registry", out var registry)
-                || registry.ValueKind != JsonValueKind.String
-                || !string.Equals(registry.GetString(), OfficialRegistry, StringComparison.Ordinal)
-                || !root.TryGetProperty("version", out var version)
-                || version.ValueKind != JsonValueKind.String)
-                return null;
-            return version.GetString();
+            return TryReadUpdateReceipt(document.RootElement, out var receipt)
+                ? receipt.Version
+                : null;
         }
         catch { return null; }
     }
 
+    internal static bool TryReadUpdateReceipt(JsonElement root, out DshUpdateReceipt receipt)
+    {
+        receipt = default!;
+        if (!root.TryGetProperty("package", out var package)
+            || package.ValueKind != JsonValueKind.String
+            || !string.Equals(package.GetString(), DshPackageName, StringComparison.Ordinal)
+            || !root.TryGetProperty("version", out var version)
+            || version.ValueKind != JsonValueKind.String
+            || string.IsNullOrWhiteSpace(version.GetString()))
+            return false;
+
+        var schema = 1;
+        if (root.TryGetProperty("schemaVersion", out var schemaElement)
+            && schemaElement.ValueKind == JsonValueKind.Number
+            && schemaElement.TryGetInt32(out var parsedSchema))
+            schema = parsedSchema;
+
+        if (schema == 3)
+        {
+            // v3 records both where the trusted lock came from and which
+            // registry merely served the bytes. The lock is always validated
+            // against the official origin; the download registry never
+            // changes validation semantics.
+            if (!root.TryGetProperty("lockSource", out var lockSource)
+                || lockSource.ValueKind != JsonValueKind.String
+                || !string.Equals(lockSource.GetString(), "bundled", StringComparison.Ordinal)
+                || !root.TryGetProperty("lockSha256", out var lockSha256)
+                || lockSha256.ValueKind != JsonValueKind.String
+                || !IsSha256Hex(lockSha256.GetString())
+                || !root.TryGetProperty("dshSri", out var dshSri)
+                || dshSri.ValueKind != JsonValueKind.String
+                || !DshSri.TryParse(dshSri.GetString(), out var sri)
+                || !root.TryGetProperty("downloadRegistryKey", out var key)
+                || key.ValueKind != JsonValueKind.String
+                || !DshRegistryDescriptor.TryGet(key.GetString(), out var descriptor)
+                || !root.TryGetProperty("downloadRegistryOrigin", out var origin)
+                || origin.ValueKind != JsonValueKind.String
+                || !string.Equals(origin.GetString(), descriptor.Origin, StringComparison.Ordinal))
+                return false;
+            receipt = new DshUpdateReceipt(
+                3,
+                version.GetString()!,
+                descriptor.Key,
+                descriptor.Origin,
+                sri,
+                lockSource.GetString()!,
+                lockSha256.GetString()!.ToUpperInvariant());
+            return true;
+        }
+
+        if (schema == 2)
+        {
+            if (!root.TryGetProperty("registryKey", out var key)
+                || key.ValueKind != JsonValueKind.String
+                || !DshRegistryDescriptor.TryGet(key.GetString(), out var descriptor)
+                || !root.TryGetProperty("registryOrigin", out var origin)
+                || origin.ValueKind != JsonValueKind.String
+                || !string.Equals(origin.GetString(), descriptor.Origin, StringComparison.Ordinal)
+                || !root.TryGetProperty("integrity", out var integrity)
+                || integrity.ValueKind != JsonValueKind.String
+                || !DshSri.TryParse(integrity.GetString(), out var sri))
+                return false;
+            receipt = new DshUpdateReceipt(2, version.GetString()!, descriptor.Key, descriptor.Origin, sri);
+            return true;
+        }
+
+        if (!root.TryGetProperty("registry", out var registry)
+            || registry.ValueKind != JsonValueKind.String
+            || !string.Equals(registry.GetString(), OfficialRegistry, StringComparison.Ordinal))
+            return false;
+        receipt = new DshUpdateReceipt(
+            1,
+            version.GetString()!,
+            DshRegistryDescriptor.OfficialKey,
+            OfficialRegistry,
+            null);
+        return true;
+    }
+
+    private static bool IsSha256Hex(string? value) =>
+        value is not null
+        && value.Length == 64
+        && value.All(char.IsAsciiHexDigit);
+
     /// <summary>
-    /// Validate the exact requested package and the generated npm lock. npm
-    /// already verifies tarball integrity while extracting; this gate also
-    /// makes the official registry, exact version and recorded integrity
-    /// observable before dsh-next can be activated.
+    /// Receipt is a source record and launch gate, not an independent
+    /// signature. v1 official receipts remain readable; new updates write v2.
     /// </summary>
     internal static string? ValidateStagedUpdate(string directory, string expectedVersion)
     {
@@ -548,80 +771,106 @@ public sealed class DshWebRuntime
         var installedVersion = ReadPackageVersion(Path.Combine(directory, DshPackageJson));
         if (!string.Equals(installedVersion, expectedVersion, StringComparison.Ordinal))
             return $"installed version '{installedVersion}' does not match '{expectedVersion}'";
-        if (!string.Equals(expectedVersion, SeededPackageVersion, StringComparison.Ordinal)
-            && !string.Equals(ReadUpdateReceiptVersion(directory), expectedVersion, StringComparison.Ordinal))
-            return "PSX update receipt is missing or invalid";
 
-        var lockPath = Path.Combine(directory, "package-lock.json");
-        if (!File.Exists(lockPath))
-            return "package-lock.json is missing";
-        try
+        DshUpdateReceipt? receipt = null;
+        if (!string.Equals(expectedVersion, SeededPackageVersion, StringComparison.Ordinal))
         {
-            using var document = JsonDocument.Parse(File.ReadAllText(lockPath));
-            var root = document.RootElement;
-            if (!root.TryGetProperty("packages", out var packages)
-                || packages.ValueKind != JsonValueKind.Object)
-                return "lockfile packages table is missing";
-            if (!packages.TryGetProperty("", out var rootPackage)
-                || !rootPackage.TryGetProperty("dependencies", out var dependencies)
-                || !dependencies.TryGetProperty(DshPackageName, out var requested)
-                || requested.ValueKind != JsonValueKind.String
-                || !string.Equals(requested.GetString(), expectedVersion, StringComparison.Ordinal))
-                return "lockfile root dependency is not exact";
-
-            var dshLockKey = "node_modules/@deepseek-ai/dsh";
-            if (!packages.TryGetProperty(dshLockKey, out var dshPackage)
-                || !PackageEntryHasOfficialIntegrity(dshPackage, expectedVersion))
-                return "DSH lock entry is not pinned to the official registry with integrity";
-
-            foreach (var entry in packages.EnumerateObject())
+            try
             {
-                if (string.IsNullOrEmpty(entry.Name))
-                    continue;
-                var value = entry.Value;
-                if (value.TryGetProperty("link", out var link)
-                    && link.ValueKind == JsonValueKind.True)
-                    continue;
-                // Bundled dependencies are covered by their containing
-                // package tarball's integrity. Every other package must carry
-                // its own official-registry URL and sha512 integrity; a
-                // missing field is not silently treated as trusted.
-                if (value.TryGetProperty("inBundle", out var inBundle)
-                    && inBundle.ValueKind == JsonValueKind.True)
-                    continue;
-                if (!value.TryGetProperty("resolved", out var resolved)
-                    || resolved.ValueKind != JsonValueKind.String
-                    || !IsOfficialRegistryUrl(resolved.GetString())
-                    || !value.TryGetProperty("integrity", out var integrity)
-                    || integrity.ValueKind != JsonValueKind.String
-                    || !integrity.GetString()!.StartsWith("sha512-", StringComparison.Ordinal))
-                    return $"lock entry '{entry.Name}' is not registry/integrity pinned";
+                using var document = JsonDocument.Parse(
+                    File.ReadAllText(Path.Combine(directory, UpdateReceiptName)));
+                if (!TryReadUpdateReceipt(document.RootElement, out var parsed)
+                    || !string.Equals(parsed.Version, expectedVersion, StringComparison.Ordinal))
+                    return "PSX update receipt is missing or invalid";
+                receipt = parsed;
+            }
+            catch
+            {
+                return "PSX update receipt is missing or invalid";
             }
         }
-        catch (Exception ex)
-        {
-            return $"lockfile could not be parsed: {ex.GetType().Name}";
-        }
 
+        // v3 receipts always validate against the official origin with the
+        // catalog-pinned root SRI plus the recorded lock hash; v2 keeps its
+        // receipt-registry origin so mirror-installed trees still pass the
+        // launch gate.
+        var origin = receipt?.SchemaVersion == 3
+            ? OfficialRegistry
+            : receipt?.RegistryOrigin ?? OfficialRegistry;
+        var expectedSri = receipt?.SchemaVersion is 2 or 3 ? receipt.Integrity : null;
+        var lockError = DshLockValidator.ValidateLockFile(directory, expectedVersion, origin, expectedSri);
+        if (lockError != null)
+            return lockError;
+        if (receipt?.SchemaVersion == 3
+            && !string.Equals(
+                HashFile(Path.Combine(directory, "package-lock.json")),
+                receipt.LockSha256,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return "v3 receipt lock hash does not match the staged lockfile";
+        }
         return null;
     }
 
-    private static bool PackageEntryHasOfficialIntegrity(JsonElement entry, string expectedVersion) =>
-        entry.TryGetProperty("version", out var version)
-        && version.ValueKind == JsonValueKind.String
-        && string.Equals(version.GetString(), expectedVersion, StringComparison.Ordinal)
-        && entry.TryGetProperty("resolved", out var resolved)
-        && resolved.ValueKind == JsonValueKind.String
-        && IsOfficialRegistryUrl(resolved.GetString())
-        && entry.TryGetProperty("integrity", out var integrity)
-        && integrity.ValueKind == JsonValueKind.String
-        && integrity.GetString()!.StartsWith("sha512-", StringComparison.Ordinal);
+    private static string HashFile(string path)
+    {
+        using var stream = File.OpenRead(path);
+        return Convert.ToHexString(SHA256.HashData(stream));
+    }
 
-    private static bool IsOfficialRegistryUrl(string? value) =>
-        Uri.TryCreate(value, UriKind.Absolute, out var uri)
-        && string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
-        && string.Equals(uri.Host, "registry.npmjs.org", StringComparison.OrdinalIgnoreCase)
-        && string.IsNullOrEmpty(uri.UserInfo);
+    private static DshUpdateResult NpmUpdateFailure(
+        string? current,
+        string candidate,
+        NpmRuntimeProcessResult result)
+    {
+        var errorClass = MapNpmErrorClass(result, forCheck: false);
+        var message = result.Kind == AcpRuntimeOperationKind.Cancelled
+            ? "更新已停止，当前版本未改变。"
+            : errorClass switch
+            {
+                DshErrorClass.RegistryTimeout or DshErrorClass.RegistryNetwork =>
+                    "更新下载失败，请检查网络后重试。",
+                DshErrorClass.RegistryNotFound => "仓库中找不到该版本。",
+                DshErrorClass.IntegrityFailed => "下载的更新未通过完整性校验，当前版本未改变。",
+                _ => "更新安装失败，当前版本可继续使用。"
+            };
+        return new(false, current, candidate, message, result.ExitCode, errorClass);
+    }
+
+    private static string MapCheckErrorMessage(NpmRuntimeProcessResult result) =>
+        MapNpmErrorClass(result, forCheck: true) switch
+        {
+            DshErrorClass.RegistryTimeout or DshErrorClass.RegistryNetwork =>
+                "无法连接 npm 仓库，请检查网络后重试。",
+            DshErrorClass.RegistryNotFound => "仓库中找不到可用版本。",
+            _ => "检查更新失败，当前版本可继续使用。"
+        };
+
+    private static string MapInstallErrorMessage(NpmRuntimeProcessResult result) =>
+        result.Kind == AcpRuntimeOperationKind.Cancelled
+            ? "安装已停止。"
+            : MapNpmErrorClass(result, forCheck: false) switch
+            {
+                DshErrorClass.RegistryTimeout or DshErrorClass.RegistryNetwork =>
+                    "网络不可用，无法连接 npm 仓库。请检查网络后重试。",
+                DshErrorClass.RegistryNotFound => "仓库中找不到锁定版本。",
+                DshErrorClass.IntegrityFailed => "安装包未通过完整性校验。",
+                _ => "安装失败：npm ci 没有成功完成。"
+            };
+
+    internal static string? MapNpmErrorClass(NpmRuntimeProcessResult result, bool forCheck) =>
+        result.Kind == AcpRuntimeOperationKind.Cancelled
+            ? null
+            : result.FailureKind switch
+            {
+                NpmRuntimeFailureKind.Timeout => DshErrorClass.RegistryTimeout,
+                NpmRuntimeFailureKind.DnsOrConnection => DshErrorClass.RegistryNetwork,
+                NpmRuntimeFailureKind.NotFound => DshErrorClass.RegistryNotFound,
+                NpmRuntimeFailureKind.Integrity => DshErrorClass.IntegrityFailed,
+                _ when result.Kind == AcpRuntimeOperationKind.NetworkUnavailable =>
+                    DshErrorClass.RegistryNetwork,
+                _ => forCheck ? null : DshErrorClass.InstallFailed
+            };
 
     internal static string? ParseNpmViewVersion(string stdout)
     {
@@ -833,28 +1082,55 @@ public sealed class DshWebRuntime
 }
 
 public sealed record DshLaunchSpec(string NodePath, string EntryPath);
-public sealed record DshInstallResult(bool Success, string? ErrorMessage, int? ExitCode);
+public sealed record DshInstallResult(
+    bool Success,
+    string? ErrorMessage,
+    int? ExitCode,
+    string? ErrorClass = null);
 public sealed record DshAvailableVersion(string Version, IReadOnlyList<string> Tags);
+public sealed record DshUpdateReceipt(
+    int SchemaVersion,
+    string Version,
+    string RegistryKey,
+    string RegistryOrigin,
+    string? Integrity,
+    string? LockSource = null,
+    string? LockSha256 = null);
 public sealed record DshUpdateCheckResult(
     bool Success,
     bool UpdateAvailable,
     string? CurrentVersion,
     string? AvailableVersion,
     IReadOnlyList<DshAvailableVersion> AvailableVersions,
-    string? ErrorMessage)
+    string? ErrorMessage,
+    string? ErrorClass = null,
+    IReadOnlyList<DshAvailableVersion>? DeferredVersions = null,
+    IReadOnlyList<DshAvailableVersion>? BlockedVersions = null)
 {
     public static IReadOnlyList<DshAvailableVersion> EmptyVersions { get; } =
         Array.Empty<DshAvailableVersion>();
 
-    public static DshUpdateCheckResult Failed(string? current, string error) =>
-        new(false, false, current, null, EmptyVersions, error);
+    /// <summary>Published newer versions not carried by this PSX build
+    /// (neither installable nor blocked) — expected with a future PSX.</summary>
+    public IReadOnlyList<DshAvailableVersion> DeferredList =>
+        DeferredVersions ?? EmptyVersions;
+
+    /// <summary>Published newer versions a review decision rejected; the
+    /// current PSX does not support them and may never do.</summary>
+    public IReadOnlyList<DshAvailableVersion> BlockedList =>
+        BlockedVersions ?? EmptyVersions;
+
+    public static DshUpdateCheckResult Failed(string? current, string error, string? errorClass = null) =>
+        new(false, false, current, null, EmptyVersions, error, errorClass);
 
     public static DshUpdateCheckResult UpToDate(string? current) =>
         new(true, false, current, null, EmptyVersions, null);
 
     public static DshUpdateCheckResult Available(
         string? current,
-        IReadOnlyList<DshAvailableVersion> catalog)
+        IReadOnlyList<DshAvailableVersion> catalog,
+        IReadOnlyList<DshAvailableVersion>? deferred = null,
+        IReadOnlyList<DshAvailableVersion>? blocked = null)
     {
         var list = catalog ?? EmptyVersions;
         return new(
@@ -863,15 +1139,27 @@ public sealed record DshUpdateCheckResult(
             current,
             list.Count > 0 ? list[0].Version : null,
             list,
-            null);
+            null,
+            null,
+            deferred,
+            blocked);
     }
+
+    /// <summary>Every published newer version is deferred or blocked: nothing
+    /// is installable, but the UI must not claim the user is up to date.</summary>
+    public static DshUpdateCheckResult DeferredOnly(
+        string? current,
+        IReadOnlyList<DshAvailableVersion>? deferred = null,
+        IReadOnlyList<DshAvailableVersion>? blocked = null) =>
+        new(true, false, current, null, EmptyVersions, null, null, deferred, blocked);
 }
 public sealed record DshUpdateResult(
     bool Success,
     string? PreviousVersion,
     string? CandidateVersion,
     string? ErrorMessage,
-    int? ExitCode);
+    int? ExitCode,
+    string? ErrorClass = null);
 
 /// <summary>Small, dependency-free SemVer 2 precedence implementation used
 /// only for the DSH package gate. Build metadata is ignored for precedence;
@@ -897,9 +1185,26 @@ internal readonly record struct DshSemanticVersion(
             || !int.TryParse(match.Groups[2].Value, out var minor)
             || !int.TryParse(match.Groups[3].Value, out var patch))
             return false;
+        if (match.Groups[4].Success && HasLeadingZeroNumericIdentifier(match.Groups[4].Value))
+            return false;
         version = new(major, minor, patch,
             match.Groups[4].Success ? match.Groups[4].Value : null);
         return true;
+    }
+
+    /// <summary>SemVer 2: purely numeric prerelease identifiers must not
+    /// carry leading zeroes ("01" is invalid; "0", "0a" and "alpha" are not
+    /// numeric identifiers and stay valid).</summary>
+    private static bool HasLeadingZeroNumericIdentifier(string prerelease)
+    {
+        foreach (var identifier in prerelease.Split('.'))
+        {
+            if (identifier.Length > 1
+                && identifier[0] == '0'
+                && identifier.All(char.IsAsciiDigit))
+                return true;
+        }
+        return false;
     }
 
     public int CompareTo(DshSemanticVersion other)

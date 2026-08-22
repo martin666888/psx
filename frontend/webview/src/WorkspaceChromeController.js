@@ -9,6 +9,11 @@
 
 import { Bridge } from './Bridge.js';
 import { createProviderIconSvg } from './ProviderIcons.js';
+import {
+    dshSourceLabel,
+    dshSwitchCta,
+    safeDshRegistry
+} from './DshRegistryUi.js';
 
 const ATTENTION_LABELS = Object.freeze({
     permission: '需确认',
@@ -17,7 +22,9 @@ const ATTENTION_LABELS = Object.freeze({
     completed: '已完成'
 });
 
-const DSH_UPDATE_STATES = new Set(['idle', 'checking', 'up_to_date', 'available', 'updating', 'failed']);
+const DSH_UPDATE_STATES = new Set([
+    'idle', 'checking', 'up_to_date', 'available', 'updating', 'failed', 'requires_psx_update'
+]);
 const DSH_UPDATE_PHASES = new Set(['downloading', 'validating', 'restarting']);
 
 function safeDshVersion(value) {
@@ -30,10 +37,11 @@ function safeDshTag(value) {
     return /^[0-9A-Za-z._-]{1,32}$/.test(text) ? text : '';
 }
 
-function normalizeDshAvailableVersions(message) {
-    const raw = Array.isArray(message?.availableVersions) ? message.availableVersions : [];
+function normalizeDshVersionList(raw, cap) {
     const versions = [];
+    if (!Array.isArray(raw)) return versions;
     for (const entry of raw) {
+        if (versions.length >= cap) break;
         const version = safeDshVersion(entry?.version);
         if (!version) continue;
         const tags = Array.isArray(entry?.tags)
@@ -42,6 +50,18 @@ function normalizeDshAvailableVersions(message) {
         versions.push({ version, tags });
     }
     return versions;
+}
+
+function normalizeDshAvailableVersions(message) {
+    return normalizeDshVersionList(message?.availableVersions, 20);
+}
+
+function normalizeDshDeferredVersions(message) {
+    return normalizeDshVersionList(message?.deferredVersions, 20);
+}
+
+function normalizeDshBlockedVersions(message) {
+    return normalizeDshVersionList(message?.blockedVersions, 20);
 }
 
 export class WorkspaceChromeController {
@@ -57,6 +77,7 @@ export class WorkspaceChromeController {
         this.historyButton = document.querySelector('[data-role="history-toggle"]');
         this.createButton = document.querySelector('[data-role="workspace-create-toggle"]');
         this.themeButton = document.querySelector('[data-role="theme-toggle"]');
+        this.settingsButton = document.querySelector('[data-role="app-settings-toggle"]');
         this.catalogRevision = -1;
         this.themeRevision = -1;
         this.catalog = { workspaces: [], providers: [], maxColumns: 3 };
@@ -67,6 +88,7 @@ export class WorkspaceChromeController {
         this.openTrigger = null;
         this.paneMenuWorkspace = null;
         this.dshRuntimeStatus = { state: 'not_installed', updateState: 'idle', availableVersions: [] };
+        this.appSettings = { revision: -1, dshRegistry: 'official' };
         this.kimiWebRuntimeStatus = { state: 'stopped', errorClass: null, reason: null };
         this.dshUpdateConfirmation = false;
         this.dshSelectedVersion = '';
@@ -74,12 +96,17 @@ export class WorkspaceChromeController {
         this.capacityChecker = null;
         this.historyButton.disabled = false;
         this.historyButton.setAttribute('aria-expanded', 'false');
+        this.settingsButton.setAttribute('aria-expanded', 'false');
 
         this.historyButton.addEventListener('click', () => {
             document.dispatchEvent(new window.CustomEvent('psx-history-toggle'));
         });
         this.createButton.addEventListener('click', () => this.toggleMenu('create', this.createButton));
         this.themeButton.addEventListener('click', () => this.toggleMenu('theme', this.themeButton));
+        this.settingsButton.addEventListener('click', () => {
+            if (this.openMenu) this.closeMenu(this.openMenu === 'theme', false);
+            document.dispatchEvent(new window.CustomEvent('psx-open-settings'));
+        });
         this.onDocumentPointerDown = (event) => {
             if (!this.openMenu) return;
             const menu = this.portalRoot.firstElementChild;
@@ -105,9 +132,14 @@ export class WorkspaceChromeController {
             const open = event.detail?.open === true;
             this.historyButton.setAttribute('aria-expanded', String(open));
         };
+        this.onSettingsState = (event) => {
+            const open = event.detail?.open === true;
+            this.settingsButton.setAttribute('aria-expanded', String(open));
+        };
         document.addEventListener('pointerdown', this.onDocumentPointerDown, true);
         document.addEventListener('keydown', this.onDocumentKeyDown);
         document.addEventListener('psx-history-state', this.onHistoryState);
+        document.addEventListener('psx-settings-state', this.onSettingsState);
         document.addEventListener('psx-embedded-frame-pointerdown', this.onEmbeddedFramePointerDown);
     }
 
@@ -115,6 +147,7 @@ export class WorkspaceChromeController {
         document.removeEventListener('pointerdown', this.onDocumentPointerDown, true);
         document.removeEventListener('keydown', this.onDocumentKeyDown);
         document.removeEventListener('psx-history-state', this.onHistoryState);
+        document.removeEventListener('psx-settings-state', this.onSettingsState);
         document.removeEventListener('psx-embedded-frame-pointerdown', this.onEmbeddedFramePointerDown);
         this.closeMenu(this.openMenu === 'theme', false);
     }
@@ -158,6 +191,8 @@ export class WorkspaceChromeController {
     applyDshRuntimeStatus(message) {
         const availableVersion = safeDshVersion(message?.availableVersion);
         const availableVersions = normalizeDshAvailableVersions(message);
+        const deferredVersions = normalizeDshDeferredVersions(message);
+        const blockedVersions = normalizeDshBlockedVersions(message);
         const next = {
             state: typeof message?.state === 'string' ? message.state : 'not_installed',
             currentVersion: safeDshVersion(message?.currentVersion),
@@ -165,8 +200,23 @@ export class WorkspaceChromeController {
             updatePhase: DSH_UPDATE_PHASES.has(message?.updatePhase) ? message.updatePhase : '',
             availableVersion,
             availableVersions,
+            deferredVersions,
+            blockedVersions,
             updateError: typeof message?.updateError === 'string'
-                ? message.updateError.trim().slice(0, 240) : ''
+                ? message.updateError.trim().slice(0, 240) : '',
+            registryKey: safeDshRegistry(message?.registryKey),
+            operationRegistryKey: message?.operationRegistryKey === 'official'
+                || message?.operationRegistryKey === 'npmmirror'
+                ? message.operationRegistryKey
+                : '',
+            catalogRegistryKey: message?.catalogRegistryKey === 'official'
+                || message?.catalogRegistryKey === 'npmmirror'
+                ? message.catalogRegistryKey
+                : '',
+            runtimeErrorClass: typeof message?.runtimeErrorClass === 'string'
+                ? message.runtimeErrorClass : '',
+            updateErrorClass: typeof message?.updateErrorClass === 'string'
+                ? message.updateErrorClass : ''
         };
         this.dshRuntimeStatus = next;
         if (next.updateState !== 'available' || (!next.availableVersion && availableVersions.length === 0))
@@ -431,6 +481,18 @@ export class WorkspaceChromeController {
 
     menuLabel() {
         return { create: '新建工作区', theme: '主题', pane: '工作区操作' }[this.openMenu] || '菜单';
+    }
+
+    applyAppSettingsSnapshot(message) {
+        const revision = Number(message?.revision);
+        if (!Number.isFinite(revision) || revision < this.appSettings.revision)
+            return;
+        if (revision === this.appSettings.revision && this.appSettings.revision >= 0 && !message?.errorClass)
+            return;
+        this.appSettings = {
+            revision,
+            dshRegistry: safeDshRegistry(message?.dshRegistry)
+        };
     }
 
     renderCreateMenu(menu) {
@@ -698,6 +760,7 @@ export class WorkspaceChromeController {
                 tagHint.textContent = catalog[0].tags.join(', ');
                 confirmation.appendChild(tagHint);
             }
+            this.renderDshDeferredNotices(confirmation, status);
 
             const copy = document.createElement('p');
             copy.textContent = 'PSX 将在后台下载并校验新版本，然后自动切换并重启 DeepSeek Harness 本地服务。无需重启 PSX；配置和会话不会被删除。下载可能需要几分钟。';
@@ -736,6 +799,19 @@ export class WorkspaceChromeController {
             menu.appendChild(error);
         }
 
+        const source = document.createElement('p');
+        source.className = 'workspace-popover-message';
+        source.textContent = dshSourceLabel(status);
+        menu.appendChild(source);
+
+        const switchCta = dshSwitchCta(status);
+        if (switchCta) {
+            menu.appendChild(this.menuRow(switchCta.label, '', () => {
+                Bridge.sendDshCommand(switchCta.command, undefined, switchCta.registry);
+                this.closeMenu(false);
+            }));
+        }
+
         const stopped = status.state === 'exited';
         menu.appendChild(this.menuRow(
             stopped ? '启动运行时' : '停止运行时',
@@ -746,6 +822,29 @@ export class WorkspaceChromeController {
             },
             status.state === 'not_installed' || status.state === 'installing'
         ));
+    }
+
+    // Non-interactive notices for published versions this PSX build cannot
+    // install: blocked = review decision (may never come), deferred = not
+    // carried by this build (expected with a future PSX). Never selectable,
+    // never a second update entry.
+    renderDshDeferredNotices(container, status) {
+        const blocked = Array.isArray(status?.blockedVersions) ? status.blockedVersions : [];
+        const deferred = Array.isArray(status?.deferredVersions) ? status.deferredVersions : [];
+        if (blocked.length > 0) {
+            const notice = document.createElement('p');
+            notice.className = 'workspace-popover-message';
+            notice.dataset.muted = 'true';
+            notice.textContent = `当前 PSX 不支持此版本：${blocked.map((entry) => `v${entry.version}`).join('、')}`;
+            container.appendChild(notice);
+        }
+        if (deferred.length > 0) {
+            const notice = document.createElement('p');
+            notice.className = 'workspace-popover-message';
+            notice.dataset.muted = 'true';
+            notice.textContent = `已发布但暂不可安装：${deferred.map((entry) => `v${entry.version}`).join('、')}（将随 PSX 更新提供）`;
+            container.appendChild(notice);
+        }
     }
 
     renderDshUpdateAction(menu, status) {
@@ -782,6 +881,12 @@ export class WorkspaceChromeController {
             case 'up_to_date':
                 menu.appendChild(this.menuRow('检查更新', '已是最新', check, !canCheck));
                 break;
+            case 'requires_psx_update': {
+                menu.appendChild(this.menuRow('发现新版本', '需更新 PSX 后才能安装', () => {}, true));
+                this.renderDshDeferredNotices(menu, status);
+                menu.appendChild(this.menuRow('重新检查', '', check, !canCheck));
+                break;
+            }
             case 'failed':
                 menu.appendChild(this.menuRow('重新检查', '', check, !canCheck));
                 break;

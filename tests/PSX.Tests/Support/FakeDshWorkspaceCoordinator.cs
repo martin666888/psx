@@ -68,7 +68,7 @@ internal sealed class FakeDshWorkspaceCoordinator : IDshWebWorkspaceCoordinator
         return Task.CompletedTask;
     }
 
-    public Task HandleCommandAsync(string name, string? version = null)
+    public Task HandleCommandAsync(string name, string? version = null, string? registry = null)
     {
         lock (_sync)
             Commands.Add(string.IsNullOrWhiteSpace(version) ? name : $"{name}:{version}");
