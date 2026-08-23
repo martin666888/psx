@@ -167,6 +167,13 @@ function Invoke-NodeProcess {
     $startInfo.RedirectStandardError = $true
     $startInfo.StandardOutputEncoding = [Text.Encoding]::UTF8
     $startInfo.StandardErrorEncoding = [Text.Encoding]::UTF8
+    # Clean machines have no node on PATH, but package lifecycle scripts
+    # (koffi's install step, node-gyp helpers) invoke bare `node` through
+    # cmd.exe. Expose the pinned portable Node directory to every child.
+    $nodeDirectory = Split-Path -Parent $NodePath
+    $childPath = $startInfo.EnvironmentVariables["Path"]
+    if ([string]::IsNullOrEmpty($childPath)) { $childPath = $env:PATH }
+    $startInfo.EnvironmentVariables["Path"] = "$nodeDirectory;$childPath"
 
     $process = New-Object System.Diagnostics.Process
     $process.StartInfo = $startInfo
@@ -445,6 +452,16 @@ function New-SolveWorkspace {
 
 function Invoke-LockSolve {
     param([string]$DshVersion)
+    # Reuse a solve that already completed on this machine (e.g. a smoke
+    # failure interrupted the previous run): Test-LockPreconditions and the
+    # official-integrity comparison below still gate the reused files, so
+    # tampering in between cannot slip through.
+    $resumeDirectory = Join-Path $WorkRoot ([Uri]::EscapeDataString($DshVersion))
+    if ((Test-Path -LiteralPath (Join-Path $resumeDirectory "package-lock.json") -PathType Leaf) -and
+        (Test-Path -LiteralPath (Join-Path $resumeDirectory "package.json") -PathType Leaf)) {
+        Write-Host "    Reusing the existing solve output for $DshVersion."
+        return $resumeDirectory
+    }
     $workDirectory = New-SolveWorkspace -DshVersion $DshVersion
     $arguments = @(
         $script:Toolchain.NpmCli, "install", "$DshPackageName@$DshVersion",
@@ -472,6 +489,23 @@ function Invoke-LockSolve {
 function New-SmokeWorkspace {
     param([string]$SolveDirectory, [string]$DshVersion)
     $smokeDirectory = Join-Path $SolveDirectory "smoke"
+    # A resumed run may find the previous attempt's half-installed tree here;
+    # remove it (npm/Defender can briefly retain handles, hence the retries)
+    # so the fresh npm ci starts clean.
+    if (Test-Path -LiteralPath $smokeDirectory) {
+        $removed = $false
+        foreach ($delay in @(0, 200, 500, 1000, 2000, 4000)) {
+            if ($delay -gt 0) { Start-Sleep -Milliseconds $delay }
+            try {
+                Remove-Item -Recurse -Force $smokeDirectory -ErrorAction Stop
+                $removed = $true
+                break
+            } catch [IOException], [UnauthorizedAccessException] { }
+        }
+        if (-not $removed) {
+            throw "Could not clean the previous smoke workspace: $smokeDirectory"
+        }
+    }
     New-Item -ItemType Directory -Path $smokeDirectory -Force | Out-Null
     foreach ($name in @("package.json", "package-lock.json", ".npmrc")) {
         Copy-Item -LiteralPath (Join-Path $SolveDirectory $name) -Destination (Join-Path $smokeDirectory $name) -Force
