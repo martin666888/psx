@@ -98,7 +98,7 @@ $DshPinnedVersion = "0.1.0-rc.6"
 # SHA-256 of tools/dsh-locks/catalog.json. Update it (and review the diff)
 # whenever the DSH lock catalog changes; the release machine never executes
 # new package code, this pin is its only catalog trust evidence.
-$DshLockCatalogExpectedSha = "BF3E98EFCC17CBFA941E03912C854151B8FD1AF0C5696C462207316ECAB467E8"
+$DshLockCatalogExpectedSha = "A325D8E8C5AAD2434DB29FFDC4402577940FC6FE8CAB866C29D1A6B758269C29"
 $DshLockBlockedReasons = @("smoke_failed", "official_integrity_mismatch", "sri_conflict")
 
 # ---- locate repo root ----

@@ -1,5 +1,44 @@
 {
-  "schemaVersion": 1,
-  "entries": [],
-  "blockedVersions": []
+    "schemaVersion":  1,
+    "entries":  [
+                    {
+                        "version":  "0.1.1-rc.2",
+                        "lockSha256":  "555350B00763B1CBE368B507A28AF5542DBC57DE7B781030A241BE9103ACAFC2",
+                        "packageSha256":  "7CB9BDE666E452B65770748C7B931B609D5D3751AFF234D861916ACD027344C1",
+                        "lockfileVersion":  3,
+                        "generatedByNpm":  "10.9.8",
+                        "dshSri":  "sha512-UP1UIh6q3Gme/yXRn/QL2P8IsVlv8Shpg22TRJIZPsCRWLm4CBiA1MUvXmJAfsOEETBMLAl+xWPtFw6ICsN3wg==",
+                        "smokePassed":  true
+                    },
+                    {
+                        "version":  "0.1.1-rc.1",
+                        "lockSha256":  "35146EC651A73BEA05F51C91E0D40625E91CB58D33EEFE4D6B8C7FFA64FE97C3",
+                        "packageSha256":  "977C3FDAE6AF95A513DD402CE626A05C0FF674C59FB7E7346932D78540156045",
+                        "lockfileVersion":  3,
+                        "generatedByNpm":  "10.9.8",
+                        "dshSri":  "sha512-HVauMT0F7MWUctkxzBcu5PMFc8j0lm0kX+4IbcUsA7Oh+/xv7xhigEDP0SaSOM/kR48U/BldHbZru116DcZz0w==",
+                        "smokePassed":  true
+                    },
+                    {
+                        "version":  "0.1.0-rc.8",
+                        "lockSha256":  "9C886F931CBB000ED0CDF6975CD0464E218C9538F48E2B29F539FE0AE4D03DB0",
+                        "packageSha256":  "EBB95F8BB77B8D363CB29CBA3CAD959872C9908E59E94B5A7314D86642954E27",
+                        "lockfileVersion":  3,
+                        "generatedByNpm":  "10.9.8",
+                        "dshSri":  "sha512-VQU5NlomrKLRgcXuOf+sxWFvqxPA8q9vMhrKPlPPXiOJEhGlGlAdiyxZvZxkCVI+v0zbhe21cY3/luLyxpSzzA==",
+                        "smokePassed":  true
+                    },
+                    {
+                        "version":  "0.1.0-rc.7",
+                        "lockSha256":  "B9DE74ED6AD2DFC79A078AFE7E624962A78BC3BA00529C1724E1294B89381C5A",
+                        "packageSha256":  "9B41BC0CFF47EFA7652B8E731DB88E8E7025E7378E5D5DFDAFE70F9BB0157CFB",
+                        "lockfileVersion":  3,
+                        "generatedByNpm":  "10.9.8",
+                        "dshSri":  "sha512-ZceDCJ8FAywih+USW/OMk9jEhunlvJBGEz4kqrhau23hPzbciOazZrywH0nBRsaalSeAJ1JGBmjtw4OSjToStw==",
+                        "smokePassed":  true
+                    }
+                ],
+    "blockedVersions":  [
+
+                        ]
 }

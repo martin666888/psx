@@ -162,7 +162,8 @@ public sealed partial class DshLockCatalogTests
         Assert.IsInRange(1, 5, versions.Count, "catalog carries between one and five approved entries (-Keep)");
         for (var index = 1; index < versions.Count; index++)
             Assert.IsGreaterThan(
-                versions[index - 1].Parsed.CompareTo(versions[index].Parsed), 0,
+                0,
+                versions[index - 1].Parsed.CompareTo(versions[index].Parsed),
                 $"entries must be sorted newest first: {versions[index - 1].Version} then {versions[index].Version}");
     }
 
