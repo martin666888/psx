@@ -90,6 +90,15 @@ if ([string]::IsNullOrWhiteSpace($NpmCache)) {
 $SemverTool = Join-Path $RepoRoot "tools\dsh-semver.mjs"
 $BuildCacheDir = [IO.Path]::GetFullPath((Join-Path $RepoRoot "bin\build-cache"))
 
+# idealTree resolution for the DSH dependency graph peaks above Node's
+# ~2 GB default heap cap and dies with "JavaScript heap out of memory" on
+# otherwise adequate machines. Raise the ceiling for every node/npm child
+# (solve, ci, launch smoke); it is a limit, not an allocation, so smaller
+# workloads are unaffected. Respect an operator-provided NODE_OPTIONS.
+if ($env:NODE_OPTIONS -notmatch "max-old-space-size") {
+    $env:NODE_OPTIONS = ("--max-old-space-size=6144 " + [string]$env:NODE_OPTIONS).Trim()
+}
+
 # ---- toolchain: pinned portable Node (never the system npm) ----
 function Resolve-Toolchain {
     $repoNode = Join-Path $RepoRoot "tools\node\node.exe"
