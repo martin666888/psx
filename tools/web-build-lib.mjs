@@ -21,7 +21,7 @@ export const repoRoot = path.resolve(here, '..');
 export const webviewRoot = path.join(repoRoot, 'frontend', 'webview');
 export const committedAppDir = path.join(repoRoot, 'wwwroot', 'app');
 
-const agentUiFontFamily = 'Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI, Segoe UI Emoji, sans-serif';
+const agentUiFontFamily = 'Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI, Microsoft JhengHei UI, Yu Gothic UI, Meiryo, Segoe UI Emoji, sans-serif';
 const mapleMonoFontFamily = 'PSX Maple Mono, Segoe UI Emoji, Microsoft YaHei UI, monospace';
 const mapleMonoFiles = new Map([
   ['wwwroot/vendor/fonts/maple-mono/MapleMonoNormal-CN-Regular.ttf', 'E42D081EAECBDA6A043079EAAAF43EA20BD8805666BC06E1FE4DC663C462AD7F'],
