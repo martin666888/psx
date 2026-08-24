@@ -49,10 +49,13 @@
 
     /* === 字体 === */
     --agent-font-size: 15px;
-    --workspace-font-ui: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Segoe UI Emoji", sans-serif;
-    --workspace-font-mono: ui-monospace, "Cascadia Mono", "Cascadia Code", Consolas, monospace;
-    --agent-font-ui: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Segoe UI Emoji", sans-serif;
-    --agent-font-mono: "PSX Maple Mono", "Segoe UI Emoji", "Microsoft YaHei UI", monospace;
+    /* UI stacks carry every shipped script's fallback: Simplified Chinese,
+     * Traditional Chinese and Japanese. html[lang] reorders per locale so
+     * the active language's glyphs win without dropping the others. */
+    --workspace-font-ui: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft JhengHei UI", "Yu Gothic UI", Meiryo, "Segoe UI Emoji", sans-serif;
+    --workspace-font-mono: ui-monospace, "Cascadia Mono", "Cascadia Code", Consolas, "Microsoft YaHei UI", "Microsoft JhengHei UI", "Yu Gothic UI", Meiryo, monospace;
+    --agent-font-ui: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft JhengHei UI", "Yu Gothic UI", Meiryo, "Segoe UI Emoji", sans-serif;
+    --agent-font-mono: "PSX Maple Mono", "Cascadia Mono", Consolas, "Microsoft YaHei UI", "Microsoft JhengHei UI", "Yu Gothic UI", Meiryo, monospace;
     /* Tailwind's font theme variables also drive global Preflight. Keep their
      * default resolution on workspace fonts; explicit Agent surfaces override
      * only these indirection tokens, so Terminal-only DOM can never select the
@@ -77,6 +80,20 @@
     --agent-duration-state: 160ms;
     --agent-ease-standard: cubic-bezier(0.2, 0, 0, 1);
     --agent-composer-input-min-height: 28px;
+}
+
+/* Locale-driven font ordering (html lang tracks the resolved locale): move
+ * the active language's glyph source ahead of the other CJK fallbacks so
+ * han-unified codepoints render region-appropriately. A user-configured
+ * agent font still wins — main.js writes those variables inline. */
+html[lang="ja"] {
+    --workspace-font-ui: "Segoe UI Variable Text", "Segoe UI", "Yu Gothic UI", Meiryo, "Microsoft YaHei UI", "Microsoft JhengHei UI", "Segoe UI Emoji", sans-serif;
+    --agent-font-ui: "Segoe UI Variable Text", "Segoe UI", "Yu Gothic UI", Meiryo, "Microsoft YaHei UI", "Microsoft JhengHei UI", "Segoe UI Emoji", sans-serif;
+}
+
+html[lang="zh-Hant"] {
+    --workspace-font-ui: "Segoe UI Variable Text", "Segoe UI", "Microsoft JhengHei UI", "Microsoft YaHei UI", "Yu Gothic UI", Meiryo, "Segoe UI Emoji", sans-serif;
+    --agent-font-ui: "Segoe UI Variable Text", "Segoe UI", "Microsoft JhengHei UI", "Microsoft YaHei UI", "Yu Gothic UI", Meiryo, "Segoe UI Emoji", sans-serif;
 }
 
 /* .agent-ui wraps the whole WebView shell, including Terminal and global
