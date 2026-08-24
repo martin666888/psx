@@ -4,6 +4,6 @@
   "version": "0.1.0",
   "description": "PSX DeepSeek Harness runtime seed pinned for user-confirmed installation into runtime/dsh-current.",
   "dependencies": {
-    "@deepseek-ai/dsh": "0.1.0-rc.6"
+    "@deepseek-ai/dsh": "0.1.1-rc.2"
   }
 }

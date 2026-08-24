@@ -15,7 +15,7 @@ namespace PSX.Services;
 public sealed class DshWebRuntime
 {
     public const string DshPackageName = "@deepseek-ai/dsh";
-    public const string SeededPackageVersion = "0.1.0-rc.6";
+    public const string SeededPackageVersion = "0.1.1-rc.2";
 
     private const string OfficialRegistry = DshRegistryDescriptor.OfficialOrigin;
 

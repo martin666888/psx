@@ -7,7 +7,7 @@ dependencies are installed from the pinned lockfile in `tools/kimi-seed/`
 
 Bundled packages (from the pinned `package-lock.json`, Windows x64 only):
 
-- `@moonshot-ai/kimi-code@0.29.1` — MIT © Moonshot AI. See `licenses/kimi/LICENSE`.
+- `@moonshot-ai/kimi-code@0.38.0` — MIT © Moonshot AI. See `licenses/kimi/LICENSE`.
 - `node-pty@1.1.0` — MIT © 2012-2015 Christopher Jeffrey; © 2016 Daniel Imms. Terms below.
 - `node-addon-api@7.1.1` — MIT © 2017 Node.js API collaborators. Terms below.
 - `@mariozechner/clipboard@0.3.9` (+ `@mariozechner/clipboard-win32-x64-msvc@0.3.9`) — MIT. Terms below.

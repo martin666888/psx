@@ -53,7 +53,7 @@ $PortableNodeUrl = "https://nodejs.org/dist/$PortableNodeVersion/$PortableNodeAr
 $PortableNodeExpectedSha = "7df0bc9375723f4a86b3aa1b7cc73342423d9677a8df4538aca31a049e309c29"
 
 $DshPackageName = "@deepseek-ai/dsh"
-$DshSeedVersion = "0.1.0-rc.6"
+$DshSeedVersion = "0.1.1-rc.2"
 $OfficialRegistry = "https://registry.npmjs.org/"
 $SmokeReadyTimeoutSeconds = 120
 $SmokeKillGraceSeconds = 30
@@ -385,7 +385,7 @@ function Invoke-DshLaunchSmoke {
     $stdoutPath = Join-Path $SmokeDirectory "smoke-server.out.log"
     $stderrPath = Join-Path $SmokeDirectory "smoke-server.err.log"
     $server = Start-Process -FilePath $script:Toolchain.Node `
-        -ArgumentList @($entryPath, "web", "--host", "127.0.0.1", "--port", "0") `
+        -ArgumentList @($entryPath, "web", "--host", "127.0.0.1", "--port", "0", "--no-open") `
         -WorkingDirectory $SmokeDirectory `
         -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath `
         -WindowStyle Hidden -PassThru

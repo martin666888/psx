@@ -7,20 +7,20 @@ dependencies are installed from the pinned lockfile in `tools/qwen-seed/`
 
 Primary package:
 
-- `@qwen-code/qwen-code@0.21.5` — Apache-2.0. See `licenses/qwen/LICENSE`.
+- `@qwen-code/qwen-code@0.22.0` — Apache-2.0. See `licenses/qwen/LICENSE`.
 
 Windows x64 production/optional dependencies observed in the pinned install
 (re-check after any lockfile bump):
 
 - `@lydell/node-pty@1.2.0-beta.10` (+ win32-x64) — MIT
 - `@teddyzhu/clipboard@0.0.5` (+ win32-x64-msvc) — MIT
-- `sharp@0.34.5` — Apache-2.0
-- `@img/sharp-win32-x64@0.34.5` — Apache-2.0 AND LGPL-3.0-or-later
+- `sharp@0.35.3` — Apache-2.0
+- `@img/sharp-win32-x64@0.35.3` — Apache-2.0 AND LGPL-3.0-or-later
 - `@img/colour@1.1.0` — MIT
 - `detect-libc@2.1.2` — Apache-2.0
 - `node-gyp-build@4.8.4` — MIT
 - `semver@7.8.5` — ISC
-- `@qwen-code/audio-capture@0.21.5` — bundled companion (see package tree)
+- `@qwen-code/audio-capture@0.22.0` — bundled companion (see package tree)
 
 macOS/Linux platform variants listed as optional dependencies in the lockfile
 are NOT installed into the release (the seed `.npmrc` pins `os=win32`/`cpu=x64`).

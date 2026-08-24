@@ -14,7 +14,7 @@ tools/dsh-locks/
   locks/<version>/package-lock.json
 ```
 
-- `entries`：经批准可安装的版本，**最新在前**，至多 5 条（`-Keep`），全部 ≥ seed（`0.1.0-rc.6`）。
+- `entries`：经批准可安装的版本，**最新在前**，至多 5 条（`-Keep`），全部 ≥ seed（`0.1.1-rc.2`）。
   每条携带 `lockSha256`/`packageSha256`/`lockfileVersion`/`generatedByNpm`/`dshSri`/`smokePassed`。
 - `blockedVersions`：人工审核决策，`reason` 为固定键
   （`smoke_failed | official_integrity_mismatch | sri_conflict`），至多 10 条，与 entries 不相交。
@@ -36,7 +36,7 @@ powershell -ExecutionPolicy Bypass -File tools/generate-dsh-lock.ps1 -Version ig
 生成 = 钉死 Portable Node v22.23.1（与 build-release 同 SHA）→
 `npm install --package-lock-only --ignore-scripts`（官方源）→ 结构初检 →
 官方 `dist.integrity` 与 lock 条目 SRI 相等核对 → `npm ci` + 启动
-`dsh web --host 127.0.0.1 --port 0` 等 Ready 的强制 smoke → 写入 catalog（降序、裁剪、SHA）。
+`dsh web --host 127.0.0.1 --port 0 --no-open` 等 Ready 的强制 smoke → 写入 catalog（降序、裁剪、SHA）。
 
 ## 隔离契约（供应链边界）
 
