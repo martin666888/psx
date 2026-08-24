@@ -27,7 +27,8 @@ import {
 } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { createRoot, type Root } from 'react-dom/client';
-import type { IslandFailureReporter } from './islandHost.js';
+import { I18nextProvider } from 'react-i18next';
+import { i18n } from '../../../webview/src/i18n.js';import type { IslandFailureReporter } from './islandHost.js';
 
 interface IslandEntry {
   key: number;
@@ -121,11 +122,14 @@ const IslandPortal = memo(function IslandPortal({ entry }: FrameProps): JSX.Elem
 function AgentIslandsView(): JSX.Element {
   const current = useSyncExternalStore(subscribe, getSnapshot);
   return (
-    <>
+    // One provider around the one shared root: every island (History,
+    // Composer, toolbar, usage…) re-renders through useTranslation on a
+    // language switch without any second React instance.
+    <I18nextProvider i18n={i18n}>
       {current.map((entry) => (
         <IslandPortal entry={entry} key={entry.key} />
       ))}
-    </>
+    </I18nextProvider>
   );
 }
 

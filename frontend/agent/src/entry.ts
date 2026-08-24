@@ -11,8 +11,18 @@ import { AgentWorkspaceRegistry } from './workspace/AgentWorkspaceRegistry.js';
 import { HistoryDockController } from './history/HistoryDockController.js';
 import { UsagePanelController } from './usage/UsagePanelController.js';
 import { AgentShellLayoutController } from './shell/AgentShellLayoutController.js';
+import { registerNamespace } from '../../webview/src/i18n.js';
+import agentZhHans from './locales/zh-Hans/agent.json';
+import agentEn from './locales/en/agent.json';
 import type { RawHostMessage } from './contracts/host-events.js';
 import type { SettingsSection } from './contracts/agent-usage.js';
+
+// The Agent namespace ships with this lazy chunk for every released language,
+// so a language switch never awaits resources (atomic single-frame switch).
+registerNamespace('agent', {
+  'zh-Hans': agentZhHans,
+  en: agentEn
+});
 
 export interface AgentAppOptions {
   terminalManager: { setViewVisible(visible: boolean): void };
