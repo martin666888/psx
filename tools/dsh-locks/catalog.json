@@ -3,8 +3,8 @@
     "entries":  [
                     {
                         "version":  "0.1.1-rc.2",
-                        "lockSha256":  "D4E59035E0960C02BD3B29CC09F73690D07620AAA3F6075C7EC8A6CED4B026D6",
-                        "packageSha256":  "5EFCFCB3F135B9E258D4F3A796E97D46A38865F049D49B3D081A7E1DBF654E4C",
+                        "lockSha256":  "A8416ECDCEC4443C9BE62096E7B2AFCFB27D86ED0DE925C7D9703545CF69E408",
+                        "packageSha256":  "7363BA7A25CF4C3B59C7DF8CD22C44194F102A1578643828EC29A70AFDBE6FEC",
                         "lockfileVersion":  3,
                         "generatedByNpm":  "10.9.8",
                         "dshSri":  "sha512-UP1UIh6q3Gme/yXRn/QL2P8IsVlv8Shpg22TRJIZPsCRWLm4CBiA1MUvXmJAfsOEETBMLAl+xWPtFw6ICsN3wg==",
