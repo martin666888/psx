@@ -108,6 +108,29 @@ public sealed partial class DshLockCatalogTests
             Assert.Fail($"locks/ contains a directory not listed in the catalog: {orphan}");
     }
 
+    [TestMethod]
+    public void HashedSupplyChainEvidence_UsesLfOnly()
+    {
+        var paths = new List<string>
+        {
+            Path.Combine(TestWorkspace.RepositoryRoot, "tools", "dsh-seed", "package-lock.json"),
+            Path.Combine(LocksRoot, "catalog.json")
+        };
+        var versionsDirectory = Path.Combine(LocksRoot, "locks");
+        if (Directory.Exists(versionsDirectory))
+        {
+            paths.AddRange(Directory.GetFiles(versionsDirectory, "*.json", SearchOption.AllDirectories));
+        }
+
+        foreach (var path in paths)
+        {
+            Assert.IsTrue(File.Exists(path), $"hashed DSH evidence is missing: {path}");
+            Assert.IsFalse(
+                File.ReadAllBytes(path).Contains((byte)'\r'),
+                $"hashed DSH evidence must use deterministic LF line endings: {path}");
+        }
+    }
+
     private static JsonDocument ReadCatalog(out JsonElement root)
     {
         var catalogPath = Path.Combine(LocksRoot, "catalog.json");
