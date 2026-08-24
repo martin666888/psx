@@ -152,9 +152,9 @@ public sealed class DshWebRuntime
             var paths = Paths;
             var current = CurrentVersion;
             if (!IsInstalled() || !DshSemanticVersion.TryParse(current, out _))
-                return DshUpdateCheckResult.Failed(current, "请先安装 DeepSeek Harness。");
+                return DshUpdateCheckResult.Failed(current, DshErrorClass.NotInstalled);
             if (paths.PortableNodePath == null || paths.PortableNpmCliPath == null)
-                return DshUpdateCheckResult.Failed(current, "缺少便携 Node.js，无法检查更新。");
+                return DshUpdateCheckResult.Failed(current, DshErrorClass.UpdateNodeMissing);
 
             Directory.CreateDirectory(paths.RuntimeRoot);
             var view = await _npmRunner.RunAsync(
@@ -173,14 +173,14 @@ public sealed class DshWebRuntime
                 Log($"DSH update check failed: {view.Kind} exit={view.ExitCode} detail={view.Message}");
                 return DshUpdateCheckResult.Failed(
                     current,
-                    MapCheckErrorMessage(view),
+                    MapCheckErrorCode(view),
                     MapNpmErrorClass(view, forCheck: true));
             }
 
             if (!TryBuildUpdateCatalog(view.Stdout, current, out var catalog, out var parseError))
             {
                 Log($"DSH registry catalog parse failed: {parseError}");
-                return DshUpdateCheckResult.Failed(current, "npm 仓库返回了无效版本，未执行更新。");
+                return DshUpdateCheckResult.Failed(current, DshErrorClass.InvalidVersions);
             }
 
             if (catalog.Count == 0)
@@ -196,7 +196,7 @@ public sealed class DshWebRuntime
             {
                 Log("DSH bundled lock catalog is invalid; update check reported catalog_corrupt.");
                 return DshUpdateCheckResult.Failed(
-                    current, "PSX 安装文件损坏，请重新安装。", DshErrorClass.CatalogCorrupt);
+                    current, DshErrorClass.CatalogCorrupt, DshErrorClass.CatalogCorrupt);
             }
 
             var blockedSet = new HashSet<string>(snapshot.BlockedVersions, StringComparer.Ordinal);
@@ -220,7 +220,7 @@ public sealed class DshWebRuntime
                     default:
                         Log($"DSH bundled lock for {entry.Version} is corrupt; update check reported catalog_corrupt.");
                         return DshUpdateCheckResult.Failed(
-                            current, "PSX 安装文件损坏，请重新安装。", DshErrorClass.CatalogCorrupt);
+                            current, DshErrorClass.CatalogCorrupt, DshErrorClass.CatalogCorrupt);
                 }
             }
 
@@ -267,19 +267,19 @@ public sealed class DshWebRuntime
                 || !DshSemanticVersion.TryParse(candidate, out var candidateVersion)
                 || candidateVersion.CompareTo(currentVersion) <= 0)
             {
-                return new(false, current, candidate, "待更新版本无效或不高于当前版本。", null);
+                return new(false, current, candidate, DshErrorClass.CandidateInvalid, null);
             }
             if (paths.PortableNodePath == null || paths.PortableNpmCliPath == null)
-                return new(false, current, candidate, "缺少便携 Node.js，无法下载更新。", null);
+                return new(false, current, candidate, DshErrorClass.UpdateNodeMissing, null);
 
             var lookup = _lockSource.Find(candidate);
             if (lookup.Kind != DshLockLookup.Found)
             {
-                var (lockMessage, lockErrorClass) = lookup.Kind == DshLockLookup.VersionNotBundled
-                    ? ("该版本暂不可安装，请更新 PSX 后重试。", DshErrorClass.LockUnavailable)
-                    : ("PSX 安装文件损坏，请重新安装。", DshErrorClass.CatalogCorrupt);
+                var (lockCode, lockErrorClass) = lookup.Kind == DshLockLookup.VersionNotBundled
+                    ? (DshErrorClass.UpdateRequiresPsx, DshErrorClass.LockUnavailable)
+                    : (DshErrorClass.CatalogCorrupt, DshErrorClass.CatalogCorrupt);
                 Log($"DSH update refused with {lockErrorClass}: lock lookup for {candidate} returned {lookup.Kind}.");
-                return new(false, current, candidate, lockMessage, null, lockErrorClass);
+                return new(false, current, candidate, lockCode, null, lockErrorClass);
             }
             var artifact = lookup.Artifact!;
 
@@ -289,7 +289,7 @@ public sealed class DshWebRuntime
                 Directory.CreateDirectory(paths.DshNextDirectory);
                 var seedNpmrc = Path.Combine(paths.DshSeedDirectory, ".npmrc");
                 if (!File.Exists(seedNpmrc))
-                    return new(false, current, candidate, "缺少 DSH Registry 配置，无法安全更新。", null);
+                    return new(false, current, candidate, DshErrorClass.RegistryConfigMissing, null);
                 File.Copy(seedNpmrc, Path.Combine(paths.DshNextDirectory, ".npmrc"), overwrite: true);
                 File.WriteAllText(Path.Combine(paths.DshNextDirectory, "package.json"), artifact.PackageJson);
                 File.WriteAllText(Path.Combine(paths.DshNextDirectory, "package-lock.json"), artifact.LockJson);
@@ -297,7 +297,7 @@ public sealed class DshWebRuntime
             catch (Exception ex)
             {
                 Log($"Failed to prepare dsh-next: {ex}");
-                return new(false, current, candidate, "无法准备 DSH 更新目录。", null);
+                return new(false, current, candidate, DshErrorClass.UpdateWorkspaceFailed, null);
             }
 
             // The source verified the artifact bytes it read; this verifies
@@ -359,7 +359,7 @@ public sealed class DshWebRuntime
             catch (Exception ex)
             {
                 Log($"Failed to write DSH update receipt: {ex}");
-                return new(false, current, candidate, "无法记录更新来源，当前版本未改变。", null);
+                return new(false, current, candidate, DshErrorClass.ReceiptWriteFailed, null);
             }
 
             var validationError = ValidateStagedUpdate(paths.DshNextDirectory, candidate);
@@ -370,13 +370,13 @@ public sealed class DshWebRuntime
                     false,
                     current,
                     candidate,
-                    "下载的更新未通过完整性校验，当前版本未改变。",
+                    DshErrorClass.IntegrityFailed,
                     null,
                     DshErrorClass.IntegrityFailed);
             }
             if (!_stagedStore.TryWriteActivePointer(
                     paths.RuntimeRoot, paths.DshActivePointerFile, ActiveNextToken))
-                return new(false, current, candidate, "更新已下载，但无法写入激活标记。", null);
+                return new(false, current, candidate, DshErrorClass.UpdateMarkerFailed, null);
 
             Log($"DSH {candidate} staged in dsh-next and validated.");
             return new(true, current, candidate, null, null);
@@ -391,9 +391,9 @@ public sealed class DshWebRuntime
         ArgumentNullException.ThrowIfNull(registry);
         var paths = Paths;
         if (paths.PortableNodePath == null || paths.PortableNpmCliPath == null)
-            return new(false, "缺少便携 Node.js 运行时，无法安装。", null);
+            return new(false, DshErrorClass.PortableNodeMissing, null);
         if (!Directory.Exists(paths.DshSeedDirectory))
-            return new(false, "缺少 DSH seed 目录 (tools/dsh-seed)。", null);
+            return new(false, DshErrorClass.SeedMissing, null);
 
         Log("Starting DSH install (lifecycle scripts enabled).");
         var scratch = paths.DshInstallingDirectory;
@@ -402,7 +402,7 @@ public sealed class DshWebRuntime
         if (missingSeedFile != null)
         {
             Log($"DSH seed is incomplete: {missingSeedFile} is missing from {paths.DshSeedDirectory}.");
-            return new(false, "缺少 DSH 安装种子文件，无法安装。", null);
+            return new(false, DshErrorClass.SeedMissing, null);
         }
 
         var result = await _npmRunner.RunAsync(
@@ -422,7 +422,7 @@ public sealed class DshWebRuntime
             Log($"DSH install npm result: {result.Kind} exit={result.ExitCode} detail={result.Message}");
             return new(
                 false,
-                MapInstallErrorMessage(result),
+                MapInstallErrorCode(result),
                 result.ExitCode,
                 MapNpmErrorClass(result, forCheck: false));
         }
@@ -437,20 +437,20 @@ public sealed class DshWebRuntime
     internal DshInstallResult ValidateInstalledTree(RuntimePaths paths, string scratch)
     {
         if (!File.Exists(Path.Combine(scratch, DshEntryPath)))
-            return new(false, "安装后入口文件缺失 (lib/bin.js)。", null);
+            return new(false, DshErrorClass.EntryMissing, null);
         var version = ReadPackageVersion(Path.Combine(scratch, DshPackageJson));
         if (string.IsNullOrWhiteSpace(version))
-            return new(false, "安装后无法读取 DSH 版本。", null);
+            return new(false, DshErrorClass.VersionUnreadable, null);
         if (!string.Equals(version, SeededPackageVersion, StringComparison.Ordinal))
         {
             Log($"DSH install produced version {version}; the seed pins {SeededPackageVersion}. Refusing the swap.");
-            return new(false, "安装结果与锁定版本不一致，已拒绝启用。", null);
+            return new(false, DshErrorClass.VersionMismatch, null);
         }
 
         if (!TrySwapToCurrent(paths, scratch))
-            return new(false, "安装目录切换失败，运行时未启用。", null);
+            return new(false, DshErrorClass.InstallSwitchFailed, null);
         if (!IsInstalled())
-            return new(false, "安装后运行时不可用。", null);
+            return new(false, DshErrorClass.PostInstallUnavailable, null);
 
         Log("DSH install complete.");
         return new(true, null, null);
@@ -619,7 +619,7 @@ public sealed class DshWebRuntime
             false,
             current,
             candidate,
-            "下载的更新未通过完整性校验，当前版本未改变。",
+            DshErrorClass.IntegrityFailed,
             null,
             DshErrorClass.IntegrityFailed);
 
@@ -824,38 +824,37 @@ public sealed class DshWebRuntime
         NpmRuntimeProcessResult result)
     {
         var errorClass = MapNpmErrorClass(result, forCheck: false);
-        var message = result.Kind == AcpRuntimeOperationKind.Cancelled
-            ? "更新已停止，当前版本未改变。"
+        var errorCode = result.Kind == AcpRuntimeOperationKind.Cancelled
+            ? DshErrorClass.UpdateCancelled
             : errorClass switch
             {
-                DshErrorClass.RegistryTimeout or DshErrorClass.RegistryNetwork =>
-                    "更新下载失败，请检查网络后重试。",
-                DshErrorClass.RegistryNotFound => "仓库中找不到该版本。",
-                DshErrorClass.IntegrityFailed => "下载的更新未通过完整性校验，当前版本未改变。",
-                _ => "更新安装失败，当前版本可继续使用。"
+                DshErrorClass.RegistryTimeout or DshErrorClass.RegistryNetwork
+                    or DshErrorClass.RegistryNotFound or DshErrorClass.IntegrityFailed
+                    => errorClass!,
+                _ => DshErrorClass.UpdateFailed
             };
-        return new(false, current, candidate, message, result.ExitCode, errorClass);
+        return new(false, current, candidate, errorCode, result.ExitCode, errorClass);
     }
 
-    private static string MapCheckErrorMessage(NpmRuntimeProcessResult result) =>
+    private static string MapCheckErrorCode(NpmRuntimeProcessResult result) =>
         MapNpmErrorClass(result, forCheck: true) switch
         {
             DshErrorClass.RegistryTimeout or DshErrorClass.RegistryNetwork =>
-                "无法连接 npm 仓库，请检查网络后重试。",
-            DshErrorClass.RegistryNotFound => "仓库中找不到可用版本。",
-            _ => "检查更新失败，当前版本可继续使用。"
+                DshErrorClass.RegistryNetwork,
+            DshErrorClass.RegistryNotFound => DshErrorClass.RegistryNotFound,
+            _ => DshErrorClass.CheckFailed
         };
 
-    private static string MapInstallErrorMessage(NpmRuntimeProcessResult result) =>
+    private static string MapInstallErrorCode(NpmRuntimeProcessResult result) =>
         result.Kind == AcpRuntimeOperationKind.Cancelled
-            ? "安装已停止。"
+            ? DshErrorClass.InstallCancelled
             : MapNpmErrorClass(result, forCheck: false) switch
             {
                 DshErrorClass.RegistryTimeout or DshErrorClass.RegistryNetwork =>
-                    "网络不可用，无法连接 npm 仓库。请检查网络后重试。",
-                DshErrorClass.RegistryNotFound => "仓库中找不到锁定版本。",
-                DshErrorClass.IntegrityFailed => "安装包未通过完整性校验。",
-                _ => "安装失败：npm ci 没有成功完成。"
+                    DshErrorClass.RegistryNetwork,
+                DshErrorClass.RegistryNotFound => DshErrorClass.RegistryNotFound,
+                DshErrorClass.IntegrityFailed => DshErrorClass.IntegrityFailed,
+                _ => DshErrorClass.InstallFailed
             };
 
     internal static string? MapNpmErrorClass(NpmRuntimeProcessResult result, bool forCheck) =>
@@ -1084,7 +1083,7 @@ public sealed class DshWebRuntime
 public sealed record DshLaunchSpec(string NodePath, string EntryPath);
 public sealed record DshInstallResult(
     bool Success,
-    string? ErrorMessage,
+    string? ErrorCode,
     int? ExitCode,
     string? ErrorClass = null);
 public sealed record DshAvailableVersion(string Version, IReadOnlyList<string> Tags);
@@ -1102,7 +1101,7 @@ public sealed record DshUpdateCheckResult(
     string? CurrentVersion,
     string? AvailableVersion,
     IReadOnlyList<DshAvailableVersion> AvailableVersions,
-    string? ErrorMessage,
+    string? ErrorCode,
     string? ErrorClass = null,
     IReadOnlyList<DshAvailableVersion>? DeferredVersions = null,
     IReadOnlyList<DshAvailableVersion>? BlockedVersions = null)
@@ -1120,8 +1119,8 @@ public sealed record DshUpdateCheckResult(
     public IReadOnlyList<DshAvailableVersion> BlockedList =>
         BlockedVersions ?? EmptyVersions;
 
-    public static DshUpdateCheckResult Failed(string? current, string error, string? errorClass = null) =>
-        new(false, false, current, null, EmptyVersions, error, errorClass);
+    public static DshUpdateCheckResult Failed(string? current, string errorCode, string? errorClass = null) =>
+        new(false, false, current, null, EmptyVersions, errorCode, errorClass);
 
     public static DshUpdateCheckResult UpToDate(string? current) =>
         new(true, false, current, null, EmptyVersions, null);
@@ -1157,7 +1156,7 @@ public sealed record DshUpdateResult(
     bool Success,
     string? PreviousVersion,
     string? CandidateVersion,
-    string? ErrorMessage,
+    string? ErrorCode,
     int? ExitCode,
     string? ErrorClass = null);
 

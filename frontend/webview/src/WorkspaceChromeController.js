@@ -12,6 +12,7 @@ import { createProviderIconSvg } from './ProviderIcons.js';
 import {
     dshSourceLabel,
     dshSwitchCta,
+    dshUpdateErrorLabel,
     safeDshRegistry
 } from './DshRegistryUi.js';
 
@@ -202,8 +203,8 @@ export class WorkspaceChromeController {
             availableVersions,
             deferredVersions,
             blockedVersions,
-            updateError: typeof message?.updateError === 'string'
-                ? message.updateError.trim().slice(0, 240) : '',
+            updateErrorCode: typeof message?.updateErrorCode === 'string'
+                ? message.updateErrorCode.trim().slice(0, 64) : '',
             registryKey: safeDshRegistry(message?.registryKey),
             operationRegistryKey: message?.operationRegistryKey === 'official'
                 || message?.operationRegistryKey === 'npmmirror'
@@ -778,7 +779,7 @@ export class WorkspaceChromeController {
                     updateState: 'updating',
                     updatePhase: 'downloading',
                     availableVersion: version,
-                    updateError: ''
+                    updateErrorCode: ''
                 };
                 this.refreshDshRuntimeMenu();
                 Bridge.sendDshCommand('update', version);
@@ -791,11 +792,11 @@ export class WorkspaceChromeController {
             this.renderDshUpdateAction(menu, status);
         }
 
-        if (status.updateState === 'failed' && status.updateError) {
+        if (status.updateState === 'failed' && status.updateErrorCode) {
             const error = document.createElement('p');
             error.className = 'workspace-popover-message';
             error.dataset.error = 'true';
-            error.textContent = status.updateError;
+            error.textContent = dshUpdateErrorLabel(status.updateErrorCode);
             menu.appendChild(error);
         }
 
@@ -853,7 +854,7 @@ export class WorkspaceChromeController {
             && status.state !== 'installing'
             && status.state !== 'starting';
         const check = () => {
-            this.dshRuntimeStatus = { ...status, updateState: 'checking', updateError: '' };
+            this.dshRuntimeStatus = { ...status, updateState: 'checking', updateErrorCode: '' };
             this.refreshDshRuntimeMenu();
             Bridge.sendDshCommand('check_update');
         };

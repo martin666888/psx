@@ -21,6 +21,7 @@ import './css/agent/index.css';
 import './css/runtime-diagnostics.css';
 import { Bridge } from './Bridge.js';
 import { BridgeEventType } from './BridgeMessages.js';
+import { workspaceNoticeLabel } from './WorkspaceNoticeCopy.js';
 import { colorSchemeForBackground } from './colorScheme.js';
 import { PaneLayoutController } from './PaneLayoutController.js';
 import { installRuntimeDiagnostics } from './RuntimeDiagnostics.js';
@@ -346,7 +347,7 @@ installRuntimeDiagnostics();
                 workspaceChrome.applyThemeCatalog(message);
                 return;
             case BridgeEventType.WorkspaceNotice:
-                workspaceChrome.showNotice(message.message);
+                workspaceChrome.showNotice(workspaceNoticeLabel(message.code));
                 return;
             case BridgeEventType.PaneZoomToggle:
                 paneLayout.toggleZoom();

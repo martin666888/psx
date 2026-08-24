@@ -157,16 +157,16 @@ test('reducer: agent_usage_update normalizes Context usage, limit, and optional 
 test('reducer: runtime_status accepts allowed states and rejects others', () => {
   let state = createInitialWorkspaceState(WS);
   state = reduceWorkspaceState(state, workspaceEvent({
-    type: 'runtime_status', state: 'installing', message: 'Downloading', canInstall: false, canCancel: true
+    type: 'runtime_status', state: 'installing', messageCode: 'runtime.preparing_install', canInstall: false, canCancel: true
   }));
   assert.equal(state.runtime.state, 'installing');
-  assert.equal(state.runtime.message, 'Downloading');
+  assert.equal(state.runtime.messageCode, 'runtime.preparing_install');
   assert.equal(state.runtime.canCancel, true);
 
   state = reduceWorkspaceState(state, workspaceEvent({
     type: 'runtime_status',
     state: 'ready',
-    message: 'Ready',
+    messageCode: 'runtime.ready',
     ownership: 'managed'
   }));
   assert.equal(state.runtime.state, 'ready');
@@ -174,7 +174,7 @@ test('reducer: runtime_status accepts allowed states and rejects others', () => 
 
   state = reduceWorkspaceState(state, workspaceEvent({ type: 'runtime_status', state: 'bogus' }));
   assert.equal(state.runtime.state, 'missing');
-  assert.equal(state.runtime.message, 'Agent runtime is not installed.');
+  assert.equal(state.runtime.messageCode, '');
 });
 
 test('reducer: runtime_status also merges identity fields', () => {

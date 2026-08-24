@@ -1,3 +1,5 @@
+using PSX.Models;
+
 namespace PSX.Services;
 
 /// <summary>
@@ -9,7 +11,9 @@ public sealed class RuntimeUpdateStatusChangedEventArgs : EventArgs
 {
     public required IAcpAgentRuntime Runtime { get; init; }
     public required string State { get; init; }
-    public string Message { get; init; } = "";
+    /// <summary>Fixed <see cref="RuntimeStatusCode"/> key or "" — never a
+    /// composed sentence; display copy lives in the frontend.</summary>
+    public string MessageCode { get; init; } = "";
 }
 
 /// <summary>
@@ -17,7 +21,7 @@ public sealed class RuntimeUpdateStatusChangedEventArgs : EventArgs
 /// Lets workspaces created or re-activated after an update finished show the
 /// real outcome (failed / up_to_date) instead of defaulting back to idle.
 /// </summary>
-public sealed record RuntimeUpdateSnapshot(string State, string Message);
+public sealed record RuntimeUpdateSnapshot(string State, string MessageCode);
 
 public interface IAgentRuntimeCoordinator
 {
@@ -71,13 +75,15 @@ public sealed class AgentRuntimeCoordinator : IAgentRuntimeCoordinator, IDisposa
             .ToArray();
 
         // npm progress arrives through the runtime's own StatusChanged; while
-        // an update is in flight it is re-broadcast as "checking" progress.
+        // an update is in flight it is re-broadcast as a "checking" pulse so
+        // late subscribers see activity. Progress detail stays internal —
+        // the wire carries states plus fixed outcome codes only.
         foreach (var runtime in _runtimes)
         {
-            Action<string> handler = message =>
+            Action<string> handler = _ =>
             {
                 if (IsUpdateInFlight(runtime))
-                    RaiseUpdateStatus(runtime, "checking", message);
+                    RaiseUpdateStatus(runtime, "checking", "");
             };
             runtime.StatusChanged += handler;
             _statusSubscriptions.Add((runtime, handler));
@@ -101,7 +107,7 @@ public sealed class AgentRuntimeCoordinator : IAgentRuntimeCoordinator, IDisposa
             var staged = new AcpRuntimeOperationResult(
                 AcpRuntimeOperationKind.AlreadyReady,
                 "Update already staged. Restart PSX to apply it.");
-            RaiseUpdateStatus(runtime, "staged_restart_required", staged.Message);
+            RaiseUpdateStatus(runtime, "staged_restart_required", "");
             return Task.FromResult(staged);
         }
 
@@ -165,7 +171,15 @@ public sealed class AgentRuntimeCoordinator : IAgentRuntimeCoordinator, IDisposa
             var state = result.Kind is AcpRuntimeOperationKind.Success or AcpRuntimeOperationKind.AlreadyReady
                 ? (runtime.GetVersionSnapshot().HasPendingUpdate ? "staged_restart_required" : "up_to_date")
                 : "failed";
-            RaiseUpdateStatus(runtime, state, result.Message);
+            // The wire carries a fixed outcome code derived from the result
+            // kind; the raw result message stays internal (npm details,
+            // exception text).
+            var messageCode = state == "failed"
+                ? (result.Kind == AcpRuntimeOperationKind.NetworkUnavailable
+                    ? RuntimeStatusCode.UpdateNetworkUnavailable
+                    : RuntimeStatusCode.UpdateFailed)
+                : "";
+            RaiseUpdateStatus(runtime, state, messageCode);
         }
         finally
         {
@@ -180,17 +194,17 @@ public sealed class AgentRuntimeCoordinator : IAgentRuntimeCoordinator, IDisposa
         }
     }
 
-    private void RaiseUpdateStatus(IAcpAgentRuntime runtime, string state, string message)
+    private void RaiseUpdateStatus(IAcpAgentRuntime runtime, string state, string messageCode)
     {
         lock (_updateLock)
         {
-            _updateSnapshots[runtime] = new RuntimeUpdateSnapshot(state, message);
+            _updateSnapshots[runtime] = new RuntimeUpdateSnapshot(state, messageCode);
         }
         UpdateStatusChanged?.Invoke(this, new RuntimeUpdateStatusChangedEventArgs
         {
             Runtime = runtime,
             State = state,
-            Message = message
+            MessageCode = messageCode
         });
     }
 

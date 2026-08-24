@@ -417,7 +417,7 @@ test('panel: config opens as its own surface without a usage/config switch', asy
               displayName: 'Claude Code',
               iconKey: 'claude',
               state: 'available',
-              facts: [{ label: '默认模型', value: 'sonnet' }],
+              facts: [{ labelKey: 'config.fact.default_model', value: 'sonnet' }],
               models: [],
               mcpServers: [{
                 name: 'demo',
@@ -435,7 +435,7 @@ test('panel: config opens as its own surface without a usage/config switch', asy
               displayName: 'Kimi Code',
               iconKey: 'kimi',
               state: 'available',
-              facts: [{ label: '默认模型', value: 'kimi-k2' }],
+              facts: [{ labelKey: 'config.fact.default_model', value: 'kimi-k2' }],
               models: [],
               mcpServers: [],
               skills: [],

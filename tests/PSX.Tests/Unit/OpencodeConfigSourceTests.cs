@@ -68,8 +68,8 @@ public sealed class OpencodeConfigSourceTests
         var json = JsonSerializer.Serialize(report);
 
         Assert.AreEqual(AgentProviderConfigReport.Available, report.State);
-        Assert.IsTrue(report.Facts.Any(f => f.Label == "默认模型"));
-        Assert.IsTrue(report.Facts.Any(f => f.Label == "已保存凭据 Provider" && f.Value.Contains("anthropic")));
+        Assert.IsTrue(report.Facts.Any(f => f.LabelKey == AgentConfigFactLabels.DefaultModel));
+        Assert.IsTrue(report.Facts.Any(f => f.LabelKey == AgentConfigFactLabels.SavedCredentialProviders && f.Value.Contains("anthropic")));
         Assert.IsTrue(report.Skills.Any(s => s.Name == "oc-skill"));
         Assert.IsTrue(report.McpServers.Any(m =>
             m.Name == "remote" && m.Target == "https://mcp.example.com/rpc"));

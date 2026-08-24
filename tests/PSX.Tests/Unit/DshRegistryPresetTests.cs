@@ -222,7 +222,7 @@ public sealed class DshRegistryPresetTests
 
         Assert.IsFalse(result.Success);
         Assert.AreEqual(DshErrorClass.CatalogCorrupt, result.ErrorClass);
-        Assert.AreEqual("PSX 安装文件损坏，请重新安装。", result.ErrorMessage);
+        Assert.AreEqual(DshErrorClass.CatalogCorrupt, result.ErrorCode);
         Assert.IsFalse(Directory.Exists(paths.DshNextDirectory));
     }
 
@@ -247,7 +247,7 @@ public sealed class DshRegistryPresetTests
 
         Assert.IsFalse(result.Success);
         Assert.AreEqual(DshErrorClass.CatalogCorrupt, result.ErrorClass);
-        Assert.AreEqual("PSX 安装文件损坏，请重新安装。", result.ErrorMessage);
+        Assert.AreEqual(DshErrorClass.CatalogCorrupt, result.ErrorCode);
         Assert.IsFalse(Directory.Exists(paths.DshNextDirectory));
     }
 
@@ -284,7 +284,7 @@ public sealed class DshRegistryPresetTests
 
         Assert.IsFalse(result.Success);
         Assert.AreEqual(DshErrorClass.CatalogCorrupt, result.ErrorClass);
-        Assert.AreEqual("PSX 安装文件损坏，请重新安装。", result.ErrorMessage);
+        Assert.AreEqual(DshErrorClass.CatalogCorrupt, result.ErrorCode);
     }
 
     [TestMethod]
@@ -328,7 +328,7 @@ public sealed class DshRegistryPresetTests
 
         var result = await runtime.CheckForUpdateAsync(CancellationToken.None);
 
-        Assert.IsTrue(result.Success, result.ErrorMessage);
+        Assert.IsTrue(result.Success, result.ErrorCode ?? string.Empty);
         Assert.IsTrue(result.UpdateAvailable);
         Assert.AreEqual("0.1.1-rc.4", result.AvailableVersion);
         Assert.HasCount(1, result.AvailableVersions);
@@ -361,7 +361,7 @@ public sealed class DshRegistryPresetTests
 
         var result = await runtime.CheckForUpdateAsync(CancellationToken.None);
 
-        Assert.IsTrue(result.Success, result.ErrorMessage);
+        Assert.IsTrue(result.Success, result.ErrorCode ?? string.Empty);
         Assert.IsFalse(result.UpdateAvailable, "nothing is installable; up_to_date would be a lie");
         Assert.IsNull(result.AvailableVersion);
         Assert.HasCount(0, result.AvailableVersions);
@@ -391,7 +391,7 @@ public sealed class DshRegistryPresetTests
             "0.1.1-rc.3",
             CancellationToken.None);
 
-        Assert.IsTrue(result.Success, result.ErrorMessage);
+        Assert.IsTrue(result.Success, result.ErrorCode ?? string.Empty);
         Assert.IsNull(DshWebRuntime.ValidateStagedUpdate(paths.DshNextDirectory, "0.1.1-rc.3"));
 
         using var document = JsonDocument.Parse(

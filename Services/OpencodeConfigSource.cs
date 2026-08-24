@@ -126,7 +126,7 @@ public sealed class OpencodeConfigSource : IAgentConfigSource
                 && !string.IsNullOrWhiteSpace(model.GetString()))
             {
                 var id = model.GetString()!;
-                facts.Add(new AgentConfigFact("默认模型", id));
+                facts.Add(new AgentConfigFact(AgentConfigFactLabels.DefaultModel, id));
                 models.Add(new AgentConfigModelEntry(id, null, null));
             }
 
@@ -134,7 +134,7 @@ public sealed class OpencodeConfigSource : IAgentConfigSource
                 && small.ValueKind == JsonValueKind.String
                 && !string.IsNullOrWhiteSpace(small.GetString()))
             {
-                facts.Add(new AgentConfigFact("小模型", small.GetString()!));
+                facts.Add(new AgentConfigFact(AgentConfigFactLabels.SmallModel, small.GetString()!));
             }
 
             // provider (v1 schema) and providers (docs variant) — keys only for
@@ -151,7 +151,7 @@ public sealed class OpencodeConfigSource : IAgentConfigSource
                     .Where(s => !string.IsNullOrWhiteSpace(s))
                     .ToArray();
                 if (ids.Length > 0)
-                    facts.Add(new AgentConfigFact("已禁用 Provider", string.Join(", ", ids)));
+                    facts.Add(new AgentConfigFact(AgentConfigFactLabels.DisabledProviders, string.Join(", ", ids)));
             }
 
             if (root.TryGetProperty("instructions", out var instructions))
@@ -159,13 +159,13 @@ public sealed class OpencodeConfigSource : IAgentConfigSource
                 if (instructions.ValueKind == JsonValueKind.Array)
                 {
                     facts.Add(new AgentConfigFact(
-                        "指令文件数",
+                        AgentConfigFactLabels.InstructionFileCount,
                         instructions.GetArrayLength().ToString()));
                 }
                 else if (instructions.ValueKind == JsonValueKind.String
                          && !string.IsNullOrWhiteSpace(instructions.GetString()))
                 {
-                    facts.Add(new AgentConfigFact("指令", instructions.GetString()!));
+                    facts.Add(new AgentConfigFact(AgentConfigFactLabels.Instructions, instructions.GetString()!));
                 }
             }
 
@@ -267,7 +267,7 @@ public sealed class OpencodeConfigSource : IAgentConfigSource
         if (ids.Count > 0)
         {
             facts.Add(new AgentConfigFact(
-                "自定义 Provider",
+                AgentConfigFactLabels.CustomProviders,
                 string.Join(", ", ids)));
         }
     }
@@ -365,7 +365,7 @@ public sealed class OpencodeConfigSource : IAgentConfigSource
             // Keys only — never enumerate values into the DTO.
             var ids = AgentConfigSanitizer.CollectObjectKeys(doc.RootElement);
             if (ids.Count > 0)
-                facts.Add(new AgentConfigFact("已保存凭据 Provider", string.Join(", ", ids)));
+                facts.Add(new AgentConfigFact(AgentConfigFactLabels.SavedCredentialProviders, string.Join(", ", ids)));
         }
         catch (Exception ex)
         {

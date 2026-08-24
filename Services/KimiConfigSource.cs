@@ -159,13 +159,13 @@ public sealed partial class KimiConfigSource : IAgentConfigSource
                 {
                     if (string.Equals(key, "default_model", StringComparison.OrdinalIgnoreCase))
                     {
-                        facts.Add(new AgentConfigFact("默认模型", value));
+                        facts.Add(new AgentConfigFact(AgentConfigFactLabels.DefaultModel, value));
                         if (!string.IsNullOrWhiteSpace(value))
                             models.Add(new AgentConfigModelEntry(value, null, null));
                     }
                     else if (string.Equals(key, "default_plan_mode", StringComparison.OrdinalIgnoreCase))
                     {
-                        facts.Add(new AgentConfigFact("默认 Plan 模式", value));
+                        facts.Add(new AgentConfigFact(AgentConfigFactLabels.DefaultPlanMode, value));
                     }
                 }
                 else if (string.Equals(currentSection, "secondary_model", StringComparison.Ordinal))
@@ -181,18 +181,18 @@ public sealed partial class KimiConfigSource : IAgentConfigSource
             }
 
             if (!string.IsNullOrWhiteSpace(secondaryModel))
-                facts.Add(new AgentConfigFact("子 Agent 模型", secondaryModel));
+                facts.Add(new AgentConfigFact(AgentConfigFactLabels.SubagentModel, secondaryModel));
             if (secondaryModelPool.Count > 0)
             {
                 facts.Add(new AgentConfigFact(
-                    "子 Agent 模型池",
+                    AgentConfigFactLabels.SubagentModelPool,
                     string.Join(", ", secondaryModelPool.Distinct(StringComparer.OrdinalIgnoreCase))));
             }
 
             if (providerSections.Count > 0)
             {
                 facts.Add(new AgentConfigFact(
-                    "自定义 Provider",
+                    AgentConfigFactLabels.CustomProviders,
                     string.Join(", ", providerSections.Distinct(StringComparer.OrdinalIgnoreCase))));
             }
         }

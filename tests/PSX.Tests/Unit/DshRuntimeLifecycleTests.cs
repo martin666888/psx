@@ -231,7 +231,7 @@ public sealed class DshRuntimeLifecycleTests
 
         var result = await runtime.CheckForUpdateAsync(CancellationToken.None);
 
-        Assert.IsTrue(result.Success, result.ErrorMessage);
+        Assert.IsTrue(result.Success, result.ErrorCode ?? string.Empty);
         Assert.IsTrue(result.UpdateAvailable);
         Assert.AreEqual(DshWebRuntime.SeededPackageVersion, result.CurrentVersion);
         Assert.AreEqual("0.1.1-rc.3", result.AvailableVersion);
@@ -261,7 +261,7 @@ public sealed class DshRuntimeLifecycleTests
 
         var result = await runtime.CheckForUpdateAsync(CancellationToken.None);
 
-        Assert.IsTrue(result.Success, result.ErrorMessage);
+        Assert.IsTrue(result.Success, result.ErrorCode ?? string.Empty);
         Assert.IsTrue(result.UpdateAvailable);
         Assert.AreEqual("0.1.1-rc.4", result.AvailableVersion);
         Assert.HasCount(1, result.AvailableVersions);
@@ -293,7 +293,7 @@ public sealed class DshRuntimeLifecycleTests
 
         var result = await runtime.StageUpdateAsync("0.1.1-rc.3", CancellationToken.None);
 
-        Assert.IsTrue(result.Success, result.ErrorMessage);
+        Assert.IsTrue(result.Success, result.ErrorCode ?? string.Empty);
         Assert.AreEqual(DshWebRuntime.SeededPackageVersion, runtime.CurrentVersion);
         Assert.AreEqual("next", File.ReadAllText(paths.DshActivePointerFile));
         Assert.IsNull(DshWebRuntime.ValidateStagedUpdate(paths.DshNextDirectory, "0.1.1-rc.3"));
@@ -1035,7 +1035,7 @@ public sealed class DshRuntimeLifecycleTests
 
         var status = LastRuntimeStatus(bridge);
         Assert.AreEqual("requires_psx_update", status.GetProperty("updateState").GetString());
-        Assert.AreEqual("请先更新 PSX。", status.GetProperty("updateError").GetString());
+        Assert.AreEqual(DshErrorClass.UpdateRequiresPsx, status.GetProperty("updateErrorCode").GetString());
         Assert.AreEqual("0.1.1-rc.3", runtime.CurrentVersion);
         Assert.IsFalse(Directory.Exists(paths.DshNextDirectory));
     }
@@ -1051,7 +1051,7 @@ public sealed class DshRuntimeLifecycleTests
         var result = runtime.ValidateInstalledTree(paths, scratch);
 
         Assert.IsFalse(result.Success);
-        StringAssert.Contains(result.ErrorMessage, "\u9501\u5b9a\u7248\u672c");
+        Assert.AreEqual(DshErrorClass.VersionMismatch, result.ErrorCode);
         Assert.IsFalse(Directory.Exists(paths.DshCurrentDirectory),
             "a mismatched install must not swap onto dsh-current");
     }
@@ -1067,7 +1067,7 @@ public sealed class DshRuntimeLifecycleTests
 
         var result = runtime.ValidateInstalledTree(paths, scratch);
 
-        Assert.IsTrue(result.Success, result.ErrorMessage);
+        Assert.IsTrue(result.Success, result.ErrorCode ?? string.Empty);
         Assert.IsTrue(runtime.IsInstalled());
     }
 
@@ -1085,7 +1085,7 @@ public sealed class DshRuntimeLifecycleTests
         var result = await runtime.InstallAsync(CancellationToken.None);
 
         Assert.IsFalse(result.Success);
-        StringAssert.Contains(result.ErrorMessage, "\u79cd\u5b50");
+        Assert.AreEqual(DshErrorClass.SeedMissing, result.ErrorCode);
     }
 
     [TestMethod]
@@ -1106,7 +1106,7 @@ public sealed class DshRuntimeLifecycleTests
             // and never waits out a second uncancellable npm ci.
             var first = supervisor.RetryAsync();
             await TestWorkspace.WaitUntilAsync(
-                () => File.Exists(runsPath) && File.ReadAllLines(runsPath).Length >= 1,
+                () => File.Exists(runsPath) && ReadRunCount(runsPath) >= 1,
                 TimeSpan.FromSeconds(15),
                 "the fake npm never started");
             var second = supervisor.RetryAsync();
@@ -1118,7 +1118,7 @@ public sealed class DshRuntimeLifecycleTests
             watch.Stop();
 
             Assert.AreEqual(DshRuntimeState.Exited, supervisor.State);
-            Assert.HasCount(1, File.ReadAllLines(runsPath),
+            Assert.AreEqual(1, ReadRunCount(runsPath),
                 "exactly one npm ci may run for the whole retry burst");
             Assert.IsLessThan(30_000L, watch.ElapsedMilliseconds,
                 $"Stop must cancel the install promptly, waited {watch.ElapsedMilliseconds}ms");
@@ -1289,6 +1289,27 @@ public sealed class DshRuntimeLifecycleTests
         File.WriteAllText(Path.Combine(paths.DshSeedDirectory, "package.json"), "{}");
         File.WriteAllText(Path.Combine(paths.DshSeedDirectory, "package-lock.json"), "{}");
         File.WriteAllText(Path.Combine(paths.DshSeedDirectory, ".npmrc"), "registry=https://registry.npmjs.org/");
+    }
+
+    /// <summary>Shared-read line count for the runs log: the fake npm may
+    /// hold the file open for its next append at the exact moment this test
+    /// polls or asserts, so a plain File.ReadAllLines can race an
+    /// IOException into an otherwise green run.</summary>
+    private static int ReadRunCount(string runsPath)
+    {
+        try
+        {
+            using var stream = new FileStream(runsPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var reader = new StreamReader(stream);
+            var lines = 0;
+            while (reader.ReadLine() != null)
+                lines++;
+            return lines;
+        }
+        catch (IOException)
+        {
+            return 0;
+        }
     }
 
     private static void SeedCountingSlowNpm(RuntimePaths paths, string runsPath, int delayMs)

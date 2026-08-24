@@ -272,7 +272,7 @@ export function reduceWorkspaceState(
         identity: mergeIdentity(state.identity, raw),
         runtime: {
           state: runtimeState,
-          message: asString(raw.message) || 'Agent runtime is not installed.',
+          messageCode: asString(raw.messageCode),
           canInstall: !!raw.canInstall,
           canCancel: !!raw.canCancel,
           ownership: asString(raw.ownership) || 'managed',
@@ -328,7 +328,7 @@ export function reduceWorkspaceState(
         ...state,
         runtimeUpdate: {
           state: RUNTIME_UPDATE_STATES.has(rawState) ? rawState : 'idle',
-          message: asString(raw.message),
+          messageCode: asString(raw.messageCode),
           currentVersion: asString(raw.currentVersion),
           pendingVersion: asString(raw.pendingVersion),
           versionLabel: asString(raw.versionLabel),

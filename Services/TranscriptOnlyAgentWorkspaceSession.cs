@@ -93,7 +93,7 @@ internal sealed class TranscriptOnlyAgentWorkspaceSession : IAgentWorkspaceSessi
             type = "runtime_update_status",
             providerKey = _thread.Provider,
             state = "unavailable",
-            message = "This saved transcript is read-only.",
+            messageCode = RuntimeStatusCode.TranscriptReadOnly,
             currentVersion = "",
             pendingVersion = "",
             // Read-only transcripts have no runtime, so no version text.

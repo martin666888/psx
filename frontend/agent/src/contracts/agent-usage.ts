@@ -60,7 +60,9 @@ export type UsageWindowKey = 'today' | 'last7Days' | 'last30Days';
 export type ConfigProviderState = 'available' | 'partial' | 'unavailable';
 
 export interface ConfigFact {
-  label: string;
+  /** Fixed wire key (Models/AgentConfigFactLabels.cs); the panel maps it to
+   * display copy. */
+  labelKey: string;
   value: string;
 }
 
@@ -92,6 +94,7 @@ export interface ProviderConfigReport {
   models: ConfigModelEntry[];
   mcpServers: ConfigMcpServer[];
   skills: ConfigSkill[];
+  /** Fixed note codes (Models/AgentConfigModels.cs AgentConfigNotes). */
   notes: string[];
 }
 

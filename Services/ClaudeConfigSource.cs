@@ -124,20 +124,20 @@ public sealed class ClaudeConfigSource : IAgentConfigSource
             {
                 var keys = AgentConfigSanitizer.CollectObjectKeys(env);
                 if (keys.Count > 0)
-                    facts.Add(new AgentConfigFact("环境变量键", string.Join(", ", keys)));
+                    facts.Add(new AgentConfigFact(AgentConfigFactLabels.EnvVarKeys, string.Join(", ", keys)));
             }
 
             if (root.TryGetProperty("model", out var model)
                 && model.ValueKind == JsonValueKind.String
                 && !string.IsNullOrWhiteSpace(model.GetString()))
             {
-                facts.Add(new AgentConfigFact("默认模型", model.GetString()!));
+                facts.Add(new AgentConfigFact(AgentConfigFactLabels.DefaultModel, model.GetString()!));
             }
 
             if (root.TryGetProperty("enabledPlugins", out var plugins)
                 && plugins.ValueKind == JsonValueKind.Object)
             {
-                facts.Add(new AgentConfigFact("已启用插件数", plugins.EnumerateObject().Count().ToString()));
+                facts.Add(new AgentConfigFact(AgentConfigFactLabels.EnabledPlugins, plugins.EnumerateObject().Count().ToString()));
             }
             else if (root.TryGetProperty("plugins", out var pluginsAlt))
             {
@@ -148,7 +148,7 @@ public sealed class ClaudeConfigSource : IAgentConfigSource
                     _ => 0
                 };
                 if (count > 0)
-                    facts.Add(new AgentConfigFact("插件数", count.ToString()));
+                    facts.Add(new AgentConfigFact(AgentConfigFactLabels.PluginCount, count.ToString()));
             }
 
             return true;
@@ -189,7 +189,7 @@ public sealed class ClaudeConfigSource : IAgentConfigSource
             var joined = string.Join(", ", entries);
             if (joined.Length > maxChars)
                 joined = joined[..maxChars] + "…";
-            facts.Add(new AgentConfigFact("本地权限允许", joined));
+            facts.Add(new AgentConfigFact(AgentConfigFactLabels.LocalPermissionsAllow, joined));
         }
         catch (Exception ex)
         {

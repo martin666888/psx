@@ -749,7 +749,7 @@ test('dsh_web update menu reports checking, latest and safe errors without long 
 
   chrome.applyDshRuntimeStatus({
     state: 'ready', currentVersion: '0.1.0-rc.6', updateState: 'failed',
-    updateError: '无法连接 npm 仓库，请检查网络后重试。'
+    updateErrorCode: 'registry_network'
   });
   assert.equal(document.querySelector('.workspace-popover-message[data-error="true"]').textContent,
     '无法连接 npm 仓库，请检查网络后重试。');
@@ -794,7 +794,7 @@ test('dsh_web menu separates deferred and blocked versions from installable ones
       { version: 42, tags: [] }
     ],
     blockedVersions: [{ version: '0.1.2', tags: ['latest'] }],
-    updateError: '请先更新 PSX。'
+    updateErrorCode: 'update_requires_psx'
   });
   document.querySelector('.workspace-tab')
     .dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));

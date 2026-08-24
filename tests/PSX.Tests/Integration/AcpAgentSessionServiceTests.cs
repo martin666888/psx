@@ -102,7 +102,7 @@ public sealed class AcpAgentSessionServiceTests
         var snapshot = await lateBridge.WaitForEventAsync(
             "runtime_update_status",
             message => message.GetProperty("state").GetString() == "failed");
-        Assert.AreEqual("Fake ACP refresh finished.", snapshot.GetProperty("message").GetString());
+        Assert.AreEqual(PSX.Models.RuntimeStatusCode.UpdateFailed, snapshot.GetProperty("messageCode").GetString());
     }
 
     [TestMethod]

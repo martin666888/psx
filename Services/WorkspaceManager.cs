@@ -754,11 +754,11 @@ public sealed class WorkspaceManager : IWorkspaceManager
     {
         await _bridge.SendEventAsync(layoutMessage).ConfigureAwait(false);
         foreach (var _ in newConflicts)
-            await SendNoticeAsync("多个可见 Agent 正在使用同一 worktree，请留意并发修改冲突。").ConfigureAwait(false);
+            await SendNoticeAsync(WorkspaceNoticeCode.WorktreeConflict).ConfigureAwait(false);
     }
 
-    private Task SendNoticeAsync(string message) =>
-        _bridge.SendEventAsync(new { type = "workspace_notice", message });
+    private Task SendNoticeAsync(string code) =>
+        _bridge.SendEventAsync(new { type = "workspace_notice", code });
 
     private void BroadcastCatalog()
     {

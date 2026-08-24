@@ -5,7 +5,7 @@
 
 import { Bridge } from './Bridge.js';
 import { createProviderIconSvg } from './ProviderIcons.js';
-import { dshSwitchCta } from './DshRegistryUi.js';
+import { dshSwitchCta, DSH_RUNTIME_ERROR_COPY } from './DshRegistryUi.js';
 
 function isSameFrameUrl(iframe, readyUrl) {
     try {
@@ -160,7 +160,7 @@ export class DshWorkspaceHost {
             updateState: message?.updateState || 'idle',
             updatePhase: message?.updatePhase || null,
             availableVersion: message?.availableVersion || null,
-            updateError: message?.updateError || null
+            updateErrorCode: message?.updateErrorCode || null
         };
         for (const panel of this.panels.values()) this.renderCard(panel, this.status);
     }
@@ -232,7 +232,7 @@ export class DshWorkspaceHost {
         message.className = 'dsh-card-message';
         message.dataset.role = 'dsh-runtime-message';
         message.textContent = status.state === 'failed' && status.errorClass
-            ? status.errorClass
+            ? (DSH_RUNTIME_ERROR_COPY[status.errorClass] || copy.message)
             : copy.message;
         heading.appendChild(message);
         if (copy.note) {

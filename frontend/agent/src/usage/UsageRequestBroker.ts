@@ -64,6 +64,11 @@ const TIMEOUT_CONFIG_TEXT = 'Loading config timed out.';
 const DEFAULT_CONFIG_ERROR_TEXT = 'Unable to load config.';
 const DEFAULT_PROFILE_ERROR_TEXT = '无法保存个人资料，请重试。';
 
+// Fixed config-report error codes → display copy.
+const CONFIG_ERROR_COPY: Readonly<Record<string, string>> = {
+  'config.note.scan_failed': '无法读取配置信息，请重试。'
+};
+
 function num(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
@@ -172,9 +177,9 @@ function normalizeStringList(value: unknown): string[] {
 
 function normalizeConfigFact(value: unknown): ConfigFact | null {
   const fact = asRecord(value);
-  const label = str(fact.label);
-  if (!label) return null;
-  return { label, value: str(fact.value) };
+  const labelKey = str(fact.labelKey);
+  if (!labelKey) return null;
+  return { labelKey, value: str(fact.value) };
 }
 
 function normalizeConfigModel(value: unknown): ConfigModelEntry | null {
@@ -396,7 +401,9 @@ export class UsageRequestBroker {
 
     const error = strOrNull(raw.error);
     if (error || !raw.report) {
-      this.store.applyConfigError(error || DEFAULT_CONFIG_ERROR_TEXT);
+      // `error` is a fixed note code (Models/AgentConfigModels.cs); map it
+      // to display copy here so raw keys never reach the DOM.
+      this.store.applyConfigError(CONFIG_ERROR_COPY[error ?? ''] ?? DEFAULT_CONFIG_ERROR_TEXT);
       return;
     }
     this.store.applyConfigReport(normalizeConfigReport(raw.report), str(raw.generatedAt));

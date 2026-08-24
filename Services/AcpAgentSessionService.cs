@@ -132,7 +132,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     private CancellationTokenSource? _runtimeInstallCts;
     private bool _runtimeInstallInProgress;
     private string _runtimeInstallState = "missing";
-    private string _runtimeInstallMessage = "Agent runtime is not installed.";
+    private string _runtimeInstallMessageCode = RuntimeStatusCode.NotInstalled;
     private bool _restoreBlockedByRuntime;
     private bool _disposed;
     private IReadOnlyList<AcpAuthMethod> _authMethods = Array.Empty<AcpAuthMethod>();
@@ -218,7 +218,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         if (IsAgentRuntimeReady())
         {
             _runtimeInstallState = ResolveReadyRuntimeState();
-            _runtimeInstallMessage = "Agent runtime is ready.";
+            _runtimeInstallMessageCode = RuntimeStatusCode.Ready;
         }
         _currentThread = initialThread;
         if (IsEmptyAgentDraft(_currentThread))
@@ -824,15 +824,15 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     private void OnRuntimeStatusChanged(string message)
     {
+        // The runtime's own status text stays internal (npm details); while
+        // an install runs it only triggers a republish of the fixed-code
+        // lifecycle state.
+        bool publish;
         lock (_runtimeInstallLock)
-        {
-            if (!_runtimeInstallInProgress)
-                return;
+            publish = _runtimeInstallInProgress;
 
-            _runtimeInstallMessage = message;
-        }
-
-        _ = PublishRuntimeStatusAsync();
+        if (publish)
+            _ = PublishRuntimeStatusAsync();
     }
 
     private async Task InstallRuntimeAsync()
@@ -846,14 +846,14 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             if (IsAgentRuntimeReady())
             {
                 _runtimeInstallState = ResolveReadyRuntimeState();
-                _runtimeInstallMessage = "Agent runtime is ready.";
+                _runtimeInstallMessageCode = RuntimeStatusCode.Ready;
                 installCts = null;
             }
             else
             {
                 _runtimeInstallInProgress = true;
                 _runtimeInstallState = "installing";
-                _runtimeInstallMessage = "Preparing to install the Agent runtime...";
+                _runtimeInstallMessageCode = RuntimeStatusCode.PreparingInstall;
                 _runtimeInstallCts = new CancellationTokenSource();
                 installCts = _runtimeInstallCts;
             }
@@ -878,19 +878,21 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                     case AcpRuntimeOperationKind.Success:
                     case AcpRuntimeOperationKind.AlreadyReady:
                         _runtimeInstallState = ResolveReadyRuntimeState();
-                        _runtimeInstallMessage = "Agent runtime installed successfully.";
+                        _runtimeInstallMessageCode = RuntimeStatusCode.InstallSucceeded;
                         break;
                     case AcpRuntimeOperationKind.Cancelled:
                         _runtimeInstallState = "cancelled";
-                        _runtimeInstallMessage = "Agent runtime installation was cancelled.";
+                        _runtimeInstallMessageCode = RuntimeStatusCode.InstallCancelled;
                         break;
                     case AcpRuntimeOperationKind.NetworkUnavailable:
                         _runtimeInstallState = "failed";
-                        _runtimeInstallMessage = "Download failed. Check the network connection and retry.";
+                        _runtimeInstallMessageCode = RuntimeStatusCode.NetworkUnavailable;
                         break;
                     default:
+                        // Raw npm detail stays in the runtime log; the wire
+                        // carries the fixed failure code only.
                         _runtimeInstallState = "failed";
-                        _runtimeInstallMessage = $"Agent runtime installation failed. {result.Message}";
+                        _runtimeInstallMessageCode = RuntimeStatusCode.InstallFailed;
                         break;
                 }
             }
@@ -900,7 +902,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             lock (_runtimeInstallLock)
             {
                 _runtimeInstallState = "cancelled";
-                _runtimeInstallMessage = "Agent runtime installation was cancelled.";
+                _runtimeInstallMessageCode = RuntimeStatusCode.InstallCancelled;
             }
         }
         finally
@@ -925,7 +927,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             if (!_runtimeInstallInProgress || installCts == null)
                 return;
 
-            _runtimeInstallMessage = "Cancelling Agent runtime installation...";
+            _runtimeInstallMessageCode = RuntimeStatusCode.CancellingInstall;
         }
 
         try { installCts.Cancel(); } catch { }
@@ -935,7 +937,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     private async Task PublishRuntimeStatusAsync()
     {
         string state;
-        string message;
+        string messageCode;
         bool canCancel;
 
         lock (_runtimeInstallLock)
@@ -943,16 +945,16 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             if (!_runtimeInstallInProgress && IsAgentRuntimeReady())
             {
                 _runtimeInstallState = ResolveReadyRuntimeState();
-                _runtimeInstallMessage = "Agent runtime is ready.";
+                _runtimeInstallMessageCode = RuntimeStatusCode.Ready;
             }
             else if (_runtimeInstallState is "ready")
             {
                 _runtimeInstallState = "missing";
-                _runtimeInstallMessage = "Agent runtime is not installed.";
+                _runtimeInstallMessageCode = RuntimeStatusCode.NotInstalled;
             }
 
             state = _runtimeInstallState;
-            message = _runtimeInstallMessage;
+            messageCode = _runtimeInstallMessageCode;
             canCancel = _runtimeInstallInProgress;
         }
 
@@ -962,7 +964,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             providerKey = _provider.Descriptor.Key,
             agentName = _provider.Descriptor.DisplayName,
             state,
-            message,
+            messageCode,
             canInstall = state is "missing" or "failed" or "cancelled",
             canCancel,
             ownership = "managed",
@@ -1005,7 +1007,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     {
         if (!ReferenceEquals(args.Runtime, _runtime) || _disposed)
             return;
-        _ = PublishRuntimeUpdateStatusAsync(args.State, args.Message);
+        _ = PublishRuntimeUpdateStatusAsync(args.State, args.MessageCode);
     }
 
     /// <summary>
@@ -1028,12 +1030,12 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
         var snapshot = _runtimeCoordinator.GetUpdateSnapshot(_runtime);
         if (snapshot is { State: "failed" or "up_to_date" })
-            return PublishRuntimeUpdateStatusAsync(snapshot.State, snapshot.Message);
+            return PublishRuntimeUpdateStatusAsync(snapshot.State, snapshot.MessageCode);
 
         return PublishRuntimeUpdateStatusAsync("idle");
     }
 
-    private Task PublishRuntimeUpdateStatusAsync(string state, string? message = null)
+    private Task PublishRuntimeUpdateStatusAsync(string state, string? messageCode = null)
     {
         var snapshot = _runtime.GetVersionSnapshot();
         return _bridgeService.SendEventAsync(new
@@ -1041,7 +1043,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             type = "runtime_update_status",
             providerKey = _provider.Descriptor.Key,
             state,
-            message = message ?? "",
+            messageCode = messageCode ?? "",
             currentVersion = snapshot.CurrentVersion ?? "",
             pendingVersion = snapshot.PendingVersion ?? "",
             // User-recognizable product version for the toolbar label; empty

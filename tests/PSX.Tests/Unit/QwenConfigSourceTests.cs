@@ -42,8 +42,8 @@ public sealed class QwenConfigSourceTests
         var json = JsonSerializer.Serialize(report);
 
         Assert.AreEqual(AgentProviderConfigReport.Available, report.State);
-        Assert.IsTrue(report.Facts.Any(f => f.Label == "默认模型"));
-        Assert.IsTrue(report.Facts.Any(f => f.Label == "认证类型" && f.Value == "oauth"));
+        Assert.IsTrue(report.Facts.Any(f => f.LabelKey == AgentConfigFactLabels.DefaultModel));
+        Assert.IsTrue(report.Facts.Any(f => f.LabelKey == AgentConfigFactLabels.AuthType && f.Value == "oauth"));
         Assert.IsTrue(report.Models.Any(m =>
             m.Id == "dashscope" && m.BaseUrl == "https://dashscope.aliyuncs.com/compatible-mode/v1"));
         Assert.IsTrue(report.McpServers.Any(m =>

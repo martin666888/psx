@@ -81,39 +81,39 @@ test('shell: the toolbar Update button follows runtime_update_status states', as
   const request = runtime.postedMessages.at(-1);
   assert.equal(request.command, 'check_runtime_update');
 
-  app.handle({ type: 'runtime_update_status', workspaceId: WS, state: 'checking', message: '', currentVersion: '1.2.3', pendingVersion: '' });
+  app.handle({ type: 'runtime_update_status', workspaceId: WS, state: 'checking', messageCode: '', currentVersion: '1.2.3', pendingVersion: '' });
   await until(() => update().dataset.updateState === 'checking', 'checking state renders');
   assert.equal(update().disabled, true);
 
-  app.handle({ type: 'runtime_update_status', workspaceId: WS, state: 'staged_restart_required', message: '', currentVersion: '1.2.3', pendingVersion: '2.0.0' });
+  app.handle({ type: 'runtime_update_status', workspaceId: WS, state: 'staged_restart_required', messageCode: '', currentVersion: '1.2.3', pendingVersion: '2.0.0' });
   await until(() => update().dataset.updateState === 'staged_restart_required', 'staged state renders');
   assert.equal(update().textContent, 'Restart to update');
   assert.equal(update().disabled, true);
   assert.match(update().title, /2\.0\.0/);
 
-  app.handle({ type: 'runtime_update_status', workspaceId: WS, state: 'unsupported', message: '', currentVersion: '0.29.1', pendingVersion: '' });
+  app.handle({ type: 'runtime_update_status', workspaceId: WS, state: 'unsupported', messageCode: '', currentVersion: '0.29.1', pendingVersion: '' });
   await until(() => update().dataset.updateState === 'unsupported', 'unsupported state renders');
   assert.equal(update().disabled, true);
   assert.equal(update().title, 'Updates ship with PSX releases');
 
-  app.handle({ type: 'runtime_update_status', workspaceId: WS, state: 'install_required', message: '', currentVersion: '', pendingVersion: '' });
+  app.handle({ type: 'runtime_update_status', workspaceId: WS, state: 'install_required', messageCode: '', currentVersion: '', pendingVersion: '' });
   await until(() => update().dataset.updateState === 'install_required', 'install_required state renders');
   assert.equal(update().disabled, true);
   assert.equal(update().title, 'Install the Agent runtime first');
 
-  app.handle({ type: 'runtime_update_status', workspaceId: WS, state: 'unavailable', message: '', currentVersion: '', pendingVersion: '' });
+  app.handle({ type: 'runtime_update_status', workspaceId: WS, state: 'unavailable', messageCode: '', currentVersion: '', pendingVersion: '' });
   await until(() => update().dataset.updateState === 'unavailable', 'unavailable state renders');
   assert.equal(update().disabled, true);
   assert.equal(update().title, 'Updates are not available for this workspace');
 
-  app.handle({ type: 'runtime_update_status', workspaceId: WS, state: 'failed', message: 'npm exit code 1: network unreachable', currentVersion: '1.2.3', pendingVersion: '' });
+  app.handle({ type: 'runtime_update_status', workspaceId: WS, state: 'failed', messageCode: 'update.network_unavailable', currentVersion: '1.2.3', pendingVersion: '' });
   await until(() => update().dataset.updateState === 'failed', 'failed state renders');
   assert.equal(update().textContent, 'Retry update');
   assert.equal(update().disabled, false);
   // The backend failure reason surfaces as the tooltip so the user sees why.
-  assert.match(update().title, /network unreachable/);
+  assert.match(update().title, /network is unavailable/);
 
-  app.handle({ type: 'runtime_update_status', workspaceId: WS, state: 'up_to_date', message: '', currentVersion: '1.2.3', pendingVersion: '' });
+  app.handle({ type: 'runtime_update_status', workspaceId: WS, state: 'up_to_date', messageCode: '', currentVersion: '1.2.3', pendingVersion: '' });
   await until(() => update().dataset.updateState === 'up_to_date', 'up_to_date state renders');
   assert.equal(update().textContent, 'Up to date');
   assert.equal(update().disabled, false);
@@ -174,7 +174,7 @@ test('shell: the toolbar shows the product version label and tooltip details', a
     type: 'runtime_update_status',
     workspaceId: WS,
     state: 'failed',
-    message: 'network unreachable',
+    messageCode: 'update.network_unavailable',
     currentVersion: '2.1.0',
     pendingVersion: '',
     versionLabel: 'Claude Code v2.1.0',
@@ -182,7 +182,7 @@ test('shell: the toolbar shows the product version label and tooltip details', a
   });
   await until(() => update().dataset.updateState === 'failed', 'failed renders');
   assert.equal(version().textContent, 'Claude Code v2.1.0');
-  assert.match(update().title, /network unreachable/);
+  assert.match(update().title, /network is unavailable/);
 
   // Unknown / uninstalled: no version label element at all (never v0/Unknown).
   app.handle({

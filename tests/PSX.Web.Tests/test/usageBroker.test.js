@@ -333,7 +333,7 @@ function minimalConfigReport() {
       displayName: 'Claude Code',
       iconKey: 'claude',
       state: 'available',
-      facts: [{ label: '默认模型', value: 'sonnet' }],
+      facts: [{ labelKey: 'config.fact.default_model', value: 'sonnet' }],
       models: [],
       mcpServers: [],
       skills: [{ name: 'demo' }],
@@ -389,7 +389,7 @@ test('broker: config error payload surfaces in the config slice', () => {
   const rig = makeRig();
   rig.broker.requestConfig(false);
   const sent = configCommands(rig.commands).at(-1);
-  rig.broker.handleConfigReport({ requestId: sent.requestId, error: '无法读取配置信息，请重试。' });
+  rig.broker.handleConfigReport({ requestId: sent.requestId, error: 'config.note.scan_failed' });
   const state = rig.store.getState();
   assert.equal(state.configStatus, 'error');
   assert.match(state.configErrorText, /无法读取配置/);

@@ -40,8 +40,8 @@ public sealed class KimiConfigSourceTests
         var json = JsonSerializer.Serialize(report);
 
         Assert.AreEqual(AgentProviderConfigReport.Available, report.State);
-        Assert.IsTrue(report.Facts.Any(f => f.Label == "默认模型" && f.Value == "kimi-k2"));
-        Assert.IsTrue(report.Facts.Any(f => f.Label == "自定义 Provider" && f.Value.Contains("custom")));
+        Assert.IsTrue(report.Facts.Any(f => f.LabelKey == AgentConfigFactLabels.DefaultModel && f.Value == "kimi-k2"));
+        Assert.IsTrue(report.Facts.Any(f => f.LabelKey == AgentConfigFactLabels.CustomProviders && f.Value.Contains("custom")));
         Assert.DoesNotContain(Canary, json);
         Assert.IsFalse(report.Facts.Any(f => f.Value.Contains(Canary)));
     }
@@ -89,11 +89,11 @@ public sealed class KimiConfigSourceTests
         var report = new KimiConfigSource(() => home).Collect(CancellationToken.None);
 
         Assert.AreEqual(AgentProviderConfigReport.Available, report.State);
-        var defaultFacts = report.Facts.Where(f => f.Label == "默认模型").ToArray();
+        var defaultFacts = report.Facts.Where(f => f.LabelKey == AgentConfigFactLabels.DefaultModel).ToArray();
         Assert.HasCount(1, defaultFacts);
         Assert.AreEqual("kimi-for-coding/k3", defaultFacts[0].Value);
         Assert.IsTrue(report.Facts.Any(f =>
-            f.Label == "子 Agent 模型" && f.Value == "kimi-code/kimi-for-coding-highspeed"));
+            f.LabelKey == AgentConfigFactLabels.SubagentModel && f.Value == "kimi-code/kimi-for-coding-highspeed"));
     }
 
     [TestMethod]
@@ -116,7 +116,7 @@ public sealed class KimiConfigSourceTests
         var report = new KimiConfigSource(() => home).Collect(CancellationToken.None);
 
         Assert.AreEqual(AgentProviderConfigReport.Available, report.State);
-        var pool = report.Facts.Single(f => f.Label == "子 Agent 模型池");
+        var pool = report.Facts.Single(f => f.LabelKey == AgentConfigFactLabels.SubagentModelPool);
         Assert.Contains("kimi-code/kimi-for-coding-highspeed", pool.Value);
         Assert.Contains("kimi-code/k3", pool.Value);
         Assert.DoesNotContain("Fast and cheap", pool.Value);

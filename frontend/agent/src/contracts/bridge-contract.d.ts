@@ -410,9 +410,10 @@ interface KimiWebRuntimeStatusEvent extends BridgeInboundMessageBase {
  * and DshWorkspaceHost, never the Agent chunk). availableVersions are
  * installable from this PSX build's pre-generated lock catalog; deferred
  * versions ship with a future PSX, blocked versions were rejected by a
- * review decision and may never be offered. errorClass is a user-facing
- * localized message, unlike the fixed-enum runtimeErrorClass/
- * updateErrorClass. */
+ * review decision and may never be offered. errorClass and updateErrorCode
+ * are fixed DshErrorClass codes the frontend maps to display copy, like the
+ * typed runtimeErrorClass/updateErrorClass; composed sentences never cross
+ * the bridge. */
 interface DshRuntimeStatusEvent extends BridgeInboundMessageBase {
     type: 'dsh_runtime_status';
     state: 'not_installed' | 'installing' | 'starting' | 'ready' | 'exited' | 'failed';
@@ -425,7 +426,7 @@ interface DshRuntimeStatusEvent extends BridgeInboundMessageBase {
     availableVersions: Array<{ version: string; tags: string[] }>;
     deferredVersions?: Array<{ version: string; tags: string[] }>;
     blockedVersions?: Array<{ version: string; tags: string[] }>;
-    updateError?: string | null;
+    updateErrorCode?: string | null;
     registryKey: 'official' | 'npmmirror';
     operationRegistryKey?: 'official' | 'npmmirror' | null;
     catalogRegistryKey?: 'official' | 'npmmirror' | null;

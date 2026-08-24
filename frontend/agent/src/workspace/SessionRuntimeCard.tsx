@@ -9,6 +9,7 @@
 
 import type { JSX } from 'react';
 import type { WorkspaceRuntimeState } from '../contracts/workspace-state.js';
+import { runtimeStatusLabel } from './runtimeCopy.js';
 import { Button } from '../components/ui/button.js';
 import { LoaderCircleIcon, TriangleAlertIcon, XCircleIcon } from 'lucide-react';
 
@@ -86,7 +87,7 @@ export function SessionRuntimeCard({
           {RUNTIME_TITLES[runtime.state] || 'Agent runtime'}
         </h2>
         <p className="mt-1 mb-0 break-words text-muted-foreground text-xs leading-normal" data-role="runtime-message">
-          {runtime.message}
+          {runtimeStatusLabel(runtime.messageCode)}
         </p>
         <p className="agent-runtime-note mt-1 mb-0 text-muted-foreground text-xs leading-normal">
           Downloads pinned components from the official npm registry into this PSX folder and reuses them on later

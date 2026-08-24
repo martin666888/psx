@@ -33,7 +33,7 @@ export class WorkspaceToolbarController implements FeatureController {
   private planUnread = false;
   private runtimeUpdate: WorkspaceRuntimeUpdateState = {
     state: 'idle',
-    message: '',
+    messageCode: '',
     currentVersion: '',
     pendingVersion: '',
     versionLabel: '',
@@ -138,7 +138,7 @@ export class WorkspaceToolbarController implements FeatureController {
       },
       update: {
         state: this.runtimeUpdate.state,
-        message: this.runtimeUpdate.message,
+        messageCode: this.runtimeUpdate.messageCode,
         currentVersion: this.runtimeUpdate.currentVersion,
         pendingVersion: this.runtimeUpdate.pendingVersion,
         versionLabel: this.runtimeUpdate.versionLabel,

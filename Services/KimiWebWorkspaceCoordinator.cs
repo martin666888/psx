@@ -148,18 +148,18 @@ public sealed class KimiWebWorkspaceCoordinator : IKimiWebWorkspaceCoordinator
             var ready = _supervisor.GetReadyTokenSnapshot();
             if (ready == null)
             {
-                await SendFailureNoticeAsync("导出失败：本地服务未就绪，请稍后重试。").ConfigureAwait(false);
+                await SendFailureNoticeAsync(WorkspaceNoticeCode.KimiExportNotReady).ConfigureAwait(false);
                 return;
             }
             var origin = KimiWebRuntimeSupervisor.ToFrameOrigin(ready.Value.ReadyUrl);
             if (origin == null)
             {
-                await SendFailureNoticeAsync("导出失败：本地服务未就绪，请稍后重试。").ConfigureAwait(false);
+                await SendFailureNoticeAsync(WorkspaceNoticeCode.KimiExportNotReady).ConfigureAwait(false);
                 return;
             }
             if (!Uri.TryCreate(url, UriKind.Absolute, out var exportUri) || !IsAllowedExportUri(exportUri, origin))
             {
-                await SendFailureNoticeAsync("导出失败：导出请求无效。").ConfigureAwait(false);
+                await SendFailureNoticeAsync(WorkspaceNoticeCode.KimiExportInvalidRequest).ConfigureAwait(false);
                 return;
             }
 
@@ -171,12 +171,12 @@ public sealed class KimiWebWorkspaceCoordinator : IKimiWebWorkspaceCoordinator
                 .ConfigureAwait(false);
             if (ShouldRejectExportResponse(response, origin))
             {
-                await SendFailureNoticeAsync("导出失败：服务返回了无效响应。").ConfigureAwait(false);
+                await SendFailureNoticeAsync(WorkspaceNoticeCode.KimiExportInvalidResponse).ConfigureAwait(false);
                 return;
             }
             if (!DshWebWorkspaceCoordinator.IsAllowedExportContentType(response.Content.Headers.ContentType))
             {
-                await SendFailureNoticeAsync("导出失败：会话数据格式无效。").ConfigureAwait(false);
+                await SendFailureNoticeAsync(WorkspaceNoticeCode.KimiExportInvalidContentType).ConfigureAwait(false);
                 return;
             }
 
@@ -185,7 +185,7 @@ public sealed class KimiWebWorkspaceCoordinator : IKimiWebWorkspaceCoordinator
             if (!await DshWebWorkspaceCoordinator.TryReadExactAsync(source, prefix).ConfigureAwait(false)
                 || !DshWebWorkspaceCoordinator.LooksLikeZip(prefix))
             {
-                await SendFailureNoticeAsync("导出失败：会话数据无效。").ConfigureAwait(false);
+                await SendFailureNoticeAsync(WorkspaceNoticeCode.KimiExportInvalidData).ConfigureAwait(false);
                 return;
             }
 
@@ -206,23 +206,23 @@ public sealed class KimiWebWorkspaceCoordinator : IKimiWebWorkspaceCoordinator
             catch (DshWebWorkspaceCoordinator.DshExportTooLargeException)
             {
                 Debug.WriteLine("Kimi Web export exceeded the size limit.");
-                await SendFailureNoticeAsync("导出失败：文件过大，已取消。").ConfigureAwait(false);
+                await SendFailureNoticeAsync(WorkspaceNoticeCode.KimiExportTooLarge).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
                 Debug.WriteLine("Kimi Web export failed: " + ex.Message);
-                await SendFailureNoticeAsync("导出失败：文件写入没有完成。").ConfigureAwait(false);
+                await SendFailureNoticeAsync(WorkspaceNoticeCode.KimiExportWriteFailed).ConfigureAwait(false);
             }
         }
         catch (Exception ex)
         {
             Debug.WriteLine("Kimi Web export failed: " + ex.Message);
-            await SendFailureNoticeAsync("导出失败：无法连接本地服务。").ConfigureAwait(false);
+            await SendFailureNoticeAsync(WorkspaceNoticeCode.KimiExportConnectFailed).ConfigureAwait(false);
         }
     }
 
-    private Task SendFailureNoticeAsync(string message) =>
-        _bridge.SendEventAsync(new { type = "workspace_notice", message });
+    private Task SendFailureNoticeAsync(string code) =>
+        _bridge.SendEventAsync(new { type = "workspace_notice", code });
 
     /// <summary>True when the export URI is exactly the current kimi origin
     /// plus the /api/v1/sessions/{id}/export path; anything else (spoofed,

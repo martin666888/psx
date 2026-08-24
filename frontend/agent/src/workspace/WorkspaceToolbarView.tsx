@@ -16,6 +16,7 @@ import {
   TooltipTrigger
 } from '../components/ui/tooltip.js';
 import { SessionMeta, type SessionMetaProps } from './SessionToolbar.js';
+import { runtimeUpdateFailureLabel } from './runtimeCopy.js';
 import { useDismissibleLayer } from '../components/use-dismissible-layer.js';
 
 export interface WorkspaceToolbarProps {
@@ -35,8 +36,9 @@ export interface WorkspaceToolbarProps {
     // idle | checking | up_to_date | staged_restart_required | unsupported
     // | install_required | unavailable | failed
     state: string;
-    // Backend outcome detail; shown as the tooltip for failed checks.
-    message: string;
+    // Fixed backend outcome code (Models/RuntimeStatusCode.cs); the tooltip
+    // maps it to copy for failed checks.
+    messageCode: string;
     currentVersion: string;
     pendingVersion: string;
     // Toolbar-facing product string (e.g. "Product v2.1.0"); '' hides the
@@ -85,9 +87,7 @@ function updateButtonTitle(update: WorkspaceToolbarProps['update']): string {
   if (update.versionDetail) lines.push(update.versionDetail);
 
   if (update.state === 'failed') {
-    lines.push(
-      update.message ? 'Update check failed: ' + update.message : 'Update check failed; click to retry'
-    );
+    lines.push(runtimeUpdateFailureLabel(update.messageCode) || 'Update check failed; click to retry');
   } else if (update.state === 'staged_restart_required') {
     lines.push(
       update.pendingVersion

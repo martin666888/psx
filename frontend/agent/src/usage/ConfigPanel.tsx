@@ -24,6 +24,34 @@ const STATE_LABEL: Record<ConfigProviderState, string> = {
   unavailable: '不可用'
 };
 
+// Fixed wire codes (Models/AgentConfigFactLabels.cs / AgentConfigNotes) →
+// display copy. The backend never sends label sentences.
+const FACT_LABEL_COPY: Readonly<Record<string, string>> = {
+  'config.fact.env_var_keys': '环境变量键',
+  'config.fact.default_model': '默认模型',
+  'config.fact.small_model': '小模型',
+  'config.fact.subagent_model': '子 Agent 模型',
+  'config.fact.subagent_model_pool': '子 Agent 模型池',
+  'config.fact.default_plan_mode': '默认 Plan 模式',
+  'config.fact.auth_type': '认证类型',
+  'config.fact.enabled_plugins': '已启用插件数',
+  'config.fact.plugin_count': '插件数',
+  'config.fact.custom_providers': '自定义 Provider',
+  'config.fact.disabled_providers': '已禁用 Provider',
+  'config.fact.saved_credential_providers': '已保存凭据 Provider',
+  'config.fact.local_permissions_allow': '本地权限允许',
+  'config.fact.instruction_file_count': '指令文件数',
+  'config.fact.instructions': '指令'
+};
+
+const NOTE_COPY: Readonly<Record<string, string>> = {
+  'config.note.file_too_large': '配置文件过大，已跳过',
+  'config.note.parse_failed': '部分配置无法解析',
+  'config.note.no_editable_config': '该 Agent 无用户可编辑配置文件',
+  'config.note.home_missing': '未找到用户配置目录',
+  'config.note.scan_failed': '无法读取配置信息，请重试。'
+};
+
 /** Local HH:MM for the cached-report timestamp; '' when unparsable. */
 function formatUpdatedAt(iso: string): string {
   const date = new Date(iso);
@@ -66,7 +94,7 @@ function ProviderConfigDetail({
       {provider.notes.length > 0 ? (
         <ul className="agent-config-notes" data-role="config-notes">
           {provider.notes.map((note) => (
-            <li key={note}>{note}</li>
+            <li key={note}>{NOTE_COPY[note] ?? note}</li>
           ))}
         </ul>
       ) : null}
@@ -74,8 +102,8 @@ function ProviderConfigDetail({
       {provider.facts.length > 0 ? (
         <dl className="agent-config-facts" data-role="config-facts">
           {provider.facts.map((fact) => (
-            <div key={`${fact.label}:${fact.value}`} className="agent-config-fact-row">
-              <dt>{fact.label}</dt>
+            <div key={`${fact.labelKey}:${fact.value}`} className="agent-config-fact-row">
+              <dt>{FACT_LABEL_COPY[fact.labelKey] ?? fact.labelKey}</dt>
               <dd>{fact.value}</dd>
             </div>
           ))}

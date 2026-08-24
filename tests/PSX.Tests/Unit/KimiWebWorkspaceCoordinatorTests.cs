@@ -170,7 +170,7 @@ public sealed class KimiWebWorkspaceCoordinatorTests
             "http://127.0.0.1:1234/api/v1/sessions/s1/export", "/api/v1/sessions/s1/export", "s1");
 
         var notice = bridge.Events.Single(message => message.GetProperty("type").GetString() == "workspace_notice");
-        StringAssert.Contains(notice.GetProperty("message").GetString(), "本地服务未就绪");
+        Assert.AreEqual(WorkspaceNoticeCode.KimiExportNotReady, notice.GetProperty("code").GetString());
     }
 
     [TestMethod]
@@ -196,17 +196,17 @@ public sealed class KimiWebWorkspaceCoordinatorTests
         // Wrong origin: refused before any network call.
         await coordinator.HandleExportAsync(
             "http://127.0.0.1:9/api/v1/sessions/s1/export", "/api/v1/sessions/s1/export", "s1");
-        AssertNotice(bridge, "导出请求无效");
+        AssertNotice(bridge, WorkspaceNoticeCode.KimiExportInvalidRequest);
 
         // 3xx response: the redirect is refused.
         await coordinator.HandleExportAsync(
             origin + "/api/v1/sessions/redirect/export", "/api/v1/sessions/redirect/export", "redirect");
-        AssertNotice(bridge, "服务返回了无效响应");
+        AssertNotice(bridge, WorkspaceNoticeCode.KimiExportInvalidResponse);
 
         // Non-ZIP magic: refused.
         await coordinator.HandleExportAsync(
             origin + "/api/v1/sessions/nonzip/export", "/api/v1/sessions/nonzip/export", "nonzip");
-        AssertNotice(bridge, "会话数据无效");
+        AssertNotice(bridge, WorkspaceNoticeCode.KimiExportInvalidData);
 
         await supervisor.StopAsync();
         Assert.IsNull(supervisor.ReadyUrl);
@@ -217,7 +217,7 @@ public sealed class KimiWebWorkspaceCoordinatorTests
     private static void AssertNotice(RecordingAgentBridgeService bridge, string fragment)
     {
         var notice = bridge.Events.Last(message => message.GetProperty("type").GetString() == "workspace_notice");
-        StringAssert.Contains(notice.GetProperty("message").GetString(), fragment);
+        StringAssert.Contains(notice.GetProperty("code").GetString(), fragment);
     }
 
     private static KimiWebRuntimeSupervisor CreateSupervisor(

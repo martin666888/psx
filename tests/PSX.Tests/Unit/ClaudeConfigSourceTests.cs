@@ -50,8 +50,8 @@ public sealed class ClaudeConfigSourceTests
         var json = JsonSerializer.Serialize(report);
 
         Assert.AreEqual(AgentProviderConfigReport.Available, report.State);
-        Assert.IsTrue(report.Facts.Any(f => f.Label == "默认模型" && f.Value == "claude-sonnet"));
-        Assert.IsTrue(report.Facts.Any(f => f.Label == "环境变量键" && f.Value.Contains("ANTHROPIC_API_KEY")));
+        Assert.IsTrue(report.Facts.Any(f => f.LabelKey == AgentConfigFactLabels.DefaultModel && f.Value == "claude-sonnet"));
+        Assert.IsTrue(report.Facts.Any(f => f.LabelKey == AgentConfigFactLabels.EnvVarKeys && f.Value.Contains("ANTHROPIC_API_KEY")));
         Assert.IsTrue(report.Skills.Any(s => s.Name == "demo-skill"));
         Assert.HasCount(2, report.McpServers);
         Assert.DoesNotContain(Canary, json);

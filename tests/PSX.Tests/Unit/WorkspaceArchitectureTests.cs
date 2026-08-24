@@ -99,7 +99,7 @@ public sealed class AgentProviderRegistryTests
         // instead of defaulting back to idle.
         var snapshot = coordinator.GetUpdateSnapshot(runtime);
         Assert.AreEqual("failed", snapshot?.State);
-        Assert.AreEqual("npm exploded", snapshot?.Message);
+        Assert.AreEqual(PSX.Models.RuntimeStatusCode.UpdateFailed, snapshot?.MessageCode);
         Assert.IsFalse(coordinator.IsUpdateInFlight(runtime), "the in-flight entry must be released on failure");
     }
 

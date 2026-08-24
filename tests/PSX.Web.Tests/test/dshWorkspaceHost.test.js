@@ -108,7 +108,7 @@ describe('DshWorkspaceHost', () => {
     assert.ok(panel.querySelector('[data-role="dsh-install"]'), 'install button present');
     assert.match(panel.textContent, /npm/);
 
-    host.applyRuntimeStatus({ state: 'failed', errorClass: '安装目录切换失败，运行时未启用。' });
+    host.applyRuntimeStatus({ state: 'failed', errorClass: 'install_switch_failed' });
     assert.match(panel.textContent, /安装目录切换失败/);
     assert.ok(panel.querySelector('[data-role="dsh-retry"]'), 'retry button present');
 

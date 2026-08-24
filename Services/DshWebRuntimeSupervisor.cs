@@ -64,7 +64,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
     private string? _operationRegistryKey;
     private long _operationIdentity;
     private long _publishedOperationIdentity;
-    private string? _updateError;
+    private string? _updateErrorCode;
     private string? _updateErrorClass;
     private string? _runtimeErrorClass;
     private CancellationTokenSource? _runCts;   // live lifecycle operation; guarded by _sync
@@ -420,7 +420,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
                 return;
             SetState(
                 DshRuntimeState.Failed,
-                result.ErrorMessage ?? "DSH 运行时安装失败。",
+                result.ErrorCode ?? DshErrorClass.InstallFailed,
                 result.ErrorClass ?? DshErrorClass.InstallFailed);
             return;
         }
@@ -465,7 +465,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
                 _deferredVersions = DshUpdateCheckResult.EmptyVersions;
                 _blockedVersions = DshUpdateCheckResult.EmptyVersions;
                 _catalogRegistryKey = null;
-                _updateError = null;
+                _updateErrorCode = null;
                 _updateErrorClass = null;
                 _updateState = DshUpdateState.Idle;
             }
@@ -476,7 +476,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
                 _deferredVersions = DshUpdateCheckResult.EmptyVersions;
                 _blockedVersions = DshUpdateCheckResult.EmptyVersions;
                 _catalogRegistryKey = null;
-                _updateError = result.ErrorMessage;
+                _updateErrorCode = result.ErrorCode;
                 _updateErrorClass = result.ErrorClass;
                 _updateState = DshUpdateState.Failed;
             }
@@ -487,7 +487,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
                 _deferredVersions = result.DeferredList;
                 _blockedVersions = result.BlockedList;
                 _catalogRegistryKey = snapshot.Key;
-                _updateError = null;
+                _updateErrorCode = null;
                 _updateErrorClass = null;
                 _updateState = result.UpdateAvailable
                     ? DshUpdateState.Available
@@ -520,7 +520,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
             SetUpdateState(
                 DshUpdateState.Failed,
                 null,
-                "更新源已变更，请重新检查更新。");
+                DshErrorClass.UpdateRegistryChanged);
             return;
         }
 
@@ -530,7 +530,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
             // into a plain failure: nothing is installable in this PSX build
             // and the user needs a PSX update. Keep the state; surface a
             // transient hint through the same publish path.
-            SetUpdateState(DshUpdateState.RequiresPsxUpdate, error: "请先更新 PSX。");
+            SetUpdateState(DshUpdateState.RequiresPsxUpdate, errorCode: DshErrorClass.UpdateRequiresPsx);
             return;
         }
 
@@ -544,7 +544,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
                 SetUpdateState(
                     DshUpdateState.Failed,
                     null,
-                    "更新版本无效，请重新检查更新。");
+                    DshErrorClass.UpdateInvalidVersion);
                 return;
             }
             candidate = requested;
@@ -603,7 +603,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
             SetUpdateState(
                 DshUpdateState.Failed,
                 null,
-                staged.ErrorMessage ?? "更新失败，当前版本可继续使用。",
+                staged.ErrorCode ?? DshErrorClass.UpdateFailed,
                 errorClass: staged.ErrorClass);
             return;
         }
@@ -634,7 +634,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         {
             _runtime.RollbackAppliedUpdate();
             ClearAllowlist();
-            SetUpdateState(DshUpdateState.Failed, null, "更新切换失败，已保留原版本。");
+            SetUpdateState(DshUpdateState.Failed, null, DshErrorClass.UpdateSwitchFailed);
             await EnsureRunningHoldingLockAsync().ConfigureAwait(false);
             return;
         }
@@ -644,7 +644,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         {
             _runtime.RollbackAppliedUpdate();
             ClearAllowlist();
-            SetUpdateState(DshUpdateState.Failed, null, "更新无法启动，已恢复原版本。");
+            SetUpdateState(DshUpdateState.Failed, null, DshErrorClass.UpdateRelaunchFailed);
             await EnsureRunningHoldingLockAsync().ConfigureAwait(false);
             return;
         }
@@ -672,7 +672,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
                 _deferredVersions = DshUpdateCheckResult.EmptyVersions;
                 _blockedVersions = DshUpdateCheckResult.EmptyVersions;
                 _catalogRegistryKey = null;
-                _updateError = null;
+                _updateErrorCode = null;
                 _updateState = DshUpdateState.UpToDate;
                 _updatePhase = null;
             }
@@ -684,7 +684,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         // on Failed. Calling this again is harmless and covers a stale start.
         _runtime.RollbackAppliedUpdate();
         ClearAllowlist();
-        SetUpdateState(DshUpdateState.Failed, null, "新版本启动失败，已恢复原版本。");
+        SetUpdateState(DshUpdateState.Failed, null, DshErrorClass.UpdateRelaunchFailed);
         await StartRecoveredRuntimeHoldingLockAsync().ConfigureAwait(false);
     }
 
@@ -718,7 +718,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         SetUpdateState(
             DshUpdateState.Failed,
             null,
-            "更新未能完成，当前版本可继续使用。");
+            DshErrorClass.UpdateFailed);
 
         bool needsStart;
         lock (_sync)
@@ -837,7 +837,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
                 generation,
                 DshRuntimeState.Failed,
                 null,
-                "无法启动 DSH 进程。",
+                DshErrorClass.LaunchFailed,
                 DshErrorClass.LaunchFailed);
             return Task.FromResult(false);
         }
@@ -945,7 +945,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
                 generation,
                 DshRuntimeState.Failed,
                 null,
-                ExitedQuietly(process) ? "DSH 进程意外退出。" : "DSH 启动超时（90 秒内未就绪）。",
+                ExitedQuietly(process) ? DshErrorClass.ProcessExited : DshErrorClass.StartTimeout,
                 DshErrorClass.LaunchFailed);
         }
         finally
@@ -977,7 +977,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         long generation,
         DshRuntimeState state,
         Uri? readyUrl,
-        string? error = null,
+        string? errorCode = null,
         string? errorClass = null)
     {
         lock (_publishLock)
@@ -1016,7 +1016,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
             else if (state is DshRuntimeState.Failed or DshRuntimeState.Exited)
                 ReadyUrlChanged?.Invoke(null);
 
-            PublishState(state, error, state == DshRuntimeState.Ready ? readyUrl : null);
+            PublishState(state, errorCode, state == DshRuntimeState.Ready ? readyUrl : null);
             return true;
         }
     }
@@ -1041,7 +1041,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         }
     }
 
-    private void SetState(DshRuntimeState state, string? error = null, string? errorClass = null)
+    private void SetState(DshRuntimeState state, string? errorCode = null, string? errorClass = null)
     {
         lock (_publishLock)
         {
@@ -1059,7 +1059,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
             if (state is DshRuntimeState.Failed or DshRuntimeState.Exited)
                 ReadyUrlChanged?.Invoke(null);
 
-            PublishState(state, error, readyUrl);
+            PublishState(state, errorCode, readyUrl);
         }
     }
 
@@ -1084,7 +1084,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
             _deferredVersions = DshUpdateCheckResult.EmptyVersions;
             _blockedVersions = DshUpdateCheckResult.EmptyVersions;
             _catalogRegistryKey = null;
-            _updateError = null;
+            _updateErrorCode = null;
             _updateErrorClass = null;
         }
     }
@@ -1092,7 +1092,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
     private void SetUpdateState(
         DshUpdateState state,
         string? availableVersion = null,
-        string? error = null,
+        string? errorCode = null,
         DshUpdatePhase? phase = null,
         string? errorClass = null)
     {
@@ -1102,7 +1102,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
             _updatePhase = state == DshUpdateState.Updating ? phase : null;
             if (availableVersion != null)
                 _availableVersion = availableVersion;
-            _updateError = error;
+            _updateErrorCode = errorCode;
             _updateErrorClass = state == DshUpdateState.Failed ? errorClass : null;
         }
         PublishCurrentState();
@@ -1123,7 +1123,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         }
     }
 
-    private void PublishState(DshRuntimeState state, string? error, Uri? readyUrl = null)
+    private void PublishState(DshRuntimeState state, string? errorCode, Uri? readyUrl = null)
     {
         if (state == DshRuntimeState.Ready && readyUrl == null)
         {
@@ -1137,7 +1137,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         object[] availableVersions;
         object[] deferredVersions;
         object[] blockedVersions;
-        string? updateError;
+        string? updateErrorCode;
         string? catalogRegistryKey;
         string? operationRegistryKey;
         string? registryKey;
@@ -1171,8 +1171,8 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
                     tags = entry.Tags.ToArray()
                 })
                 .ToArray();
-            updateError = _updateState is DshUpdateState.Failed or DshUpdateState.RequiresPsxUpdate
-                ? _updateError
+            updateErrorCode = _updateState is DshUpdateState.Failed or DshUpdateState.RequiresPsxUpdate
+                ? _updateErrorCode
                 : null;
             catalogRegistryKey = _catalogRegistryKey;
             operationRegistryKey = _operationRegistryKey;
@@ -1180,13 +1180,17 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
             updateErrorClass = _updateState == DshUpdateState.Failed ? _updateErrorClass : null;
         }
         registryKey = _settings.GetSnapshot().DshRegistry;
-        var wireError = state == DshRuntimeState.Failed ? (error ?? "运行时不可用") : (string?)null;
+        // The wire `errorClass` is a fixed DshErrorClass code the frontend
+        // maps to copy; composed sentences never cross the bridge.
+        var wireErrorCode = state == DshRuntimeState.Failed
+            ? (errorCode ?? DshErrorClass.RuntimeUnavailable)
+            : null;
         _ = _bridge.SendEventAsync(new
         {
             type = "dsh_runtime_status",
             state = ToWireState(state),
             readyUrl = state == DshRuntimeState.Ready ? ToFrameOrigin(readyUrl) : null,
-            errorClass = wireError,
+            errorClass = wireErrorCode,
             currentVersion = _runtime.CurrentVersion,
             updateState,
             updatePhase,
@@ -1194,7 +1198,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
             availableVersions,
             deferredVersions,
             blockedVersions,
-            updateError,
+            updateErrorCode,
             registryKey,
             operationRegistryKey,
             catalogRegistryKey,
@@ -1230,12 +1234,11 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
 
     private void FailSettingsWrite(DshOperationKind kind, PsxEnvironmentSetResult result)
     {
-        var message = result.ErrorMessage ?? PsxEnvironmentSettingsCoordinator.SettingsWriteFailedMessage;
         var errorClass = result.ErrorClass ?? DshErrorClass.SettingsWriteFailed;
         if (kind is DshOperationKind.RetryInstall)
-            SetState(DshRuntimeState.Failed, message, errorClass);
+            SetState(DshRuntimeState.Failed, DshErrorClass.SettingsWriteFailed, errorClass);
         else
-            SetUpdateState(DshUpdateState.Failed, error: message, errorClass: errorClass);
+            SetUpdateState(DshUpdateState.Failed, errorCode: DshErrorClass.SettingsWriteFailed, errorClass: errorClass);
     }
 
     private DshRegistryDescriptor CurrentRegistry() =>
@@ -1263,7 +1266,7 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
             _deferredVersions = DshUpdateCheckResult.EmptyVersions;
             _blockedVersions = DshUpdateCheckResult.EmptyVersions;
             _catalogRegistryKey = null;
-            _updateError = null;
+            _updateErrorCode = null;
             _updateErrorClass = null;
             _updateState = DshUpdateState.Idle;
             _updatePhase = null;

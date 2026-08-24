@@ -19,7 +19,7 @@ function runtimeEvent(state, overrides = {}) {
     type: 'runtime_status',
     workspaceId: WS,
     state,
-    message: state,
+    messageCode: state,
     canInstall: state === 'missing' || state === 'failed' || state === 'cancelled',
     canCancel: state === 'installing',
     ...overrides

@@ -332,7 +332,7 @@ export function createAgentWorkspace(app, workspaceId, { ready = true } = {}) {
       type: 'runtime_status',
       workspaceId,
       state: 'ready',
-      message: 'Ready',
+      messageCode: 'runtime.ready',
       canInstall: false,
       canCancel: false
     });

@@ -85,14 +85,14 @@ public sealed class QwenConfigSource : IAgentConfigSource
                     && !string.IsNullOrWhiteSpace(name.GetString()))
                 {
                     var modelName = name.GetString()!;
-                    facts.Add(new AgentConfigFact("默认模型", modelName));
+                    facts.Add(new AgentConfigFact(AgentConfigFactLabels.DefaultModel, modelName));
                     models.Add(new AgentConfigModelEntry(modelName, modelName, null));
                 }
                 else if (model.ValueKind == JsonValueKind.String
                          && !string.IsNullOrWhiteSpace(model.GetString()))
                 {
                     var modelName = model.GetString()!;
-                    facts.Add(new AgentConfigFact("默认模型", modelName));
+                    facts.Add(new AgentConfigFact(AgentConfigFactLabels.DefaultModel, modelName));
                     models.Add(new AgentConfigModelEntry(modelName, modelName, null));
                 }
             }
@@ -141,7 +141,7 @@ public sealed class QwenConfigSource : IAgentConfigSource
             {
                 var keys = AgentConfigSanitizer.CollectObjectKeys(env);
                 if (keys.Count > 0)
-                    facts.Add(new AgentConfigFact("环境变量键", string.Join(", ", keys)));
+                    facts.Add(new AgentConfigFact(AgentConfigFactLabels.EnvVarKeys, string.Join(", ", keys)));
             }
 
             if (root.TryGetProperty("security", out var security)
@@ -152,7 +152,7 @@ public sealed class QwenConfigSource : IAgentConfigSource
                 && selected.ValueKind == JsonValueKind.String
                 && !string.IsNullOrWhiteSpace(selected.GetString()))
             {
-                facts.Add(new AgentConfigFact("认证类型", selected.GetString()!));
+                facts.Add(new AgentConfigFact(AgentConfigFactLabels.AuthType, selected.GetString()!));
             }
         }
         catch (Exception ex)

@@ -168,12 +168,12 @@ public sealed class DshWebWorkspaceCoordinator : IDshWebWorkspaceCoordinator
                 .ConfigureAwait(false);
             if (ShouldRejectExportResponse(response, readyUrl))
             {
-                await SendFailureNoticeAsync("导出失败：服务返回了无效响应。").ConfigureAwait(false);
+                await SendFailureNoticeAsync(WorkspaceNoticeCode.DshExportInvalidResponse).ConfigureAwait(false);
                 return;
             }
             if (!IsAllowedExportContentType(response.Content.Headers.ContentType))
             {
-                await SendFailureNoticeAsync("导出失败：会话数据格式无效。").ConfigureAwait(false);
+                await SendFailureNoticeAsync(WorkspaceNoticeCode.DshExportInvalidContentType).ConfigureAwait(false);
                 return;
             }
 
@@ -182,7 +182,7 @@ public sealed class DshWebWorkspaceCoordinator : IDshWebWorkspaceCoordinator
             if (!await TryReadExactAsync(source, prefix).ConfigureAwait(false)
                 || !LooksLikeZip(prefix))
             {
-                await SendFailureNoticeAsync("导出失败：会话数据无效。").ConfigureAwait(false);
+                await SendFailureNoticeAsync(WorkspaceNoticeCode.DshExportInvalidData).ConfigureAwait(false);
                 return;
             }
 
@@ -199,18 +199,18 @@ public sealed class DshWebWorkspaceCoordinator : IDshWebWorkspaceCoordinator
             catch (DshExportTooLargeException)
             {
                 Debug.WriteLine("DSH export exceeded the size limit.");
-                await SendFailureNoticeAsync("导出失败：文件过大，已取消。").ConfigureAwait(false);
+                await SendFailureNoticeAsync(WorkspaceNoticeCode.DshExportTooLarge).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
                 Debug.WriteLine("DSH export failed: " + ex.Message);
-                await SendFailureNoticeAsync("导出失败：文件写入没有完成。").ConfigureAwait(false);
+                await SendFailureNoticeAsync(WorkspaceNoticeCode.DshExportWriteFailed).ConfigureAwait(false);
             }
         }
         catch (Exception ex)
         {
             Debug.WriteLine("DSH export failed: " + ex.Message);
-            await SendFailureNoticeAsync("导出失败：无法连接本地服务。").ConfigureAwait(false);
+            await SendFailureNoticeAsync(WorkspaceNoticeCode.DshExportConnectFailed).ConfigureAwait(false);
         }
     }
 
@@ -267,8 +267,8 @@ public sealed class DshWebWorkspaceCoordinator : IDshWebWorkspaceCoordinator
         }
     }
 
-    private Task SendFailureNoticeAsync(string message) =>
-        _bridge.SendEventAsync(new { type = "workspace_notice", message });
+    private Task SendFailureNoticeAsync(string code) =>
+        _bridge.SendEventAsync(new { type = "workspace_notice", code });
 
     /// <summary>
     /// Fill <paramref name="buffer"/> even when the source yields partial

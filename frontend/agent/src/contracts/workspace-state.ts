@@ -29,7 +29,7 @@ export interface WorkspaceSessionState {
 
 export interface WorkspaceRuntimeState {
   state: string;
-  message: string;
+  messageCode: string;
   canInstall: boolean;
   canCancel: boolean;
   ownership?: string;
@@ -47,7 +47,7 @@ export interface WorkspaceRuntimeState {
  * the tooltip-only ACP/runtime technical string. */
 export interface WorkspaceRuntimeUpdateState {
   state: string;
-  message: string;
+  messageCode: string;
   currentVersion: string;
   pendingVersion: string;
   versionLabel: string;
@@ -167,7 +167,7 @@ export function createInitialWorkspaceState(workspaceId: string): AgentWorkspace
     },
     runtime: {
       state: 'missing',
-      message: 'Agent runtime is not installed.',
+      messageCode: '',
       canInstall: false,
       canCancel: false,
       ownership: 'managed',
@@ -178,7 +178,7 @@ export function createInitialWorkspaceState(workspaceId: string): AgentWorkspace
     },
     runtimeUpdate: {
       state: 'idle',
-      message: '',
+      messageCode: '',
       currentVersion: '',
       pendingVersion: '',
       versionLabel: '',

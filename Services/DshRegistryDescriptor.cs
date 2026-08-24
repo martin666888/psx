@@ -47,7 +47,13 @@ public sealed record DshRegistryDescriptor(string Key, string Origin, string Lab
     public bool MatchesResolvedUrl(string? value) => DshSri.IsTrustedRegistryUrl(value, Origin);
 }
 
-/// <summary>Fixed wire error classes for DSH runtime/update failures.</summary>
+/// <summary>
+/// Fixed wire error codes for DSH runtime/update failures. Every value that
+/// crosses the bridge as <c>errorClass</c> / <c>updateErrorCode</c> is one of
+/// these stable keys — never a composed sentence. The coarse classes are
+/// matched by the download-source CTA logic; the fine-grained runtime/update
+/// detail codes each map to one frontend copy entry.
+/// </summary>
 public static class DshErrorClass
 {
     public const string RegistryTimeout = "registry_timeout";
@@ -60,10 +66,51 @@ public static class DshErrorClass
     public const string LockUnavailable = "lock_unavailable";
     public const string CatalogCorrupt = "catalog_corrupt";
 
+    // Runtime/install detail codes (wire `errorClass`).
+    public const string RuntimeUnavailable = "runtime_unavailable";
+    public const string ProcessExited = "process_exited";
+    public const string StartTimeout = "start_timeout";
+    public const string PortableNodeMissing = "portable_node_missing";
+    public const string SeedMissing = "seed_missing";
+    public const string InstallCancelled = "install_cancelled";
+    public const string EntryMissing = "entry_missing";
+    public const string VersionUnreadable = "version_unreadable";
+    public const string VersionMismatch = "version_mismatch";
+    public const string InstallSwitchFailed = "install_switch_failed";
+    public const string PostInstallUnavailable = "post_install_unavailable";
+
+    // Update/check detail codes (wire `updateErrorCode`).
+    public const string NotInstalled = "not_installed";
+    public const string UpdateRequiresPsx = "update_requires_psx";
+    public const string UpdateRegistryChanged = "update_registry_changed";
+    public const string UpdateInvalidVersion = "update_invalid_version";
+    public const string UpdateCancelled = "update_cancelled";
+    public const string UpdateFailed = "update_failed";
+    public const string UpdateSwitchFailed = "update_switch_failed";
+    public const string UpdateRelaunchFailed = "update_relaunch_failed";
+    public const string UpdateNodeMissing = "update_node_missing";
+    public const string InvalidVersions = "invalid_versions";
+    public const string CandidateInvalid = "candidate_invalid";
+    public const string RegistryConfigMissing = "registry_config_missing";
+    public const string UpdateWorkspaceFailed = "update_workspace_failed";
+    public const string ReceiptWriteFailed = "receipt_write_failed";
+    public const string UpdateMarkerFailed = "update_marker_failed";
+    public const string CheckFailed = "check_failed";
+
     public static bool IsKnown(string? value) =>
         value is RegistryTimeout or RegistryNetwork or RegistryNotFound
             or IntegrityFailed or InstallFailed or LaunchFailed
-            or SettingsWriteFailed or LockUnavailable or CatalogCorrupt;
+            or SettingsWriteFailed or LockUnavailable or CatalogCorrupt
+            or RuntimeUnavailable or ProcessExited or StartTimeout
+            or PortableNodeMissing or SeedMissing or InstallCancelled
+            or EntryMissing or VersionUnreadable or VersionMismatch
+            or InstallSwitchFailed or PostInstallUnavailable
+            or NotInstalled or UpdateRequiresPsx or UpdateRegistryChanged
+            or UpdateInvalidVersion or UpdateCancelled or UpdateFailed
+            or UpdateSwitchFailed or UpdateRelaunchFailed or UpdateNodeMissing
+            or InvalidVersions or CandidateInvalid or RegistryConfigMissing
+            or UpdateWorkspaceFailed or ReceiptWriteFailed
+            or UpdateMarkerFailed or CheckFailed;
 }
 
 /// <summary>
