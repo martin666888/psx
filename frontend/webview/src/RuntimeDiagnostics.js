@@ -3,8 +3,9 @@ const BENIGN_RESIZE_OBSERVER_MESSAGES = new Set([
     'ResizeObserver loop limit exceeded'
 ]);
 
+import { t } from './i18n.js';
+
 const DIAGNOSTIC_ROLE = 'runtime-diagnostic';
-const GENERIC_MESSAGE = '界面发生异常，部分内容可能未正确更新。';
 
 export function isBenignResizeObserverMessage(value) {
     return BENIGN_RESIZE_OBSERVER_MESSAGES.has(String(value ?? '').trim());
@@ -25,13 +26,13 @@ function createDiagnostic(documentRef) {
 
     const message = documentRef.createElement('span');
     message.className = 'psx-runtime-diagnostic-message';
-    message.textContent = GENERIC_MESSAGE;
+    message.textContent = t('diagnostics.generic');
 
     const dismiss = documentRef.createElement('button');
     dismiss.type = 'button';
     dismiss.className = 'psx-runtime-diagnostic-dismiss';
-    dismiss.textContent = '关闭';
-    dismiss.setAttribute('aria-label', '关闭界面错误提示');
+    dismiss.textContent = t('diagnostics.dismiss');
+    dismiss.setAttribute('aria-label', t('diagnostics.dismissAria'));
     dismiss.addEventListener('click', () => diagnostic.remove());
 
     diagnostic.append(message, dismiss);

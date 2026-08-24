@@ -9,19 +9,13 @@
 
 import { Bridge } from './Bridge.js';
 import { createProviderIconSvg } from './ProviderIcons.js';
+import { t, onLocaleChanged } from './i18n.js';
 import {
     dshSourceLabel,
     dshSwitchCta,
     dshUpdateErrorLabel,
     safeDshRegistry
 } from './DshRegistryUi.js';
-
-const ATTENTION_LABELS = Object.freeze({
-    permission: '需确认',
-    question: '待回复',
-    error: '出错',
-    completed: '已完成'
-});
 
 const DSH_UPDATE_STATES = new Set([
     'idle', 'checking', 'up_to_date', 'available', 'updating', 'failed', 'requires_psx_update'
@@ -137,6 +131,12 @@ export class WorkspaceChromeController {
             const open = event.detail?.open === true;
             this.settingsButton.setAttribute('aria-expanded', String(open));
         };
+        this.disposeLocaleChanged = onLocaleChanged(() => {
+            // Re-render every text surface from the retained snapshots so a
+            // language switch applies in place (tabs, badges, open menu).
+            this.renderTabStrips();
+            if (this.openMenu) this.renderOpenMenu();
+        });
         document.addEventListener('pointerdown', this.onDocumentPointerDown, true);
         document.addEventListener('keydown', this.onDocumentKeyDown);
         document.addEventListener('psx-history-state', this.onHistoryState);
@@ -145,6 +145,7 @@ export class WorkspaceChromeController {
     }
 
     dispose() {
+        this.disposeLocaleChanged?.();
         document.removeEventListener('pointerdown', this.onDocumentPointerDown, true);
         document.removeEventListener('keydown', this.onDocumentKeyDown);
         document.removeEventListener('psx-history-state', this.onHistoryState);
@@ -327,13 +328,13 @@ export class WorkspaceChromeController {
         tabEl.setAttribute('role', 'presentation');
         tabEl.dataset.workspaceId = tab.workspaceId || '';
         tabEl.dataset.active = tab.workspaceId === column.activeTabId ? 'true' : 'false';
-        tabEl.title = workspace?.title || 'Workspace';
+        tabEl.title = workspace?.title || t('workspace.fallbackTitle');
 
         const target = document.createElement('button');
         target.type = 'button';
         target.className = 'workspace-tab-target';
         target.setAttribute('aria-pressed', tab.workspaceId === column.activeTabId ? 'true' : 'false');
-        target.title = workspace?.title || 'Workspace';
+        target.title = workspace?.title || t('workspace.fallbackTitle');
 
         const icon = document.createElement('span');
         icon.className = 'workspace-tab-icon';
@@ -349,17 +350,21 @@ export class WorkspaceChromeController {
 
         const title = document.createElement('span');
         title.className = 'workspace-tab-title';
-        title.textContent = workspace?.title || 'Workspace';
+        title.textContent = workspace?.title || t('workspace.fallbackTitle');
 
         const attention = document.createElement('span');
         attention.className = 'workspace-tab-attention';
         attention.dataset.kind = workspace?.attentionKind || '';
-        attention.textContent = ATTENTION_LABELS[workspace?.attentionKind] || '';
+        attention.textContent = workspace?.attentionKind
+            ? t(`attention.${workspace.attentionKind}`)
+            : '';
 
         const close = document.createElement('button');
         close.type = 'button';
         close.className = 'workspace-chrome-icon-button workspace-tab-close';
-        close.setAttribute('aria-label', `关闭 ${workspace?.title || '工作区'}`);
+        close.setAttribute('aria-label', t('tab.closeTitle', {
+                title: workspace?.title || t('workspace.fallbackTitle')
+            }));
         close.textContent = '×';
         close.disabled = !workspace;
         close.addEventListener('click', (event) => {
@@ -481,7 +486,11 @@ export class WorkspaceChromeController {
     }
 
     menuLabel() {
-        return { create: '新建工作区', theme: '主题', pane: '工作区操作' }[this.openMenu] || '菜单';
+        return {
+            create: t('menu.create'),
+            theme: t('menu.theme'),
+            pane: t('menu.pane')
+        }[this.openMenu] || t('menu.fallback');
     }
 
     applyAppSettingsSnapshot(message) {
@@ -497,7 +506,7 @@ export class WorkspaceChromeController {
     }
 
     renderCreateMenu(menu) {
-        menu.appendChild(this.heading('新建工作区'));
+        menu.appendChild(this.heading(t('menu.create')));
         const capacity = this.capacityChecker?.() ?? null;
         // The column-cap gate uses the REQUESTED column count (zoomed
         // effective layouts under-count) and the catalog's maxColumns.
@@ -505,7 +514,10 @@ export class WorkspaceChromeController {
         const atColumnCap = columnCount >= this.catalog.maxColumns;
         const segments = document.createElement('div');
         segments.className = 'workspace-segments';
-        for (const [value, label] of [['focused', '当前列'], ['new_right', '右侧新列']]) {
+        for (const [value, label] of [
+            ['focused', t('create.placementFocused')],
+            ['new_right', t('create.placementNewRight')]
+        ]) {
             const button = document.createElement('button');
             button.type = 'button';
             button.textContent = label;
@@ -517,8 +529,8 @@ export class WorkspaceChromeController {
             const capBlocked = value === 'new_right' && atColumnCap;
             const capacityBlocked = value === 'new_right' && capacity !== null && !capacity.fitsAgent;
             button.disabled = capBlocked || capacityBlocked;
-            if (capBlocked) button.title = '最多支持 3 列';
-            else if (capacityBlocked) button.title = '窗口宽度不足以容纳新列';
+            if (capBlocked) button.title = t('create.columnCapTitle');
+            else if (capacityBlocked) button.title = t('common.widthInsufficient');
             button.addEventListener('click', () => {
                 this.createPlacement = value;
                 this.renderOpenMenu();
@@ -532,7 +544,7 @@ export class WorkspaceChromeController {
             '',
             () => this.createWorkspace('terminal'),
             terminalBlocked,
-            terminalBlocked ? '窗口宽度不足以容纳新列' : ''
+            terminalBlocked ? t('common.widthInsufficient') : ''
         ));
         // Kimi Code Web and DeepSeek Harness are shell-owned web-app
         // workspaces, not ACP providers: list them under WEB APP above the
@@ -544,7 +556,7 @@ export class WorkspaceChromeController {
             '',
             () => this.createWorkspace('kimi_web'),
             kimiWebBlocked,
-            kimiWebBlocked ? '窗口宽度不足以容纳新列' : ''
+            kimiWebBlocked ? t('common.widthInsufficient') : ''
         ));
         const dshBlocked = this.createPlacement === 'new_right' && capacity !== null && !capacity.fitsDsh;
         menu.appendChild(this.menuRow(
@@ -552,7 +564,7 @@ export class WorkspaceChromeController {
             '',
             () => this.createWorkspace('dsh_web'),
             dshBlocked,
-            dshBlocked ? '窗口宽度不足以容纳新列' : ''
+            dshBlocked ? t('common.widthInsufficient') : ''
         ));
         menu.appendChild(this.subheading('AGENT (ACP)'));
         for (const provider of this.catalog.providers) {
@@ -569,7 +581,7 @@ export class WorkspaceChromeController {
     renderThemeMenu(menu) {
         const top = document.createElement('div');
         top.className = 'workspace-popover-heading-row';
-        top.append(this.heading('Theme'));
+        top.append(this.heading(t('menu.theme')));
         const current = document.createElement('span');
         current.textContent = this.themeCatalog.currentLabel || '';
         top.append(current);
@@ -578,13 +590,14 @@ export class WorkspaceChromeController {
         for (const source of ['builtin', 'user']) {
             const group = themes.filter((theme) => theme.source === source);
             if (!group.length) continue;
-            menu.appendChild(this.subheading(source === 'builtin' ? 'BUILT-IN' : 'CUSTOM'));
+            menu.appendChild(this.subheading(source === 'builtin'
+                ? t('theme.builtIn') : t('theme.custom')));
             for (const theme of group) {
                 const row = document.createElement('div');
                 row.className = 'workspace-theme-row';
                 row.appendChild(this.menuRow(
                     theme.name,
-                    theme.isUpdated ? 'Updated' : theme.isCurrent ? 'Current' : '',
+                    theme.isUpdated ? t('theme.updated') : theme.isCurrent ? t('theme.current') : '',
                     () => Bridge.sendThemeAction('preview', theme.key),
                     !theme.isAvailable,
                     theme.diagnostic
@@ -593,7 +606,7 @@ export class WorkspaceChromeController {
                     const confirm = document.createElement('button');
                     confirm.type = 'button';
                     confirm.className = 'workspace-theme-confirm';
-                    confirm.textContent = 'Confirm';
+                    confirm.textContent = t('theme.confirm');
                     confirm.addEventListener('click', () => {
                         Bridge.sendThemeAction('confirm', theme.key);
                         this.closeMenu(false);
@@ -613,8 +626,8 @@ export class WorkspaceChromeController {
         const footer = document.createElement('div');
         footer.className = 'workspace-popover-footer';
         footer.append(
-            this.actionButton('Refresh', () => Bridge.sendThemeAction('refresh')),
-            this.actionButton('Open theme folder', () => Bridge.sendThemeAction('open_folder'))
+            this.actionButton(t('common.refresh'), () => Bridge.sendThemeAction('refresh')),
+            this.actionButton(t('theme.openFolder'), () => Bridge.sendThemeAction('open_folder'))
         );
         menu.appendChild(footer);
     }
@@ -635,7 +648,7 @@ export class WorkspaceChromeController {
                 ? `v${this.dshRuntimeStatus.currentVersion}` : '';
             top.appendChild(version);
             menu.appendChild(top);
-            menu.appendChild(this.subheading('布局'));
+            menu.appendChild(this.subheading(t('pane.layoutSection')));
         } else {
             menu.appendChild(this.heading(workspace.title));
         }
@@ -661,15 +674,15 @@ export class WorkspaceChromeController {
         // pixel capacity both block the split entry; the C# reason text wins
         // the secondary line when present, otherwise the capacity text.
         menu.appendChild(this.menuRow(
-            '移到右侧新列',
-            (splitBlocked ? workspace.splitBlockedReason || '' : '') || (capacityBlocked ? '窗口宽度不足以容纳新列' : ''),
+            t('pane.splitRight'),
+            (splitBlocked ? workspace.splitBlockedReason || '' : '') || (capacityBlocked ? t('common.widthInsufficient') : ''),
             () => {
                 Bridge.sendWorkspaceLayoutIntent('split_right', workspace.workspaceId);
                 this.closeMenu(false);
             },
             splitBlocked || capacityBlocked
         ));
-        if (workspace.canCollapse) menu.appendChild(this.menuRow('合并为单列', '', () => {
+        if (workspace.canCollapse) menu.appendChild(this.menuRow(t('pane.collapseSingle'), '', () => {
             Bridge.sendWorkspaceLayoutIntent('collapse_single');
             this.closeMenu(false);
         }));
@@ -714,7 +727,7 @@ export class WorkspaceChromeController {
 
     renderDshRuntimeMenu(menu) {
         const status = this.dshRuntimeStatus;
-        menu.appendChild(this.subheading('运行时'));
+        menu.appendChild(this.subheading(t('runtime.section')));
 
         const selectedVersion = this.resolveDshSelectedVersion(status);
         if (this.dshUpdateConfirmation
@@ -724,7 +737,10 @@ export class WorkspaceChromeController {
             confirmation.className = 'workspace-update-confirmation';
             const versions = document.createElement('div');
             versions.className = 'workspace-update-versions';
-            versions.textContent = `${status.currentVersion || '当前版本'} → ${selectedVersion}`;
+            versions.textContent = t('dsh.versionsLine', {
+                from: status.currentVersion || t('dsh.currentVersionFallback'),
+                to: selectedVersion
+            });
             confirmation.appendChild(versions);
 
             const catalog = Array.isArray(status.availableVersions) ? status.availableVersions : [];
@@ -732,7 +748,7 @@ export class WorkspaceChromeController {
                 const list = document.createElement('div');
                 list.className = 'workspace-update-version-list';
                 list.setAttribute('role', 'listbox');
-                list.setAttribute('aria-label', '可选更新版本');
+                list.setAttribute('aria-label', t('dsh.versionListLabel'));
                 for (const entry of catalog) {
                     const option = document.createElement('button');
                     option.type = 'button';
@@ -764,14 +780,14 @@ export class WorkspaceChromeController {
             this.renderDshDeferredNotices(confirmation, status);
 
             const copy = document.createElement('p');
-            copy.textContent = 'PSX 将在后台下载并校验新版本，然后自动切换并重启 DeepSeek Harness 本地服务。无需重启 PSX；配置和会话不会被删除。下载可能需要几分钟。';
+            copy.textContent = t('dsh.updateConfirmBody');
             const actions = document.createElement('div');
             actions.className = 'workspace-update-actions';
-            const cancel = this.actionButton('取消', () => {
+            const cancel = this.actionButton(t('common.cancel'), () => {
                 this.dshUpdateConfirmation = false;
                 this.refreshDshRuntimeMenu();
             });
-            const confirm = this.actionButton('开始后台更新', () => {
+            const confirm = this.actionButton(t('dsh.startBackgroundUpdate'), () => {
                 const version = this.resolveDshSelectedVersion(status);
                 this.dshUpdateConfirmation = false;
                 this.dshRuntimeStatus = {
@@ -815,7 +831,7 @@ export class WorkspaceChromeController {
 
         const stopped = status.state === 'exited';
         menu.appendChild(this.menuRow(
-            stopped ? '启动运行时' : '停止运行时',
+            stopped ? t('runtime.start') : t('runtime.stop'),
             '',
             () => {
                 Bridge.sendDshCommand(stopped ? 'retry' : 'stop');
@@ -836,14 +852,18 @@ export class WorkspaceChromeController {
             const notice = document.createElement('p');
             notice.className = 'workspace-popover-message';
             notice.dataset.muted = 'true';
-            notice.textContent = `当前 PSX 不支持此版本：${blocked.map((entry) => `v${entry.version}`).join('、')}`;
+            notice.textContent = t('dsh.blockedNotice', {
+                versions: blocked.map((entry) => `v${entry.version}`).join('、')
+            });
             container.appendChild(notice);
         }
         if (deferred.length > 0) {
             const notice = document.createElement('p');
             notice.className = 'workspace-popover-message';
             notice.dataset.muted = 'true';
-            notice.textContent = `已发布但暂不可安装：${deferred.map((entry) => `v${entry.version}`).join('、')}（将随 PSX 更新提供）`;
+            notice.textContent = t('dsh.deferredNotice', {
+                versions: deferred.map((entry) => `v${entry.version}`).join('、')
+            });
             container.appendChild(notice);
         }
     }
@@ -861,13 +881,13 @@ export class WorkspaceChromeController {
 
         switch (status.updateState) {
             case 'checking':
-                menu.appendChild(this.menuRow('正在检查更新…', '', () => {}, true));
+                menu.appendChild(this.menuRow(t('dsh.checking'), '', () => {}, true));
                 break;
             case 'available': {
                 const target = this.resolveDshSelectedVersion(status);
                 menu.appendChild(this.menuRow(
-                    target ? `更新到 v${target}` : '检查更新',
-                    '后台更新',
+                    target ? t('dsh.updateTo', { version: target }) : t('dsh.checkUpdate'),
+                    t('dsh.backgroundUpdate'),
                     () => {
                         this.dshUpdateConfirmation = true;
                         this.refreshDshRuntimeMenu();
@@ -880,21 +900,22 @@ export class WorkspaceChromeController {
                 this.renderDshUpdatingAction(menu, status);
                 break;
             case 'up_to_date':
-                menu.appendChild(this.menuRow('检查更新', '已是最新', check, !canCheck));
+                menu.appendChild(this.menuRow(t('dsh.checkUpdate'), t('dsh.upToDate'), check, !canCheck));
                 break;
             case 'requires_psx_update': {
-                menu.appendChild(this.menuRow('发现新版本', '需更新 PSX 后才能安装', () => {}, true));
+                menu.appendChild(this.menuRow(
+                    t('dsh.newVersionsFound'), t('dsh.requiresPsxUpdate'), () => {}, true));
                 this.renderDshDeferredNotices(menu, status);
-                menu.appendChild(this.menuRow('重新检查', '', check, !canCheck));
+                menu.appendChild(this.menuRow(t('dsh.recheck'), '', check, !canCheck));
                 break;
             }
             case 'failed':
-                menu.appendChild(this.menuRow('重新检查', '', check, !canCheck));
+                menu.appendChild(this.menuRow(t('dsh.recheck'), '', check, !canCheck));
                 break;
             default:
                 menu.appendChild(this.menuRow(
-                    '检查更新',
-                    canCheck ? '' : '请先安装',
+                    t('dsh.checkUpdate'),
+                    canCheck ? '' : t('dsh.notInstalledHint'),
                     check,
                     !canCheck
                 ));
@@ -905,16 +926,16 @@ export class WorkspaceChromeController {
     renderDshUpdatingAction(menu, status) {
         const version = status.availableVersion ? ` v${status.availableVersion}` : '';
         const phaseCopy = {
-            downloading: [`正在后台下载${version}…`, '可能需要几分钟'],
-            validating: [`正在校验${version}…`, '当前服务保持可用'],
-            restarting: [`正在切换到${version || '新版本'}…`, '无需重启 PSX']
-        }[status.updatePhase] || ['正在后台更新…', '无需重启 PSX'];
+            downloading: [t('dsh.phaseDownloading', { version }), t('dsh.downloadingHint')],
+            validating: [t('dsh.phaseValidating', { version }), t('dsh.validatingHint')],
+            restarting: [t('dsh.phaseSwitching', { version: version || t('dsh.versionFallback') }), t('dsh.switchingHint')]
+        }[status.updatePhase] || [t('dsh.phaseGeneric'), t('dsh.genericHint')];
         menu.appendChild(this.menuRow(phaseCopy[0], phaseCopy[1], () => {}, true));
 
         if (status.updatePhase === 'downloading' || status.updatePhase === 'validating') {
-            const cancel = this.menuRow('取消更新', '保留当前版本', () => {
+            const cancel = this.menuRow(t('dsh.cancelUpdate'), t('dsh.keepCurrent'), () => {
                 cancel.disabled = true;
-                cancel.querySelector('.workspace-menu-primary').textContent = '正在取消…';
+                cancel.querySelector('.workspace-menu-primary').textContent = t('dsh.cancelling');
                 Bridge.sendDshCommand('cancel_update');
             });
             menu.appendChild(cancel);
@@ -932,33 +953,33 @@ export class WorkspaceChromeController {
 
     renderKimiWebRuntimeMenu(menu) {
         const status = this.kimiWebRuntimeStatus;
-        menu.appendChild(this.subheading('运行时'));
+        menu.appendChild(this.subheading(t('runtime.section')));
         const state = status.state;
-        let label = '重新启动';
+        let label = t('runtime.restart');
         let command = 'retry';
         let secondary = '';
         let disabled = false;
         switch (state) {
             case 'starting':
-                label = '正在启动…';
+                label = t('kimi.starting');
                 disabled = true;
                 break;
             case 'ready':
-                label = '停止';
+                label = t('runtime.stop');
                 command = 'stop';
                 break;
             case 'stopping':
-                label = '正在停止…';
+                label = t('kimi.stopping');
                 disabled = true;
                 break;
             case 'failed':
-                label = '重试';
+                label = t('common.retry');
                 break;
             case 'unavailable':
-                label = '重试';
+                label = t('common.retry');
                 // retry in unavailable only re-validates the launch spec;
                 // it never pulls a process or downloads anything.
-                secondary = '仅重新校验运行时';
+                secondary = t('kimi.validateOnly');
                 break;
             default:
                 break;

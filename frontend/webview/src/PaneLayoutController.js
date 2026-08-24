@@ -9,6 +9,7 @@
 // column below its floor rather than dropping one (decision K).
 
 import { Bridge } from './Bridge.js';
+import { t } from './i18n.js';
 
 const WORKBENCH_GUTTER = 12;
 const CHROME_HEIGHT = 40;
@@ -423,7 +424,7 @@ export class PaneLayoutController {
         divider.setAttribute('aria-orientation', 'vertical');
         divider.setAttribute('aria-label', '调整相邻列宽度');
         divider.tabIndex = 0;
-        divider.title = '拖动调整宽度，双击均分相邻列';
+        divider.title = t('panes.dividerTitle');
 
         divider.addEventListener('pointerdown', (event) => {
             if (event.button !== 0 || !this.snapshot) return;

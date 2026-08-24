@@ -14,6 +14,7 @@
 
 import { Bridge } from './Bridge.js';
 import { createProviderIconSvg } from './ProviderIcons.js';
+import { t, onLocaleChanged } from './i18n.js';
 
 function isSameFrameUrl(iframe, readyUrl) {
     try {
@@ -29,57 +30,57 @@ function expectedOriginFromReadyUrl(readyUrl) {
     catch { return null; }
 }
 
-const UNAVAILABLE_REASON_COPY = {
-    portable_node_missing: 'PSX 自带的 Node 运行时缺失。',
-    runtime_missing: 'Kimi 运行时文件缺失。',
-    runtime_invalid: 'Kimi 运行时文件无效。'
-};
+// All Kimi Web card strings resolve through the shared i18n instance
+// (shell namespace); see locales/<lang>/shell.json under kimi.*.
+function unavailableReason(reason) {
+    return t(`kimi.unavailableReasonCopy.${reason}`);
+}
 
-const FAILED_ERROR_COPY = {
-    launch_failed: 'Kimi Web 进程未能启动。',
-    start_timeout: '启动超时，请重试。',
-    health_check_failed: '服务健康检查未通过。'
-};
+function failedError(errorClass) {
+    return t(`kimi.failedErrorCopy.${errorClass}`);
+}
 
-const CARD_COPY = {
-    starting: {
-        title: '正在启动 Kimi Web',
-        message: '正在拉起本地 Kimi Web 服务，请稍候。'
-    },
-    unavailable: {
-        title: 'Kimi 运行时已损坏',
-        message: 'Kimi 运行时不可用。',
-        note: '重新解压或下载 PSX',
-        action: '重试',
-        command: 'retry'
-    },
-    failed: {
-        title: '启动失败',
-        message: '启动没有完成，可重试。',
-        action: '重试',
-        command: 'retry'
-    },
-    stopped: {
-        title: '已停止',
-        message: 'Kimi Web 服务已停止。',
-        action: '重新启动',
-        command: 'retry'
-    },
-    stopping: {
-        title: '正在停止',
-        message: '正在停止 Kimi Web 服务。'
-    },
-    exited: {
-        title: '已停止',
-        message: 'Kimi Web 服务已退出。',
-        action: '重新启动',
-        command: 'retry'
-    },
-    ready: {
-        title: '运行时已就绪',
-        message: '正在打开 Kimi Code Web。'
+function cardCopy(state) {
+    switch (state) {
+        case 'starting':
+            return { title: t('kimi.card.startingTitle'), message: t('kimi.card.startingMessage') };
+        case 'unavailable':
+            return {
+                title: t('kimi.card.unavailableTitle'),
+                message: t('kimi.card.unavailableMessage'),
+                note: t('kimi.card.unavailableNote'),
+                action: t('kimi.card.retry'),
+                command: 'retry'
+            };
+        case 'failed':
+            return {
+                title: t('kimi.card.failedTitle'),
+                message: t('kimi.card.failedMessage'),
+                action: t('kimi.card.retry'),
+                command: 'retry'
+            };
+        case 'stopped':
+            return {
+                title: t('kimi.card.stoppedTitle'),
+                message: t('kimi.card.stoppedMessage'),
+                action: t('kimi.card.restart'),
+                command: 'retry'
+            };
+        case 'stopping':
+            return { title: t('kimi.card.stoppingTitle'), message: t('kimi.card.stoppingMessage') };
+        case 'exited':
+            return {
+                title: t('kimi.card.exitedTitle'),
+                message: t('kimi.card.exitedMessage'),
+                action: t('kimi.card.restart'),
+                command: 'retry'
+            };
+        case 'ready':
+            return { title: t('kimi.card.readyTitle'), message: t('kimi.card.readyMessage') };
+        default:
+            return { title: 'Kimi Code Web', message: t('dsh.card.unknownStateMessage') };
     }
-};
+}
 
 export class KimiWebWorkspaceHost {
     constructor(container) {
@@ -87,6 +88,9 @@ export class KimiWebWorkspaceHost {
         this.panels = new Map();   // workspaceId -> panel element
         this.status = { state: 'stopped' };
         this.colorScheme = document.documentElement.style.colorScheme || '';
+        this.disposeLocaleChanged = onLocaleChanged(() => {
+            for (const panel of this.panels.values()) this.renderCard(panel, this.status);
+        });
         window.addEventListener('message', (event) => this.onFrameMessage(event));
     }
 
@@ -216,10 +220,7 @@ export class KimiWebWorkspaceHost {
 
         panel.classList.add('kimi-web-panel--status');
         panel.replaceChildren();
-        const copy = CARD_COPY[status.state] || {
-            title: 'Kimi Code Web',
-            message: '状态未知。'
-        };
+        const copy = cardCopy(status.state);
         const card = document.createElement('section');
         card.className = 'kimi-web-card';
         card.dataset.role = 'kimi-web-runtime-card';
@@ -251,9 +252,9 @@ export class KimiWebWorkspaceHost {
         message.className = 'kimi-web-card-message';
         message.dataset.role = 'kimi-web-runtime-message';
         message.textContent = status.state === 'unavailable' && status.reason
-            ? (UNAVAILABLE_REASON_COPY[status.reason] || copy.message)
+            ? (unavailableReason(status.reason) || copy.message)
             : status.state === 'failed' && status.errorClass
-                ? (FAILED_ERROR_COPY[status.errorClass] || copy.message)
+                ? (failedError(status.errorClass) || copy.message)
                 : copy.message;
         heading.appendChild(message);
         if (copy.note) {

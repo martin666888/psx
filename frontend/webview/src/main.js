@@ -22,6 +22,7 @@ import './css/runtime-diagnostics.css';
 import { Bridge } from './Bridge.js';
 import { BridgeEventType } from './BridgeMessages.js';
 import { workspaceNoticeLabel } from './WorkspaceNoticeCopy.js';
+import { t, onLocaleChanged } from './i18n.js';
 import { colorSchemeForBackground } from './colorScheme.js';
 import { PaneLayoutController } from './PaneLayoutController.js';
 import { installRuntimeDiagnostics } from './RuntimeDiagnostics.js';
@@ -31,6 +32,31 @@ import { DshWorkspaceHost } from './DshWorkspaceHost.js';
 import { KimiWebWorkspaceHost } from './KimiWebWorkspaceHost.js';
 
 installRuntimeDiagnostics();
+
+// Localize the static rail chrome (index.html carries zh-CN defaults only as
+// a no-JS fallback); aria-labels and titles resolve from the shell locale.
+(function localizeStaticChrome() {
+    const apply = () => {
+        for (const [role, key, withTitle] of [
+            ['history-toggle', 'rail.history', true],
+            ['workspace-create-toggle', 'rail.newWorkspace', false],
+            ['theme-toggle', 'rail.theme', true],
+            ['app-settings-toggle', 'rail.settings', true]
+        ]) {
+            const node = document.querySelector(`[data-role="${role}"]`);
+            if (!node) continue;
+            const label = t(key);
+            node.setAttribute('aria-label', label);
+            if (withTitle) node.title = label;
+        }
+        const rail = document.getElementById('activity-rail');
+        if (rail) rail.setAttribute('aria-label', t('rail.activityBar'));
+        const chrome = document.getElementById('workspace-chrome');
+        if (chrome) chrome.setAttribute('aria-label', t('rail.workspaceNav'));
+    };
+    apply();
+    onLocaleChanged(apply);
+})();
 
 (function () {
     // Neutral pane layout root (split-pane Phase 0 seam, always loaded — a
@@ -190,9 +216,9 @@ installRuntimeDiagnostics();
             const card = document.createElement('div');
             card.className = 'agent-load-error-card';
             const title = document.createElement('h2');
-            title.textContent = 'Agent UI unavailable';
+            title.textContent = t('agentLoad.title');
             const message = document.createElement('p');
-            message.textContent = 'The Agent panel could not load. Terminal workspaces remain available; restart PSX to retry the Agent panel.';
+            message.textContent = t('agentLoad.message');
             card.append(title, message);
             error.appendChild(card);
             error.hidden = true;

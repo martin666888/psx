@@ -5,7 +5,8 @@
 
 import { Bridge } from './Bridge.js';
 import { createProviderIconSvg } from './ProviderIcons.js';
-import { dshSwitchCta, DSH_RUNTIME_ERROR_COPY } from './DshRegistryUi.js';
+import { dshSwitchCta } from './DshRegistryUi.js';
+import { t, onLocaleChanged } from './i18n.js';
 
 function isSameFrameUrl(iframe, readyUrl) {
     try {
@@ -21,39 +22,41 @@ function expectedOriginFromReadyUrl(readyUrl) {
     catch { return null; }
 }
 
-const CARD_COPY = {
-    not_installed: {
-        title: '需要安装 DeepSeek Harness',
-        message: '安装会把锁定版本写入本机 PSX 目录，之后启动可直接复用。',
-        note: '安装会执行第三方 npm 原生脚本（node-pty / koffi）。',
-        action: '安装',
-        command: 'install'
-    },
-    installing: {
-        title: '正在安装运行时',
-        message: '正在写入本机 PSX 目录，请保持窗口打开。'
-    },
-    starting: {
-        title: '正在启动',
-        message: '正在拉起本地 DeepSeek Harness 服务。'
-    },
-    failed: {
-        title: '运行时不可用',
-        message: '安装或启动没有完成。可重试，不会改动 DSH 自己的会话和配置。',
-        action: '重试',
-        command: 'retry'
-    },
-    exited: {
-        title: '已停止',
-        message: '本地服务已退出。重新启动不会新建工作区。',
-        action: '重新启动',
-        command: 'retry'
-    },
-    ready: {
-        title: '运行时已就绪',
-        message: '正在打开 DeepSeek Harness。'
+// Card copy resolves through the shared i18n instance (shell namespace);
+// every state's strings live in locales/<lang>/shell.json under dsh.card.*.
+function cardCopy(state) {
+    const key = {
+        not_installed: null,
+        installing: 'installing',
+        starting: 'starting',
+        failed: 'failed',
+        exited: 'exited',
+        ready: 'ready'
+    }[state];
+    if (state === 'not_installed') {
+        return {
+            title: t('dsh.card.notInstalledTitle'),
+            message: t('dsh.card.notInstalledMessage'),
+            note: t('dsh.card.notInstalledNote'),
+            action: t('dsh.card.install'),
+            command: 'install'
+        };
     }
-};
+    if (key == null) {
+        return { title: 'DeepSeek Harness', message: t('dsh.card.unknownStateMessage') };
+    }
+    const suffix = key.charAt(0).toUpperCase() + key.slice(1);
+    const copy = { title: t(`dsh.card.${key}Title`), message: t(`dsh.card.${key}Message`) };
+    if (state === 'failed') {
+        copy.action = t('common.retry');
+        copy.command = 'retry';
+    } else if (state === 'exited') {
+        copy.action = t('dsh.card.restart');
+        copy.command = 'retry';
+    }
+    void suffix;
+    return copy;
+}
 
 export class DshWorkspaceHost {
     constructor(container) {
@@ -61,6 +64,9 @@ export class DshWorkspaceHost {
         this.panels = new Map();   // workspaceId -> panel element
         this.status = { state: 'not_installed' };
         this.colorScheme = document.documentElement.style.colorScheme || '';
+        this.disposeLocaleChanged = onLocaleChanged(() => {
+            for (const panel of this.panels.values()) this.renderCard(panel, this.status);
+        });
         // The injected DSH frame script posts export handoffs and a
         // pointerdown focus ping here. Validate the message origin against
         // the current DSH ready URL before forwarding so a spoofed
@@ -197,10 +203,7 @@ export class DshWorkspaceHost {
 
         panel.classList.add('dsh-panel--status');
         panel.replaceChildren();
-        const copy = CARD_COPY[status.state] || {
-            title: 'DeepSeek Harness',
-            message: '状态未知。'
-        };
+        const copy = cardCopy(status.state);
         const card = document.createElement('section');
         card.className = 'dsh-card';
         card.dataset.role = 'dsh-runtime-card';
@@ -232,7 +235,7 @@ export class DshWorkspaceHost {
         message.className = 'dsh-card-message';
         message.dataset.role = 'dsh-runtime-message';
         message.textContent = status.state === 'failed' && status.errorClass
-            ? (DSH_RUNTIME_ERROR_COPY[status.errorClass] || copy.message)
+            ? (t(`dsh.runtimeErrorCopy.${status.errorClass}`, { ns: 'shell' }) || copy.message)
             : copy.message;
         heading.appendChild(message);
         if (copy.note) {

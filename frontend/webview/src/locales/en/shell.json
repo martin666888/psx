@@ -1,5 +1,215 @@
 {
-  "app": {
-    "name": "PSX"
+  "attention": {
+    "permission": "Needs confirmation",
+    "question": "Awaiting reply",
+    "error": "Error",
+    "completed": "Completed"
+  },
+  "workspace": {
+    "fallbackTitle": "Workspace"
+  },
+  "tab": {
+    "closeTitle": "Close {{title}}"
+  },
+  "menu": {
+    "create": "New workspace",
+    "theme": "Theme",
+    "pane": "Workspace actions",
+    "fallback": "Menu"
+  },
+  "create": {
+    "placementFocused": "This column",
+    "placementNewRight": "New column on the right",
+    "columnCapTitle": "At most 3 columns are supported"
+  },
+  "common": {
+    "widthInsufficient": "Window is too narrow for another column",
+    "cancel": "Cancel",
+    "refresh": "Refresh",
+    "retry": "Retry"
+  },
+  "theme": {
+    "builtIn": "BUILT-IN",
+    "custom": "CUSTOM",
+    "updated": "Updated",
+    "current": "Current",
+    "confirm": "Confirm",
+    "openFolder": "Open theme folder"
+  },
+  "pane": {
+    "layoutSection": "Layout",
+    "splitRight": "Move to a new right-hand column",
+    "collapseSingle": "Merge into a single column"
+  },
+  "runtime": {
+    "section": "Runtime",
+    "start": "Start runtime",
+    "stop": "Stop runtime",
+    "restart": "Restart runtime"
+  },
+  "dsh": {
+    "updateConfirmBody": "PSX will download and verify the new version in the background, then switch over and restart the local DeepSeek Harness service. PSX itself does not restart; configuration and sessions are kept. The download may take a few minutes.",
+    "startBackgroundUpdate": "Start background update",
+    "currentVersionFallback": "current version",
+    "versionListLabel": "Available update versions",
+    "blockedNotice": "This PSX build does not support these versions: {{versions}}",
+    "deferredNotice": "Published but not installable yet: {{versions}} (ships with a future PSX update)",
+    "checkUpdate": "Check for updates",
+    "checking": "Checking for updates…",
+    "versionsLine": "{{from}} → {{to}}",
+    "versionFallback": "the new version",
+    "upToDate": "Up to date",
+    "updateTo": "Update to v{{version}}",
+    "backgroundUpdate": "Background update",
+    "recheck": "Re-check",
+    "newVersionsFound": "New versions found",
+    "requiresPsxUpdate": "Update PSX first to install them",
+    "notInstalledHint": "Install first",
+    "phaseDownloading": "Downloading{{version}} in the background…",
+    "downloadingHint": "May take a few minutes",
+    "phaseValidating": "Verifying{{version}}…",
+    "validatingHint": "The current service stays available",
+    "phaseSwitching": "Switching to{{version}}…",
+    "switchingHint": "PSX does not restart",
+    "phaseGeneric": "Updating in the background…",
+    "genericHint": "PSX does not restart",
+    "cancelUpdate": "Cancel update",
+    "keepCurrent": "Keep current version",
+    "cancelling": "Cancelling…",
+    "card": {
+      "notInstalledTitle": "DeepSeek Harness needs to be installed",
+      "notInstalledMessage": "Installing writes the locked version into PSX's local folder; later launches reuse it directly.",
+      "notInstalledNote": "Installation runs third-party npm native scripts (node-pty / koffi).",
+      "install": "Install",
+      "installingTitle": "Installing the runtime",
+      "installingMessage": "Writing into PSX's local folder — keep this window open.",
+      "startingTitle": "Starting",
+      "startingMessage": "Bringing up the local DeepSeek Harness service.",
+      "failedTitle": "Runtime unavailable",
+      "failedMessage": "The install or start did not complete. You can retry without touching DSH's own sessions or configuration.",
+      "exitedTitle": "Stopped",
+      "exitedMessage": "The local service has exited. Restarting does not create a new workspace.",
+      "restart": "Restart",
+      "readyTitle": "Runtime is ready",
+      "readyMessage": "Opening DeepSeek Harness.",
+      "unknownStateMessage": "Unknown state."
+    },
+    "runtimeErrorCopy": {
+      "runtime_unavailable": "Runtime unavailable.",
+      "process_exited": "The DSH process exited unexpectedly.",
+      "start_timeout": "DSH did not become ready within 90 seconds.",
+      "launch_failed": "The DSH process could not be started.",
+      "install_failed": "Install failed: npm ci did not finish successfully.",
+      "install_cancelled": "The install was stopped.",
+      "portable_node_missing": "PSX's portable Node.js runtime is missing — cannot install.",
+      "seed_missing": "The DSH install seed files are missing — cannot install.",
+      "entry_missing": "The entry file (lib/bin.js) is missing after install.",
+      "version_unreadable": "The DSH version could not be read after install.",
+      "version_mismatch": "The installed result does not match the locked version and was refused.",
+      "install_switch_failed": "Switching the install directory failed; the runtime was not enabled.",
+      "post_install_unavailable": "The runtime is unavailable after install.",
+      "registry_network": "The network is unavailable — cannot reach the npm registry. Check the connection and retry.",
+      "registry_not_found": "The locked version was not found in the registry.",
+      "integrity_failed": "The install package failed the integrity check.",
+      "settings_write_failed": "Could not save the download-source setting; no retry was started.",
+      "catalog_corrupt": "The PSX installation is damaged. Please reinstall."
+    },
+    "updateErrorCopy": {
+      "update_requires_psx": "Please update PSX first.",
+      "update_registry_changed": "The download source changed — please check for updates again.",
+      "update_invalid_version": "That update version is invalid — please check for updates again.",
+      "update_cancelled": "The update was stopped; the current version is unchanged.",
+      "update_failed": "The update failed; the current version keeps working.",
+      "update_switch_failed": "Switching to the update failed; the previous version was kept.",
+      "update_relaunch_failed": "The new version failed to start; the previous version was restored.",
+      "not_installed": "DeepSeek Harness is not installed yet.",
+      "update_node_missing": "The portable Node.js runtime is missing — cannot check for updates.",
+      "invalid_versions": "The npm registry returned invalid versions; no update was performed.",
+      "candidate_invalid": "That candidate version is invalid or not newer than the current one.",
+      "registry_config_missing": "The DSH registry configuration is missing — cannot update safely.",
+      "update_workspace_failed": "Could not prepare the DSH update directory.",
+      "receipt_write_failed": "Could not record the update source; the current version is unchanged.",
+      "update_marker_failed": "The update downloaded but the activation marker could not be written.",
+      "check_failed": "Checking for updates failed; the current version keeps working.",
+      "registry_network": "Cannot reach the npm registry — check the network connection and retry.",
+      "registry_not_found": "No usable version was found in the registry.",
+      "integrity_failed": "The downloaded update failed the integrity check; the current version is unchanged.",
+      "lock_unavailable": "That version cannot be installed yet — please update PSX and retry.",
+      "catalog_corrupt": "The PSX installation is damaged. Please reinstall.",
+      "settings_write_failed": "Could not save the download-source setting; no retry was started."
+    }
+  },
+  "kimi": {
+    "starting": "Starting…",
+    "stopping": "Stopping…",
+    "validateOnly": "Re-validate runtime only",
+    "unavailableReasonCopy": {
+      "portable_node_missing": "PSX's bundled Node runtime is missing.",
+      "runtime_missing": "The Kimi runtime files are missing.",
+      "runtime_invalid": "The Kimi runtime files are invalid."
+    },
+    "failedErrorCopy": {
+      "launch_failed": "The Kimi Web process failed to launch.",
+      "start_timeout": "Startup timed out — please retry.",
+      "health_check_failed": "The service health check did not pass."
+    },
+    "card": {
+      "startingTitle": "Starting Kimi Web",
+      "startingMessage": "Bringing up the local Kimi Web service — one moment.",
+      "unavailableTitle": "Kimi runtime is damaged",
+      "unavailableMessage": "The Kimi runtime is unavailable.",
+      "unavailableNote": "Re-extract or re-download PSX",
+      "retry": "Retry",
+      "failedTitle": "Start failed",
+      "failedMessage": "The start did not complete — you can retry.",
+      "stoppedTitle": "Stopped",
+      "stoppedMessage": "The Kimi Web service has stopped.",
+      "restart": "Restart",
+      "stoppingTitle": "Stopping",
+      "stoppingMessage": "Stopping the Kimi Web service.",
+      "exitedTitle": "Stopped",
+      "exitedMessage": "The Kimi Web service has exited.",
+      "readyTitle": "Runtime is ready",
+      "readyMessage": "Opening Kimi Code Web."
+    }
+  },
+  "notice": {
+    "generic": "The operation did not complete — please retry.",
+    "workspace.worktree_conflict": "Multiple visible Agents are using the same worktree; watch for concurrent modification conflicts.",
+    "dsh.export.invalid_response": "Export failed: the service returned an invalid response.",
+    "dsh.export.invalid_content_type": "Export failed: the session data format is invalid.",
+    "dsh.export.invalid_data": "Export failed: the session data is invalid.",
+    "dsh.export.too_large": "Export failed: the file is too large and was cancelled.",
+    "dsh.export.write_failed": "Export failed: writing the file did not complete.",
+    "dsh.export.connect_failed": "Export failed: cannot reach the local service.",
+    "kimi.export.not_ready": "Export failed: the local service is not ready yet — try again shortly.",
+    "kimi.export.invalid_request": "Export failed: the export request is invalid.",
+    "kimi.export.invalid_response": "Export failed: the service returned an invalid response.",
+    "kimi.export.invalid_content_type": "Export failed: the session data format is invalid.",
+    "kimi.export.invalid_data": "Export failed: the session data is invalid.",
+    "kimi.export.too_large": "Export failed: the file is too large and was cancelled.",
+    "kimi.export.write_failed": "Export failed: writing the file did not complete.",
+    "kimi.export.connect_failed": "Export failed: cannot reach the local service."
+  },
+  "diagnostics": {
+    "generic": "Something went wrong; some content may not have updated correctly.",
+    "dismiss": "Dismiss",
+    "dismissAria": "Dismiss the interface error notice"
+  },
+  "agentLoad": {
+    "title": "Agent UI unavailable",
+    "message": "The Agent panel could not load. Terminal workspaces remain available; restart PSX to retry the Agent panel."
+  },
+  "rail": {
+    "activityBar": "Global actions",
+    "history": "History",
+    "newWorkspace": "New workspace",
+    "theme": "Theme",
+    "settings": "PSX settings",
+    "workspaceNav": "Workspace navigation"
+  },
+  "panes": {
+    "dividerAria": "Resize adjacent columns",
+    "dividerTitle": "Drag to resize; double-click equalizes the pair"
   }
 }

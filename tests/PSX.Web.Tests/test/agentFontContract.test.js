@@ -8,7 +8,7 @@ import { repositoryRoot } from './agentHarness.js';
 
 const webview = path.join(repositoryRoot, 'frontend', 'webview');
 const agent = path.join(repositoryRoot, 'frontend', 'agent', 'src');
-const uiStack = 'Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI, Segoe UI Emoji, sans-serif';
+const uiStack = 'Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI, Microsoft JhengHei UI, Yu Gothic UI, Meiryo, Segoe UI Emoji, sans-serif';
 const monoStack = 'PSX Maple Mono, Segoe UI Emoji, Microsoft YaHei UI, monospace';
 
 function read(...segments) {
@@ -112,8 +112,8 @@ describe('bundled Agent typography contract', () => {
 
   it('keeps natural-language surfaces proportional and technical content mono', () => {
     const tokens = read('frontend', 'webview', 'src', 'css', 'agent', 'tokens.css');
-    assert.ok(tokens.includes(`--agent-font-ui: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Segoe UI Emoji", sans-serif`));
-    assert.ok(tokens.includes(`--agent-font-mono: "PSX Maple Mono", "Segoe UI Emoji", "Microsoft YaHei UI", monospace`));
+    assert.ok(tokens.includes(`--agent-font-ui: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft JhengHei UI", "Yu Gothic UI", Meiryo, "Segoe UI Emoji", sans-serif`));
+    assert.ok(tokens.includes(`--agent-font-mono: "PSX Maple Mono", "Cascadia Mono", Consolas, "Microsoft YaHei UI", "Microsoft JhengHei UI", "Yu Gothic UI", Meiryo, monospace`));
 
     const monoCss = [
       read('frontend', 'webview', 'src', 'css', 'agent', 'markdown.css'),

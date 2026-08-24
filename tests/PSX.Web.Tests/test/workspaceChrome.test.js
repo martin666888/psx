@@ -65,7 +65,7 @@ test('chrome merges layout and catalog in either arrival order without replacing
     { columnId: 'column-1', tabs: [{ workspaceId: 'workspace-1', kind: 'terminal' }], activeTabId: 'workspace-1', ratio: 1 }
   ]), new Map([['column-1', { left: 40, top: 40, width: 960, height: 700 }]]));
   const strip = document.querySelector('.workspace-tab-strip');
-  assert.equal(strip.querySelector('.workspace-tab-title').textContent, 'Workspace');
+  assert.equal(strip.querySelector('.workspace-tab-title').textContent, '工作区');
 
   chrome.applyCatalog({
     revision: 7,
@@ -896,7 +896,7 @@ test('kimi_web tab menu switches the runtime action by status', async () => {
   // ready -> the stop action.
   chrome.applyKimiWebRuntimeStatus({ state: 'ready' });
   openMenu();
-  assert.equal(primaryText(runtimeRow()), '停止');
+  assert.equal(primaryText(runtimeRow()), '停止运行时');
   runtimeRow().click();
   assert.deepEqual(runtime.postedMessages.at(-1), { type: 'kimi_web_command', name: 'stop' });
 
