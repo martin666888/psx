@@ -50,10 +50,24 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
     public event EventHandler<ThemeActionEventArgs>? ThemeActionRequested;
     public event EventHandler<AppSettingsCommandEventArgs>? AppSettingsCommandRequested;
 
+    /// <summary>Resolves the current display locale for the bootstrap URL;
+    /// deferred so the settings coordinator is only pulled when navigation
+    /// actually happens.</summary>
+    private readonly Func<string>? _resolvedLocaleProvider;
+
     public TerminalBridgeService(ISettingsService settingsService, RuntimeLocator runtimeLocator)
+        : this(settingsService, runtimeLocator, null)
+    {
+    }
+
+    public TerminalBridgeService(
+        ISettingsService settingsService,
+        RuntimeLocator runtimeLocator,
+        Func<string>? resolvedLocaleProvider)
     {
         _settingsService = settingsService;
         _runtimeLocator = runtimeLocator;
+        _resolvedLocaleProvider = resolvedLocaleProvider;
     }
 
     public async Task InitializeAsync(WebView2 webView)
@@ -89,9 +103,15 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
             CoreWebView2HostResourceAccessKind.Allow);
 
         // Navigate to the packaged frontend under the /app/ virtual-host path.
-        // Debug builds may point at a loopback Vite dev server for HMR through
+        // The resolved locale rides on the query so i18next can initialize
+        // synchronously before any controller renders. Language switches later
+        // broadcast over the bridge — the shell never re-navigates. Debug
+        // builds may point at a loopback Vite dev server for HMR through
         // PSX_WEB_DEV_SERVER; Release builds ignore the variable entirely.
-        var navigationUrl = "https://psx.local/app/index.html";
+        var locale = _resolvedLocaleProvider?.Invoke();
+        var navigationUrl = string.IsNullOrWhiteSpace(locale)
+            ? "https://psx.local/app/index.html"
+            : $"https://psx.local/app/index.html?locale={Uri.EscapeDataString(locale)}";
 #if DEBUG
         var devServer = Environment.GetEnvironmentVariable("PSX_WEB_DEV_SERVER");
         if (!string.IsNullOrWhiteSpace(devServer)
@@ -101,6 +121,8 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
         {
             _debugDevServerOrigin = devUri.GetLeftPart(UriPartial.Authority);
             navigationUrl = devUri.ToString();
+            if (!string.IsNullOrWhiteSpace(locale))
+                navigationUrl += (devUri.Query.Length > 0 ? "&" : "?") + $"locale={Uri.EscapeDataString(locale)}";
         }
 #endif
         _hostPolicy?.Dispose();

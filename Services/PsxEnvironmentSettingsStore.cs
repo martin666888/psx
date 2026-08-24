@@ -2,18 +2,21 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using PSX.Models;
 
 namespace PSX.Services;
 
 /// <summary>
 /// Machine-local environment preferences under <c>~/.psx/environment.json</c>.
-/// Schema is closed: only <c>dshRegistry</c> is persisted; unknown fields are
-/// ignored on read. Writes are tmp + replace; the in-memory cache updates
-/// only after a successful replace.
+/// Schema v2 persists <c>dshRegistry</c> and <c>localeMode</c>; unknown
+/// fields are ignored on read and schema-v1 documents are upgraded in place.
+/// Writes are tmp + replace; the in-memory cache updates only after a
+/// successful replace. The locale fallback (upgrade = zh-Hans, fresh install
+/// = system) is injected from <see cref="PsxInstallState"/> at composition.
 /// </summary>
 public sealed class PsxEnvironmentSettingsStore
 {
-    private const int SchemaVersion = 1;
+    private const int SchemaVersion = 2;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -24,13 +27,19 @@ public sealed class PsxEnvironmentSettingsStore
 
     private readonly object _lock = new();
     private readonly string _path;
+    private readonly string _fallbackLocaleMode;
     private PsxEnvironmentSettingsSnapshot? _cached;
 
-    public PsxEnvironmentSettingsStore(string rootDirectory)
+    public PsxEnvironmentSettingsStore(
+        string rootDirectory,
+        string fallbackLocaleMode = LocaleDescriptor.FreshInstallDefaultMode)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(rootDirectory);
         RootDirectory = Path.GetFullPath(rootDirectory);
         _path = Path.Combine(RootDirectory, "environment.json");
+        _fallbackLocaleMode = LocaleDescriptor.IsMode(fallbackLocaleMode)
+            ? fallbackLocaleMode
+            : LocaleDescriptor.System;
     }
 
     public string RootDirectory { get; }
@@ -44,7 +53,7 @@ public sealed class PsxEnvironmentSettingsStore
     {
         lock (_lock)
         {
-            var current = _cached ??= ReadFromDisk();
+            var current = EnsureCache();
             _cached = current with { Revision = current.Revision + 1 };
         }
     }
@@ -52,7 +61,7 @@ public sealed class PsxEnvironmentSettingsStore
     public PsxEnvironmentSettingsSnapshot GetSnapshot()
     {
         lock (_lock)
-            return _cached ??= ReadFromDisk();
+            return EnsureCache();
     }
 
     public PsxEnvironmentSetResult SetDshRegistry(string? key)
@@ -62,7 +71,7 @@ public sealed class PsxEnvironmentSettingsStore
 
         lock (_lock)
         {
-            var current = _cached ??= ReadFromDisk();
+            var current = EnsureCache();
             if (string.Equals(current.DshRegistry, descriptor.Key, StringComparison.Ordinal))
                 return new(true, false, current, null, null);
 
@@ -85,33 +94,99 @@ public sealed class PsxEnvironmentSettingsStore
         }
     }
 
-    private PsxEnvironmentSettingsSnapshot ReadFromDisk()
+    /// <summary>Persist a UI locale mode. Same-value sets are no-ops: no
+    /// revision bump. Invalid values are rejected without touching disk.</summary>
+    public PsxEnvironmentSetResult SetLocale(string? mode)
+    {
+        if (!LocaleDescriptor.IsMode(mode))
+            return Fail(GetSnapshot(), "语言设置无效。");
+
+        lock (_lock)
+        {
+            var current = EnsureCache();
+            if (string.Equals(current.LocaleMode, mode, StringComparison.Ordinal))
+                return new(true, false, current, null, null);
+
+            var next = current with
+            {
+                Revision = current.Revision + 1,
+                LocaleMode = mode!
+            };
+            try
+            {
+                WriteDocument(next);
+            }
+            catch (Exception)
+            {
+                return Fail(current, "无法保存语言设置，未开始重试。");
+            }
+
+            _cached = next;
+            return new(true, true, next, null, null);
+        }
+    }
+
+    private PsxEnvironmentSettingsSnapshot EnsureCache()
+    {
+        if (_cached != null)
+            return _cached;
+        var (snapshot, migrate) = ReadFromDisk();
+        _cached = snapshot;
+        // Persist the schema-v2 upgrade (and a fresh install's default) once,
+        // so the pinned language choice survives and is inspectable on disk.
+        // A corrupt document is left untouched for manual recovery.
+        if (migrate)
+        {
+            try { WriteDocument(_cached); }
+            catch (Exception) { /* retry lazily on the next mutation */ }
+        }
+
+        return _cached;
+    }
+
+    private (PsxEnvironmentSettingsSnapshot Snapshot, bool Migrate) ReadFromDisk()
     {
         try
         {
             if (!File.Exists(_path))
-                return PsxEnvironmentSettingsSnapshot.Default;
+                return (DefaultSnapshot(), Migrate: true);
             using var document = JsonDocument.Parse(File.ReadAllText(_path));
             var root = document.RootElement;
-            if (!root.TryGetProperty("schemaVersion", out var schema)
-                || schema.ValueKind != JsonValueKind.Number
-                || schema.GetInt32() != SchemaVersion)
-            {
-                return PsxEnvironmentSettingsSnapshot.Default;
-            }
+            var storedSchema = root.TryGetProperty("schemaVersion", out var schema)
+                && schema.ValueKind == JsonValueKind.Number
+                    ? schema.GetInt32()
+                    : -1;
+            if (storedSchema is not (1 or 2))
+                return (DefaultSnapshot(), Migrate: false);
 
             string? stored = null;
             if (root.TryGetProperty("dshRegistry", out var registry)
                 && registry.ValueKind == JsonValueKind.String)
                 stored = registry.GetString();
             var descriptor = DshRegistryDescriptor.ResolveStoredOrOfficial(stored);
-            return new PsxEnvironmentSettingsSnapshot(0, descriptor.Key);
+
+            string? storedLocale = null;
+            if (root.TryGetProperty("localeMode", out var locale)
+                && locale.ValueKind == JsonValueKind.String)
+                storedLocale = locale.GetString();
+
+            // A v1 document never carried a language field: it gets the
+            // injected default (zh-Hans for an upgrade, system for fresh).
+            var localeMode = LocaleDescriptor.IsMode(storedLocale)
+                ? storedLocale!
+                : _fallbackLocaleMode;
+            return (
+                new PsxEnvironmentSettingsSnapshot(0, descriptor.Key, localeMode),
+                Migrate: storedSchema == 1);
         }
         catch (Exception)
         {
-            return PsxEnvironmentSettingsSnapshot.Default;
+            return (DefaultSnapshot(), Migrate: false);
         }
     }
+
+    private PsxEnvironmentSettingsSnapshot DefaultSnapshot() =>
+        new(0, DshRegistryDescriptor.OfficialKey, _fallbackLocaleMode);
 
     private void WriteDocument(PsxEnvironmentSettingsSnapshot snapshot)
     {
@@ -120,7 +195,8 @@ public sealed class PsxEnvironmentSettingsStore
             new EnvironmentDocument
             {
                 SchemaVersion = SchemaVersion,
-                DshRegistry = snapshot.DshRegistry
+                DshRegistry = snapshot.DshRegistry,
+                LocaleMode = snapshot.LocaleMode
             },
             JsonOptions);
         var bytes = Encoding.UTF8.GetBytes(payload);
@@ -139,16 +215,20 @@ public sealed class PsxEnvironmentSettingsStore
     {
         public int SchemaVersion { get; set; }
         public string DshRegistry { get; set; } = DshRegistryDescriptor.OfficialKey;
+        public string LocaleMode { get; set; } = LocaleDescriptor.FreshInstallDefaultMode;
     }
 }
 
-public sealed record PsxEnvironmentSettingsSnapshot(long Revision, string DshRegistry)
+public sealed record PsxEnvironmentSettingsSnapshot(long Revision, string DshRegistry, string LocaleMode)
 {
     public static PsxEnvironmentSettingsSnapshot Default { get; } =
-        new(0, DshRegistryDescriptor.OfficialKey);
+        new(0, DshRegistryDescriptor.OfficialKey, LocaleDescriptor.FreshInstallDefaultMode);
 
     public DshRegistryDescriptor Registry =>
         DshRegistryDescriptor.ResolveStoredOrOfficial(DshRegistry);
+
+    /// <summary>The concrete display language this mode resolves to.</summary>
+    public string ResolvedLocale => LocaleDescriptor.Resolve(LocaleMode);
 }
 
 public sealed record PsxEnvironmentSetResult(

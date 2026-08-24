@@ -4,6 +4,7 @@
              xmlns:local="clr-namespace:PSX.Controls"
              xmlns:models="clr-namespace:PSX.Models"
              xmlns:converters="clr-namespace:PSX.Converters"
+             xmlns:properties="clr-namespace:PSX.Properties"
              Height="40">
     <UserControl.Resources>
         <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
@@ -387,7 +388,7 @@
                         <CheckBox IsChecked="{Binding NewWorkspaceToNewPane, Mode=TwoWay}"
                                   Style="{StaticResource NewWorkspacePlacementCheckBoxStyle}"
                                   Margin="6,2,6,4"
-                                  Content="新建到右侧列"/>
+                                  Content="{x:Static properties:Strings.TabNewToRightColumn}"/>
 
                         <Button Style="{StaticResource NewWorkspaceMenuRowStyle}"
                                 AutomationProperties.Name="New Terminal"
@@ -471,7 +472,7 @@
                             Command="{Binding PlacementTarget.Tag.MoveTabToNewPaneCommand, ElementName=TabContextPopup}"
                             CommandParameter="{Binding SessionId}"
                             Click="OnTabContextMenuActionClick">
-                        <TextBlock Text="移到新列"
+                        <TextBlock Text="{x:Static properties:Strings.TabMoveToNewColumn}"
                                    Foreground="{DynamicResource TextPrimaryBrush}"
                                    FontSize="12"/>
                     </Button>
@@ -479,7 +480,7 @@
                             Visibility="{Binding IsSplit, Converter={StaticResource BoolToVisibilityConverter}}"
                             Command="{Binding PlacementTarget.Tag.CollapseToSinglePaneCommand, ElementName=TabContextPopup}"
                             Click="OnTabContextMenuActionClick">
-                        <TextBlock Text="合并为单列"
+                        <TextBlock Text="{x:Static properties:Strings.TabMergeIntoSingleColumn}"
                                    Foreground="{DynamicResource TextPrimaryBrush}"
                                    FontSize="12"/>
                     </Button>

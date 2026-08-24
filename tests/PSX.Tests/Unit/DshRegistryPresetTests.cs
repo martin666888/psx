@@ -543,7 +543,8 @@ public sealed class DshRegistryPresetTests
         Assert.IsTrue(DshRegistryDescriptor.TryGet(snapshot.DshRegistry, out _));
         using var document = JsonDocument.Parse(
             File.ReadAllText(Path.Combine(workspace.Path, "environment.json")));
-        Assert.AreEqual(1, document.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.AreEqual(2, document.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.IsTrue(LocaleDescriptor.IsMode(document.RootElement.GetProperty("localeMode").GetString()));
         Assert.IsTrue(DshRegistryDescriptor.TryGet(
             document.RootElement.GetProperty("dshRegistry").GetString(), out _));
     }

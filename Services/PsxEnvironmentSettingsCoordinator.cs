@@ -1,3 +1,5 @@
+using PSX.Models;
+
 namespace PSX.Services;
 
 /// <summary>
@@ -8,6 +10,7 @@ namespace PSX.Services;
 public sealed class PsxEnvironmentSettingsCoordinator
 {
     public const string SettingsWriteFailedMessage = "无法保存下载源设置，未开始重试。";
+    public const string LocaleWriteFailedMessage = "无法保存语言设置。";
 
     private readonly PsxEnvironmentSettingsStore _store;
     private readonly IAgentBridgeService _bridge;
@@ -23,7 +26,13 @@ public sealed class PsxEnvironmentSettingsCoordinator
     /// <summary>Fired after a successful persist that actually changed dshRegistry.</summary>
     public event EventHandler<PsxEnvironmentSettingsSnapshot>? DshRegistryChanged;
 
+    /// <summary>Fired after a successful persist that actually changed localeMode.</summary>
+    public event EventHandler<PsxEnvironmentSettingsSnapshot>? LocaleChanged;
+
     public PsxEnvironmentSettingsSnapshot GetSnapshot() => _store.GetSnapshot();
+
+    /// <summary>The concrete display language for the persisted mode.</summary>
+    public string ResolvedLocale => GetSnapshot().ResolvedLocale;
 
     /// <summary>
     /// Persist <paramref name="key"/> and return the already-written snapshot.
@@ -38,7 +47,16 @@ public sealed class PsxEnvironmentSettingsCoordinator
         return result;
     }
 
-    public Task HandleCommandAsync(string requestId, string action, string? registry)
+    /// <summary>Persist a UI locale mode; same-value sets are no-ops.</summary>
+    public PsxEnvironmentSetResult SetLocale(string? mode)
+    {
+        var result = _store.SetLocale(mode);
+        if (result.Success && result.Changed)
+            LocaleChanged?.Invoke(this, result.Snapshot);
+        return result;
+    }
+
+    public Task HandleCommandAsync(string requestId, string action, string? registry, string? localeMode = null)
     {
         if (string.IsNullOrWhiteSpace(requestId))
             return Task.CompletedTask;
@@ -46,23 +64,41 @@ public sealed class PsxEnvironmentSettingsCoordinator
         if (action == "get")
             return PublishSnapshotAsync(GetSnapshot(), requestId, null, null);
 
+        if (action == "set_locale")
+        {
+            var result = SetLocale(localeMode);
+            if (!result.Success)
+            {
+                return PublishSnapshotAsync(
+                    result.Snapshot,
+                    requestId,
+                    result.ErrorClass ?? DshErrorClass.SettingsWriteFailed,
+                    result.ErrorMessage ?? LocaleWriteFailedMessage);
+            }
+
+            var reply = PublishSnapshotAsync(result.Snapshot, requestId, null, null);
+            if (!result.Changed)
+                return reply;
+            return Task.WhenAll(reply, PublishSnapshotAsync(result.Snapshot, null, null, null));
+        }
+
         if (action != "set_dsh_registry")
             return Task.CompletedTask;
 
-        var result = SetDshRegistry(registry);
-        if (!result.Success)
+        var setResult = SetDshRegistry(registry);
+        if (!setResult.Success)
         {
             return PublishSnapshotAsync(
-                result.Snapshot,
+                setResult.Snapshot,
                 requestId,
-                result.ErrorClass ?? DshErrorClass.SettingsWriteFailed,
-                result.ErrorMessage ?? SettingsWriteFailedMessage);
+                setResult.ErrorClass ?? DshErrorClass.SettingsWriteFailed,
+                setResult.ErrorMessage ?? SettingsWriteFailedMessage);
         }
 
-        var reply = PublishSnapshotAsync(result.Snapshot, requestId, null, null);
-        if (!result.Changed)
-            return reply;
-        return Task.WhenAll(reply, PublishSnapshotAsync(result.Snapshot, null, null, null));
+        var setReply = PublishSnapshotAsync(setResult.Snapshot, requestId, null, null);
+        if (!setResult.Changed)
+            return setReply;
+        return Task.WhenAll(setReply, PublishSnapshotAsync(setResult.Snapshot, null, null, null));
     }
 
     /// <summary>Broadcast after a DSH CTA successfully changed the registry.</summary>
@@ -83,6 +119,10 @@ public sealed class PsxEnvironmentSettingsCoordinator
             type = "app_settings_snapshot",
             revision = snapshot.Revision,
             dshRegistry = snapshot.DshRegistry,
+            // Persisted preference plus the concrete display language it
+            // resolves to; the frontend bootstraps and switches on these.
+            localeMode = snapshot.LocaleMode,
+            resolvedLocale = snapshot.ResolvedLocale,
             requestId,
             errorClass,
             errorMessage

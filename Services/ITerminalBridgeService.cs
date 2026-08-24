@@ -69,6 +69,8 @@ public sealed class AppSettingsCommandEventArgs : EventArgs
     public required string RequestId { get; init; }
     public required string Action { get; init; }
     public string? Registry { get; init; }
+    /// <summary>Carried by <c>set_locale</c> only.</summary>
+    public string? LocaleMode { get; init; }
 }
 
 public sealed class KimiWebCommandEventArgs : EventArgs

@@ -58,6 +58,9 @@ public sealed class TerminalMessage
     [JsonPropertyName("registry")]
     public string? Registry { get; set; }
 
+    [JsonPropertyName("localeMode")]
+    public string? LocaleMode { get; set; }
+
     [JsonPropertyName("url")]
     public string? Url { get; set; }
 

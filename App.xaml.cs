@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.IO;
+using System.Threading;
 using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
 using PSX.Models;
@@ -17,6 +19,16 @@ public partial class App : Application
 
         try
         {
+            // Must precede every service resolution: the DSH/Kimi supervisors
+            // create ~/.psx subdirectories in their constructors, and the
+            // locale migration needs to know whether the install predates
+            // this first run.
+            PsxInstallState.Record();
+            ApplyUiCulture(LocaleDescriptor.Resolve(
+                PsxInstallState.PreExistingInstall
+                    ? LocaleDescriptor.UpgradeDefaultMode
+                    : LocaleDescriptor.FreshInstallDefaultMode));
+
             var settingsService = new SettingsService();
             var settings = settingsService.GetSettings();
             AppearanceService.ApplyWpf(AppearanceSettings.FromSettings(settings));
@@ -30,9 +42,27 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"启动失败: {ex.Message}\n\n{ex.StackTrace}", "PSX 错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(
+                string.Format(
+                    CultureInfo.CurrentUICulture,
+                    PSX.Properties.Strings.StartupFailedFormat,
+                    ex.Message,
+                    ex.StackTrace),
+                PSX.Properties.Strings.ErrorDialogTitle,
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
             Shutdown(1);
         }
+    }
+
+    /// <summary>Set the WPF UI culture so .resx reads (MessageBox, dialogs)
+    /// pick the resolved display language. Later switches update this through
+    /// the coordinator's LocaleChanged event.</summary>
+    private static void ApplyUiCulture(string resolvedLocale)
+    {
+        var culture = new CultureInfo(resolvedLocale);
+        CultureInfo.DefaultThreadCurrentUICulture = culture;
+        Thread.CurrentThread.CurrentUICulture = culture;
     }
 
     private static void ConfigureServices(IServiceCollection services, ISettingsService settingsService)
@@ -42,7 +72,10 @@ public partial class App : Application
         services.AddSingleton<IThemeService, ThemeService>();
         services.AddSingleton<IAppearanceService, AppearanceService>();
         services.AddSingleton<ConPtyService>();
-        services.AddSingleton<ITerminalBridgeService, TerminalBridgeService>();
+        services.AddSingleton<ITerminalBridgeService>(sp => new TerminalBridgeService(
+            sp.GetRequiredService<ISettingsService>(),
+            sp.GetRequiredService<RuntimeLocator>(),
+            () => sp.GetRequiredService<PsxEnvironmentSettingsCoordinator>().GetSnapshot().ResolvedLocale));
         services.AddSingleton<ITabManagementService, TabManagementService>();
         services.AddSingleton<IAgentBridgeService, AgentBridgeService>();
         services.AddSingleton<IAgentThreadStore, AgentThreadStore>();
@@ -53,7 +86,12 @@ public partial class App : Application
         services.AddSingleton(sp => new AgentProfileStore(
             Path.Combine(sp.GetRequiredService<IAgentThreadStore>().RootDirectory, "profile")));
         services.AddSingleton(sp => new PsxEnvironmentSettingsStore(
-            sp.GetRequiredService<IAgentThreadStore>().RootDirectory));
+            sp.GetRequiredService<IAgentThreadStore>().RootDirectory,
+            // Upgraded installs keep today's Chinese UI; fresh installs follow
+            // Windows (Models/LocaleDescriptor.cs).
+            PsxInstallState.PreExistingInstall
+                ? LocaleDescriptor.UpgradeDefaultMode
+                : LocaleDescriptor.FreshInstallDefaultMode));
         services.AddSingleton<PsxEnvironmentSettingsCoordinator>();
         // Global Usage aggregation (thread activity + provider exact-usage
         // sources). Singleton so its short-TTL cache is shared across requests.

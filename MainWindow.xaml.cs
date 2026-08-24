@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Windows;
 using System.Windows.Interop;
 using PSX.Models;
@@ -64,6 +66,8 @@ public partial class MainWindow : Window
         _environmentSettings = environmentSettings;
 
         DataContext = _viewModel;
+        ApplyUiCulture(_environmentSettings.ResolvedLocale);
+        _environmentSettings.LocaleChanged += (_, snapshot) => ApplyUiCulture(snapshot.ResolvedLocale);
         _bridgeService.FrontendReady += OnFrontendReady;
         _bridgeService.ThemeActionRequested += OnThemeActionRequested;
         _bridgeService.AppSettingsCommandRequested += OnAppSettingsCommandRequested;
@@ -103,8 +107,18 @@ public partial class MainWindow : Window
         {
             if (_environmentSettings == null)
                 return;
-            await _environmentSettings.HandleCommandAsync(e.RequestId, e.Action, e.Registry);
+            await _environmentSettings.HandleCommandAsync(e.RequestId, e.Action, e.Registry, e.LocaleMode);
         });
+
+    /// <summary>WPF reads .resx through the current UI culture; a locale
+    /// switch applies to strings read after this point (MessageBox and the
+    /// hidden compatibility menus). The WebView re-renders independently.</summary>
+    private static void ApplyUiCulture(string resolvedLocale)
+    {
+        var culture = new CultureInfo(resolvedLocale);
+        CultureInfo.DefaultThreadCurrentUICulture = culture;
+        Thread.CurrentThread.CurrentUICulture = culture;
+    }
 
     private Task PublishThemeCatalogAsync()
     {
@@ -194,7 +208,15 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"初始化失败: {ex.Message}\n\n{ex.StackTrace}", "PSX 错误", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(
+                string.Format(
+                    CultureInfo.CurrentUICulture,
+                    PSX.Properties.Strings.InitializationFailedFormat,
+                    ex.Message,
+                    ex.StackTrace),
+                PSX.Properties.Strings.ErrorDialogTitle,
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
         }
     }
 
@@ -235,14 +257,13 @@ public partial class MainWindow : Window
         }
 
         // WebView2 is required but not installed. Show a clear message and exit.
-        var message =
-            "未检测到 Microsoft Edge WebView2 Runtime，PSX 无法启动。\n\n" +
-            "请安装 WebView2 Runtime 后重试。可联系 IT 管理员获取帮助，或从微软官网下载。\n\n" +
-            "WebView2 是 PSX 界面渲染所必需的组件。";
-
         await Dispatcher.BeginInvoke(() =>
         {
-            MessageBox.Show(message, "缺少 WebView2 Runtime", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(
+                PSX.Properties.Strings.WebView2MissingBody,
+                PSX.Properties.Strings.WebView2MissingTitle,
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
             Application.Current.Shutdown(1);
         });
     }

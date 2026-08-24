@@ -416,7 +416,7 @@ internal static class TerminalBridgeMessageParser
                     });
                 return true;
 
-            case "app_settings_command" when source.Action is "get" or "set_dsh_registry":
+            case "app_settings_command" when source.Action is "get" or "set_dsh_registry" or "set_locale":
                 {
                     var requestId = source.RequestId?.Trim();
                     if (string.IsNullOrWhiteSpace(requestId) || requestId.Length > 128)
@@ -429,13 +429,24 @@ internal static class TerminalBridgeMessageParser
                         registry = descriptor.Key;
                     }
 
+                    // An invalid locale mode is rejected whole, mirroring the
+                    // registry preset gate: nothing reaches the coordinator.
+                    string? localeMode = null;
+                    if (source.Action == "set_locale")
+                    {
+                        if (!LocaleDescriptor.IsMode(source.LocaleMode))
+                            return false;
+                        localeMode = source.LocaleMode;
+                    }
+
                     message = new TerminalBridgeMessage(
                         TerminalBridgeMessageKind.AppSettingsCommand,
                         AppSettingsCommand: new AppSettingsCommandEventArgs
                         {
                             RequestId = requestId,
                             Action = source.Action,
-                            Registry = registry
+                            Registry = registry,
+                            LocaleMode = localeMode
                         });
                     return true;
                 }
