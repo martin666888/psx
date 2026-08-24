@@ -11,14 +11,15 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..', '..', '..');
 
-const LOCALE_FILES = [
-  'frontend/webview/src/locales/zh-Hans/shell.json',
-  'frontend/webview/src/locales/en/shell.json',
-  'frontend/agent/src/locales/zh-Hans/agent.json',
-  'frontend/agent/src/locales/en/agent.json',
-  'frontend/agent/src/usage/locales/zh-Hans/settings.json',
-  'frontend/agent/src/usage/locales/en/settings.json'
+const LOCALE_NAMESPACES = [
+  ['frontend/webview/src/locales', 'shell.json'],
+  ['frontend/agent/src/locales', 'agent.json'],
+  ['frontend/agent/src/usage/locales', 'settings.json']
 ];
+const LOCALES = ['zh-Hans', 'zh-Hant', 'en', 'ja'];
+const LOCALE_FILES = LOCALE_NAMESPACES.flatMap(([dir, file]) =>
+  LOCALES.map((locale) => `${dir}/${locale}/${file}`)
+);
 
 const CANONICAL = {
   shell: 'frontend/webview/src/locales/en/shell.json',
@@ -65,7 +66,7 @@ test('every shipped locale resource exists and parses', () => {
 });
 
 for (const [namespace, canonicalPath] of Object.entries(CANONICAL)) {
-  const locales = ['en', 'zh-Hans'];
+  const locales = LOCALES;
   const canonicalDoc = JSON.parse(readFileSync(path.join(repoRoot, canonicalPath), 'utf8'));
   const canonicalKeys = flatten(canonicalDoc);
   const canonicalLeaves = leaves(canonicalDoc);

@@ -1,0 +1,125 @@
+{
+  "title": "設定",
+  "dialogDescription": "プロフィール、使用量、読み取り専用の構成、npm ダウンロードソース",
+  "navAria": "設定カテゴリ",
+  "section": {
+    "profile": "プロフィール",
+    "language": "言語",
+    "usage": "使用量",
+    "config": "構成",
+    "registry": "ダウンロードソース"
+  },
+  "common": {
+    "refresh": "再読み込み",
+    "retry": "再試行",
+    "apply": "適用"
+  },
+  "profile": {
+    "avatarAria": "アバターを変更",
+    "nameAria": "表示名",
+    "editNameAria": "表示名を編集",
+    "unnamed": "名前未設定",
+    "note": "現在変更できるのは表示名のみです。名前をクリックすると編集できます。",
+    "saveFailed": "プロフィールを保存できませんでした。もう一度お試しください。"
+  },
+  "language": {
+    "lede": "インターフェイスの表示言語を選択するか、Windows の表示言語に合わせることができます。変更はすぐに反映されます。",
+    "systemOption": "Windows に合わせる",
+    "systemResolvedSuffix": "現在: {{resolved}}",
+    "localeNames": {
+      "zh-Hans": "簡体字中国語",
+      "zh-Hant": "繁体字中国語",
+      "en": "English",
+      "ja": "日本語"
+    },
+    "saveFailed": "言語設定を保存できませんでした。"
+  },
+  "registry": {
+    "lede": "npm パッケージのダウンロードソースを選択してください。タオバオの npmmirror でも更新前に npmjs.org のルートパッケージを検証します。",
+    "noteOfficial": "公式",
+    "noteNpmmirror": "タオバオミラー",
+    "saveFailed": "ダウンロードソースの設定を保存できませんでした。"
+  },
+  "config": {
+    "stateAvailable": "利用可能",
+    "statePartial": "一部",
+    "stateUnavailable": "利用不可",
+    "toolbarLabel": "ユーザーレベルの構成（読み取り専用）",
+    "updatedAt": "{{time}} に更新",
+    "refreshAria": "構成を再読み込み",
+    "loading": "構成を読み込んでいます…",
+    "empty": "表示できる構成はありません",
+    "chooseAgentAria": "Agent を選択",
+    "modelsHeading": "モデル",
+    "mcpDisabled": "無効",
+    "envKeyTitle": "環境変数キー（値は非表示）",
+    "headerKeyTitle": "ヘッダーキー（値は非表示）",
+    "scanFailed": "構成情報を読み取れませんでした。再試行してください。",
+    "loadFailed": "構成を読み込めませんでした。",
+    "facts": {
+      "env_var_keys": "環境変数キー",
+      "default_model": "既定のモデル",
+      "small_model": "小モデル",
+      "subagent_model": "サブ Agent モデル",
+      "subagent_model_pool": "サブ Agent モデルプール",
+      "default_plan_mode": "既定の Plan モード",
+      "auth_type": "認証タイプ",
+      "enabled_plugins": "有効なプラグイン数",
+      "plugin_count": "プラグイン数",
+      "custom_providers": "カスタム Provider",
+      "disabled_providers": "無効な Provider",
+      "saved_credential_providers": "認証情報を保存済みの Provider",
+      "local_permissions_allow": "ローカルで許可された権限",
+      "instruction_file_count": "指示ファイル数",
+      "instructions": "指示"
+    },
+    "notes": {
+      "file_too_large": "構成ファイルが大きすぎるためスキップしました",
+      "parse_failed": "一部の構成を解析できませんでした",
+      "no_editable_config": "この Agent にはユーザーが編集できる構成ファイルがありません",
+      "home_missing": "ユーザー構成ディレクトリが見つかりません",
+      "scan_failed": "構成情報を読み取れませんでした。再試行してください。"
+    }
+  },
+  "usage": {
+    "windowGroupAria": "集計期間",
+    "windowToday": "今日",
+    "window7Days": "7 日間",
+    "window30Days": "30 日間",
+    "refreshAria": "使用量を再読み込み",
+    "loading": "集計中…",
+    "totalLabel": "Token 合計",
+    "incompleteNote": "統計は不完全です。この合計には読み取れた正確な Token のみが含まれます。",
+    "byAgent": "Agent 別",
+    "allProviders": "すべて",
+    "viewAllTitle": "すべての Agent を表示",
+    "viewAllBlockedTitle": "合計を表示するにはすべての Agent が完全である必要があります",
+    "providerGroupAria": "年間使用量の Agent を選択",
+    "tokenAmount": "{{count}} Token",
+    "recordedPrefix": "記録済み ",
+    "unavailableValue": "— · {{reason}}",
+    "dateUnknown": "日付不明",
+    "dateRangeJoin": "{{start}}〜{{end}}",
+    "totalTokensLine": "合計 {{count}} Token",
+    "timezoneLine": "集計タイムゾーン {{timezone}}",
+    "timezoneUnknown": "不明",
+    "ariaJoin": "、",
+    "heatmapHeading": "過去 1 年間の Token 使用量 · {{scope}}",
+    "heatmapEmpty": "利用できる正確な Token データはまだありません",
+    "colorHint": "色が濃いほど、その日の Token が多いことを示します",
+    "cellTitle": "{{date}} · {{count}} Token",
+    "allAgentsScope": "すべての Agent",
+    "reasons": {
+      "unsupported_source": "この Agent はまだ使用量統計に対応していません",
+      "unsupported_format": "このバージョンはまだ使用量統計に対応していません",
+      "missing_session_logs": "セッションの使用量記録が見つかりませんでした",
+      "ambiguous_session_logs": "重複するセッション記録が見つかりました",
+      "unreadable_logs": "一部の使用量記録を読み取れませんでした",
+      "unmatched_sessions": "一部のセッションは集計されていません",
+      "missing_session_id": "一部のセッションを関連付けできませんでした",
+      "damaged_thread_files": "一部のローカルセッション記録が壊れています",
+      "unregistered_provider": "一部のセッションの Agent は既に利用できません"
+    },
+    "noExactRecords": "利用できる正確な Token 記録はまだありません"
+  }
+}

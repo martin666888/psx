@@ -1,0 +1,125 @@
+{
+  "title": "設定",
+  "dialogDescription": "個人檔案、用量、唯讀組態與 npm 下載來源",
+  "navAria": "設定分類",
+  "section": {
+    "profile": "個人檔案",
+    "language": "語言",
+    "usage": "用量",
+    "config": "組態",
+    "registry": "下載來源"
+  },
+  "common": {
+    "refresh": "重新整理",
+    "retry": "重試",
+    "apply": "套用"
+  },
+  "profile": {
+    "avatarAria": "變更頭像",
+    "nameAria": "顯示名稱",
+    "editNameAria": "編輯顯示名稱",
+    "unnamed": "未命名",
+    "note": "目前僅可修改顯示名稱。點擊名稱即可編輯。",
+    "saveFailed": "無法儲存個人檔案，請重試。"
+  },
+  "language": {
+    "lede": "選擇介面顯示語言，或跟隨 Windows 顯示語言。變更立即生效。",
+    "systemOption": "跟隨 Windows",
+    "systemResolvedSuffix": "目前：{{resolved}}",
+    "localeNames": {
+      "zh-Hans": "簡體中文",
+      "zh-Hant": "繁體中文",
+      "en": "English",
+      "ja": "日本語"
+    },
+    "saveFailed": "無法儲存語言設定。"
+  },
+  "registry": {
+    "lede": "選擇 npm 套件的下載來源。淘寶 npmmirror 在更新前仍會向 npmjs.org 驗證根套件。",
+    "noteOfficial": "官方",
+    "noteNpmmirror": "淘寶鏡像",
+    "saveFailed": "無法儲存下載來源設定。"
+  },
+  "config": {
+    "stateAvailable": "可用",
+    "statePartial": "部分",
+    "stateUnavailable": "無法使用",
+    "toolbarLabel": "使用者層級組態（唯讀）",
+    "updatedAt": "於 {{time}} 更新",
+    "refreshAria": "重新整理組態",
+    "loading": "正在讀取組態…",
+    "empty": "暫無組態可顯示",
+    "chooseAgentAria": "選擇 Agent",
+    "modelsHeading": "模型",
+    "mcpDisabled": "已停用",
+    "envKeyTitle": "環境變數索引鍵（值已隱藏）",
+    "headerKeyTitle": "標頭索引鍵（值已隱藏）",
+    "scanFailed": "無法讀取組態資訊，請重試。",
+    "loadFailed": "無法載入組態。",
+    "facts": {
+      "env_var_keys": "環境變數索引鍵",
+      "default_model": "預設模型",
+      "small_model": "小型模型",
+      "subagent_model": "子 Agent 模型",
+      "subagent_model_pool": "子 Agent 模型集",
+      "default_plan_mode": "預設 Plan 模式",
+      "auth_type": "驗證類型",
+      "enabled_plugins": "已啟用的外掛程式數量",
+      "plugin_count": "外掛程式數量",
+      "custom_providers": "自訂 Provider",
+      "disabled_providers": "已停用的 Provider",
+      "saved_credential_providers": "已保存憑證的 Provider",
+      "local_permissions_allow": "本機允許的權限",
+      "instruction_file_count": "指示檔數量",
+      "instructions": "指示"
+    },
+    "notes": {
+      "file_too_large": "組態檔過大，已略過",
+      "parse_failed": "部分組態無法解析",
+      "no_editable_config": "此 Agent 沒有使用者可編輯的組態檔",
+      "home_missing": "找不到使用者組態目錄",
+      "scan_failed": "無法讀取組態資訊，請重試。"
+    }
+  },
+  "usage": {
+    "windowGroupAria": "統計視窗",
+    "windowToday": "今日",
+    "window7Days": "7 天",
+    "window30Days": "30 天",
+    "refreshAria": "重新整理用量",
+    "loading": "正在統計…",
+    "totalLabel": "Token 總量",
+    "incompleteNote": "統計不完整；此總量僅包含已讀取到的精確 Token。",
+    "byAgent": "按 Agent",
+    "allProviders": "全部",
+    "viewAllTitle": "查看所有 Agent",
+    "viewAllBlockedTitle": "需所有 Agent 完整時才可查看合計",
+    "providerGroupAria": "選擇年度用量的 Agent",
+    "tokenAmount": "{{count}} Token",
+    "recordedPrefix": "已記錄 ",
+    "unavailableValue": "— · {{reason}}",
+    "dateUnknown": "日期未知",
+    "dateRangeJoin": "{{start}} 至 {{end}}",
+    "totalTokensLine": "共 {{count}} Token",
+    "timezoneLine": "統計時區 {{timezone}}",
+    "timezoneUnknown": "未知",
+    "ariaJoin": "，",
+    "heatmapHeading": "過去一年的 Token 用量 · {{scope}}",
+    "heatmapEmpty": "暫無可用的精確 Token 資料",
+    "colorHint": "顏色越深，當天的 Token 越多",
+    "cellTitle": "{{date}} · {{count}} Token",
+    "allAgentsScope": "所有 Agent",
+    "reasons": {
+      "unsupported_source": "目前此 Agent 尚不支援用量統計",
+      "unsupported_format": "此版本尚不支援用量統計",
+      "missing_session_logs": "找不到工作階段用量記錄",
+      "ambiguous_session_logs": "發現重複的工作階段記錄",
+      "unreadable_logs": "部分用量記錄無法讀取",
+      "unmatched_sessions": "部分工作階段未計入",
+      "missing_session_id": "部分工作階段無法關聯",
+      "damaged_thread_files": "部分本機工作階段記錄損毀",
+      "unregistered_provider": "部分工作階段所屬的 Agent 已無法使用"
+    },
+    "noExactRecords": "目前沒有可用的精確 Token 記錄"
+  }
+}

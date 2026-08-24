@@ -1,0 +1,60 @@
+{
+  "composer": {
+    "hint": {
+      "attachmentsNotAllowed": "斜線指令無法與附件一起傳送，請先移除附件。",
+      "commandsLoading": "Agent 指令清單仍在載入，請稍後再試。",
+      "unsupported": "無法識別的指令：{{command}}\nPSX 僅支援指令選單中顯示的指令。輸入 / 可查看可用指令；部分 {{agentName}} 指令需在原生終端機中使用。"
+    },
+    "compactConfigAria": "Agent 設定"
+  },
+  "timeline": {
+    "copy": "複製",
+    "copied": "已複製",
+    "copyFailed": "複製失敗",
+    "showMore": "顯示更多",
+    "collapse": "收合"
+  },
+  "runtime": {
+    "notInstalled": "Agent 執行階段尚未安裝。",
+    "ready": "Agent 執行階段已就緒。",
+    "preparingInstall": "正在準備安裝 Agent 執行階段…",
+    "installSucceeded": "Agent 執行階段安裝成功。",
+    "cancellingInstall": "正在取消 Agent 執行階段的安裝…",
+    "installCancelled": "Agent 執行階段的安裝已取消。",
+    "networkUnavailable": "下載失敗。請檢查網路連線後重試。",
+    "installFailed": "Agent 執行階段安裝失敗。",
+    "updateFailed": "更新未完成。點擊以重試。",
+    "updateNetworkUnavailable": "更新失敗——網路無法使用。請檢查連線後重試。",
+    "transcriptReadOnly": "此已儲存的對話記錄為唯讀。"
+  },
+  "toolbar": {
+    "checking": "檢查中…",
+    "upToDate": "已是最新",
+    "stagedRestart": "重新啟動以更新",
+    "retryUpdate": "重試更新",
+    "update": "更新",
+    "unsupportedTitle": "更新隨 PSX 版本一同提供",
+    "installRequiredTitle": "請先安裝 Agent 執行階段",
+    "unavailableTitle": "此工作區無法進行更新",
+    "currentVersion": "目前版本：{{version}}",
+    "pendingVersion": "更新就緒：{{version}}",
+    "failedTooltip": "更新未完成；點擊以重試",
+    "stagedWithPending": "重新啟動 PSX 以套用更新。",
+    "stagedWithoutPending": "更新已就緒；重新啟動 PSX 以套用。",
+    "checkTooltip": "檢查 Agent 執行階段更新",
+    "moreAria": "更多 Agent 動作"
+  },
+  "sessionCard": {
+    "titles": {
+      "missing": "需要 Agent 執行階段",
+      "installing": "正在安裝 Agent 執行階段",
+      "failed": "Agent 執行階段安裝失敗",
+      "cancelled": "Agent 執行階段的安裝已取消"
+    },
+    "fallbackTitle": "Agent 執行階段",
+    "note": "從官方 npm 套件庫下載釘選版本的元件到此 PSX 資料夾，並在後續啟動時重複使用。",
+    "install": "安裝執行階段",
+    "retryInstallation": "重試安裝",
+    "cancel": "取消"
+  }
+}

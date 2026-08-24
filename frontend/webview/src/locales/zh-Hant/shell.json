@@ -1,0 +1,220 @@
+{
+  "attention": {
+    "permission": "需要確認",
+    "question": "待回覆",
+    "error": "錯誤",
+    "completed": "已完成"
+  },
+  "workspace": {
+    "fallbackTitle": "工作區"
+  },
+  "tab": {
+    "closeTitle": "關閉 {{title}}"
+  },
+  "menu": {
+    "create": "新增工作區",
+    "theme": "佈景主題",
+    "pane": "工作區動作",
+    "fallback": "選單"
+  },
+  "create": {
+    "placementFocused": "目前欄位",
+    "placementNewRight": "右側新增欄位",
+    "columnCapTitle": "最多支援 3 欄"
+  },
+  "common": {
+    "widthInsufficient": "視窗寬度不足以容納新欄位",
+    "cancel": "取消",
+    "refresh": "重新整理",
+    "retry": "重試"
+  },
+  "theme": {
+    "builtIn": "內建",
+    "custom": "自訂",
+    "updated": "已更新",
+    "current": "目前",
+    "confirm": "確認",
+    "openFolder": "開啟佈景主題資料夾"
+  },
+  "pane": {
+    "layoutSection": "版面配置",
+    "splitRight": "移到右側新欄位",
+    "collapseSingle": "合併為單一欄位"
+  },
+  "runtime": {
+    "section": "執行階段",
+    "start": "啟動執行階段",
+    "stop": "停止執行階段",
+    "restart": "重新啟動"
+  },
+  "dsh": {
+    "updateConfirmBody": "PSX 將在背景下載並驗證新版本，接著自動切換並重新啟動本機的 DeepSeek Harness 服務。PSX 本身不會重新啟動；設定與工作階段都會保留。下載可能需要幾分鐘。",
+    "startBackgroundUpdate": "開始背景更新",
+    "currentVersionFallback": "目前的版本",
+    "versionListLabel": "可安裝的更新版本",
+    "blockedNotice": "此 PSX 版本不支援以下版本：{{versions}}",
+    "deferredNotice": "已發布但尚無法安裝：{{versions}}（將隨未來的 PSX 更新提供）",
+    "checkUpdate": "檢查更新",
+    "checking": "正在檢查更新…",
+    "versionsLine": "{{from}} → {{to}}",
+    "versionFallback": "新版本",
+    "upToDate": "已是最新",
+    "updateTo": "更新到 v{{version}}",
+    "backgroundUpdate": "背景更新",
+    "recheck": "重新檢查",
+    "newVersionsFound": "發現新版本",
+    "requiresPsxUpdate": "需先更新 PSX 才能安裝",
+    "notInstalledHint": "請先安裝",
+    "phaseDownloading": "正在背景下載{{version}}…",
+    "downloadingHint": "可能需要幾分鐘",
+    "phaseValidating": "正在驗證{{version}}…",
+    "validatingHint": "目前的服務保持可用",
+    "phaseSwitching": "正在切換到{{version}}…",
+    "switchingHint": "PSX 不會重新啟動",
+    "phaseGeneric": "正在背景更新…",
+    "genericHint": "PSX 不會重新啟動",
+    "cancelUpdate": "取消更新",
+    "keepCurrent": "保留目前版本",
+    "cancelling": "正在取消…",
+    "card": {
+      "notInstalledTitle": "需要安裝 DeepSeek Harness",
+      "notInstalledMessage": "安裝會將鎖定的版本寫入本機 PSX 目錄，之後啟動可直接重複使用。",
+      "notInstalledNote": "安裝會執行第三方 npm 原生指令碼（node-pty / koffi）。",
+      "install": "安裝",
+      "installingTitle": "正在安裝執行階段",
+      "installingMessage": "正在寫入本機 PSX 目錄，請保持視窗開啟。",
+      "startingTitle": "正在啟動",
+      "startingMessage": "正在啟動本機 DeepSeek Harness 服務。",
+      "failedTitle": "執行階段無法使用",
+      "failedMessage": "安裝或啟動未完成。可以重試，且不會更動 DSH 自己的工作階段與設定。",
+      "exitedTitle": "已停止",
+      "exitedMessage": "本機服務已結束。重新啟動不會建立新的工作區。",
+      "restart": "重新啟動",
+      "readyTitle": "執行階段已就緒",
+      "readyMessage": "正在開啟 DeepSeek Harness。",
+      "unknownStateMessage": "狀態不明。"
+    },
+    "runtimeErrorCopy": {
+      "runtime_unavailable": "執行階段無法使用",
+      "process_exited": "DSH 處理程序意外結束。",
+      "start_timeout": "DSH 未在 90 秒內就緒。",
+      "launch_failed": "無法啟動 DSH 處理程序。",
+      "install_failed": "安裝失敗：npm ci 未成功完成。",
+      "install_cancelled": "安裝已停止。",
+      "portable_node_missing": "缺少 PSX 內建的 Node.js 執行階段，無法安裝。",
+      "seed_missing": "缺少 DSH 安裝種子檔案，無法安裝。",
+      "entry_missing": "安裝後缺少進入點檔案 (lib/bin.js)。",
+      "version_unreadable": "安裝後無法讀取 DSH 版本。",
+      "version_mismatch": "安裝結果與鎖定版本不一致，已拒絕啟用。",
+      "install_switch_failed": "切換安裝目錄失敗，執行階段未啟用。",
+      "post_install_unavailable": "安裝後執行階段無法使用。",
+      "registry_network": "網路無法使用，無法連線 npm 套件庫。請檢查網路後重試。",
+      "registry_not_found": "套件庫中找不到鎖定的版本。",
+      "integrity_failed": "安裝套件未通過完整性驗證。",
+      "settings_write_failed": "無法儲存下載來源設定，尚未開始重試。",
+      "catalog_corrupt": "PSX 安裝檔已損毀，請重新安裝。"
+    },
+    "updateErrorCopy": {
+      "update_requires_psx": "請先更新 PSX。",
+      "update_registry_changed": "下載來源已變更，請重新檢查更新。",
+      "update_invalid_version": "更新版本無效，請重新檢查更新。",
+      "update_cancelled": "更新已停止，目前版本未變更。",
+      "update_failed": "更新失敗，目前版本可繼續使用。",
+      "update_switch_failed": "切換至更新失敗，已保留原版本。",
+      "update_relaunch_failed": "新版本啟動失敗，已還原原版本。",
+      "not_installed": "尚未安裝 DeepSeek Harness。",
+      "update_node_missing": "缺少可攜式 Node.js，無法檢查更新。",
+      "invalid_versions": "npm 套件庫回傳了無效版本，未執行更新。",
+      "candidate_invalid": "待更新的版本無效或不高於目前的版本。",
+      "registry_config_missing": "缺少 DSH Registry 設定，無法安全更新。",
+      "update_workspace_failed": "無法準備 DSH 更新目錄。",
+      "receipt_write_failed": "無法記錄更新來源，目前版本未變更。",
+      "update_marker_failed": "更新已下載，但無法寫入啟用標記。",
+      "check_failed": "檢查更新失敗，目前版本可繼續使用。",
+      "registry_network": "無法連線 npm 套件庫，請檢查網路後重試。",
+      "registry_not_found": "套件庫中找不到可用版本。",
+      "integrity_failed": "下載的更新未通過完整性驗證，目前版本未變更。",
+      "lock_unavailable": "該版本暫時無法安裝，請更新 PSX 後再試。",
+      "catalog_corrupt": "PSX 安裝檔已損毀，請重新安裝。",
+      "settings_write_failed": "無法儲存下載來源設定，尚未開始重試。"
+    },
+    "sourceOperation": "本次來源：{{registry}}",
+    "sourceDefault": "預設下載來源：{{registry}}",
+    "ctaRecheck": "重新檢查",
+    "ctaReinstall": "重新安裝",
+    "ctaSwitch": "改用 {{registry}} {{verb}}"
+  },
+  "kimi": {
+    "starting": "正在啟動…",
+    "stopping": "正在停止…",
+    "validateOnly": "僅重新驗證執行階段",
+    "unavailableReasonCopy": {
+      "portable_node_missing": "PSX 內建的 Node 執行階段缺失。",
+      "runtime_missing": "Kimi 執行階段檔案缺失。",
+      "runtime_invalid": "Kimi 執行階段檔案無效。"
+    },
+    "failedErrorCopy": {
+      "launch_failed": "Kimi Web 處理程序無法啟動。",
+      "start_timeout": "啟動逾時，請重試。",
+      "health_check_failed": "服務健康檢查未通過。"
+    },
+    "card": {
+      "startingTitle": "正在啟動 Kimi Web",
+      "startingMessage": "正在啟動本機 Kimi Web 服務，請稍候。",
+      "unavailableTitle": "Kimi 執行階段已損毀",
+      "unavailableMessage": "Kimi 執行階段無法使用。",
+      "unavailableNote": "重新解壓縮或重新下載 PSX",
+      "retry": "重試",
+      "failedTitle": "啟動失敗",
+      "failedMessage": "啟動未完成，可以重試。",
+      "stoppedTitle": "已停止",
+      "stoppedMessage": "Kimi Web 服務已停止。",
+      "restart": "重新啟動",
+      "stoppingTitle": "正在停止",
+      "stoppingMessage": "正在停止 Kimi Web 服務。",
+      "exitedTitle": "已停止",
+      "exitedMessage": "Kimi Web 服務已結束。",
+      "readyTitle": "執行階段已就緒",
+      "readyMessage": "正在開啟 Kimi Code Web。"
+    }
+  },
+  "notice": {
+    "generic": "操作未完成，請重試。",
+    "workspace.worktree_conflict": "多個可見 Agent 正在使用同一 worktree，請留意並行修改衝突。",
+    "dsh.export.invalid_response": "匯出失敗：服務回傳了無效的回應。",
+    "dsh.export.invalid_content_type": "匯出失敗：工作階段資料格式無效。",
+    "dsh.export.invalid_data": "匯出失敗：工作階段資料無效。",
+    "dsh.export.too_large": "匯出失敗：檔案過大，已取消。",
+    "dsh.export.write_failed": "匯出失敗：檔案寫入未完成。",
+    "dsh.export.connect_failed": "匯出失敗：無法連線本機服務。",
+    "kimi.export.not_ready": "匯出失敗：本機服務尚未就緒，請稍後再試。",
+    "kimi.export.invalid_request": "匯出失敗：匯出要求無效。",
+    "kimi.export.invalid_response": "匯出失敗：服務回傳了無效的回應。",
+    "kimi.export.invalid_content_type": "匯出失敗：工作階段資料格式無效。",
+    "kimi.export.invalid_data": "匯出失敗：工作階段資料無效。",
+    "kimi.export.too_large": "匯出失敗：檔案過大，已取消。",
+    "kimi.export.write_failed": "匯出失敗：檔案寫入未完成。",
+    "kimi.export.connect_failed": "匯出失敗：無法連線本機服務。"
+  },
+  "diagnostics": {
+    "generic": "介面發生異常，部分內容可能未正確更新。",
+    "dismiss": "關閉",
+    "dismissAria": "關閉介面錯誤通知"
+  },
+  "agentLoad": {
+    "title": "Agent 介面無法使用",
+    "message": "Agent 面板載入失敗。終端機工作區仍可使用；重新啟動 PSX 可再次嘗試載入 Agent 面板。"
+  },
+  "rail": {
+    "activityBar": "全域動作",
+    "history": "歷史記錄",
+    "newWorkspace": "新增工作區",
+    "theme": "佈景主題",
+    "settings": "PSX 設定",
+    "workspaceNav": "工作區導覽"
+  },
+  "panes": {
+    "dividerAria": "調整相鄰欄位寬度",
+    "dividerTitle": "拖曳調整寬度，按兩下均分相鄰欄位"
+  }
+}

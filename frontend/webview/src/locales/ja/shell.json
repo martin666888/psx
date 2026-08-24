@@ -1,0 +1,220 @@
+{
+  "attention": {
+    "permission": "要確認",
+    "question": "返信待ち",
+    "error": "エラー",
+    "completed": "完了"
+  },
+  "workspace": {
+    "fallbackTitle": "ワークスペース"
+  },
+  "tab": {
+    "closeTitle": "{{title}} を閉じる"
+  },
+  "menu": {
+    "create": "新規ワークスペース",
+    "theme": "テーマ",
+    "pane": "ワークスペース操作",
+    "fallback": "メニュー"
+  },
+  "create": {
+    "placementFocused": "現在の列",
+    "placementNewRight": "右に新しい列",
+    "columnCapTitle": "列は最大 3 列までです"
+  },
+  "common": {
+    "widthInsufficient": "ウィンドウの幅が足りず、新しい列を追加できません",
+    "cancel": "キャンセル",
+    "refresh": "再読み込み",
+    "retry": "再試行"
+  },
+  "theme": {
+    "builtIn": "内蔵",
+    "custom": "カスタム",
+    "updated": "更新済み",
+    "current": "現在",
+    "confirm": "確認",
+    "openFolder": "テーマフォルダーを開く"
+  },
+  "pane": {
+    "layoutSection": "レイアウト",
+    "splitRight": "右側の新しい列へ移動",
+    "collapseSingle": "単一列にまとめる"
+  },
+  "runtime": {
+    "section": "ランタイム",
+    "start": "ランタイムを起動",
+    "stop": "ランタイムを停止",
+    "restart": "再起動"
+  },
+  "dsh": {
+    "updateConfirmBody": "PSX は新しいバージョンをバックグラウンドでダウンロードして検証し、自動的に切り替えてローカルの DeepSeek Harness サービスを再起動します。PSX 本体は再起動せず、設定とセッションはそのまま保持されます。ダウンロードには数分かかる場合があります。",
+    "startBackgroundUpdate": "バックグラウンド更新を開始",
+    "currentVersionFallback": "現在のバージョン",
+    "versionListLabel": "インストール可能な更新バージョン",
+    "blockedNotice": "この PSX ビルドでは次のバージョンをサポートしていません: {{versions}}",
+    "deferredNotice": "公開済みですがまだインストールできません: {{versions}}（今後の PSX 更新で提供予定）",
+    "checkUpdate": "更新を確認",
+    "checking": "更新を確認中…",
+    "versionsLine": "{{from}} → {{to}}",
+    "versionFallback": "新しいバージョン",
+    "upToDate": "最新です",
+    "updateTo": "v{{version}} に更新",
+    "backgroundUpdate": "バックグラウンド更新",
+    "recheck": "再確認",
+    "newVersionsFound": "新しいバージョンがあります",
+    "requiresPsxUpdate": "インストールには先に PSX の更新が必要です",
+    "notInstalledHint": "未インストール",
+    "phaseDownloading": "{{version}} をバックグラウンドでダウンロード中…",
+    "downloadingHint": "数分かかる場合があります",
+    "phaseValidating": "{{version}} を検証中…",
+    "validatingHint": "現在のサービスは引き続き利用可能",
+    "phaseSwitching": "{{version}} へ切り替え中…",
+    "switchingHint": "PSX は再起動しません",
+    "phaseGeneric": "バックグラウンドで更新中…",
+    "genericHint": "PSX は再起動しません",
+    "cancelUpdate": "更新をキャンセル",
+    "keepCurrent": "現在のバージョンを保持",
+    "cancelling": "キャンセル中…",
+    "card": {
+      "notInstalledTitle": "DeepSeek Harness のインストールが必要",
+      "notInstalledMessage": "インストールすると、ロックされたバージョンが PSX のローカルフォルダーに書き込まれ、以降の起動で再利用されます。",
+      "notInstalledNote": "インストールではサードパーティ製の npm ネイティブスクリプト（node-pty / koffi）を実行します。",
+      "install": "インストール",
+      "installingTitle": "ランタイムをインストール中",
+      "installingMessage": "PSX のローカルフォルダーに書き込んでいます。ウィンドウを開いたままにしてください。",
+      "startingTitle": "起動中",
+      "startingMessage": "ローカルの DeepSeek Harness サービスを起動しています。",
+      "failedTitle": "ランタイムを利用できません",
+      "failedMessage": "インストールまたは起動が完了しませんでした。DSH 固有のセッションや設定に影響を与えずに再試行できます。",
+      "exitedTitle": "停止しました",
+      "exitedMessage": "ローカルサービスが終了しました。再起動しても新しいワークスペースは作られません。",
+      "restart": "再起動",
+      "readyTitle": "ランタイムは準備完了",
+      "readyMessage": "DeepSeek Harness を開いています。",
+      "unknownStateMessage": "状態不明です。"
+    },
+    "runtimeErrorCopy": {
+      "runtime_unavailable": "ランタイムを利用できません",
+      "process_exited": "DSH プロセスが予期せず終了しました。",
+      "start_timeout": "DSH が 90 秒以内に準備完了になりませんでした。",
+      "launch_failed": "DSH プロセスを起動できませんでした。",
+      "install_failed": "インストール失敗: npm ci が正常に完了しませんでした。",
+      "install_cancelled": "インストールを停止しました。",
+      "portable_node_missing": "PSX 同梱の Node.js ランタイムが見つからないため、インストールできません。",
+      "seed_missing": "DSH インストール用シードファイルがないため、インストールできません。",
+      "entry_missing": "インストール後にエントリーファイル (lib/bin.js) が見つかりません。",
+      "version_unreadable": "インストール後に DSH のバージョンを読み取れません。",
+      "version_mismatch": "インストール結果がロックされたバージョンと一致しないため、有効化を拒否しました。",
+      "install_switch_failed": "インストールディレクトリの切り替えに失敗し、ランタイムは有効化されませんでした。",
+      "post_install_unavailable": "インストール後にランタイムを利用できません。",
+      "registry_network": "ネットワークを利用できないため、npm レジストリに接続できません。接続を確認して再試行してください。",
+      "registry_not_found": "レジストリにロックされたバージョンが見つかりません。",
+      "integrity_failed": "インストールパッケージが整合性チェックに合格しませんでした。",
+      "settings_write_failed": "ダウンロードソースの設定を保存できなかったため、再試行は開始されていません。",
+      "catalog_corrupt": "PSX のインストールが壊れています。再インストールしてください。"
+    },
+    "updateErrorCopy": {
+      "update_requires_psx": "先に PSX を更新してください。",
+      "update_registry_changed": "ダウンロードソースが変更されました。更新をもう一度確認してください。",
+      "update_invalid_version": "その更新バージョンは無効です。更新をもう一度確認してください。",
+      "update_cancelled": "更新を停止しました。現在のバージョンは変わっていません。",
+      "update_failed": "更新に失敗しました。現在のバージョンは引き続き利用できます。",
+      "update_switch_failed": "更新への切り替えに失敗したため、以前のバージョンを保持しました。",
+      "update_relaunch_failed": "新しいバージョンの起動に失敗したため、以前のバージョンを復元しました。",
+      "not_installed": "DeepSeek Harness がまだインストールされていません。",
+      "update_node_missing": "ポータブル Node.js が見つからないため、更新を確認できません。",
+      "invalid_versions": "npm レジストリが無効なバージョンを返したため、更新を実行しませんでした。",
+      "candidate_invalid": "更新候補のバージョンが無効か、現在のバージョンと同じかそれ以下です。",
+      "registry_config_missing": "DSH レジストリ設定がなく、安全に更新できません。",
+      "update_workspace_failed": "DSH 更新用ディレクトリを準備できませんでした。",
+      "receipt_write_failed": "更新ソースを記録できなかったため、現在のバージョンは変わっていません。",
+      "update_marker_failed": "更新のダウンロード後にアクティベーションマーカーを書き込めませんでした。",
+      "check_failed": "更新の確認に失敗しました。現在のバージョンは引き続き利用できます。",
+      "registry_network": "npm レジストリに接続できません。ネットワーク接続を確認して再試行してください。",
+      "registry_not_found": "レジストリに利用可能なバージョンが見つかりません。",
+      "integrity_failed": "ダウンロードした更新が整合性チェックに合格しなかったため、現在のバージョンは変わっていません。",
+      "lock_unavailable": "このバージョンはまだインストールできません。PSX を更新してから再試行してください。",
+      "catalog_corrupt": "PSX のインストールが壊れています。再インストールしてください。",
+      "settings_write_failed": "ダウンロードソースの設定を保存できなかったため、再試行は開始されていません。"
+    },
+    "sourceOperation": "今回の取得元: {{registry}}",
+    "sourceDefault": "既定のダウンロードソース: {{registry}}",
+    "ctaRecheck": "再確認",
+    "ctaReinstall": "再インストール",
+    "ctaSwitch": "{{registry}} に切り替えて {{verb}}"
+  },
+  "kimi": {
+    "starting": "起動中…",
+    "stopping": "停止中…",
+    "validateOnly": "ランタイムの再検証のみ行う",
+    "unavailableReasonCopy": {
+      "portable_node_missing": "PSX 同梱の Node ランタイムがありません。",
+      "runtime_missing": "Kimi ランタイムファイルがありません。",
+      "runtime_invalid": "Kimi ランタイムファイルが無効です。"
+    },
+    "failedErrorCopy": {
+      "launch_failed": "Kimi Web プロセスを起動できませんでした。",
+      "start_timeout": "起動がタイムアウトしました。再試行してください。",
+      "health_check_failed": "サービスのヘルスチェックに合格しませんでした。"
+    },
+    "card": {
+      "startingTitle": "Kimi Web を起動中",
+      "startingMessage": "ローカルの Kimi Web サービスを起動しています。しばらくお待ちください。",
+      "unavailableTitle": "Kimi ランタイムが破損しています",
+      "unavailableMessage": "Kimi ランタイムを利用できません。",
+      "unavailableNote": "PSX を再展開または再ダウンロードしてください",
+      "retry": "再試行",
+      "failedTitle": "起動に失敗",
+      "failedMessage": "起動が完了しませんでした。再試行できます。",
+      "stoppedTitle": "停止しました",
+      "stoppedMessage": "Kimi Web サービスを停止しました。",
+      "restart": "再起動",
+      "stoppingTitle": "停止中",
+      "stoppingMessage": "Kimi Web サービスを停止しています。",
+      "exitedTitle": "停止しました",
+      "exitedMessage": "Kimi Web サービスが終了しました。",
+      "readyTitle": "ランタイムは準備完了",
+      "readyMessage": "Kimi Code Web を開いています。"
+    }
+  },
+  "notice": {
+    "generic": "操作が完了しませんでした。もう一度お試しください。",
+    "workspace.worktree_conflict": "複数の表示中の Agent が同じ worktree を使用しています。同時編集による競合にご注意ください。",
+    "dsh.export.invalid_response": "エクスポートに失敗しました: サービスが無効な応答を返しました。",
+    "dsh.export.invalid_content_type": "エクスポートに失敗しました: セッションデータの形式が無効です。",
+    "dsh.export.invalid_data": "エクスポートに失敗しました: セッションデータが無効です。",
+    "dsh.export.too_large": "エクスポートに失敗しました: ファイルが大きすぎるため中止しました。",
+    "dsh.export.write_failed": "エクスポートに失敗しました: ファイルへの書き込みが完了しませんでした。",
+    "dsh.export.connect_failed": "エクスポートに失敗しました: ローカルサービスに接続できません。",
+    "kimi.export.not_ready": "エクスポートに失敗しました: ローカルサービスの準備ができていません。しばらくしてから再試行してください。",
+    "kimi.export.invalid_request": "エクスポートに失敗しました: エクスポート要求が無効です。",
+    "kimi.export.invalid_response": "エクスポートに失敗しました: サービスが無効な応答を返しました。",
+    "kimi.export.invalid_content_type": "エクスポートに失敗しました: セッションデータの形式が無効です。",
+    "kimi.export.invalid_data": "エクスポートに失敗しました: セッションデータが無効です。",
+    "kimi.export.too_large": "エクスポートに失敗しました: ファイルが大きすぎるため中止しました。",
+    "kimi.export.write_failed": "エクスポートに失敗しました: ファイルへの書き込みが完了しませんでした。",
+    "kimi.export.connect_failed": "エクスポートに失敗しました: ローカルサービスに接続できません。"
+  },
+  "diagnostics": {
+    "generic": "インターフェイスで問題が発生し、一部の内容が正しく更新されていない可能性があります。",
+    "dismiss": "閉じる",
+    "dismissAria": "インターフェイスエラーの通知を閉じる"
+  },
+  "agentLoad": {
+    "title": "Agent UI を利用できません",
+    "message": "Agent パネルを読み込めませんでした。ターミナルのワークスペースは引き続き利用できます。PSX を再起動すると Agent パネルを再試行できます。"
+  },
+  "rail": {
+    "activityBar": "グローバル操作",
+    "history": "履歴",
+    "newWorkspace": "新規ワークスペース",
+    "theme": "テーマ",
+    "settings": "PSX 設定",
+    "workspaceNav": "ワークスペースナビゲーション"
+  },
+  "panes": {
+    "dividerAria": "隣接する列の幅を変更",
+    "dividerTitle": "ドラッグで幅を変更、ダブルクリックで均等配置"
+  }
+}

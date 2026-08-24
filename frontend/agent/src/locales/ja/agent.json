@@ -1,0 +1,60 @@
+{
+  "composer": {
+    "hint": {
+      "attachmentsNotAllowed": "スラッシュコマンドは添付ファイルと一緒に送信できません。先に添付ファイルを取り除いてください。",
+      "commandsLoading": "Agent のコマンドリストはまだ読み込み中です。しばらくしてから再試行してください。",
+      "unsupported": "コマンドを認識できません: {{command}}\nPSX がサポートするのはコマンドメニューに表示されているコマンドだけです。/ と入力すると利用可能なコマンドを確認できます。一部の {{agentName}} コマンドはネイティブのターミナルで実行する必要があります。"
+    },
+    "compactConfigAria": "Agent 設定"
+  },
+  "timeline": {
+    "copy": "コピー",
+    "copied": "コピーしました",
+    "copyFailed": "コピーに失敗しました",
+    "showMore": "さらに表示",
+    "collapse": "折りたたむ"
+  },
+  "runtime": {
+    "notInstalled": "Agent ランタイムがインストールされていません。",
+    "ready": "Agent ランタイムは準備完了です。",
+    "preparingInstall": "Agent ランタイムのインストールを準備しています…",
+    "installSucceeded": "Agent ランタイムのインストールが完了しました。",
+    "cancellingInstall": "Agent ランタイムのインストールをキャンセルしています…",
+    "installCancelled": "Agent ランタイムのインストールをキャンセルしました。",
+    "networkUnavailable": "ダウンロードに失敗しました。ネットワーク接続を確認して再試行してください。",
+    "installFailed": "Agent ランタイムのインストールに失敗しました。",
+    "updateFailed": "更新が完了しませんでした。クリックして再試行してください。",
+    "updateNetworkUnavailable": "更新に失敗しました——ネットワークを利用できません。接続を確認して再試行してください。",
+    "transcriptReadOnly": "この保存済みトランスクリプトは読み取り専用です。"
+  },
+  "toolbar": {
+    "checking": "確認中…",
+    "upToDate": "最新です",
+    "stagedRestart": "再起動して適用",
+    "retryUpdate": "更新を再試行",
+    "update": "更新",
+    "unsupportedTitle": "更新は PSX のリリースとともに提供されます",
+    "installRequiredTitle": "先に Agent ランタイムをインストールしてください",
+    "unavailableTitle": "このワークスペースでは更新を利用できません",
+    "currentVersion": "現在: {{version}}",
+    "pendingVersion": "更新準備完了: {{version}}",
+    "failedTooltip": "更新が完了しませんでした。クリックして再試行してください",
+    "stagedWithPending": "PSX を再起動すると更新が適用されます。",
+    "stagedWithoutPending": "更新の準備ができました。PSX を再起動して適用してください。",
+    "checkTooltip": "Agent ランタイムの更新を確認",
+    "moreAria": "その他の Agent 操作"
+  },
+  "sessionCard": {
+    "titles": {
+      "missing": "Agent ランタイムが必要です",
+      "installing": "Agent ランタイムをインストール中",
+      "failed": "Agent ランタイムのインストールに失敗しました",
+      "cancelled": "Agent ランタイムのインストールをキャンセルしました"
+    },
+    "fallbackTitle": "Agent ランタイム",
+    "note": "公式 npm レジストリから固定バージョンのコンポーネントをこの PSX フォルダーにダウンロードし、以降の起動で再利用します。",
+    "install": "ランタイムをインストール",
+    "retryInstallation": "インストールを再試行",
+    "cancel": "キャンセル"
+  }
+}

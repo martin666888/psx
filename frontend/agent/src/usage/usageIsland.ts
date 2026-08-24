@@ -8,14 +8,18 @@ import type { IslandFailureReporter, IslandHandle } from '../core/islandHost.js'
 import { mountReactIsland } from '../core/reactIsland.js';
 import { registerNamespace } from '../../../webview/src/i18n.js';
 import settingsZhHans from './locales/zh-Hans/settings.json';
+import settingsZhHant from './locales/zh-Hant/settings.json';
 import settingsEn from './locales/en/settings.json';
+import settingsJa from './locales/ja/settings.json';
 import { UsagePanel, type UsagePanelProps } from './UsagePanel.js';
 
 // The settings namespace ships with this chunk for every released language,
 // so a language switch never awaits resources (atomic single-frame switch).
 registerNamespace('settings', {
   'zh-Hans': settingsZhHans,
-  en: settingsEn
+  'zh-Hant': settingsZhHant,
+  en: settingsEn,
+  ja: settingsJa
 });
 
 export function mountUsageIsland(

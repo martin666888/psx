@@ -12,13 +12,17 @@
 import i18next from 'i18next';
 
 import shellZhHans from './locales/zh-Hans/shell.json';
+import shellZhHant from './locales/zh-Hant/shell.json';
 import shellEn from './locales/en/shell.json';
+import shellJa from './locales/ja/shell.json';
 
 export const SUPPORTED_LOCALES = Object.freeze(['zh-Hans', 'zh-Hant', 'en', 'ja']);
 
 const SHELL_RESOURCES = {
     'zh-Hans': { shell: shellZhHans },
-    en: { shell: shellEn }
+    'zh-Hant': { shell: shellZhHant },
+    en: { shell: shellEn },
+    ja: { shell: shellJa }
 };
 
 function localeFromBootstrapUrl() {

@@ -13,7 +13,9 @@ import { UsagePanelController } from './usage/UsagePanelController.js';
 import { AgentShellLayoutController } from './shell/AgentShellLayoutController.js';
 import { registerNamespace } from '../../webview/src/i18n.js';
 import agentZhHans from './locales/zh-Hans/agent.json';
+import agentZhHant from './locales/zh-Hant/agent.json';
 import agentEn from './locales/en/agent.json';
+import agentJa from './locales/ja/agent.json';
 import type { RawHostMessage } from './contracts/host-events.js';
 import type { SettingsSection } from './contracts/agent-usage.js';
 
@@ -21,7 +23,9 @@ import type { SettingsSection } from './contracts/agent-usage.js';
 // so a language switch never awaits resources (atomic single-frame switch).
 registerNamespace('agent', {
   'zh-Hans': agentZhHans,
-  en: agentEn
+  'zh-Hant': agentZhHant,
+  en: agentEn,
+  ja: agentJa
 });
 
 export interface AgentAppOptions {

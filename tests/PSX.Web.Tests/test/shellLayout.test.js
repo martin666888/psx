@@ -74,7 +74,7 @@ test('shell: the toolbar Update button follows runtime_update_status states', as
   }
 
   // Default (idle): actionable before any status event arrives.
-  assert.equal(update().textContent, 'Update');
+  assert.equal(update().textContent, '更新');
   assert.equal(update().disabled, false);
 
   update().click();
@@ -87,35 +87,35 @@ test('shell: the toolbar Update button follows runtime_update_status states', as
 
   app.handle({ type: 'runtime_update_status', workspaceId: WS, state: 'staged_restart_required', messageCode: '', currentVersion: '1.2.3', pendingVersion: '2.0.0' });
   await until(() => update().dataset.updateState === 'staged_restart_required', 'staged state renders');
-  assert.equal(update().textContent, 'Restart to update');
+  assert.equal(update().textContent, '重启后更新');
   assert.equal(update().disabled, true);
   assert.match(update().title, /2\.0\.0/);
 
   app.handle({ type: 'runtime_update_status', workspaceId: WS, state: 'unsupported', messageCode: '', currentVersion: '0.29.1', pendingVersion: '' });
   await until(() => update().dataset.updateState === 'unsupported', 'unsupported state renders');
   assert.equal(update().disabled, true);
-  assert.equal(update().title, 'Updates ship with PSX releases');
+  assert.equal(update().title, '更新随 PSX 版本提供');
 
   app.handle({ type: 'runtime_update_status', workspaceId: WS, state: 'install_required', messageCode: '', currentVersion: '', pendingVersion: '' });
   await until(() => update().dataset.updateState === 'install_required', 'install_required state renders');
   assert.equal(update().disabled, true);
-  assert.equal(update().title, 'Install the Agent runtime first');
+  assert.equal(update().title, '请先安装 Agent 运行时');
 
   app.handle({ type: 'runtime_update_status', workspaceId: WS, state: 'unavailable', messageCode: '', currentVersion: '', pendingVersion: '' });
   await until(() => update().dataset.updateState === 'unavailable', 'unavailable state renders');
   assert.equal(update().disabled, true);
-  assert.equal(update().title, 'Updates are not available for this workspace');
+  assert.equal(update().title, '此工作区无法更新');
 
   app.handle({ type: 'runtime_update_status', workspaceId: WS, state: 'failed', messageCode: 'update.network_unavailable', currentVersion: '1.2.3', pendingVersion: '' });
   await until(() => update().dataset.updateState === 'failed', 'failed state renders');
-  assert.equal(update().textContent, 'Retry update');
+  assert.equal(update().textContent, '重试更新');
   assert.equal(update().disabled, false);
   // The backend failure reason surfaces as the tooltip so the user sees why.
-  assert.match(update().title, /network is unavailable/);
+  assert.match(update().title, /网络不可用/);
 
   app.handle({ type: 'runtime_update_status', workspaceId: WS, state: 'up_to_date', messageCode: '', currentVersion: '1.2.3', pendingVersion: '' });
   await until(() => update().dataset.updateState === 'up_to_date', 'up_to_date state renders');
-  assert.equal(update().textContent, 'Up to date');
+  assert.equal(update().textContent, '已是最新');
   assert.equal(update().disabled, false);
 });
 
@@ -149,7 +149,7 @@ test('shell: the toolbar shows the product version label and tooltip details', a
     versionDetail: 'ACP adapter 1.0.0'
   });
   await until(() => version() && version().textContent === 'Claude Code v2.1.0', 'product version renders');
-  assert.match(update().title, /Current: 2\.1\.0/);
+  assert.match(update().title, /当前版本：2\.1\.0/);
   assert.match(update().title, /ACP adapter 1\.0\.0/);
   assert.ok(!version().textContent.includes('ACP'), 'ACP detail stays out of the resident label');
 
@@ -167,7 +167,7 @@ test('shell: the toolbar shows the product version label and tooltip details', a
   });
   await until(() => update().dataset.updateState === 'staged_restart_required', 'staged renders');
   assert.equal(version().textContent, 'Claude Code v2.1.0', 'staged keeps the current version label');
-  assert.match(update().title, /Update ready: 2\.2\.0/);
+  assert.match(update().title, /更新就绪：2\.2\.0/);
 
   // Failed keeps the current version label and adds the reason to the tooltip.
   app.handle({
@@ -182,7 +182,7 @@ test('shell: the toolbar shows the product version label and tooltip details', a
   });
   await until(() => update().dataset.updateState === 'failed', 'failed renders');
   assert.equal(version().textContent, 'Claude Code v2.1.0');
-  assert.match(update().title, /network is unavailable/);
+  assert.match(update().title, /网络不可用/);
 
   // Unknown / uninstalled: no version label element at all (never v0/Unknown).
   app.handle({
