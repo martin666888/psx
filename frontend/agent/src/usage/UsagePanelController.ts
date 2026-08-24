@@ -24,6 +24,7 @@ export interface UsagePanelHost {
   setActiveTab(section: SettingsSection): void;
   setSettingsDraft(registry: DshRegistryKey): void;
   applyRegistry(registry: DshRegistryKey): void;
+  setLocale(mode: string): void;
   close(): void;
 }
 
@@ -86,6 +87,7 @@ export class UsagePanelController {
       onSetAvatar: (base64Png) => this.host.setAvatar(base64Png),
       onSetSettingsDraft: (registry) => this.host.setSettingsDraft(registry),
       onApplyRegistry: (registry) => this.host.applyRegistry(registry),
+      onSetLocale: (mode) => this.host.setLocale(mode),
       onRestoreFocus: () => {
         document.querySelector<HTMLElement>('[data-role="app-settings-toggle"]')?.focus();
       }

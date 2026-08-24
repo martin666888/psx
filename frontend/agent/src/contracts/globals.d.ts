@@ -13,9 +13,10 @@ declare global {
     sendReady(): void;
     sendAgentGlobalCommand(command: string, value?: string | boolean, requestId?: string): void;
     sendAppSettingsCommand(
-      action: 'get' | 'set_dsh_registry',
+      action: 'get' | 'set_dsh_registry' | 'set_locale',
       requestId: string,
-      registry?: 'official' | 'npmmirror'
+      registry?: 'official' | 'npmmirror',
+      localeMode?: 'system' | 'zh-Hans' | 'zh-Hant' | 'en' | 'ja'
     ): void;
     createAgentScope(
       workspaceId: string

@@ -128,6 +128,12 @@ export interface UsageState {
   dshRegistry: DshRegistryKey;
   settingsDraft: DshRegistryKey;
   settingsError: string;
+  /** Persisted locale preference ('system' | zh-Hans | zh-Hant | en | ja). */
+  localeMode: string;
+  /** The concrete display language the backend resolved; empty until the
+   * first app_settings_snapshot arrives. */
+  resolvedLocale: string;
+  languageError: string;
   profileError: string;
   profileSaving: boolean;
 }
@@ -154,6 +160,9 @@ export function createInitialUsageState(): UsageState {
     dshRegistry: 'official',
     settingsDraft: 'official',
     settingsError: '',
+    localeMode: '',
+    resolvedLocale: '',
+    languageError: '',
     profileError: '',
     profileSaving: false
   };

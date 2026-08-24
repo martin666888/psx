@@ -123,6 +123,7 @@ export class AgentWorkspaceRegistry {
       setActiveTab: (section) => this.selectSettingsSection(section),
       setSettingsDraft: (registry) => this.usageStore.setSettingsDraft(registry),
       applyRegistry: (registry) => this.usageBroker.setDshRegistry(registry),
+      setLocale: (mode: 'system' | 'zh-Hans' | 'zh-Hant' | 'en' | 'ja') => this.usageBroker.setLocale(mode),
       close: () => this.usageStore.setPanelOpen(false)
     };
   }
@@ -155,7 +156,8 @@ export class AgentWorkspaceRegistry {
   private ensureSettingsSectionData(section: SettingsSection): void {
     if (section === 'usage') this.usageBroker.requestUsage(false);
     else if (section === 'config') this.usageBroker.requestConfig(false);
-    else if (section === 'registry') this.usageBroker.requestSettings();
+    else if (section === 'registry' || section === 'language')
+      this.usageBroker.requestSettings();
   }
 
   /** Called by entry.ts once the global dock exists (before any workspace is

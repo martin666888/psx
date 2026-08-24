@@ -35,9 +35,10 @@ import { safeDshRegistry, type DshRegistryKey } from './settingsRegistry.js';
 export interface UsageRequestHost {
   sendGlobalCommand(command: string, value?: string | boolean, requestId?: string): void;
   sendAppSettingsCommand(
-    action: 'get' | 'set_dsh_registry',
+    action: 'get' | 'set_dsh_registry' | 'set_locale',
     requestId: string,
-    registry?: 'official' | 'npmmirror'
+    registry?: 'official' | 'npmmirror',
+    localeMode?: 'system' | 'zh-Hans' | 'zh-Hant' | 'en' | 'ja'
   ): void;
 }
 
@@ -276,6 +277,7 @@ export class UsageRequestBroker {
   private configTimer: ReturnType<typeof setTimeout> | null = null;
 
   private settingsRequestId = '';
+  private pendingSettingsAction: '' | 'set_dsh_registry' | 'set_locale' = '';
 
   private disposed = false;
 
@@ -335,8 +337,19 @@ export class UsageRequestBroker {
     if (this.disposed) return;
     const requestId = this.nextId('s');
     this.settingsRequestId = requestId;
+    this.pendingSettingsAction = 'set_dsh_registry';
     this.store.setSettingsDraft(registry);
     this.host.sendAppSettingsCommand('set_dsh_registry', requestId, registry);
+  }
+
+  /** Persist a UI locale mode; the broadcast snapshot applies it process-wide
+   * (the shell switches i18next on resolvedLocale). */
+  setLocale(mode: 'system' | 'zh-Hans' | 'zh-Hant' | 'en' | 'ja'): void {
+    if (this.disposed) return;
+    const requestId = this.nextId('s');
+    this.settingsRequestId = requestId;
+    this.pendingSettingsAction = 'set_locale';
+    this.host.sendAppSettingsCommand('set_locale', requestId, undefined, mode);
   }
 
   // --- Response handlers ------------------------------------------------------
@@ -438,8 +451,17 @@ export class UsageRequestBroker {
       revision,
       dshRegistry: registry,
       draft: syncDraft ? registry : undefined,
-      error
+      // Route the save error to the section that owns the in-flight request.
+      error: error && this.pendingSettingsAction !== 'set_locale' ? error : '',
+      languageError:
+        error && this.pendingSettingsAction === 'set_locale'
+          ? error
+          : '',
+      localeMode: typeof raw.localeMode === 'string' ? raw.localeMode : undefined,
+      resolvedLocale:
+        typeof raw.resolvedLocale === 'string' ? raw.resolvedLocale : undefined
     });
+    if (matchesPending) this.pendingSettingsAction = '';
   }
 
   dispose(): void {

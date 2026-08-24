@@ -9,7 +9,7 @@
 
 import { Bridge } from './Bridge.js';
 import { createProviderIconSvg } from './ProviderIcons.js';
-import { t, onLocaleChanged } from './i18n.js';
+import { t, onLocaleChanged, applyLocaleChange } from './i18n.js';
 import {
     dshSourceLabel,
     dshSwitchCta,
@@ -499,10 +499,20 @@ export class WorkspaceChromeController {
             return;
         if (revision === this.appSettings.revision && this.appSettings.revision >= 0 && !message?.errorClass)
             return;
+        const previousResolved = this.appSettings.resolvedLocale;
         this.appSettings = {
             revision,
-            dshRegistry: safeDshRegistry(message?.dshRegistry)
+            dshRegistry: safeDshRegistry(message?.dshRegistry),
+            resolvedLocale: typeof message?.resolvedLocale === 'string'
+                ? message.resolvedLocale
+                : previousResolved
         };
+        // A language switch is one atomic frame: every namespace ships all
+        // languages statically, so changeLanguage never awaits resources.
+        if (this.appSettings.resolvedLocale
+            && this.appSettings.resolvedLocale !== previousResolved) {
+            applyLocaleChange(this.appSettings.resolvedLocale);
+        }
     }
 
     renderCreateMenu(menu) {

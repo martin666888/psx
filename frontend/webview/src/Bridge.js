@@ -160,16 +160,18 @@ export const Bridge = {
     },
 
     /**
-     * @param {'get'|'set_dsh_registry'} action
+     * @param {'get'|'set_dsh_registry'|'set_locale'} action
      * @param {string} requestId
      * @param {'official'|'npmmirror'} [registry]
+     * @param {'system'|'zh-Hans'|'zh-Hant'|'en'|'ja'} [localeMode]
      */
-    sendAppSettingsCommand(action, requestId, registry) {
+    sendAppSettingsCommand(action, requestId, registry, localeMode) {
         this.sendToHost({
             type: BridgeSendType.AppSettingsCommand,
             action,
             requestId,
-            ...(registry === 'official' || registry === 'npmmirror' ? { registry } : {})
+            ...(registry === 'official' || registry === 'npmmirror' ? { registry } : {}),
+            ...(typeof localeMode === 'string' && localeMode ? { localeMode } : {})
         });
     },
 

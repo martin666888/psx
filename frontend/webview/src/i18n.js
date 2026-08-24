@@ -64,6 +64,21 @@ export function t(key, options) {
     return i18n.t(key, options);
 }
 
+/** Apply a backend-resolved locale: switch language and update <html lang>
+ * in one step. Resources for every shipped namespace are bundled statically,
+ * so this completes synchronously (atomic single-frame switch).
+ *
+ * @param {string} locale
+ */
+export function applyLocaleChange(locale) {
+    if (!SUPPORTED_LOCALES.includes(locale)) return;
+    if ((i18n.resolvedLanguage || i18n.language) === locale) {
+        applyDocumentLang();
+        return;
+    }
+    void i18n.changeLanguage(locale).then(() => applyDocumentLang());
+}
+
 /** Subscribe to runtime language switches; returns an unsubscribe fn.
  *
  * @param {(locale: string) => void} callback

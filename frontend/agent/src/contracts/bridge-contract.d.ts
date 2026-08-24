@@ -96,8 +96,10 @@ interface DshCommandPayload {
 interface AppSettingsCommandPayload {
     type: 'app_settings_command';
     requestId: string;
-    action: 'get' | 'set_dsh_registry';
+    action: 'get' | 'set_dsh_registry' | 'set_locale';
     registry?: 'official' | 'npmmirror';
+    /** Carried by set_locale only; validated against the five modes C-side. */
+    localeMode?: 'system' | 'zh-Hans' | 'zh-Hant' | 'en' | 'ja';
 }
 
 interface KimiWebCommandPayload {

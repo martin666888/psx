@@ -132,13 +132,19 @@ export class UsageStore {
     dshRegistry: DshRegistryKey;
     draft?: DshRegistryKey;
     error: string;
+    languageError?: string;
+    localeMode?: string;
+    resolvedLocale?: string;
   }): void {
     this.set({
       ...this.state,
       settingsRevision: snapshot.revision,
       dshRegistry: snapshot.dshRegistry,
       settingsDraft: snapshot.draft ?? this.state.settingsDraft,
-      settingsError: snapshot.error
+      settingsError: snapshot.error,
+      localeMode: snapshot.localeMode ?? this.state.localeMode,
+      resolvedLocale: snapshot.resolvedLocale ?? this.state.resolvedLocale,
+      languageError: snapshot.languageError ?? ''
     });
   }
 

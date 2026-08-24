@@ -47,6 +47,7 @@ export interface UsagePanelProps {
   onSetAvatar(base64Png: string): void;
   onSetSettingsDraft(registry: DshRegistryKey): void;
   onApplyRegistry(registry: DshRegistryKey): void;
+  onSetLocale(mode: string): void;
   /** Controlled Dialogs have no Radix Trigger; restore the real opener explicitly. */
   onRestoreFocus(): void;
 }
@@ -551,6 +552,10 @@ export function UsagePanel(props: UsagePanelProps): JSX.Element {
               />
             ) : null}
 
+            {activeTab === 'language' ? (
+              <LanguageSection state={state} onSetLocale={props.onSetLocale} />
+            ) : null}
+
             {activeTab === 'config' ? (
               <ConfigPanel
                 state={state}
@@ -700,6 +705,64 @@ function RegistrySection({
       >
         {t('common.apply')}
       </Button>
+    </div>
+  );
+}
+
+const LOCALE_MODES: Array<{ mode: string; nameKey: string | null }> = [
+  { mode: 'system', nameKey: null },
+  { mode: 'zh-Hans', nameKey: 'localeNames.zh-Hans' },
+  { mode: 'zh-Hant', nameKey: 'localeNames.zh-Hant' },
+  { mode: 'en', nameKey: 'localeNames.en' },
+  { mode: 'ja', nameKey: 'localeNames.ja' }
+];
+
+/** Language settings: one radio list, native language names, immediate save
+ * through app_settings_command set_locale. A failure keeps the previous
+ * language and surfaces the fixed error in the current UI language. */
+function LanguageSection({
+  state,
+  onSetLocale
+}: {
+  state: UsageState;
+  onSetLocale(mode: string): void;
+}): JSX.Element {
+  const { t } = useTranslation('settings');
+  const resolved = state.resolvedLocale || 'zh-Hans';
+  const systemResolvedName =
+    state.resolvedLocale === ''
+      ? ''
+      : `（${t('language.systemResolvedSuffix', { resolved: resolved })}）`;
+  return (
+    <div className="agent-settings-registry" data-role="settings-language">
+      <p className="agent-settings-lede">{t('language.lede')}</p>
+      {LOCALE_MODES.map(({ mode, nameKey }) => {
+        const label =
+          nameKey == null
+            ? `${t('language.systemOption')}${systemResolvedName}`
+            : t(`language.${nameKey}`);
+        return (
+          <button
+            key={mode}
+            type="button"
+            className="agent-settings-choice"
+            data-role="settings-language-choice"
+            data-mode={mode}
+            data-selected={state.localeMode === mode ? 'true' : 'false'}
+            aria-pressed={state.localeMode === mode}
+            onClick={() => {
+              if (state.localeMode !== mode) onSetLocale(mode);
+            }}
+          >
+            <span className="agent-settings-choice-label">{label}</span>
+          </button>
+        );
+      })}
+      {state.languageError ? (
+        <p className="agent-usage-error" data-role="settings-language-error" role="alert">
+          {state.languageError}
+        </p>
+      ) : null}
     </div>
   );
 }
