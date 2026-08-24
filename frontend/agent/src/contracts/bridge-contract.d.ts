@@ -541,7 +541,7 @@ interface AgentProviderConfigReportEvent {
     notes: string[];
 }
 
-/** Disk-backed user config for the Usage panel「配置」tab — distinct from
+/** Disk-backed user config for the Usage panel config tab — distinct from
  * live ACP agent_config_options (session Composer). */
 interface AgentConfigReportEvent extends BridgeInboundMessageBase {
     type: 'agent_config_report';

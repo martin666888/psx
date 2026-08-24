@@ -4,7 +4,8 @@
       "attachmentsNotAllowed": "斜杠命令不能与附件同时发送，请先移除附件。",
       "commandsLoading": "Agent 命令列表仍在加载，请稍后重试。",
       "unsupported": "无法识别命令：{{command}}\nPSX 只支持命令菜单中显示的指令。输入 / 查看可用命令；部分 {{agentName}} 指令需要在原生 Terminal 中使用。"
-    }
+    },
+    "compactConfigAria": "Agent 配置"
   },
   "timeline": {
     "copy": "复制",
@@ -40,7 +41,8 @@
     "failedTooltip": "The update did not complete; click to retry",
     "stagedWithPending": "Restart PSX to apply the update.",
     "stagedWithoutPending": "Update is ready; restart PSX to apply.",
-    "checkTooltip": "Check for Agent runtime updates"
+    "checkTooltip": "Check for Agent runtime updates",
+    "moreAria": "更多 Agent 操作"
   },
   "sessionCard": {
     "titles": {

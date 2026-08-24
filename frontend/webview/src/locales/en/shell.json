@@ -137,7 +137,12 @@
       "lock_unavailable": "That version cannot be installed yet — please update PSX and retry.",
       "catalog_corrupt": "The PSX installation is damaged. Please reinstall.",
       "settings_write_failed": "Could not save the download-source setting; no retry was started."
-    }
+    },
+    "sourceOperation": "Operation source: {{registry}}",
+    "sourceDefault": "Default download source: {{registry}}",
+    "ctaRecheck": "re-check",
+    "ctaReinstall": "re-install",
+    "ctaSwitch": "Switch to {{registry}} and {{verb}}"
   },
   "kimi": {
     "starting": "Starting…",

@@ -29,9 +29,9 @@ $minimumTests = @{
     Unit = 640
     Integration = 107
     Desktop = 2
-    Fast = 747
-    Full = 749
-    Frontend = 358
+    Fast = 765
+    Full = 767
+    Frontend = 379
 }
 
 function Invoke-Checked {

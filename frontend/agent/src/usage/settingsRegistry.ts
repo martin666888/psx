@@ -10,10 +10,7 @@ export const DSH_REGISTRY_LABELS: Record<DshRegistryKey, string> = {
   npmmirror: 'npmmirror.com'
 };
 
-export const DSH_REGISTRY_NOTES: Record<DshRegistryKey, string> = {
-  official: '官方',
-  npmmirror: '淘宝镜像'
-};
+// Registry notes moved into the settings locales (registry.noteOfficial / noteNpmmirror).
 
 export function safeDshRegistry(value: unknown): DshRegistryKey {
   return value === 'npmmirror' ? 'npmmirror' : 'official';

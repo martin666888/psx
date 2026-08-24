@@ -422,7 +422,7 @@ export class PaneLayoutController {
         divider.dataset.dividerKey = `${leftColumnId}|${rightColumnId}`;
         divider.setAttribute('role', 'separator');
         divider.setAttribute('aria-orientation', 'vertical');
-        divider.setAttribute('aria-label', '调整相邻列宽度');
+        divider.setAttribute('aria-label', t('panes.dividerAria'));
         divider.tabIndex = 0;
         divider.title = t('panes.dividerTitle');
 

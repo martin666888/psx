@@ -143,7 +143,7 @@ export function WorkspaceToolbar(props: WorkspaceToolbarProps): JSX.Element {
           ref={moreTriggerRef}
           type="button"
           className="agent-toolbar-more-trigger"
-          aria-label="更多 Agent 操作"
+          aria-label={i18nT('toolbar.moreAria', { ns: 'agent' })}
           aria-expanded={moreOpen}
           onClick={() => setMoreOpen((open) => !open)}
         >

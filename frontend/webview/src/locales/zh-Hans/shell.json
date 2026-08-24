@@ -137,7 +137,12 @@
       "lock_unavailable": "该版本暂不可安装，请更新 PSX 后重试。",
       "catalog_corrupt": "PSX 安装文件损坏，请重新安装。",
       "settings_write_failed": "无法保存下载源设置，未开始重试。"
-    }
+    },
+    "sourceOperation": "本次来源：{{registry}}",
+    "sourceDefault": "当前默认下载源：{{registry}}",
+    "ctaRecheck": "重新检查",
+    "ctaReinstall": "重新安装",
+    "ctaSwitch": "改用 {{registry}} {{verb}}"
   },
   "kimi": {
     "starting": "正在启动…",

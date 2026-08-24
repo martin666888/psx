@@ -12,11 +12,6 @@ export const DSH_REGISTRY_LABELS = Object.freeze({
     npmmirror: 'npmmirror.com'
 });
 
-export const DSH_REGISTRY_NOTES = Object.freeze({
-    official: '官方',
-    npmmirror: '淘宝镜像'
-});
-
 // The runtime/update error copy tables moved into the shell locales
 // (dsh.runtimeErrorCopy / dsh.updateErrorCopy); lookups go through the
 // shared i18n instance so a language switch re-renders in place.
@@ -37,8 +32,10 @@ export function otherDshRegistry(key) {
 export function dshSourceLabel(status) {
     const operationKey = status?.operationRegistryKey;
     if (operationKey === 'official' || operationKey === 'npmmirror')
-        return `本次来源：${DSH_REGISTRY_LABELS[operationKey]}`;
-    return `当前默认下载源：${DSH_REGISTRY_LABELS[safeDshRegistry(status?.registryKey)]}`;
+        return t('dsh.sourceOperation', { registry: DSH_REGISTRY_LABELS[operationKey] });
+    return t('dsh.sourceDefault', {
+        registry: DSH_REGISTRY_LABELS[safeDshRegistry(status?.registryKey)]
+    });
 }
 
 /**
@@ -57,14 +54,14 @@ export function dshSwitchCta(status) {
     const current = safeDshRegistry(status?.operationRegistryKey || status?.registryKey);
     const installed = Boolean(status?.currentVersion) && status?.state !== 'not_installed';
     const command = installed ? 'recheck_with_registry' : 'retry_install_with_registry';
-    const verb = installed ? '重新检查' : '重新安装';
+    const verb = installed ? t('dsh.ctaRecheck') : t('dsh.ctaReinstall');
 
     if (typed === 'registry_timeout' || typed === 'registry_network') {
         const registry = otherDshRegistry(current);
         return {
             command,
             registry,
-            label: `改用 ${DSH_REGISTRY_LABELS[registry]} ${verb}`
+            label: t('dsh.ctaSwitch', { registry: DSH_REGISTRY_LABELS[registry], verb })
         };
     }
 
@@ -73,7 +70,7 @@ export function dshSwitchCta(status) {
         return {
             command,
             registry: 'official',
-            label: `改用 ${DSH_REGISTRY_LABELS.official} ${verb}`
+            label: t('dsh.ctaSwitch', { registry: DSH_REGISTRY_LABELS.official, verb })
         };
     }
 

@@ -4,7 +4,8 @@
       "attachmentsNotAllowed": "Slash commands cannot be sent together with attachments. Remove the attachments first.",
       "commandsLoading": "The Agent command list is still loading — please retry shortly.",
       "unsupported": "Unrecognized command: {{command}}\nPSX only supports the commands shown in the command menu. Type / to see the available commands; some {{agentName}} commands must run in a native terminal."
-    }
+    },
+    "compactConfigAria": "Agent configuration"
   },
   "timeline": {
     "copy": "Copy",
@@ -40,7 +41,8 @@
     "failedTooltip": "The update did not complete; click to retry",
     "stagedWithPending": "Restart PSX to apply the update.",
     "stagedWithoutPending": "Update is ready; restart PSX to apply.",
-    "checkTooltip": "Check for Agent runtime updates"
+    "checkTooltip": "Check for Agent runtime updates",
+    "moreAria": "More Agent actions"
   },
   "sessionCard": {
     "titles": {

@@ -61,14 +61,17 @@ const USAGE_GAP_REASONS = new Set<UsageGapReason>([
 ]);
 const TIMEOUT_TEXT = 'Loading usage timed out.';
 const DEFAULT_ERROR_TEXT = 'Unable to load usage.';
-const TIMEOUT_CONFIG_TEXT = 'Loading config timed out.';
-const DEFAULT_CONFIG_ERROR_TEXT = 'Unable to load config.';
-const DEFAULT_PROFILE_ERROR_TEXT = '无法保存个人资料，请重试。';
+import { i18n } from '../../../webview/src/i18n.js';
 
-// Fixed config-report error codes → display copy.
-const CONFIG_ERROR_COPY: Readonly<Record<string, string>> = {
-  'config.note.scan_failed': '无法读取配置信息，请重试。'
-};
+const TIMEOUT_CONFIG_TEXT = 'Loading config timed out.';
+const DEFAULT_PROFILE_ERROR_TEXT_KEY = 'profile.saveFailed';
+
+// Fixed config-report error codes resolve through the settings locales.
+function configErrorText(code?: string | null): string {
+  const key = code ? `config.notes.${code.replace(/^config\.note\./, '')}` : '';
+  const localized = key ? i18n.t(key, { ns: 'settings', defaultValue: '' }) : '';
+  return localized || i18n.t('config.loadFailed', { ns: 'settings' });
+}
 
 function num(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
@@ -93,7 +96,7 @@ function strOrNull(value: unknown): string | null {
 function safeProfileError(value: string): string {
   const text = value.trim();
   if (!text || text.length > 160 || /[\\/]|[A-Za-z]:[\\/]/.test(text) || text.includes('\n'))
-    return DEFAULT_PROFILE_ERROR_TEXT;
+    return i18n.t(DEFAULT_PROFILE_ERROR_TEXT_KEY, { ns: 'settings' });
   return text;
 }
 
@@ -416,7 +419,7 @@ export class UsageRequestBroker {
     if (error || !raw.report) {
       // `error` is a fixed note code (Models/AgentConfigModels.cs); map it
       // to display copy here so raw keys never reach the DOM.
-      this.store.applyConfigError(CONFIG_ERROR_COPY[error ?? ''] ?? DEFAULT_CONFIG_ERROR_TEXT);
+      this.store.applyConfigError(configErrorText(error));
       return;
     }
     this.store.applyConfigReport(normalizeConfigReport(raw.report), str(raw.generatedAt));
@@ -432,7 +435,9 @@ export class UsageRequestBroker {
     const currentRevision = this.store.getState().settingsRevision;
     const errorClass = strOrNull(raw.errorClass);
     const errorMessage = str(raw.errorMessage);
-    const error = matchesPending && errorClass ? (errorMessage || '无法保存下载源设置。') : '';
+    const error = matchesPending && errorClass
+      ? errorMessage || i18n.t('registry.saveFailed', { ns: 'settings' })
+      : '';
 
     if (matchesPending) this.settingsRequestId = '';
 

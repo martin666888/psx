@@ -37,7 +37,8 @@
   "registry": {
     "lede": "Choose the npm package download source. The npmmirror mirror still verifies the root package against npmjs.org before updating.",
     "noteOfficial": "Official",
-    "noteNpmmirror": "Taobao mirror"
+    "noteNpmmirror": "Taobao mirror",
+    "saveFailed": "Could not save the download-source setting."
   },
   "config": {
     "stateAvailable": "Available",

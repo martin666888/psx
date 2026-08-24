@@ -13,6 +13,7 @@
 // projection that arrived while the island chunk was loading.
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type JSX, type RefObject } from 'react';
+import { useTranslation } from 'react-i18next';
 import { SlidersHorizontalIcon } from 'lucide-react';
 import { AnnounceContext } from '../ui/announce.js';
 import { BridgeProtocolLimits } from '../contracts/bridgeProtocolLimits.generated.js';
@@ -377,6 +378,7 @@ function ComposerTextarea(props: {
 }
 
 export function ComposerView(props: ComposerViewProps): JSX.Element {
+  const { t } = useTranslation('agent');
   const [draft, setDraft] = useState(props.draft.initialDraft);
   const [isComposing, setIsComposing] = useState(false);
   const [compactConfigOpen, setCompactConfigOpen] = useState(false);
@@ -515,7 +517,7 @@ export function ComposerView(props: ComposerViewProps): JSX.Element {
                   ref={configToggleRef}
                   type="button"
                   className="agent-config-toggle"
-                  aria-label="Agent 配置"
+                  aria-label={t('composer.compactConfigAria')}
                   aria-expanded={compactConfigOpen}
                   onClick={() => setCompactConfigOpen((open) => !open)}
                 >

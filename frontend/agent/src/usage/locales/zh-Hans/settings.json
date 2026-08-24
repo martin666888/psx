@@ -37,7 +37,8 @@
   "registry": {
     "lede": "选择 npm 包下载源。淘宝 npmmirror 更新前仍会核验 npmjs.org 上的根包。",
     "noteOfficial": "官方",
-    "noteNpmmirror": "淘宝镜像"
+    "noteNpmmirror": "淘宝镜像",
+    "saveFailed": "无法保存下载源设置。"
   },
   "config": {
     "stateAvailable": "可用",
