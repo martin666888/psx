@@ -1,2 +1,58 @@
 {
+  "composer": {
+    "hint": {
+      "attachmentsNotAllowed": "Slash commands cannot be sent together with attachments. Remove the attachments first.",
+      "commandsLoading": "The Agent command list is still loading — please retry shortly.",
+      "unsupported": "Unrecognized command: {{command}}\nPSX only supports the commands shown in the command menu. Type / to see the available commands; some {{agentName}} commands must run in a native terminal."
+    }
+  },
+  "timeline": {
+    "copy": "Copy",
+    "copied": "Copied",
+    "copyFailed": "Copy failed",
+    "showMore": "Show more",
+    "collapse": "Collapse"
+  },
+  "runtime": {
+    "notInstalled": "Agent runtime is not installed.",
+    "ready": "Agent runtime is ready.",
+    "preparingInstall": "Preparing to install the Agent runtime…",
+    "installSucceeded": "Agent runtime installed successfully.",
+    "cancellingInstall": "Cancelling Agent runtime installation…",
+    "installCancelled": "Agent runtime installation was cancelled.",
+    "networkUnavailable": "Download failed. Check the network connection and retry.",
+    "installFailed": "Agent runtime installation failed.",
+    "updateFailed": "The update did not complete. Click to retry.",
+    "updateNetworkUnavailable": "The update failed — the network is unavailable. Check the connection and retry.",
+    "transcriptReadOnly": "This saved transcript is read-only."
+  },
+  "toolbar": {
+    "checking": "Checking…",
+    "upToDate": "Up to date",
+    "stagedRestart": "Restart to update",
+    "retryUpdate": "Retry update",
+    "update": "Update",
+    "unsupportedTitle": "Updates ship with PSX releases",
+    "installRequiredTitle": "Install the Agent runtime first",
+    "unavailableTitle": "Updates are not available for this workspace",
+    "currentVersion": "Current: {{version}}",
+    "pendingVersion": "Update ready: {{version}}",
+    "failedTooltip": "The update did not complete; click to retry",
+    "stagedWithPending": "Restart PSX to apply the update.",
+    "stagedWithoutPending": "Update is ready; restart PSX to apply.",
+    "checkTooltip": "Check for Agent runtime updates"
+  },
+  "sessionCard": {
+    "titles": {
+      "missing": "Agent runtime required",
+      "installing": "Installing Agent runtime",
+      "failed": "Agent runtime installation failed",
+      "cancelled": "Agent runtime installation cancelled"
+    },
+    "fallbackTitle": "Agent runtime",
+    "note": "Downloads pinned components from the official npm registry into this PSX folder and reuses them on later launches.",
+    "install": "Install runtime",
+    "retryInstallation": "Retry installation",
+    "cancel": "Cancel"
+  }
 }

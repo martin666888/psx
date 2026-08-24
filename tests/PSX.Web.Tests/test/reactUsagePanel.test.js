@@ -402,7 +402,7 @@ test('panel: config opens as its own surface without a usage/config switch', asy
   const nav = [...document.querySelectorAll('[data-role="settings-nav-item"]')].map(
     (node) => node.getAttribute('data-section')
   );
-  assert.deepEqual(nav, ['profile', 'usage', 'config', 'registry']);
+  assert.deepEqual(nav, ['profile', 'language', 'usage', 'config', 'registry']);
 
   await settle(
     () =>
@@ -481,7 +481,7 @@ test('panel: settings dialog uses a left nav for profile, usage, config and regi
   const nav = [...document.querySelectorAll('[data-role="settings-nav-item"]')];
   assert.deepEqual(
     nav.map((node) => node.getAttribute('data-section')),
-    ['profile', 'usage', 'config', 'registry']
+    ['profile', 'language', 'usage', 'config', 'registry']
   );
   assert.equal(nav[0].getAttribute('aria-current'), 'page');
   assert.equal(document.querySelector('[data-role="settings-heading"]').textContent, '个人主页');

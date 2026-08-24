@@ -11,6 +11,7 @@
 // TimelineDecisions.tsx and render inside the same tree.
 
 import { useEffect, useLayoutEffect, useRef, useState, type JSX, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { AnnounceContext, useAnnounceLive } from '../ui/announce.js';
 import {
   TOOL_STATE_LABELS,
@@ -78,6 +79,7 @@ export interface TimelineViewProps {
 /** React twin of createCopyButton + showCopyFeedback, restyled onto the AI
  * Elements MessageAction (ghost icon button + tooltip). */
 export function CopyButton(props: { getText(): string; copyText(text: string): Promise<boolean> }): JSX.Element {
+  const { t } = useTranslation('agent');
   const [feedback, setFeedback] = useState<'idle' | 'success' | 'fail'>('idle');
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useLayoutEffect(
@@ -86,7 +88,11 @@ export function CopyButton(props: { getText(): string; copyText(text: string): P
     },
     []
   );
-  const label = feedback === 'success' ? '已复制' : feedback === 'fail' ? '复制失败' : '复制';
+  const label = feedback === 'success'
+    ? t('timeline.copied')
+    : feedback === 'fail'
+      ? t('timeline.copyFailed')
+      : t('timeline.copy');
   return (
     <MessageAction
       tooltip={label}
@@ -422,6 +428,7 @@ function UserMessageBody({
   item: MessageItem;
   callbacks: TimelineCallbacks;
 }): JSX.Element {
+  const { t } = useTranslation('agent');
   const body = useRef<HTMLDivElement | null>(null);
   const content = useRef<HTMLDivElement | null>(null);
   const [collapsible, setCollapsible] = useState(false);
@@ -477,7 +484,7 @@ function UserMessageBody({
             }
           }}
         >
-          {collapsed ? '显示更多' : '收起'}
+          {collapsed ? t('timeline.showMore') : t('timeline.collapse')}
           <ChevronDownIcon
             className={'size-3.5' + (collapsed ? '' : ' rotate-180')}
             aria-hidden="true"

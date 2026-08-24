@@ -102,7 +102,7 @@ export interface ConfigReport {
   providers: ProviderConfigReport[];
 }
 
-export type SettingsSection = 'profile' | 'usage' | 'config' | 'registry';
+export type SettingsSection = 'profile' | 'language' | 'usage' | 'config' | 'registry';
 /** @deprecated Use SettingsSection. Kept so openUsage('usage'|'config') stays typed. */
 export type UsagePanelTab = SettingsSection;
 

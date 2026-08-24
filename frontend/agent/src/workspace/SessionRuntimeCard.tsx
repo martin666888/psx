@@ -10,15 +10,9 @@
 import type { JSX } from 'react';
 import type { WorkspaceRuntimeState } from '../contracts/workspace-state.js';
 import { runtimeStatusLabel } from './runtimeCopy.js';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../components/ui/button.js';
 import { LoaderCircleIcon, TriangleAlertIcon, XCircleIcon } from 'lucide-react';
-
-const RUNTIME_TITLES: Readonly<Record<string, string>> = {
-  missing: 'Agent runtime required',
-  installing: 'Installing Agent runtime',
-  failed: 'Agent runtime installation failed',
-  cancelled: 'Agent runtime installation cancelled'
-};
 
 function isRuntimeCardHidden(state: string): boolean {
   return state === 'ready';
@@ -67,6 +61,7 @@ export function SessionRuntimeCard({
   onInstall,
   onCancel
 }: SessionRuntimeCardProps): JSX.Element {
+  const { t } = useTranslation('agent');
   return (
     <section
       data-role="runtime-card"
@@ -84,14 +79,15 @@ export function SessionRuntimeCard({
       <RuntimeIndicator state={runtime.state} />
       <div className="agent-runtime-copy min-w-0">
         <h2 className="m-0 font-semibold text-sm leading-snug" data-role="runtime-title">
-          {RUNTIME_TITLES[runtime.state] || 'Agent runtime'}
+          {runtime.state
+            ? t(`sessionCard.titles.${runtime.state}`, { defaultValue: t('sessionCard.fallbackTitle') })
+            : t('sessionCard.fallbackTitle')}
         </h2>
         <p className="mt-1 mb-0 break-words text-muted-foreground text-xs leading-normal" data-role="runtime-message">
           {runtimeStatusLabel(runtime.messageCode)}
         </p>
         <p className="agent-runtime-note mt-1 mb-0 text-muted-foreground text-xs leading-normal">
-          Downloads pinned components from the official npm registry into this PSX folder and reuses them on later
-          launches.
+          {t('sessionCard.note')}
         </p>
       </div>
       <div className="agent-runtime-actions flex items-center gap-2">
@@ -102,7 +98,7 @@ export function SessionRuntimeCard({
           disabled={!runtime.canInstall}
           onClick={onInstall}
         >
-          {runtime.state === 'missing' ? 'Install runtime' : 'Retry installation'}
+          {runtime.state === 'missing' ? t('sessionCard.install') : t('sessionCard.retryInstallation')}
         </Button>
         <Button
           data-role="runtime-cancel"
@@ -112,7 +108,7 @@ export function SessionRuntimeCard({
           disabled={!runtime.canCancel}
           onClick={onCancel}
         >
-          Cancel
+          {t('sessionCard.cancel')}
         </Button>
       </div>
     </section>

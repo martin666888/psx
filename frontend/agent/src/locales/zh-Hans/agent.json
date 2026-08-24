@@ -1,2 +1,58 @@
 {
+  "composer": {
+    "hint": {
+      "attachmentsNotAllowed": "斜杠命令不能与附件同时发送，请先移除附件。",
+      "commandsLoading": "Agent 命令列表仍在加载，请稍后重试。",
+      "unsupported": "无法识别命令：{{command}}\nPSX 只支持命令菜单中显示的指令。输入 / 查看可用命令；部分 {{agentName}} 指令需要在原生 Terminal 中使用。"
+    }
+  },
+  "timeline": {
+    "copy": "复制",
+    "copied": "已复制",
+    "copyFailed": "复制失败",
+    "showMore": "显示更多",
+    "collapse": "收起"
+  },
+  "runtime": {
+    "notInstalled": "Agent runtime is not installed.",
+    "ready": "Agent runtime is ready.",
+    "preparingInstall": "Preparing to install the Agent runtime…",
+    "installSucceeded": "Agent runtime installed successfully.",
+    "cancellingInstall": "Cancelling Agent runtime installation…",
+    "installCancelled": "Agent runtime installation was cancelled.",
+    "networkUnavailable": "Download failed. Check the network connection and retry.",
+    "installFailed": "Agent runtime installation failed.",
+    "updateFailed": "The update did not complete. Click to retry.",
+    "updateNetworkUnavailable": "The update failed — the network is unavailable. Check the connection and retry.",
+    "transcriptReadOnly": "This saved transcript is read-only."
+  },
+  "toolbar": {
+    "checking": "Checking…",
+    "upToDate": "Up to date",
+    "stagedRestart": "Restart to update",
+    "retryUpdate": "Retry update",
+    "update": "Update",
+    "unsupportedTitle": "Updates ship with PSX releases",
+    "installRequiredTitle": "Install the Agent runtime first",
+    "unavailableTitle": "Updates are not available for this workspace",
+    "currentVersion": "Current: {{version}}",
+    "pendingVersion": "Update ready: {{version}}",
+    "failedTooltip": "The update did not complete; click to retry",
+    "stagedWithPending": "Restart PSX to apply the update.",
+    "stagedWithoutPending": "Update is ready; restart PSX to apply.",
+    "checkTooltip": "Check for Agent runtime updates"
+  },
+  "sessionCard": {
+    "titles": {
+      "missing": "Agent runtime required",
+      "installing": "Installing Agent runtime",
+      "failed": "Agent runtime installation failed",
+      "cancelled": "Agent runtime installation cancelled"
+    },
+    "fallbackTitle": "Agent runtime",
+    "note": "Downloads pinned components from the official npm registry into this PSX folder and reuses them on later launches.",
+    "install": "Install runtime",
+    "retryInstallation": "Retry installation",
+    "cancel": "Cancel"
+  }
 }

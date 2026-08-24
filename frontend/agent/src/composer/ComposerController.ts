@@ -19,6 +19,7 @@
 // seam so the thread keeps a single writer.
 
 import type { AgentBridgePort } from '../contracts/bridge-port.js';
+import { t as i18nT } from '../../../webview/src/i18n.js';
 import { BridgeProtocolLimits } from '../contracts/bridgeProtocolLimits.generated.js';
 import type { FeatureController } from '../contracts/feature-controller.js';
 import type { AgentWorkspaceEvent, RawHostMessage } from '../contracts/host-events.js';
@@ -516,15 +517,16 @@ export class ComposerController implements FeatureController {
   }
 
   private showCommandHint(command: string, reason: string): void {
-    let text: string;
-    if (reason === 'attachments_not_allowed') {
-      text = '斜杠命令不能与附件同时发送，请先移除附件。';
-    } else if (reason === 'commands_loading') {
-      text = 'Agent 命令列表仍在加载，请稍后重试。';
-    } else {
-      text = '无法识别命令：' + command
-        + '\nPSX 只支持命令菜单中显示的指令。输入 / 查看可用命令；部分 ' + this.agentName + ' 指令需要在原生 Terminal 中使用。';
-    }
+    // Whole-sentence keys with interpolation — never half-sentence splicing.
+    const text = reason === 'attachments_not_allowed'
+      ? i18nT('composer.hint.attachmentsNotAllowed', { ns: 'agent' })
+      : reason === 'commands_loading'
+        ? i18nT('composer.hint.commandsLoading', { ns: 'agent' })
+        : i18nT('composer.hint.unsupported', {
+            ns: 'agent',
+            command,
+            agentName: this.agentName
+          });
     this.hintText = text;
     this.hintVisible = true;
     this.renderComposerIsland();

@@ -17,6 +17,8 @@ import {
 } from '../components/ui/tooltip.js';
 import { SessionMeta, type SessionMetaProps } from './SessionToolbar.js';
 import { runtimeUpdateFailureLabel } from './runtimeCopy.js';
+import { i18n } from '../../../webview/src/i18n.js';
+const i18nT = i18n.t.bind(i18n);
 import { useDismissibleLayer } from '../components/use-dismissible-layer.js';
 
 export interface WorkspaceToolbarProps {
@@ -59,43 +61,42 @@ const UPDATE_DISABLED_STATES: ReadonlySet<string> = new Set([
 ]);
 
 function updateButtonLabel(state: string): string {
-  switch (state) {
-    case 'checking':
-      return 'Checking…';
-    case 'up_to_date':
-      return 'Up to date';
-    case 'staged_restart_required':
-      return 'Restart to update';
-    case 'failed':
-      return 'Retry update';
-    default:
-      return 'Update';
-  }
+  // Module-scope helper: resolve through the shared instance so non-hook
+  // callers still get the current language.
+  const key = {
+    checking: 'toolbar.checking',
+    up_to_date: 'toolbar.upToDate',
+    staged_restart_required: 'toolbar.stagedRestart',
+    failed: 'toolbar.retryUpdate'
+  }[state];
+  return key ? i18nT(key, { ns: 'agent', defaultValue: i18nT('toolbar.update', { ns: 'agent' }) }) : i18nT('toolbar.update', { ns: 'agent' });
 }
 
 function updateButtonTitle(update: WorkspaceToolbarProps['update']): string {
-  if (update.state === 'unsupported') return 'Updates ship with PSX releases';
-  if (update.state === 'install_required') return 'Install the Agent runtime first';
-  if (update.state === 'unavailable') return 'Updates are not available for this workspace';
+  const t = (key: string, options?: Record<string, unknown>): string =>
+    i18nT(key, { ns: 'agent', ...options });
+  if (update.state === 'unsupported') return t('toolbar.unsupportedTitle');
+  if (update.state === 'install_required') return t('toolbar.installRequiredTitle');
+  if (update.state === 'unavailable') return t('toolbar.unavailableTitle');
 
   // Every other state aggregates the same tooltip: the current version, any
   // staged/pending version, the ACP/runtime technical detail and (on failure)
   // the backend reason. Blank slices drop out so short states stay terse.
   const lines: string[] = [];
-  if (update.currentVersion) lines.push('Current: ' + update.currentVersion);
-  if (update.pendingVersion) lines.push('Update ready: ' + update.pendingVersion);
+  if (update.currentVersion) lines.push(t('toolbar.currentVersion', { version: update.currentVersion }));
+  if (update.pendingVersion) lines.push(t('toolbar.pendingVersion', { version: update.pendingVersion }));
   if (update.versionDetail) lines.push(update.versionDetail);
 
   if (update.state === 'failed') {
-    lines.push(runtimeUpdateFailureLabel(update.messageCode) || 'Update check failed; click to retry');
+    lines.push(runtimeUpdateFailureLabel(update.messageCode) || t('toolbar.failedTooltip'));
   } else if (update.state === 'staged_restart_required') {
     lines.push(
       update.pendingVersion
-        ? 'Restart PSX to apply the update.'
-        : 'Update is ready; restart PSX to apply.'
+        ? t('toolbar.stagedWithPending')
+        : t('toolbar.stagedWithoutPending')
     );
   } else {
-    lines.push('Check for Agent runtime updates');
+    lines.push(t('toolbar.checkTooltip'));
   }
   return lines.join('\n');
 }

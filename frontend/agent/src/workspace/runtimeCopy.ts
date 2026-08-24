@@ -1,30 +1,32 @@
-// runtimeCopy.ts — fixed backend codes → display sentences for the
-// runtime_status / runtime_update_status bridge events. C# sends only the
-// stable messageCode (Models/RuntimeStatusCode.cs); composed sentences and
-// raw npm output never cross the bridge.
+// runtimeCopy.ts — backend messageCode → display copy through the shared
+// i18n instance (agent namespace). C# sends only stable codes
+// (Models/RuntimeStatusCode.cs); composed sentences never cross the bridge.
 
-export const RUNTIME_STATUS_COPY: Readonly<Record<string, string>> = {
-  'runtime.not_installed': 'Agent runtime is not installed.',
-  'runtime.ready': 'Agent runtime is ready.',
-  'runtime.preparing_install': 'Preparing to install the Agent runtime…',
-  'runtime.install_succeeded': 'Agent runtime installed successfully.',
-  'runtime.cancelling_install': 'Cancelling Agent runtime installation…',
-  'runtime.install_cancelled': 'Agent runtime installation was cancelled.',
-  'runtime.network_unavailable': 'Download failed. Check the network connection and retry.',
-  'runtime.install_failed': 'Agent runtime installation failed.'
+import { t } from '../../../webview/src/i18n.js';
+
+const RUNTIME_STATUS_KEY: Readonly<Record<string, string>> = {
+  'runtime.not_installed': 'runtime.notInstalled',
+  'runtime.ready': 'runtime.ready',
+  'runtime.preparing_install': 'runtime.preparingInstall',
+  'runtime.install_succeeded': 'runtime.installSucceeded',
+  'runtime.cancelling_install': 'runtime.cancellingInstall',
+  'runtime.install_cancelled': 'runtime.installCancelled',
+  'runtime.network_unavailable': 'runtime.networkUnavailable',
+  'runtime.install_failed': 'runtime.installFailed'
 };
 
 export function runtimeStatusLabel(code: string): string {
-  return RUNTIME_STATUS_COPY[code] || '';
+  const key = RUNTIME_STATUS_KEY[code];
+  return key ? t(key, { ns: 'agent', defaultValue: '' }) : '';
 }
 
-export const RUNTIME_UPDATE_FAILURE_COPY: Readonly<Record<string, string>> = {
-  'update.failed': 'The update did not complete. Click to retry.',
-  'update.network_unavailable':
-    'The update failed — the network is unavailable. Check the connection and retry.',
-  'runtime.transcript_read_only': 'This saved transcript is read-only.'
+const RUNTIME_UPDATE_FAILURE_KEY: Readonly<Record<string, string>> = {
+  'update.failed': 'runtime.updateFailed',
+  'update.network_unavailable': 'runtime.updateNetworkUnavailable',
+  'runtime.transcript_read_only': 'runtime.transcriptReadOnly'
 };
 
 export function runtimeUpdateFailureLabel(code: string): string {
-  return RUNTIME_UPDATE_FAILURE_COPY[code] || '';
+  const key = RUNTIME_UPDATE_FAILURE_KEY[code];
+  return key ? t(key, { ns: 'agent', defaultValue: '' }) : '';
 }

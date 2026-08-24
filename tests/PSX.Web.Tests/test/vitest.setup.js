@@ -4,6 +4,16 @@
 import { afterAll, afterEach } from 'vitest';
 import { act } from 'react';
 import { disposeActiveAgentRuntime } from './agentHarness.js';
+import { registerNamespace } from '../../../frontend/webview/src/i18n.js';
+import agentZhHans from '../../../frontend/agent/src/locales/zh-Hans/agent.json';
+import agentEn from '../../../frontend/agent/src/locales/en/agent.json';
+import settingsZhHans from '../../../frontend/agent/src/usage/locales/zh-Hans/settings.json';
+import settingsEn from '../../../frontend/agent/src/usage/locales/en/settings.json';
+
+// Tests that mount islands directly (bypassing entry.ts / usageIsland.ts)
+// still need the lazy namespaces; register them once for the whole file run.
+registerNamespace('agent', { 'zh-Hans': agentZhHans, en: agentEn });
+registerNamespace('settings', { 'zh-Hans': settingsZhHans, en: settingsEn });
 
 process.env.TZ ||= 'UTC';
 

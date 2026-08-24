@@ -1,0 +1,124 @@
+{
+  "title": "设置",
+  "dialogDescription": "用户资料、用量、只读配置与 npm 下载源",
+  "navAria": "设置分类",
+  "section": {
+    "profile": "个人主页",
+    "language": "语言",
+    "usage": "用量",
+    "config": "配置",
+    "registry": "下载源"
+  },
+  "common": {
+    "refresh": "刷新",
+    "retry": "重试",
+    "apply": "应用"
+  },
+  "profile": {
+    "avatarAria": "更换头像",
+    "nameAria": "显示名",
+    "editNameAria": "编辑显示名",
+    "unnamed": "未命名",
+    "note": "目前可修改显示名称。点击名称即可编辑。",
+    "saveFailed": "无法保存个人资料，请重试。"
+  },
+  "language": {
+    "lede": "选择界面显示语言，或跟随 Windows 显示语言。切换立即生效。",
+    "systemOption": "跟随 Windows",
+    "systemResolvedSuffix": "当前：{{resolved}}",
+    "localeNames": {
+      "zh-Hans": "简体中文",
+      "zh-Hant": "繁體中文",
+      "en": "English",
+      "ja": "日本語"
+    },
+    "saveFailed": "无法保存语言设置。"
+  },
+  "registry": {
+    "lede": "选择 npm 包下载源。淘宝 npmmirror 更新前仍会核验 npmjs.org 上的根包。",
+    "noteOfficial": "官方",
+    "noteNpmmirror": "淘宝镜像"
+  },
+  "config": {
+    "stateAvailable": "可用",
+    "statePartial": "部分",
+    "stateUnavailable": "不可用",
+    "toolbarLabel": "用户级配置（只读）",
+    "updatedAt": "更新于 {{time}}",
+    "refreshAria": "刷新配置",
+    "loading": "正在读取配置…",
+    "empty": "暂无配置可展示",
+    "chooseAgentAria": "选择 Agent",
+    "modelsHeading": "模型",
+    "mcpDisabled": "已禁用",
+    "envKeyTitle": "环境变量键（值已隐藏）",
+    "headerKeyTitle": "请求头键（值已隐藏）",
+    "scanFailed": "无法读取配置信息，请重试。",
+    "loadFailed": "Unable to load config.",
+    "facts": {
+      "env_var_keys": "环境变量键",
+      "default_model": "默认模型",
+      "small_model": "小模型",
+      "subagent_model": "子 Agent 模型",
+      "subagent_model_pool": "子 Agent 模型池",
+      "default_plan_mode": "默认 Plan 模式",
+      "auth_type": "认证类型",
+      "enabled_plugins": "已启用插件数",
+      "plugin_count": "插件数",
+      "custom_providers": "自定义 Provider",
+      "disabled_providers": "已禁用 Provider",
+      "saved_credential_providers": "已保存凭据 Provider",
+      "local_permissions_allow": "本地权限允许",
+      "instruction_file_count": "指令文件数",
+      "instructions": "指令"
+    },
+    "notes": {
+      "file_too_large": "配置文件过大，已跳过",
+      "parse_failed": "部分配置无法解析",
+      "no_editable_config": "该 Agent 无用户可编辑配置文件",
+      "home_missing": "未找到用户配置目录",
+      "scan_failed": "无法读取配置信息，请重试。"
+    }
+  },
+  "usage": {
+    "windowGroupAria": "统计窗口",
+    "windowToday": "今日",
+    "window7Days": "7 天",
+    "window30Days": "30 天",
+    "refreshAria": "刷新用量",
+    "loading": "正在统计…",
+    "totalLabel": "Token 总量",
+    "incompleteNote": "统计不完整；当前总量仅包含已读取到的精确 Token。",
+    "byAgent": "按 Agent",
+    "allProviders": "全部",
+    "viewAllTitle": "查看全部 Agent",
+    "viewAllBlockedTitle": "所有 Agent 完整时才可查看合计",
+    "providerGroupAria": "选择年度用量 Agent",
+    "tokenAmount": "{{count}} Token",
+    "recordedPrefix": "已记录 ",
+    "unavailableValue": "— · {{reason}}",
+    "dateUnknown": "日期未知",
+    "dateRangeJoin": "{{start}}至{{end}}",
+    "totalTokensLine": "共 {{count}} Token",
+    "timezoneLine": "统计时区 {{timezone}}",
+    "timezoneUnknown": "未知",
+    "ariaJoin": "，",
+    "heatmapHeading": "过去一年 Token 用量 · {{scope}}",
+    "heatmapEmpty": "暂无可用的精确 Token 数据",
+    "colorHint": "颜色越深，当天 Token 越多",
+    "cellTitle": "{{date}} · {{count}} Token",
+    "allAgentsScope": "全部 Agent",
+    "reasons": {
+      "unsupported_source": "当前 Agent 暂不支持用量统计",
+      "unsupported_format": "此版本暂不支持用量统计",
+      "missing_session_logs": "未找到会话用量记录",
+      "ambiguous_session_logs": "发现重复会话记录",
+      "unreadable_logs": "部分用量记录无法读取",
+      "unmatched_sessions": "部分会话未计入",
+      "missing_session_id": "部分会话无法关联",
+      "damaged_thread_files": "部分本地会话记录损坏",
+      "unregistered_provider": "部分会话所属 Agent 已不可用"
+    },
+    "noExactRecords": "当前没有可用的精确 Token 记录"
+  }
+}

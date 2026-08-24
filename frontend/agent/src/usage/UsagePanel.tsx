@@ -7,6 +7,8 @@
 // / parser detail never crosses the public contract.
 
 import { useEffect, useRef, useState, type JSX, type KeyboardEvent } from 'react';
+import { useTranslation } from 'react-i18next';
+import { i18n } from '../../../webview/src/i18n.js';
 import { BarChart3Icon, GlobeIcon, RefreshCwIcon, SlidersHorizontalIcon, UserRoundIcon } from 'lucide-react';
 import { ProviderIcon } from '../components/ProviderIcon.js';
 import { Button } from '../components/ui/button.js';
@@ -20,7 +22,6 @@ import type {
   ProviderUsageReport,
   SettingsSection,
   UsageCompleteness,
-  UsageGapReason,
   UsageState,
   UsageWindowKey
 } from '../contracts/agent-usage.js';
@@ -28,7 +29,6 @@ import { ConfigPanel } from './ConfigPanel.js';
 import {
   DSH_REGISTRY_KEYS,
   DSH_REGISTRY_LABELS,
-  DSH_REGISTRY_NOTES,
   type DshRegistryKey
 } from './settingsRegistry.js';
 
@@ -51,29 +51,29 @@ export interface UsagePanelProps {
   onRestoreFocus(): void;
 }
 
+// Labels resolve through the settings namespace at render time so a
+// language switch re-renders the nav without a remount.
 const SETTINGS_SECTIONS: Array<{
   id: SettingsSection;
-  label: string;
+  labelKey: string;
   Icon: typeof UserRoundIcon;
 }> = [
-  { id: 'profile', label: '个人主页', Icon: UserRoundIcon },
-  { id: 'usage', label: '用量', Icon: BarChart3Icon },
-  { id: 'config', label: '配置', Icon: SlidersHorizontalIcon },
-  { id: 'registry', label: '下载源', Icon: GlobeIcon }
+  { id: 'profile', labelKey: 'section.profile', Icon: UserRoundIcon },
+  { id: 'language', labelKey: 'section.language', Icon: GlobeIcon },
+  { id: 'usage', labelKey: 'section.usage', Icon: BarChart3Icon },
+  { id: 'config', labelKey: 'section.config', Icon: SlidersHorizontalIcon },
+  { id: 'registry', labelKey: 'section.registry', Icon: GlobeIcon }
 ];
 
-const SECTION_HEADINGS: Record<SettingsSection, string> = {
-  profile: '个人主页',
-  usage: '用量',
-  config: '配置',
-  registry: '下载源'
-};
+const WINDOW_KEYS: UsageWindowKey[] = ['today', 'last7Days', 'last30Days'];
 
-const WINDOW_LABELS: Array<{ key: UsageWindowKey; label: string }> = [
-  { key: 'today', label: '今日' },
-  { key: 'last7Days', label: '7 天' },
-  { key: 'last30Days', label: '30 天' }
-];
+function windowLabel(key: UsageWindowKey): string {
+  return key === 'today'
+    ? tStatic('usage.windowToday')
+    : key === 'last7Days'
+      ? tStatic('usage.window7Days')
+      : tStatic('usage.window30Days');
+}
 
 const AVATAR_TARGET_SIZE = 256;
 const HEATMAP_DAYS = 365;
@@ -81,10 +81,13 @@ const HEATMAP_COLUMNS = 53;
 const HEATMAP_ROWS = 7;
 const HEATMAP_SLOTS = HEATMAP_COLUMNS * HEATMAP_ROWS;
 const DAY_MS = 24 * 60 * 60 * 1000;
-const COUNT_FORMATTER = new Intl.NumberFormat('zh-CN');
-
 function formatCount(value: number): string {
-  return COUNT_FORMATTER.format(value);
+  return new Intl.NumberFormat(i18n.resolvedLanguage || 'zh-Hans').format(value);
+}
+
+/** Translate from the settings namespace outside component scopes. */
+function tStatic(key: string, options?: Record<string, unknown>): string {
+  return i18n.t(key, { ns: 'settings', ...options });
 }
 
 interface CivilDate {
@@ -122,7 +125,14 @@ function civilDateAt(start: string, offset: number): CivilDate | null {
 }
 
 function formatCivilDate(date: CivilDate | null): string {
-  return date ? `${date.year}年${date.month}月${date.day}日` : '日期未知';
+  if (!date) return tStatic('usage.dateUnknown');
+  // Locale-aware civil date (2024年1月5日 / January 5, 2024 / …).
+  return new Intl.DateTimeFormat(i18n.resolvedLanguage || 'zh-Hans', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    timeZone: 'UTC'
+  }).format(new Date(Date.UTC(date.year, date.month - 1, date.day)));
 }
 
 function mondayOffset(start: string): number {
@@ -170,21 +180,11 @@ function processAvatarFile(file: File, onDone: (base64Png: string) => void): voi
   image.src = url;
 }
 
-const REASON_TEXT: Record<UsageGapReason, string> = {
-  unsupported_source: '当前 Agent 暂不支持用量统计',
-  unsupported_format: '此版本暂不支持用量统计',
-  missing_session_logs: '未找到会话用量记录',
-  ambiguous_session_logs: '发现重复会话记录',
-  unreadable_logs: '部分用量记录无法读取',
-  unmatched_sessions: '部分会话未计入',
-  missing_session_id: '部分会话无法关联',
-  damaged_thread_files: '部分本地会话记录损坏',
-  unregistered_provider: '部分会话所属 Agent 已不可用'
-};
-
 function primaryReason(completeness: UsageCompleteness): string {
   const reason = completeness.reasons[0];
-  return reason ? REASON_TEXT[reason] : '当前没有可用的精确 Token 记录';
+  return reason
+    ? tStatic(`usage.reasons.${reason}`)
+    : tStatic('usage.noExactRecords');
 }
 
 function Heatmap({
@@ -200,12 +200,13 @@ function Heatmap({
   unavailable: boolean;
   scopeLabel: string;
 }): JSX.Element {
+  const { t } = useTranslation('settings');
   if (unavailable) {
     return (
       <section className="agent-usage-heatmap" data-role="usage-heatmap">
-        <h2>过去一年 Token 用量 · {scopeLabel}</h2>
+        <h2>{t('usage.heatmapHeading', { scope: scopeLabel })}</h2>
         <div className="agent-usage-heatmap-empty" data-role="usage-heatmap-empty">
-          暂无可用的精确 Token 数据
+          {t('usage.heatmapEmpty')}
         </div>
       </section>
     );
@@ -221,12 +222,16 @@ function Heatmap({
     const index = slot - leading;
     return index >= 0 && index < values.length ? index : null;
   });
+  const joiner = tStatic('usage.ariaJoin');
   const ariaLabel = [
-    `过去一年 Token 用量，${scopeLabel}`,
-    `${formatCivilDate(start)}至${formatCivilDate(end)}`,
-    `共 ${formatCount(annualTotal)} Token`,
-    `统计时区 ${timezone || '未知'}`
-  ].join('，');
+    tStatic('usage.heatmapHeading', { scope: scopeLabel }),
+    tStatic('usage.dateRangeJoin', {
+      start: formatCivilDate(start),
+      end: formatCivilDate(end)
+    }),
+    tStatic('usage.totalTokensLine', { count: formatCount(annualTotal) }),
+    tStatic('usage.timezoneLine', { timezone: timezone || tStatic('usage.timezoneUnknown') })
+  ].join(joiner);
 
   return (
     <section
@@ -237,8 +242,8 @@ function Heatmap({
       aria-label={ariaLabel}
     >
       <div className="agent-usage-heatmap-heading">
-        <h2>过去一年 Token 用量 · {scopeLabel}</h2>
-        <span aria-hidden="true">颜色越深，当天 Token 越多</span>
+        <h2>{t('usage.heatmapHeading', { scope: scopeLabel })}</h2>
+        <span aria-hidden="true">{t('usage.colorHint')}</span>
       </div>
       <div className="agent-usage-heatmap-grid" aria-hidden="true">
         {slots.map((index, slot) => {
@@ -253,7 +258,10 @@ function Heatmap({
               data-role="usage-heatmap-cell"
               data-index={index}
               data-level={heatLevel(value, maximum)}
-              title={`${formatCivilDate(civilDateAt(startDate, index))} · ${formatCount(value)} Token`}
+              title={t('usage.cellTitle', {
+                date: formatCivilDate(civilDateAt(startDate, index)),
+                count: formatCount(value)
+              })}
             />
           );
         })}
@@ -275,10 +283,11 @@ function ProviderUsageList({
   overallAvailable: boolean;
   onSelect(providerKey: string | null): void;
 }): JSX.Element {
+  const { t } = useTranslation('settings');
   return (
     <section className="agent-usage-providers" data-role="usage-providers">
       <div className="agent-usage-providers-heading">
-        <h2>按 Agent</h2>
+        <h2>{t('usage.byAgent')}</h2>
         <Button
           type="button"
           variant="ghost"
@@ -287,23 +296,24 @@ function ProviderUsageList({
           data-role="usage-all-provider"
           aria-pressed={selectedProviderKey === null}
           disabled={!overallAvailable}
-          title={overallAvailable ? '查看全部 Agent' : '所有 Agent 完整时才可查看合计'}
+          title={overallAvailable ? t('usage.viewAllTitle') : t('usage.viewAllBlockedTitle')}
           onClick={() => onSelect(null)}
         >
-          全部
+          {t('usage.allProviders')}
         </Button>
       </div>
-      <div className="agent-usage-provider-list" role="group" aria-label="选择年度用量 Agent">
+      <div className="agent-usage-provider-list" role="group" aria-label={t('usage.providerGroupAria')}>
         {providers.map((provider) => {
           const completeness = provider.completeness;
           const unavailable = completeness.status === 'unavailable';
           const total = provider[windowKey].totalTokens;
           const reason = primaryReason(completeness);
+          const amount = t('usage.tokenAmount', { count: formatCount(total) });
           const value = unavailable
-            ? `— · ${reason}`
+            ? t('usage.unavailableValue', { reason })
             : completeness.status === 'partial'
-              ? `已记录 ${formatCount(total)} Token`
-              : `${formatCount(total)} Token`;
+              ? t('usage.recordedPrefix') + amount
+              : amount;
           return (
             <Button
               key={provider.providerKey}
@@ -343,6 +353,7 @@ function ProfileCard({
   onSetDisplayName(name: string): void;
   onSetAvatar(base64Png: string): void;
 }): JSX.Element {
+  const { t } = useTranslation('settings');
   const profile = state.profile;
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [editing, setEditing] = useState(false);
@@ -380,7 +391,7 @@ function ProfileCard({
           type="button"
           className="agent-usage-avatar-button"
           data-role="usage-avatar-button"
-          aria-label="更换头像"
+          aria-label={t('profile.avatarAria')}
           disabled={state.profileSaving}
           onClick={() => fileRef.current?.click()}
         >
@@ -412,7 +423,7 @@ function ProfileCard({
           <input
             className="agent-usage-name-input"
             data-role="usage-profile-name-input"
-            aria-label="显示名"
+            aria-label={t('profile.nameAria')}
             value={draft}
             maxLength={32}
             autoFocus
@@ -426,14 +437,14 @@ function ProfileCard({
             type="button"
             className="agent-usage-name"
             data-role="usage-profile-name"
-            aria-label="编辑显示名"
+            aria-label={t('profile.editNameAria')}
             disabled={state.profileSaving}
             onClick={() => setEditing(true)}
           >
-            {profile.displayName || '未命名'}
+            {profile.displayName || t('profile.unnamed')}
           </button>
         )}
-        <p className="agent-settings-note">目前可修改显示名称。点击名称即可编辑。</p>
+        <p className="agent-settings-note">{t('profile.note')}</p>
       </div>
       </div>
       {state.profileError ? (
@@ -446,6 +457,7 @@ function ProfileCard({
 }
 
 export function UsagePanel(props: UsagePanelProps): JSX.Element {
+  const { t } = useTranslation('settings');
   const state = props.state;
   const [windowKey, setWindowKey] = useState<UsageWindowKey>('today');
   const [selectedProviderKey, setSelectedProviderKey] = useState<string | null>(null);
@@ -479,7 +491,7 @@ export function UsagePanel(props: UsagePanelProps): JSX.Element {
   }, [overallAvailable, report, selectedProviderKey]);
 
   const heatmapSeries = selectedProvider?.dailyTokens ?? report?.dailyTokens ?? [];
-  const heatmapScope = selectedProvider?.displayName ?? '全部 Agent';
+  const heatmapScope = selectedProvider?.displayName ?? t('usage.allAgentsScope');
   const heatmapUnavailable = !selectedProvider && !overallAvailable;
 
     const ignoreSettingsToggle = (event: { preventDefault(): void; target: EventTarget | null }): void => {
@@ -502,14 +514,14 @@ export function UsagePanel(props: UsagePanelProps): JSX.Element {
         onInteractOutside={ignoreSettingsToggle}
         onPointerDownOutside={ignoreSettingsToggle}
       >
-        <DialogTitle className="sr-only">设置</DialogTitle>
+        <DialogTitle className="sr-only">{t('title')}</DialogTitle>
         <DialogDescription className="sr-only">
-          用户资料、用量、只读配置与 npm 下载源
+          {t('dialogDescription')}
         </DialogDescription>
 
         <div className="agent-settings-shell">
-        <nav className="agent-settings-nav agent-native-scroll" data-role="settings-nav" aria-label="设置分类">
-          <p className="agent-settings-nav-title">设置</p>
+        <nav className="agent-settings-nav agent-native-scroll" data-role="settings-nav" aria-label={t('navAria')}>
+          <p className="agent-settings-nav-title">{t('title')}</p>
           {SETTINGS_SECTIONS.map((entry) => (
             <button
               key={entry.id}
@@ -521,14 +533,14 @@ export function UsagePanel(props: UsagePanelProps): JSX.Element {
               onClick={() => props.onSelectSection(entry.id)}
             >
               <entry.Icon className="size-4" aria-hidden="true" />
-              {entry.label}
+              {t(entry.labelKey)}
             </button>
           ))}
         </nav>
 
         <div className="agent-settings-main">
           <h2 className="agent-settings-heading" data-role="settings-heading">
-            {SECTION_HEADINGS[activeTab]}
+            {t(`section.${activeTab}`)}
           </h2>
           <div className="agent-usage-panel-scroll agent-settings-body">
             {activeTab === 'profile' ? (
@@ -558,17 +570,17 @@ export function UsagePanel(props: UsagePanelProps): JSX.Element {
             {activeTab === 'usage' ? (
               <>
               <div className="agent-usage-toolbar">
-                <div className="agent-usage-window-switch" role="group" aria-label="统计窗口">
-                  {WINDOW_LABELS.map((entry) => (
+                <div className="agent-usage-window-switch" role="group" aria-label={t('usage.windowGroupAria')}>
+                  {WINDOW_KEYS.map((key) => (
                     <button
-                      key={entry.key}
+                      key={key}
                       type="button"
                       data-role="usage-window-switch"
-                      data-window={entry.key}
-                      aria-pressed={windowKey === entry.key}
-                      onClick={() => setWindowKey(entry.key)}
+                      data-window={key}
+                      aria-pressed={windowKey === key}
+                      onClick={() => setWindowKey(key)}
                     >
-                      {entry.label}
+                      {windowLabel(key)}
                     </button>
                   ))}
                 </div>
@@ -576,12 +588,12 @@ export function UsagePanel(props: UsagePanelProps): JSX.Element {
                   variant="outline"
                   size="sm"
                   data-role="usage-refresh"
-                  aria-label="刷新用量"
+                  aria-label={t('usage.refreshAria')}
                   disabled={state.status === 'loading'}
                   onClick={props.onRefresh}
                 >
                   <RefreshCwIcon className="size-3.5" aria-hidden="true" />
-                  刷新
+                  {t('common.refresh')}
                 </Button>
               </div>
 
@@ -589,14 +601,14 @@ export function UsagePanel(props: UsagePanelProps): JSX.Element {
                 <div className="agent-usage-error" data-role="usage-error" role="alert">
                   <span>{state.errorText}</span>
                   <Button variant="outline" size="sm" data-role="usage-retry" onClick={props.onRetry}>
-                    重试
+                    {t('common.retry')}
                   </Button>
                 </div>
               ) : null}
 
               {state.status === 'loading' && !report ? (
                 <div className="agent-usage-loading" data-role="usage-loading">
-                  正在统计…
+                  {t('usage.loading')}
                 </div>
               ) : null}
 
@@ -604,7 +616,7 @@ export function UsagePanel(props: UsagePanelProps): JSX.Element {
                 <>
                   <section className="agent-usage-overview" data-role="usage-overview">
                     <div className="agent-usage-overview-label">
-                      <span>Token 总量</span>
+                      <span>{t('usage.totalLabel')}</span>
                     </div>
                     <div
                       className="agent-usage-total"
@@ -615,7 +627,7 @@ export function UsagePanel(props: UsagePanelProps): JSX.Element {
                     </div>
                     {state.completeness.status !== 'available' ? (
                       <p className="agent-usage-overview-note" role="status">
-                        统计不完整；当前总量仅包含已读取到的精确 Token。
+                        {t('usage.incompleteNote')}
                       </p>
                     ) : null}
                   </section>
@@ -654,10 +666,11 @@ function RegistrySection({
   onSelect(registry: DshRegistryKey): void;
   onApply(registry: DshRegistryKey): void;
 }): JSX.Element {
+  const { t } = useTranslation('settings');
   return (
     <div className="agent-settings-registry" data-role="settings-registry">
       <p className="agent-settings-lede">
-        选择 npm 包下载源。淘宝 npmmirror 更新前仍会核验 npmjs.org 上的根包。
+        {t('registry.lede')}
       </p>
       {DSH_REGISTRY_KEYS.map((key) => (
         <button
@@ -671,7 +684,7 @@ function RegistrySection({
           onClick={() => onSelect(key)}
         >
           <span className="agent-settings-choice-label">{DSH_REGISTRY_LABELS[key]}</span>
-          <span className="agent-settings-choice-note">{DSH_REGISTRY_NOTES[key]}</span>
+          <span className="agent-settings-choice-note">{key === 'official' ? t('registry.noteOfficial') : t('registry.noteNpmmirror')}</span>
         </button>
       ))}
       {state.settingsError ? (
@@ -685,7 +698,7 @@ function RegistrySection({
         disabled={state.settingsDraft === state.dshRegistry}
         onClick={() => onApply(state.settingsDraft)}
       >
-        应用
+        {t('common.apply')}
       </Button>
     </div>
   );

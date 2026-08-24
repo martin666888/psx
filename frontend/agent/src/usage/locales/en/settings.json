@@ -1,0 +1,124 @@
+{
+  "title": "Settings",
+  "dialogDescription": "Profile, usage, read-only configuration and the npm download source",
+  "navAria": "Settings sections",
+  "section": {
+    "profile": "Profile",
+    "language": "Language",
+    "usage": "Usage",
+    "config": "Configuration",
+    "registry": "Download source"
+  },
+  "common": {
+    "refresh": "Refresh",
+    "retry": "Retry",
+    "apply": "Apply"
+  },
+  "profile": {
+    "avatarAria": "Change avatar",
+    "nameAria": "Display name",
+    "editNameAria": "Edit display name",
+    "unnamed": "Unnamed",
+    "note": "Only the display name can be changed for now. Click the name to edit it.",
+    "saveFailed": "Could not save the profile. Please retry."
+  },
+  "language": {
+    "lede": "Choose the interface display language, or follow the Windows display language. Changes apply immediately.",
+    "systemOption": "Follow Windows",
+    "systemResolvedSuffix": "currently: {{resolved}}",
+    "localeNames": {
+      "zh-Hans": "简体中文",
+      "zh-Hant": "繁體中文",
+      "en": "English",
+      "ja": "日本語"
+    },
+    "saveFailed": "Could not save the language setting."
+  },
+  "registry": {
+    "lede": "Choose the npm package download source. The npmmirror mirror still verifies the root package against npmjs.org before updating.",
+    "noteOfficial": "Official",
+    "noteNpmmirror": "Taobao mirror"
+  },
+  "config": {
+    "stateAvailable": "Available",
+    "statePartial": "Partial",
+    "stateUnavailable": "Unavailable",
+    "toolbarLabel": "User-level configuration (read-only)",
+    "updatedAt": "Updated at {{time}}",
+    "refreshAria": "Refresh configuration",
+    "loading": "Reading configuration…",
+    "empty": "No configuration to show",
+    "chooseAgentAria": "Choose an Agent",
+    "modelsHeading": "Models",
+    "mcpDisabled": "Disabled",
+    "envKeyTitle": "Environment variable keys (values hidden)",
+    "headerKeyTitle": "Header keys (values hidden)",
+    "scanFailed": "Could not read the configuration — please retry.",
+    "loadFailed": "Unable to load config.",
+    "facts": {
+      "env_var_keys": "Environment variable keys",
+      "default_model": "Default model",
+      "small_model": "Small model",
+      "subagent_model": "Subagent model",
+      "subagent_model_pool": "Subagent model pool",
+      "default_plan_mode": "Default Plan mode",
+      "auth_type": "Authentication type",
+      "enabled_plugins": "Enabled plugins",
+      "plugin_count": "Plugins",
+      "custom_providers": "Custom providers",
+      "disabled_providers": "Disabled providers",
+      "saved_credential_providers": "Providers with saved credentials",
+      "local_permissions_allow": "Local permission allow",
+      "instruction_file_count": "Instruction files",
+      "instructions": "Instructions"
+    },
+    "notes": {
+      "file_too_large": "The configuration file is too large and was skipped",
+      "parse_failed": "Some configuration could not be parsed",
+      "no_editable_config": "This Agent has no user-editable configuration file",
+      "home_missing": "The user configuration directory was not found",
+      "scan_failed": "Could not read the configuration — please retry."
+    }
+  },
+  "usage": {
+    "windowGroupAria": "Statistics window",
+    "windowToday": "Today",
+    "window7Days": "7 days",
+    "window30Days": "30 days",
+    "refreshAria": "Refresh usage",
+    "loading": "Crunching numbers…",
+    "totalLabel": "Total tokens",
+    "incompleteNote": "Statistics are incomplete; this total only includes exact tokens that could be read.",
+    "byAgent": "By Agent",
+    "allProviders": "All",
+    "viewAllTitle": "View every Agent",
+    "viewAllBlockedTitle": "Totals require every Agent to be complete",
+    "providerGroupAria": "Choose an Agent for the annual usage",
+    "tokenAmount": "{{count}} tokens",
+    "recordedPrefix": "Recorded ",
+    "unavailableValue": "— · {{reason}}",
+    "dateUnknown": "unknown date",
+    "dateRangeJoin": "{{start}} to {{end}}",
+    "totalTokensLine": "{{count}} tokens in total",
+    "timezoneLine": "Statistics timezone {{timezone}}",
+    "timezoneUnknown": "unknown",
+    "ariaJoin": ", ",
+    "heatmapHeading": "Token usage over the past year · {{scope}}",
+    "heatmapEmpty": "No exact token data available yet",
+    "colorHint": "Darker means more tokens that day",
+    "cellTitle": "{{date}} · {{count}} tokens",
+    "allAgentsScope": "All Agents",
+    "reasons": {
+      "unsupported_source": "This Agent does not support usage statistics yet",
+      "unsupported_format": "This version does not support usage statistics yet",
+      "missing_session_logs": "No session usage records were found",
+      "ambiguous_session_logs": "Duplicate session records were found",
+      "unreadable_logs": "Some usage records could not be read",
+      "unmatched_sessions": "Some sessions were not counted",
+      "missing_session_id": "Some sessions could not be correlated",
+      "damaged_thread_files": "Some local session records are damaged",
+      "unregistered_provider": "Some sessions belong to an Agent that is no longer available"
+    },
+    "noExactRecords": "There are no exact token records available yet"
+  }
+}
