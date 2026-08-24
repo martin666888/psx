@@ -621,9 +621,6 @@ const SCENES = [
         const paneRoot = document.querySelector('#workspace-panes')?.getBoundingClientRect();
         return !!dock && !!paneRoot && Math.abs(paneRoot.left - dock.right - 12) <= 1;
       });
-      await page.waitForFunction(() =>
-        document.querySelector('[data-role="history-profile"]')?.textContent?.includes('Minghai')
-      );
       const historyFontRequests = await page.evaluate(() =>
         performance.getEntriesByType('resource')
           .map((entry) => entry.name)
@@ -647,14 +644,12 @@ const SCENES = [
     },
     async verify(page) {
       const probe = await page.evaluate(() => ({
-        profile: document.querySelector('[data-role="history-profile"]')?.textContent || '',
         icons: [...document.querySelectorAll('.agent-history-provider-icon svg')]
           .map((icon) => icon.getAttribute('data-icon')),
         fontRequests: performance.getEntriesByType('resource')
           .map((entry) => entry.name)
           .filter((name) => name.includes('/vendor/fonts/maple-mono/'))
       }));
-      if (!probe.profile.includes('Minghai')) throw new Error('saved profile was not loaded');
       for (const expected of ['claude', 'kimi', 'agent']) {
         if (!probe.icons.includes(expected)) {
           throw new Error(`provider icon ${expected} did not render from the catalog: ${probe.icons.join(', ')}`);
@@ -737,10 +732,16 @@ const SCENES = [
     events: terminalOnlyEvents,
     ready: '.workspace-tab',
     async stage(page) {
-      await page.locator('[data-role="history-toggle"]').click();
-      await page.waitForSelector('[data-role="history-profile"]');
-      await page.locator('[data-role="history-profile"]').click();
-      await page.waitForSelector('[data-role="usage-overview"]');
+      await page.locator('[data-role="app-settings-toggle"]').click();
+      await page.waitForSelector('[data-role="usage-panel"]');
+      await page.keyboard.press('Escape');
+      await page.locator('[data-role="usage-panel"]').waitFor({ state: 'detached' });
+      await page.waitForFunction(() => {
+        const button = document.querySelector('[data-role="app-settings-toggle"]');
+        return button && document.activeElement === button;
+      });
+      await page.locator('[data-role="app-settings-toggle"]').click();
+      await page.waitForSelector('[data-role="usage-panel"]');
     },
     async verify(page) {
       const panel = page.locator('[data-role="usage-panel"]');
@@ -748,11 +749,11 @@ const SCENES = [
       await page.keyboard.press('Escape');
       await panel.waitFor({ state: 'detached' });
       await page.waitForFunction(() => {
-        const button = document.querySelector('[data-role="history-profile"]');
+        const button = document.querySelector('[data-role="app-settings-toggle"]');
         return button && document.activeElement === button;
       });
-      await page.locator('[data-role="history-profile"]').click();
-      await page.waitForSelector('[data-role="usage-overview"]');
+      await page.locator('[data-role="app-settings-toggle"]').click();
+      await page.waitForSelector('[data-role="usage-panel"]');
     }
   }
 ];
