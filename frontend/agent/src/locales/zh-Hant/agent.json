@@ -12,7 +12,17 @@
     "copied": "已複製",
     "copyFailed": "複製失敗",
     "showMore": "顯示更多",
-    "collapse": "收合"
+    "collapse": "收合",
+    "system": {
+      "login": {
+        "no_entry": "{{agentName}} 需要登入，但未提供可用的登入入口。",
+        "required_terminal": "{{agentName}} 需要登入後才能繼續：已開啟登入終端機，請在其中完成登入（裝置碼或 API key），完成後返回並重新傳送訊息即可繼續。"
+      },
+      "run_failed": {
+        "vision_context": "提示：目前對話曾傳送過圖片，這個錯誤可能是因為目前模型或供應商不支援圖片上下文，或目前模型不是多模態模型所致，建議切換至多模態模型。"
+      }
+    },
+    "visionContextHint": "提示：目前對話曾傳送過圖片，這個錯誤可能是因為目前模型或供應商不支援圖片上下文，或目前模型不是多模態模型所致，建議切換至多模態模型。"
   },
   "runtime": {
     "notInstalled": "Agent 執行階段尚未安裝。",

@@ -39,7 +39,13 @@
   "pane": {
     "layoutSection": "版面配置",
     "splitRight": "移到右側新欄位",
-    "collapseSingle": "合併為單一欄位"
+    "collapseSingle": "合併為單一欄位",
+    "splitBlocked": {
+      "split": {
+        "only_workspace": "只有一個工作區，無法拆分",
+        "column_cap": "最多支援 3 欄"
+      }
+    }
   },
   "runtime": {
     "section": "執行階段",
@@ -194,7 +200,10 @@
     "kimi.export.invalid_data": "匯出失敗：工作階段資料無效。",
     "kimi.export.too_large": "匯出失敗：檔案過大，已取消。",
     "kimi.export.write_failed": "匯出失敗：檔案寫入未完成。",
-    "kimi.export.connect_failed": "匯出失敗：無法連線本機服務。"
+    "kimi.export.connect_failed": "匯出失敗：無法連線本機服務。",
+    "workspace": {
+      "agent_workspace_cap": "最多支援 {{limit}} 個 Agent 工作區"
+    }
   },
   "diagnostics": {
     "generic": "介面發生異常，部分內容可能未正確更新。",

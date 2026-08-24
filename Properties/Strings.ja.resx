@@ -90,4 +90,19 @@ WebView2 は PSX のインターフェイス描画に必要なコンポーネン
   <data name="TabMergeIntoSingleColumn" xml:space="preserve">
     <value>単一列にまとめる</value>
   </data>
+  <data name="LoginTabName" xml:space="preserve">
+    <value>{0} ログイン</value>
+  </data>
+  <data name="StartupWarningWithBackup" xml:space="preserve">
+    <value>psx.ini が無効なため、最後の有効なバックアップを読み込みました。({0})</value>
+  </data>
+  <data name="StartupWarningSafeDefaults" xml:space="preserve">
+    <value>psx.ini が無効なため、安全な既定値を使用しました。({0})</value>
+  </data>
+  <data name="StartupWarningBackupAlsoInvalid" xml:space="preserve">
+    <value>psx.ini とそのバックアップの両方が無効なため、安全な既定値を使用しました。({0})</value>
+  </data>
+  <data name="ZipArchiveFilter" xml:space="preserve">
+    <value>ZIP アーカイブ (*.zip)|*.zip</value>
+  </data>
 </root>

@@ -113,7 +113,10 @@ public sealed class OpencodeAcpAgentProvider : IAcpAgentProvider
         return new ShellProfile
         {
             Id = "opencode-login",
-            Name = $"{Descriptor.DisplayName} 登录",
+            Name = string.Format(
+                System.Globalization.CultureInfo.CurrentUICulture,
+                PSX.Properties.Strings.LoginTabName,
+                Descriptor.DisplayName),
             Command = "powershell.exe",
             Arguments = $"-NoExit -Command Set-Location -LiteralPath '{escapedCwd}'; {command}",
             StartingDirectory = workingDirectory

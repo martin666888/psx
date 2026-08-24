@@ -380,6 +380,14 @@ interface AgentGenericEvent extends AgentWorkspaceEventBase {
     busy?: boolean;
     isDraft?: boolean;
     requestId?: string;
+    /** Fixed PSX session code (Models SessionMessageCode / RuntimeStatusCode);
+     * command_result / run_failed / resume_failed carry it instead of a
+     * composed sentence — the frontend maps it to localized copy. */
+    code?: string;
+    /** Provider-authored auth hint riding along a login code (raw data). */
+    hint?: string;
+    /** Fixed vision-context code on run_failed (timeline.visionContextHint). */
+    visionContextHintCode?: string;
 }
 
 interface WorkspaceHostEvent extends BridgeInboundMessageBase {

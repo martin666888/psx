@@ -728,11 +728,13 @@ function LanguageSection({
   onSetLocale(mode: string): void;
 }): JSX.Element {
   const { t } = useTranslation('settings');
-  const resolved = state.resolvedLocale || 'zh-Hans';
-  const systemResolvedName =
+  const resolvedCode = state.resolvedLocale || 'zh-Hans';
+  const resolved =
     state.resolvedLocale === ''
       ? ''
-      : `（${t('language.systemResolvedSuffix', { resolved: resolved })}）`;
+      : t(`language.localeNames.${resolvedCode}`, { defaultValue: resolvedCode });
+  const systemResolvedName =
+    resolved === '' ? '' : `（${t('language.systemResolvedSuffix', { resolved })}）`;
   return (
     <div className="agent-settings-registry" data-role="settings-language">
       <p className="agent-settings-lede">{t('language.lede')}</p>

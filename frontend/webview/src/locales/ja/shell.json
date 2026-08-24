@@ -39,7 +39,13 @@
   "pane": {
     "layoutSection": "レイアウト",
     "splitRight": "右側の新しい列へ移動",
-    "collapseSingle": "単一列にまとめる"
+    "collapseSingle": "単一列にまとめる",
+    "splitBlocked": {
+      "split": {
+        "only_workspace": "唯一のワークスペースは分割できません",
+        "column_cap": "列は最大 3 列までです"
+      }
+    }
   },
   "runtime": {
     "section": "ランタイム",
@@ -194,7 +200,10 @@
     "kimi.export.invalid_data": "エクスポートに失敗しました: セッションデータが無効です。",
     "kimi.export.too_large": "エクスポートに失敗しました: ファイルが大きすぎるため中止しました。",
     "kimi.export.write_failed": "エクスポートに失敗しました: ファイルへの書き込みが完了しませんでした。",
-    "kimi.export.connect_failed": "エクスポートに失敗しました: ローカルサービスに接続できません。"
+    "kimi.export.connect_failed": "エクスポートに失敗しました: ローカルサービスに接続できません。",
+    "workspace": {
+      "agent_workspace_cap": "Agent ワークスペースは最大 {{limit}} 個までです"
+    }
   },
   "diagnostics": {
     "generic": "インターフェイスで問題が発生し、一部の内容が正しく更新されていない可能性があります。",

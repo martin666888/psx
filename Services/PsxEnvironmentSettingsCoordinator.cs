@@ -9,9 +9,6 @@ namespace PSX.Services;
 /// </summary>
 public sealed class PsxEnvironmentSettingsCoordinator
 {
-    public const string SettingsWriteFailedMessage = "无法保存下载源设置，未开始重试。";
-    public const string LocaleWriteFailedMessage = "无法保存语言设置。";
-
     private readonly PsxEnvironmentSettingsStore _store;
     private readonly IAgentBridgeService _bridge;
 
@@ -62,7 +59,7 @@ public sealed class PsxEnvironmentSettingsCoordinator
             return Task.CompletedTask;
 
         if (action == "get")
-            return PublishSnapshotAsync(GetSnapshot(), requestId, null, null);
+            return PublishSnapshotAsync(GetSnapshot(), requestId);
 
         if (action == "set_locale")
         {
@@ -72,14 +69,13 @@ public sealed class PsxEnvironmentSettingsCoordinator
                 return PublishSnapshotAsync(
                     result.Snapshot,
                     requestId,
-                    result.ErrorClass ?? DshErrorClass.SettingsWriteFailed,
-                    result.ErrorMessage ?? LocaleWriteFailedMessage);
+                    result.ErrorClass ?? DshErrorClass.SettingsWriteFailed);
             }
 
-            var reply = PublishSnapshotAsync(result.Snapshot, requestId, null, null);
+            var reply = PublishSnapshotAsync(result.Snapshot, requestId);
             if (!result.Changed)
                 return reply;
-            return Task.WhenAll(reply, PublishSnapshotAsync(result.Snapshot, null, null, null));
+            return Task.WhenAll(reply, PublishSnapshotAsync(result.Snapshot, null));
         }
 
         if (action != "set_dsh_registry")
@@ -91,29 +87,29 @@ public sealed class PsxEnvironmentSettingsCoordinator
             return PublishSnapshotAsync(
                 setResult.Snapshot,
                 requestId,
-                setResult.ErrorClass ?? DshErrorClass.SettingsWriteFailed,
-                setResult.ErrorMessage ?? SettingsWriteFailedMessage);
+                setResult.ErrorClass ?? DshErrorClass.SettingsWriteFailed);
         }
 
-        var setReply = PublishSnapshotAsync(setResult.Snapshot, requestId, null, null);
+        var setReply = PublishSnapshotAsync(setResult.Snapshot, requestId);
         if (!setResult.Changed)
             return setReply;
-        return Task.WhenAll(setReply, PublishSnapshotAsync(setResult.Snapshot, null, null, null));
+        return Task.WhenAll(setReply, PublishSnapshotAsync(setResult.Snapshot, null));
     }
 
     /// <summary>Broadcast after a DSH CTA successfully changed the registry.</summary>
     public Task PublishBroadcastAsync() =>
-        PublishSnapshotAsync(GetSnapshot(), null, null, null);
+        PublishSnapshotAsync(GetSnapshot(), null);
 
     public Task PublishSnapshotAsync() =>
-        PublishSnapshotAsync(GetSnapshot(), null, null, null);
+        PublishSnapshotAsync(GetSnapshot(), null);
 
     private Task PublishSnapshotAsync(
         PsxEnvironmentSettingsSnapshot snapshot,
         string? requestId,
-        string? errorClass,
-        string? errorMessage)
+        string? errorClass = null)
     {
+        // Failures carry the fixed errorClass only — display copy lives in
+        // the frontend locales, so composed sentences never cross the bridge.
         return _bridge.SendEventAsync(new
         {
             type = "app_settings_snapshot",
@@ -124,8 +120,7 @@ public sealed class PsxEnvironmentSettingsCoordinator
             localeMode = snapshot.LocaleMode,
             resolvedLocale = snapshot.ResolvedLocale,
             requestId,
-            errorClass,
-            errorMessage
+            errorClass
         });
     }
 }

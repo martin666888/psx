@@ -397,7 +397,12 @@ export class UsageRequestBroker {
 
     const error = strOrNull(raw.error);
     if (error || !raw.report || !raw.completeness) {
-      this.store.applyUsageError(error || DEFAULT_ERROR_TEXT);
+      // Fixed backend codes resolve through the settings locales; anything
+      // else is unexpected and falls back to the generic copy.
+      this.store.applyUsageError(
+        error === 'usage.scan_failed'
+          ? i18n.t('usage.scanFailed', { ns: 'settings' })
+          : DEFAULT_ERROR_TEXT);
       return;
     }
     this.store.applyUsageReport(
@@ -428,45 +433,60 @@ export class UsageRequestBroker {
   handleAppSettings(raw: RawHostMessage): void {
     if (this.disposed) return;
     const requestId = str(raw.requestId);
-    const matchesPending = Boolean(requestId && this.settingsRequestId && requestId === this.settingsRequestId);
-    if (requestId && this.settingsRequestId && !matchesPending) return;
 
+    if (requestId) {
+      // A reply must match the currently pending request exactly; late or
+      // superseded replies are dropped whole and resolve nothing.
+      if (!this.settingsRequestId || requestId !== this.settingsRequestId) return;
+
+      const action = this.pendingSettingsAction;
+      this.settingsRequestId = '';
+      this.pendingSettingsAction = '';
+
+      // Save failures surface the fixed copy for the section that owns the
+      // request — the backend's composed errorMessage never reaches the DOM.
+      const failed = strOrNull(raw.errorClass) !== null;
+      const failedKey = action === 'set_locale' ? 'language.saveFailed' : 'registry.saveFailed';
+      this.applySettingsSnapshot(raw, {
+        fromReply: true,
+        error: failed && action !== 'set_locale' ? i18n.t(failedKey, { ns: 'settings' }) : '',
+        languageError: failed && action === 'set_locale' ? i18n.t(failedKey, { ns: 'settings' }) : ''
+      });
+      return;
+    }
+
+    // Broadcast: refresh the snapshot only. A pending mutation stays armed
+    // for its own reply; broadcasts never resolve or unbind it.
+    this.applySettingsSnapshot(raw, { fromReply: false, error: '', languageError: '' });
+  }
+
+  private applySettingsSnapshot(
+    raw: RawHostMessage,
+    options: { fromReply: boolean; error: string; languageError: string }
+  ): void {
     const revision = Number(raw.revision);
-    const currentRevision = this.store.getState().settingsRevision;
-    const errorClass = strOrNull(raw.errorClass);
-    const errorMessage = str(raw.errorMessage);
-    const error = matchesPending && errorClass
-      ? errorMessage || i18n.t('registry.saveFailed', { ns: 'settings' })
-      : '';
-
-    if (matchesPending) this.settingsRequestId = '';
-
     if (!Number.isFinite(revision) || revision < 0) return;
-    if (revision < currentRevision) return;
-
-    const isBroadcast = !requestId;
-    const hadPending = Boolean(this.settingsRequestId);
-    if (isBroadcast && hadPending) this.settingsRequestId = '';
-
-    if (revision === currentRevision && isBroadcast && !errorClass && !hadPending) return;
+    const state = this.store.getState();
+    const failed = options.error !== '' || options.languageError !== '';
+    // Broadcasts dedupe at the seen revision. Replies apply when they carry a
+    // failure (a failed save does not bump the revision but must still
+    // surface its error); success replies older than the seen revision are
+    // stale and dropped.
+    if (!options.fromReply && revision <= state.settingsRevision) return;
+    if (options.fromReply && !failed && revision < state.settingsRevision) return;
 
     const registry = safeDshRegistry(raw.dshRegistry);
-    const syncDraft = (matchesPending && !errorClass) || isBroadcast;
+    const syncDraft = !options.fromReply || !failed;
     this.store.applyAppSettings({
-      revision,
+      revision: Math.max(revision, state.settingsRevision),
       dshRegistry: registry,
       draft: syncDraft ? registry : undefined,
-      // Route the save error to the section that owns the in-flight request.
-      error: error && this.pendingSettingsAction !== 'set_locale' ? error : '',
-      languageError:
-        error && this.pendingSettingsAction === 'set_locale'
-          ? error
-          : '',
+      error: options.error,
+      languageError: options.languageError,
       localeMode: typeof raw.localeMode === 'string' ? raw.localeMode : undefined,
       resolvedLocale:
         typeof raw.resolvedLocale === 'string' ? raw.resolvedLocale : undefined
     });
-    if (matchesPending) this.pendingSettingsAction = '';
   }
 
   dispose(): void {

@@ -7,7 +7,9 @@ import { t } from './i18n.js';
 
 const GENERIC_NOTICE_KEY = 'notice.generic';
 
-export function workspaceNoticeLabel(code) {
+export function workspaceNoticeLabel(code, args) {
     if (typeof code !== 'string' || !code) return '';
-    return t(`notice.${code}`, { defaultValue: '' }) || t(GENERIC_NOTICE_KEY);
+    const options = { defaultValue: '' };
+    if (args && typeof args === 'object') Object.assign(options, args);
+    return t(`notice.${code}`, options) || t(GENERIC_NOTICE_KEY);
 }

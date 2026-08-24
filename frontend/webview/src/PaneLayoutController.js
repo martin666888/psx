@@ -9,7 +9,7 @@
 // column below its floor rather than dropping one (decision K).
 
 import { Bridge } from './Bridge.js';
-import { t } from './i18n.js';
+import { t, onLocaleChanged } from './i18n.js';
 
 const WORKBENCH_GUTTER = 12;
 const CHROME_HEIGHT = 40;
@@ -27,6 +27,7 @@ export class PaneLayoutController {
         this.listeners = new Set();
         this.resizeObserver = null;
         this.resizeRafId = null;
+        this.disposeLocaleChanged = onLocaleChanged(() => this.refreshDividerLabels());
         this.lastStackWidth = -1;
         this.lastStackHeight = -1;
         this.previewRatios = null;
@@ -101,6 +102,7 @@ export class PaneLayoutController {
     }
 
     dispose() {
+        this.disposeLocaleChanged?.();
         this.cancelDrag(undefined, { recompute: false });
         window.removeEventListener('pointermove', this.onWindowPointerMove);
         window.removeEventListener('pointerup', this.onWindowPointerUp);
@@ -416,15 +418,26 @@ export class PaneLayoutController {
         return slot;
     }
 
+    localizeDivider(divider) {
+        divider.setAttribute('aria-label', t('panes.dividerAria'));
+        divider.title = t('panes.dividerTitle');
+    }
+
+    // Dividers are stable nodes that survive layout recomputes; a locale
+    // switch refreshes their labels in place.
+    refreshDividerLabels() {
+        for (const divider of this.root.querySelectorAll('.workspace-pane-divider'))
+            this.localizeDivider(divider);
+    }
+
     createDivider(leftColumnId, rightColumnId) {
         const divider = document.createElement('div');
         divider.className = 'workspace-pane-divider';
         divider.dataset.dividerKey = `${leftColumnId}|${rightColumnId}`;
         divider.setAttribute('role', 'separator');
         divider.setAttribute('aria-orientation', 'vertical');
-        divider.setAttribute('aria-label', t('panes.dividerAria'));
         divider.tabIndex = 0;
-        divider.title = t('panes.dividerTitle');
+        this.localizeDivider(divider);
 
         divider.addEventListener('pointerdown', (event) => {
             if (event.button !== 0 || !this.snapshot) return;

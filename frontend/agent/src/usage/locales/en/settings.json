@@ -120,6 +120,7 @@
       "damaged_thread_files": "Some local session records are damaged",
       "unregistered_provider": "Some sessions belong to an Agent that is no longer available"
     },
-    "noExactRecords": "There are no exact token records available yet"
+    "noExactRecords": "There are no exact token records available yet",
+    "scanFailed": "Unable to read usage data. Please retry."
   }
 }

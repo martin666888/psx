@@ -26,12 +26,12 @@ $webSummaryPath = Join-Path $webResults "test-summary.json"
 $frontendToolchain = $null
 
 $minimumTests = @{
-    Unit = 660
+    Unit = 663
     Integration = 107
     Desktop = 2
-    Fast = 768
-    Full = 770
-    Frontend = 402
+    Fast = 770
+    Full = 772
+    Frontend = 405
 }
 
 function Invoke-Checked {

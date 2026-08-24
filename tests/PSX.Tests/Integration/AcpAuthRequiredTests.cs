@@ -1,6 +1,7 @@
 using System.Text.Json;
 using PSX.Models;
 using PSX.Tests.Support;
+using PSX.Services;
 
 namespace PSX.Tests.Integration;
 
@@ -125,7 +126,10 @@ public sealed class AcpAuthRequiredTests
         await fixture.Service.SubmitMessageAsync("first message");
 
         var failure = await fixture.Bridge.WaitForEventAsync("run_failed");
-        StringAssert.Contains(failure.GetProperty("text").GetString(), "登录");
+        // The wire carries the fixed code; display copy lives in the frontend.
+        Assert.AreEqual(
+            SessionMessageCode.LoginRequiredTerminal,
+            failure.GetProperty("code").GetString());
 
         var state = await fixture.Bridge.WaitForEventAsync(
             "agent_state",

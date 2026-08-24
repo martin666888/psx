@@ -92,4 +92,19 @@ WebView2 is required to render the PSX interface.</value>
   <data name="TabMergeIntoSingleColumn" xml:space="preserve">
     <value>Merge into a single column</value>
   </data>
+  <data name="LoginTabName" xml:space="preserve">
+    <value>{0} login</value>
+  </data>
+  <data name="StartupWarningWithBackup" xml:space="preserve">
+    <value>psx.ini is invalid; the last valid backup was loaded instead. ({0})</value>
+  </data>
+  <data name="StartupWarningSafeDefaults" xml:space="preserve">
+    <value>psx.ini is invalid; safe defaults were used. ({0})</value>
+  </data>
+  <data name="StartupWarningBackupAlsoInvalid" xml:space="preserve">
+    <value>psx.ini and its backup are both invalid; safe defaults were used. ({0})</value>
+  </data>
+  <data name="ZipArchiveFilter" xml:space="preserve">
+    <value>ZIP archive (*.zip)|*.zip</value>
+  </data>
 </root>

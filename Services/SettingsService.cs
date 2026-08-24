@@ -58,13 +58,22 @@ public sealed class SettingsService : ISettingsService
             {
                 _settings = File.Exists(backupPath) ? LoadSettingsFile(backupPath) : new AppSettings();
                 StartupWarning = File.Exists(backupPath)
-                    ? $"psx.ini 无效，已加载最近一次有效备份：{activeError.Message}"
-                    : $"psx.ini 无效，已使用安全默认配置：{activeError.Message}";
+                    ? string.Format(
+                        System.Globalization.CultureInfo.CurrentUICulture,
+                        PSX.Properties.Strings.StartupWarningWithBackup,
+                        activeError.Message)
+                    : string.Format(
+                        System.Globalization.CultureInfo.CurrentUICulture,
+                        PSX.Properties.Strings.StartupWarningSafeDefaults,
+                        activeError.Message);
             }
             catch (Exception backupError)
             {
                 _settings = new AppSettings();
-                StartupWarning = $"psx.ini 及其备份均无效，已使用安全默认配置：{backupError.Message}";
+                StartupWarning = string.Format(
+                System.Globalization.CultureInfo.CurrentUICulture,
+                PSX.Properties.Strings.StartupWarningBackupAlsoInvalid,
+                backupError.Message);
             }
         }
 

@@ -39,7 +39,13 @@
   "pane": {
     "layoutSection": "布局",
     "splitRight": "移到右侧新列",
-    "collapseSingle": "合并为单列"
+    "collapseSingle": "合并为单列",
+    "splitBlocked": {
+      "split": {
+        "only_workspace": "只有一个工作区，无法拆分",
+        "column_cap": "最多支持 3 列"
+      }
+    }
   },
   "runtime": {
     "section": "运行时",
@@ -194,7 +200,10 @@
     "kimi.export.invalid_data": "导出失败：会话数据无效。",
     "kimi.export.too_large": "导出失败：文件过大，已取消。",
     "kimi.export.write_failed": "导出失败：文件写入没有完成。",
-    "kimi.export.connect_failed": "导出失败：无法连接本地服务。"
+    "kimi.export.connect_failed": "导出失败：无法连接本地服务。",
+    "workspace": {
+      "agent_workspace_cap": "最多支持 {{limit}} 个 Agent 工作区"
+    }
   },
   "diagnostics": {
     "generic": "界面发生异常，部分内容可能未正确更新。",

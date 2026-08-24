@@ -33,9 +33,10 @@ public static class LocaleDescriptor
         return ResolveSystem();
     }
 
-    /// <summary>Map the Windows UI culture: zh-TW/HK/MO (and zh-Hant) are
-    /// Traditional; other zh regions are Simplified; ja maps to Japanese;
-    /// everything unsupported falls back to English.</summary>
+    /// <summary>Map the Windows UI culture: any zh-* culture whose script is
+    /// Hant (zh-Hant, zh-Hant-HK, …) or whose region is TW/HK/MO resolves to
+    /// Traditional; every other zh-* culture is Simplified; ja maps to
+    /// Japanese; everything unsupported falls back to English.</summary>
     public static string ResolveSystem()
     {
         for (var culture = CultureInfo.CurrentUICulture;
@@ -45,9 +46,13 @@ public static class LocaleDescriptor
             var name = culture.Name;
             if (name.StartsWith("zh", StringComparison.OrdinalIgnoreCase))
             {
-                return name is "zh-TW" or "zh-HK" or "zh-MO" or "zh-Hant"
-                    ? ZhHant
-                    : ZhHans;
+                var tail = name[2..];
+                var isTraditional = tail.StartsWith("-Hant", StringComparison.OrdinalIgnoreCase)
+                    || tail is "-TW" or "-HK" or "-MO"
+                    || tail.StartsWith("-TW-", StringComparison.Ordinal)
+                    || tail.StartsWith("-HK-", StringComparison.Ordinal)
+                    || tail.StartsWith("-MO-", StringComparison.Ordinal);
+                return isTraditional ? ZhHant : ZhHans;
             }
             if (name.StartsWith("ja", StringComparison.OrdinalIgnoreCase))
                 return Ja;

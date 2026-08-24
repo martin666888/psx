@@ -269,7 +269,7 @@ public sealed class KimiWebWorkspaceCoordinator : IKimiWebWorkspaceCoordinator
         {
             FileName = name,
             DefaultExt = ".zip",
-            Filter = "ZIP 归档 (*.zip)|*.zip"
+            Filter = PSX.Properties.Strings.ZipArchiveFilter
         };
         return dialog.ShowDialog() == true ? dialog.FileName : null;
     }

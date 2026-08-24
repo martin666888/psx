@@ -592,7 +592,9 @@ public sealed class WorkspaceManager : IWorkspaceManager
             return;
         if (args.Kind == "agent" && Workspaces.Count(workspace => workspace.Kind == WorkspaceKind.Agent) >= AgentWorkspaceCoordinator.MaxAgentWorkspaces)
         {
-            await SendNoticeAsync($"最多支持 {AgentWorkspaceCoordinator.MaxAgentWorkspaces} 个 Agent 工作区").ConfigureAwait(false);
+            await SendNoticeAsync(
+                WorkspaceNoticeCode.AgentWorkspaceCap,
+                new { limit = AgentWorkspaceCoordinator.MaxAgentWorkspaces }).ConfigureAwait(false);
             return;
         }
 
@@ -757,8 +759,8 @@ public sealed class WorkspaceManager : IWorkspaceManager
             await SendNoticeAsync(WorkspaceNoticeCode.WorktreeConflict).ConfigureAwait(false);
     }
 
-    private Task SendNoticeAsync(string code) =>
-        _bridge.SendEventAsync(new { type = "workspace_notice", code });
+    private Task SendNoticeAsync(string code, object? args = null) =>
+        _bridge.SendEventAsync(new { type = "workspace_notice", code, args });
 
     private void BroadcastCatalog()
     {

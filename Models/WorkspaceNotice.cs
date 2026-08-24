@@ -7,6 +7,7 @@ namespace PSX.Models;
 /// </summary>
 public static class WorkspaceNoticeCode
 {
+    public const string AgentWorkspaceCap = "workspace.agent_workspace_cap";
     public const string WorktreeConflict = "workspace.worktree_conflict";
 
     public const string DshExportInvalidResponse = "dsh.export.invalid_response";

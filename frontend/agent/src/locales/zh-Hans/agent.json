@@ -12,7 +12,17 @@
     "copied": "已复制",
     "copyFailed": "复制失败",
     "showMore": "显示更多",
-    "collapse": "收起"
+    "collapse": "收起",
+    "system": {
+      "login": {
+        "no_entry": "{{agentName}} 需要登录，但未提供可用的登录入口。",
+        "required_terminal": "{{agentName}} 需要登录后才能继续：已打开登录终端，请在其中完成登录（设备码或 API key），完成后返回并重新发送消息即可继续。"
+      },
+      "run_failed": {
+        "vision_context": "提示：当前对话曾发送过图片，这个错误可能是因为当前模型或供应商不支持图片上下文，或当前模型不是多模态模型导致，建议切换至多模态模型。"
+      }
+    },
+    "visionContextHint": "提示：当前对话曾发送过图片，这个错误可能是因为当前模型或供应商不支持图片上下文，或当前模型不是多模态模型导致，建议切换至多模态模型。"
   },
   "runtime": {
     "notInstalled": "Agent 运行时未安装。",

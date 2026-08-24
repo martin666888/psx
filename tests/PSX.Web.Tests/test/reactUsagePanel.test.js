@@ -329,11 +329,12 @@ test('panel: unavailable differs from a real available zero', async () => {
 
 test('panel: an error reply renders inline and retry preserves the request flow', async () => {
   const rig = await fixture();
-  await openPanelWith(rig, { error: '扫描失败' });
+  await openPanelWith(rig, { error: 'usage.scan_failed' });
 
   const error = document.querySelector('[data-role="usage-error"]');
   assert.ok(error);
-  assert.match(error.textContent, /扫描失败/);
+  // Fixed backend codes resolve through the settings locales.
+  assert.match(error.textContent, /无法读取用量数据，请重试。/);
 
   await settle(
     () => document.querySelector('[data-role="usage-retry"]').click(),

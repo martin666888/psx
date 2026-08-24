@@ -13,6 +13,18 @@
 // while remaining independent from React and the bridge decoder.
 
 import type { RawHostMessage } from '../contracts/host-events.js';
+import { i18n } from '../../../webview/src/i18n.js';
+
+/** Fixed backend session codes -> localized display copy. */
+function systemMessageText(code: string, assistantName: string, hint = ''): string {
+  const localized = i18n.t(`timeline.system.${code}`, {
+    ns: 'agent',
+    agentName: assistantName,
+    defaultValue: ''
+  });
+  if (!localized) return '';
+  return hint ? `${localized} ${hint}` : localized;
+}
 
 function asString(value: unknown): string {
   return typeof value === 'string' ? value : '';
@@ -234,9 +246,14 @@ export class TimelineProjection {
       case 'agent_thread_loaded':
         this.loadThread(raw, assistantName);
         return true;
-      case 'command_result':
-        this.appendSystem(asString(raw.text));
+      case 'command_result': {
+        const code = asString(raw.code);
+        const text = code
+          ? systemMessageText(code, assistantName, asString(raw.hint))
+          : asString(raw.text);
+        if (text) this.appendSystem(text);
         return true;
+      }
       case 'user_message':
         this.finalizeRunGroup();
         this.startTurn();
@@ -328,15 +345,27 @@ export class TimelineProjection {
           }
         }
         this.finalizeRunGroup();
-        this.appendInlineTool(assistantName + ' error', asString(raw.text) || 'Unknown error.', 'error');
-        if (asString(raw.visionContextHint)) this.appendSystem(asString(raw.visionContextHint));
+        {
+          const runCode = asString(raw.code);
+          const runText = runCode
+            ? systemMessageText(runCode, assistantName)
+            : asString(raw.text) || 'Unknown error.';
+          this.appendInlineTool(assistantName + ' error', runText, 'error');
+          const visionCode = asString(raw.visionContextHintCode);
+          if (visionCode) {
+            const visionText = i18n.t('timeline.visionContextHint', { ns: 'agent', defaultValue: '' });
+            if (visionText) this.appendSystem(visionText);
+          }
+        }
         return true;
-      case 'resume_failed':
-        this.appendRecovery(
-          asString(raw.message) || asString(raw.text) || (assistantName + ' could not resume this session.'),
-          asString(raw.detail)
-        );
+      case 'resume_failed': {
+        const resumeCode = asString(raw.code);
+        const resumeText = resumeCode
+          ? systemMessageText(resumeCode, assistantName)
+          : asString(raw.message) || asString(raw.text) || (assistantName + ' could not resume this session.');
+        this.appendRecovery(resumeText, asString(raw.detail));
         return true;
+      }
       // --- decisions domain (same thread subtree, same React tree) ---------
       case 'permission_request':
         if (raw.presentation === 'mode_transition' && raw.documentText) {

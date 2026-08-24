@@ -683,9 +683,12 @@ export class WorkspaceChromeController {
         // Layered gating: the C# canSplitRight decision and the frontend
         // pixel capacity both block the split entry; the C# reason text wins
         // the secondary line when present, otherwise the capacity text.
+        const splitReason = splitBlocked && workspace.splitBlockedReason
+            ? (t(`pane.splitBlocked.${workspace.splitBlockedReason}`, { defaultValue: '' }) || '')
+            : '';
         menu.appendChild(this.menuRow(
             t('pane.splitRight'),
-            (splitBlocked ? workspace.splitBlockedReason || '' : '') || (capacityBlocked ? t('common.widthInsufficient') : ''),
+            splitReason || (capacityBlocked ? t('common.widthInsufficient') : ''),
             () => {
                 Bridge.sendWorkspaceLayoutIntent('split_right', workspace.workspaceId);
                 this.closeMenu(false);

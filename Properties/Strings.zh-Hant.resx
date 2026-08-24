@@ -90,4 +90,19 @@ WebView2 是 PSX 介面呈現所需的元件。</value>
   <data name="TabMergeIntoSingleColumn" xml:space="preserve">
     <value>合併為單一欄位</value>
   </data>
+  <data name="LoginTabName" xml:space="preserve">
+    <value>{0} 登入</value>
+  </data>
+  <data name="StartupWarningWithBackup" xml:space="preserve">
+    <value>psx.ini 無效，已載入最近一次有效的備份：({0})</value>
+  </data>
+  <data name="StartupWarningSafeDefaults" xml:space="preserve">
+    <value>psx.ini 無效，已改用安全預設值：({0})</value>
+  </data>
+  <data name="StartupWarningBackupAlsoInvalid" xml:space="preserve">
+    <value>psx.ini 與其備份皆無效，已改用安全預設值：({0})</value>
+  </data>
+  <data name="ZipArchiveFilter" xml:space="preserve">
+    <value>ZIP 壓縮檔 (*.zip)|*.zip</value>
+  </data>
 </root>

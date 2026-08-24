@@ -172,7 +172,7 @@ public sealed class WorkspaceLayoutServiceSplitTests
         Assert.IsFalse(accepted, "splitting the single open workspace cannot produce a second column");
         var reason = layout.GetSplitBlockedReason(a);
         Assert.IsNotNull(reason, "the split entry is blocked with a user-facing reason");
-        Assert.AreEqual("只有一个工作区，无法拆分", reason);
+        Assert.AreEqual(WorkspaceLayoutService.SplitBlockedReason.OnlyWorkspace, reason);
         Assert.AreEqual(before.LayoutRevision, layout.Snapshot.LayoutRevision, "the rejected split changes nothing");
         Assert.HasCount(1, layout.Snapshot.Columns);
         Assert.AreEqual(a, layout.Snapshot.Columns.Single().Tabs.Single().WorkspaceId);

@@ -44,6 +44,17 @@ public sealed class LocaleTests
     }
 
     [TestMethod]
+    public void ResolveSystem_HantScriptAndCompoundRegions_MapToTraditional()
+    {
+        using var hantNeutral = TestUiCulture.Create("zh-Hant");
+        Assert.AreEqual(LocaleDescriptor.ZhHant, LocaleDescriptor.ResolveSystem());
+        using var hantHk = TestUiCulture.Create("zh-Hant-HK");
+        Assert.AreEqual(LocaleDescriptor.ZhHant, LocaleDescriptor.ResolveSystem());
+        using var twLegacy = TestUiCulture.Create("zh-TW");
+        Assert.AreEqual(LocaleDescriptor.ZhHant, LocaleDescriptor.ResolveSystem());
+    }
+
+    [TestMethod]
     public void ResolveSystem_MapsJapaneseAndFallsBackToEnglish()
     {
         using var ja = TestUiCulture.Create("ja-JP");

@@ -7,6 +7,15 @@ using PSX.Models;
 
 namespace PSX.Services;
 
+/// <summary>Fixed message codes for PSX-authored session events; display
+/// copy lives in the frontend locales (agent namespace, timeline.*).</summary>
+public static class SessionMessageCode
+{
+    public const string LoginNoEntry = "login.no_entry";
+    public const string LoginRequiredTerminal = "login.required_terminal";
+    public const string VisionContext = "run_failed.vision_context";
+}
+
 public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 {
     private const int MaxPromptImages = 5;
@@ -584,7 +593,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             // user can log in and retry, so do NOT fall back to transcript_only.
             _restoreBlockedByRuntime = false;
             _status = "auth_required";
-            await SendResumeFailedAsync(ex.Message).ConfigureAwait(false);
+            await SendResumeFailedAsync("", null, ex.Message).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -1299,7 +1308,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                     continue;
                 }
 
-                throw new AcpAuthRequiredException(BuildLoginRequiredMessage());
+                throw new AcpAuthRequiredException(SessionMessageCode.LoginRequiredTerminal);
             }
             catch (TimeoutException) when (treatTimeoutAsAuthRequired && attempt == 0)
             {
@@ -1309,7 +1318,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 if (await RecoverFromAuthRequiredAsync(cancellationToken).ConfigureAwait(false))
                     continue;
 
-                throw new AcpAuthRequiredException(BuildLoginRequiredMessage());
+                throw new AcpAuthRequiredException(SessionMessageCode.LoginRequiredTerminal);
             }
         }
     }
@@ -1388,7 +1397,8 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             await _bridgeService.SendEventAsync(new
             {
                 type = "command_result",
-                text = $"{_provider.Descriptor.DisplayName} 需要登录，但未提供可用的登录入口。"
+                text = "",
+                code = SessionMessageCode.LoginNoEntry
             }).ConfigureAwait(false);
             return;
         }
@@ -1398,7 +1408,10 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         await _bridgeService.SendEventAsync(new
         {
             type = "command_result",
-            text = BuildLoginRequiredMessage()
+            text = "",
+            code = SessionMessageCode.LoginRequiredTerminal,
+            // Provider-authored auth hint stays raw data (never translated).
+            hint = SelectAuthHint() ?? ""
         }).ConfigureAwait(false);
     }
 
@@ -1436,7 +1449,10 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         return new ShellProfile
         {
             Id = $"{_provider.Descriptor.Key}-login",
-            Name = $"{_provider.Descriptor.DisplayName} 登录",
+            Name = string.Format(
+                System.Globalization.CultureInfo.CurrentUICulture,
+                PSX.Properties.Strings.LoginTabName,
+                _provider.Descriptor.DisplayName),
             Command = "powershell.exe",
             Arguments = $"-NoExit -Command Set-Location -LiteralPath '{escapedCwd}'; {command}",
             StartingDirectory = _workingDirectory
@@ -1446,16 +1462,11 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     private static string QuoteForPowerShell(string value)
         => "'" + value.Replace("'", "''") + "'";
 
-    private string BuildLoginRequiredMessage()
+    private string? SelectAuthHint()
     {
-        var authHint = _authMethods
+        return _authMethods
             .Select(method => method.Description)
             .FirstOrDefault(description => !string.IsNullOrWhiteSpace(description));
-        var baseMessage =
-            $"{_provider.Descriptor.DisplayName} 需要登录后才能继续：已打开登录终端，请在其中完成登录（设备码或 API key），完成后返回并重新发送消息即可继续。";
-        if (!string.IsNullOrWhiteSpace(authHint))
-            return $"{baseMessage} {authHint}";
-        return baseMessage;
     }
 
     private async Task StartAcpRunAsync(string prompt, IReadOnlyList<string>? attachmentIds = null)
@@ -1505,7 +1516,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 // is already open and the workspace is in auth_required. Do not
                 // degrade to transcript_only; let the user finish login and
                 // re-send the prompt.
-                await SendRunFailedAsync(BuildLoginRequiredMessage()).ConfigureAwait(false);
+                await SendRunFailedAsync("", null, SessionMessageCode.LoginRequiredTerminal).ConfigureAwait(false);
                 await PublishStateAsync().ConfigureAwait(false);
                 return;
             }
@@ -1652,7 +1663,8 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 if (!_disposed)
                 {
                     await _bridgeService.SendEventAsync(new { type = "thinking_finished" }).ConfigureAwait(false);
-                    await SendRunFailedAsync(ex.Message, runId).ConfigureAwait(false);
+                    // ex.Message carries the fixed SessionMessageCode here.
+                    await SendRunFailedAsync("", runId, ex.Message).ConfigureAwait(false);
                 }
             }
             catch (TimeoutException ex)
@@ -3207,25 +3219,27 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         }
     }
 
-    private Task SendRunFailedAsync(string text, string? runId = null)
+    private Task SendRunFailedAsync(string text, string? runId = null, string? code = null)
     {
         return _bridgeService.SendEventAsync(new
         {
             type = "run_failed",
             text,
+            code = code ?? "",
             runId,
-            visionContextHint = _currentThread.ContainsImages
-                ? "提示：当前对话曾发送过图片，这个错误可能是因为当前模型或供应商不支持图片上下文，或当前模型不是多模态模型导致，建议切换至多模态模型。"
+            visionContextHintCode = _currentThread.ContainsImages
+                ? SessionMessageCode.VisionContext
                 : ""
         });
     }
 
-    private Task SendResumeFailedAsync(string message, string? detail = null)
+    private Task SendResumeFailedAsync(string message, string? detail = null, string? code = null)
     {
         return _bridgeService.SendEventAsync(new
         {
             type = "resume_failed",
             message,
+            code = code ?? "",
             detail = string.IsNullOrWhiteSpace(detail) ? null : detail
         });
     }

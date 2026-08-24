@@ -12,7 +12,17 @@
     "copied": "Copied",
     "copyFailed": "Copy failed",
     "showMore": "Show more",
-    "collapse": "Collapse"
+    "collapse": "Collapse",
+    "system": {
+      "login": {
+        "no_entry": "{{agentName}} requires login, but no login entry point is available.",
+        "required_terminal": "{{agentName}} requires login to continue: a login terminal is open. Complete the login there (device code or API key), then come back and resend your message."
+      },
+      "run_failed": {
+        "vision_context": "Hint: images were sent earlier in this conversation. This error may occur because the current model or provider does not support image context, or the model is not multimodal — consider switching to a multimodal model."
+      }
+    },
+    "visionContextHint": "Hint: images were sent earlier in this conversation. This error may occur because the current model or provider does not support image context, or the model is not multimodal — consider switching to a multimodal model."
   },
   "runtime": {
     "notInstalled": "Agent runtime is not installed.",

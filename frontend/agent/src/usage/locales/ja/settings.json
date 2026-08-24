@@ -120,6 +120,7 @@
       "damaged_thread_files": "一部のローカルセッション記録が壊れています",
       "unregistered_provider": "一部のセッションの Agent は既に利用できません"
     },
-    "noExactRecords": "利用できる正確な Token 記録はまだありません"
+    "noExactRecords": "利用できる正確な Token 記録はまだありません",
+    "scanFailed": "使用量データを読み取れませんでした。再試行してください。"
   }
 }

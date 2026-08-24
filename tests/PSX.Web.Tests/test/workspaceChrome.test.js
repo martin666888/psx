@@ -409,7 +409,7 @@ test('column menu blocks split-right on pixel capacity and prefers the C# reason
     maxColumns: 3,
     workspaces: [{
       workspaceId: 'w1', kind: 'agent', title: 'docs', iconKey: 'claude',
-      columnId: 'column-1', isActiveTab: true, canSplitRight: false, splitBlockedReason: '最多支持 3 列',
+      columnId: 'column-1', isActiveTab: true, canSplitRight: false, splitBlockedReason: 'split.column_cap',
       canCollapse: true
     }]
   });

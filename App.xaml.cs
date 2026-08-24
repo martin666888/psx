@@ -24,10 +24,14 @@ public partial class App : Application
             // locale migration needs to know whether the install predates
             // this first run.
             PsxInstallState.Record();
-            ApplyUiCulture(LocaleDescriptor.Resolve(
+            // Apply the PERSISTED preference (not just the install default)
+            // before any WPF resource or early MessageBox resolves strings.
+            var environmentStore = new PsxEnvironmentSettingsStore(
+                PsxInstallState.RootDirectory,
                 PsxInstallState.PreExistingInstall
                     ? LocaleDescriptor.UpgradeDefaultMode
-                    : LocaleDescriptor.FreshInstallDefaultMode));
+                    : LocaleDescriptor.FreshInstallDefaultMode);
+            ApplyUiCulture(environmentStore.GetSnapshot().ResolvedLocale);
 
             var settingsService = new SettingsService();
             var settings = settingsService.GetSettings();

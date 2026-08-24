@@ -39,7 +39,13 @@
   "pane": {
     "layoutSection": "Layout",
     "splitRight": "Move to a new right-hand column",
-    "collapseSingle": "Merge into a single column"
+    "collapseSingle": "Merge into a single column",
+    "splitBlocked": {
+      "split": {
+        "only_workspace": "The only workspace cannot be split",
+        "column_cap": "At most 3 columns are supported"
+      }
+    }
   },
   "runtime": {
     "section": "Runtime",
@@ -194,7 +200,10 @@
     "kimi.export.invalid_data": "Export failed: the session data is invalid.",
     "kimi.export.too_large": "Export failed: the file is too large and was cancelled.",
     "kimi.export.write_failed": "Export failed: writing the file did not complete.",
-    "kimi.export.connect_failed": "Export failed: cannot reach the local service."
+    "kimi.export.connect_failed": "Export failed: cannot reach the local service.",
+    "workspace": {
+      "agent_workspace_cap": "At most {{limit}} Agent workspaces are supported"
+    }
   },
   "diagnostics": {
     "generic": "Something went wrong; some content may not have updated correctly.",

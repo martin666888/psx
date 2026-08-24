@@ -120,6 +120,7 @@
       "damaged_thread_files": "部分本地会话记录损坏",
       "unregistered_provider": "部分会话所属 Agent 已不可用"
     },
-    "noExactRecords": "当前没有可用的精确 Token 记录"
+    "noExactRecords": "当前没有可用的精确 Token 记录",
+    "scanFailed": "无法读取用量数据，请重试。"
   }
 }

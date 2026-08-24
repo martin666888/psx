@@ -23,8 +23,8 @@ function makeRig({ timeoutMs = 5000 } = {}) {
     sendGlobalCommand(command, value, requestId) {
       commands.push({ command, value, requestId });
     },
-    sendAppSettingsCommand(action, requestId, registry) {
-      commands.push({ action, requestId, registry });
+    sendAppSettingsCommand(action, requestId, registry, localeMode) {
+      commands.push({ action, requestId, registry, localeMode });
     }
   };
   const broker = new UsageRequestBroker(host, store, { timeoutMs });
@@ -160,16 +160,23 @@ test('broker: consecutive force refreshes supersede — the older reply is dropp
 
 // --- usage error + terminal-only global channel -------------------------------
 
-test('broker: a usage reply carrying an error surfaces the error text', () => {
+test('broker: a usage reply carrying the scan-failed code surfaces localized copy', () => {
   const rig = makeRig();
 
   rig.broker.requestUsage(false);
   const sent = usageCommands(rig.commands).at(-1);
-  rig.broker.handleUsageReport({ requestId: sent.requestId, error: 'scan failed' });
+  rig.broker.handleUsageReport({ requestId: sent.requestId, error: 'usage.scan_failed' });
 
   const state = rig.store.getState();
   assert.equal(state.status, 'error');
-  assert.equal(state.errorText, 'scan failed');
+  // Fixed backend codes resolve through the settings locales; arbitrary text
+  // falls back to the generic copy instead of crossing into the DOM.
+  assert.equal(state.errorText, '无法读取用量数据，请重试。');
+
+  rig.broker.requestUsage(false);
+  const second = usageCommands(rig.commands).at(-1);
+  rig.broker.handleUsageReport({ requestId: second.requestId, error: 'something unexpected' });
+  assert.equal(rig.store.getState().errorText, 'Unable to load usage.');
 });
 
 test('broker: requesting usage without an Agent workspace uses the global bridge', () => {
@@ -413,4 +420,67 @@ test('broker: a newer settings broadcast drops a stale GET reply', () => {
   });
   assert.equal(rig.store.getState().dshRegistry, 'npmmirror');
   assert.equal(rig.store.getState().settingsDraft, 'npmmirror');
+});
+
+test('broker: a broadcast never unbinds a pending locale mutation', () => {
+  const rig = makeRig();
+  rig.broker.setLocale('ja');
+  const set = rig.commands.find((entry) => entry.action === 'set_locale');
+  assert.ok(set?.requestId);
+
+  // An interleaved broadcast refreshes the snapshot but must leave the
+  // pending mutation armed for its own reply.
+  rig.broker.handleAppSettings({
+    revision: 3,
+    dshRegistry: 'official',
+    localeMode: 'zh-Hans',
+    resolvedLocale: 'zh-Hans'
+  });
+  assert.equal(rig.store.getState().resolvedLocale, 'zh-Hans');
+
+  rig.broker.handleAppSettings({
+    revision: 2,
+    dshRegistry: 'official',
+    localeMode: 'zh-Hans',
+    resolvedLocale: 'zh-Hans',
+    requestId: set.requestId,
+    errorClass: 'settings_write_failed',
+    // A composed backend sentence: it must be ignored in favor of the fixed
+    // locale copy for the language section.
+    errorMessage: '后端拼接的中文句子'
+  });
+  const state = rig.store.getState();
+  assert.equal(state.languageError, '无法保存语言设置。');
+  assert.equal(state.settingsError, '');
+});
+
+test('broker: registry save failures route to the registry section', () => {
+  const rig = makeRig();
+  rig.broker.setDshRegistry('npmmirror');
+  const set = rig.commands.find((entry) => entry.action === 'set_dsh_registry');
+
+  rig.broker.handleAppSettings({
+    revision: 0,
+    dshRegistry: 'official',
+    requestId: set.requestId,
+    errorClass: 'settings_write_failed'
+  });
+  const state = rig.store.getState();
+  assert.ok(state.settingsError.length > 0);
+  assert.equal(state.languageError, '');
+});
+
+test('broker: an unmatched settings reply is dropped whole', () => {
+  const rig = makeRig();
+  rig.broker.setLocale('en');
+  rig.broker.handleAppSettings({
+    revision: 5,
+    dshRegistry: 'official',
+    localeMode: 'en',
+    resolvedLocale: 'en',
+    requestId: 'bogus-id',
+    errorClass: 'settings_write_failed'
+  });
+  assert.equal(rig.store.getState().settingsRevision, -1);
+  assert.equal(rig.store.getState().languageError, '');
 });

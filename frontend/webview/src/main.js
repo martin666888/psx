@@ -373,7 +373,7 @@ installRuntimeDiagnostics();
                 workspaceChrome.applyThemeCatalog(message);
                 return;
             case BridgeEventType.WorkspaceNotice:
-                workspaceChrome.showNotice(workspaceNoticeLabel(message.code));
+                workspaceChrome.showNotice(workspaceNoticeLabel(message.code, message.args));
                 return;
             case BridgeEventType.PaneZoomToggle:
                 paneLayout.toggleZoom();

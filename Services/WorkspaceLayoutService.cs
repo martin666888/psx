@@ -194,17 +194,25 @@ public sealed class WorkspaceLayoutService
         return changed != null;
     }
 
+    /// <summary>Fixed split-blocked reason codes; the frontend maps them to
+    /// localized copy (shell namespace, pane.splitBlocked.*).</summary>
+    public static class SplitBlockedReason
+    {
+        public const string OnlyWorkspace = "split.only_workspace";
+        public const string ColumnCap = "split.column_cap";
+    }
+
     public string? GetSplitBlockedReason(Guid workspaceId)
     {
         lock (_sync)
         {
             if (_columns.Count == 1 && _columns[0].Tabs.Count == 1 && _columns[0].Tabs[0].Id == workspaceId)
-                return "只有一个工作区，无法拆分";
+                return SplitBlockedReason.OnlyWorkspace;
             // The 3-column cap blocks only splits that add a column; a sole-tab
             // source column collapses and the count stays put.
             var found = FindTabLocked(workspaceId);
             if (_columns.Count >= MaxColumns && !(found.HasValue && found.Value.Column.Tabs.Count == 1))
-                return "最多支持 3 列";
+                return SplitBlockedReason.ColumnCap;
             return null;
         }
     }

@@ -840,7 +840,7 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
                     timezone = TimeZoneInfo.Local.Id,
                     report = (JsonNode?)null,
                     completeness = (JsonNode?)null,
-                    error = "无法读取用量数据，请重试。"
+                    error = "usage.scan_failed"
                 }).ConfigureAwait(false);
             }
             catch (Exception reportException)

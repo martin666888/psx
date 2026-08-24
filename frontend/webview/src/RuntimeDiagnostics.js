@@ -3,7 +3,7 @@ const BENIGN_RESIZE_OBSERVER_MESSAGES = new Set([
     'ResizeObserver loop limit exceeded'
 ]);
 
-import { t } from './i18n.js';
+import { t, onLocaleChanged } from './i18n.js';
 
 const DIAGNOSTIC_ROLE = 'runtime-diagnostic';
 
@@ -52,6 +52,19 @@ export function installRuntimeDiagnostics(windowRef = window, documentRef = docu
 
     const seen = new Set();
 
+    // A notice already on screen keeps its DOM node across a language switch;
+    // refresh its copy in place.
+    const unsubscribeLocale = onLocaleChanged(() => {
+        const live = documentRef.querySelector(`[data-role="${DIAGNOSTIC_ROLE}"]`);
+        if (!live) return;
+        live.querySelector('.psx-runtime-diagnostic-message').textContent = t('diagnostics.generic');
+        const dismiss = live.querySelector('.psx-runtime-diagnostic-dismiss');
+        if (dismiss) {
+            dismiss.textContent = t('diagnostics.dismiss');
+            dismiss.setAttribute('aria-label', t('diagnostics.dismissAria'));
+        }
+    });
+
     const show = (kind, message) => {
         const fingerprint = `${kind}:${String(message ?? '')}`;
         if (seen.has(fingerprint)) return;
@@ -84,6 +97,7 @@ export function installRuntimeDiagnostics(windowRef = window, documentRef = docu
 
     const state = {
         dispose() {
+            unsubscribeLocale();
             windowRef.removeEventListener('error', onError);
             windowRef.removeEventListener('unhandledrejection', onUnhandledRejection);
             if (windowRef.__psxRuntimeDiagnostics === state)

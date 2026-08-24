@@ -120,6 +120,7 @@
       "damaged_thread_files": "部分本機工作階段記錄損毀",
       "unregistered_provider": "部分工作階段所屬的 Agent 已無法使用"
     },
-    "noExactRecords": "目前沒有可用的精確 Token 記錄"
+    "noExactRecords": "目前沒有可用的精確 Token 記錄",
+    "scanFailed": "無法讀取用量資料，請重試。"
   }
 }

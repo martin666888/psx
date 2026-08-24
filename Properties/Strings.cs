@@ -28,6 +28,16 @@ public static class Strings
 
     public static string WebView2MissingBody => Get("WebView2MissingBody");
 
+    public static string LoginTabName => Get("LoginTabName");
+
+    public static string StartupWarningWithBackup => Get("StartupWarningWithBackup");
+
+    public static string StartupWarningSafeDefaults => Get("StartupWarningSafeDefaults");
+
+    public static string StartupWarningBackupAlsoInvalid => Get("StartupWarningBackupAlsoInvalid");
+
+    public static string ZipArchiveFilter => Get("ZipArchiveFilter");
+
     public static string TabNewToRightColumn => Get("TabNewToRightColumn");
 
     public static string TabMoveToNewColumn => Get("TabMoveToNewColumn");
