@@ -41,10 +41,9 @@ internal static class AcpAskUserQuestionAdapter
         if (!TryReadQuestions(toolCall, out var questions) || questions.Count == 0)
             return false;
 
-        var title = GetString(toolCall, "title");
-        message = "Please answer the following question(s):";
-        // Keep toolCall.title for the permission card header; the form body
-        // uses this fixed prompt so header + subtitle are not duplicated.
+        message = "";
+        // The frontend supplies the localized form prompt when the Agent did
+        // not provide one; no PSX-authored display sentence crosses the bridge.
 
         var properties = new Dictionary<string, object?>(StringComparer.Ordinal);
         var indexes = new List<int>(questions.Count);
@@ -91,7 +90,9 @@ internal static class AcpAskUserQuestionAdapter
             properties[OtherFieldKey(question.OriginalIndex)] = new Dictionary<string, object?>
             {
                 ["type"] = "string",
-                ["title"] = "Other"
+                // An untitled supplemental field is rendered through the
+                // frontend's localized "Other" fallback.
+                ["title"] = ""
             };
             indexes.Add(question.OriginalIndex);
         }

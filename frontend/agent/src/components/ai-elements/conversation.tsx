@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { ArrowDownIcon } from "lucide-react";
 import type { ComponentProps } from "react";
 import { useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { StickToBottom, useStickToBottomContext } from "use-stick-to-bottom";
 
 export type ConversationProps = ComponentProps<typeof StickToBottom>;
@@ -75,6 +76,7 @@ export const ConversationScrollButton = ({
   ...props
 }: ConversationScrollButtonProps) => {
   const { isAtBottom, scrollToBottom } = useStickToBottomContext();
+  const { t } = useTranslation("agent");
 
   const handleScrollToBottom = useCallback(() => {
     scrollToBottom();
@@ -83,7 +85,7 @@ export const ConversationScrollButton = ({
   return (
     !isAtBottom && (
       <Button
-        aria-label="Scroll to bottom"
+        aria-label={t("timeline.scrollToBottom")}
         className={cn(
           "absolute bottom-4 left-[50%] translate-x-[-50%] rounded-full",
           className

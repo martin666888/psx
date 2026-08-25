@@ -268,7 +268,7 @@ test('permission form presentation folds schema without raw input text', () => {
   assert.equal(form.kind, 'permission');
   assert.equal(form.formSubmitOptionId, 'proceed_once');
   assert.equal(form.text, '', 'form variant suppresses raw input dump');
-  assert.equal(form.elicitationMessage, '');
+  assert.equal(form.elicitationMessage, 'Please answer the following question(s):');
   assert.equal(form.elicitationMessageCode, undefined);
   assert.ok(form.schema);
   assert.equal(form.schema.presentation, 'form');

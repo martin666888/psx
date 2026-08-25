@@ -12,6 +12,34 @@ namespace PSX.Tests.Integration;
 public sealed class AcpAgentSessionServiceTests
 {
     [TestMethod]
+    public async Task PsxThreadCommands_SendFixedLocalizedCodesWithoutEnglishText()
+    {
+        using var fixture = new FakeAcpSessionFixture(nameof(PsxThreadCommands_SendFixedLocalizedCodesWithoutEnglishText));
+
+        await fixture.Service.SubmitMessageAsync("/cwd");
+        var slashCwd = fixture.Bridge.Events.Last(message =>
+            EventType(message) == "command_result"
+            && message.GetProperty("code").GetString() == SessionMessageCode.CwdCurrent);
+        Assert.AreEqual("", slashCwd.GetProperty("text").GetString());
+        Assert.AreEqual(fixture.Workspace.Path, slashCwd.GetProperty("args").GetProperty("path").GetString());
+
+        var cwdCount = fixture.Bridge.Events.Count(message =>
+            EventType(message) == "command_result"
+            && message.GetProperty("code").GetString() == SessionMessageCode.CwdCurrent);
+        fixture.Bridge.RaiseCommand("cwd");
+        await Task.Yield();
+        Assert.AreEqual(cwdCount + 1, fixture.Bridge.Events.Count(message =>
+            EventType(message) == "command_result"
+            && message.GetProperty("code").GetString() == SessionMessageCode.CwdCurrent));
+
+        await fixture.Service.SubmitMessageAsync("/delete");
+        var deleted = fixture.Bridge.Events.Last(message =>
+            EventType(message) == "command_result"
+            && message.GetProperty("code").GetString() == SessionMessageCode.ThreadDeleted);
+        Assert.AreEqual("", deleted.GetProperty("text").GetString());
+    }
+
+    [TestMethod]
     public async Task CheckRuntimeUpdate_NoNewerVersion_PublishesCheckingThenUpToDate()
     {
         using var fixture = new FakeAcpSessionFixture(nameof(CheckRuntimeUpdate_NoNewerVersion_PublishesCheckingThenUpToDate));
@@ -32,6 +60,23 @@ public sealed class AcpAgentSessionServiceTests
             .ToList();
         CollectionAssert.Contains(states, "checking");
         Assert.AreEqual("up_to_date", states.Last());
+    }
+
+    [TestMethod]
+    public async Task InstallRuntime_RefreshesToolbarStateAfterRuntimeBecomesReady()
+    {
+        using var fixture = new FakeAcpSessionFixture(nameof(InstallRuntime_RefreshesToolbarStateAfterRuntimeBecomesReady));
+        fixture.Runtime.SetReady(false);
+
+        fixture.Bridge.RaiseCommand("install_runtime");
+
+        await fixture.Bridge.WaitForEventAsync(
+            "runtime_status",
+            message => message.GetProperty("state").GetString() == "ready");
+        var update = await fixture.Bridge.WaitForEventAsync(
+            "runtime_update_status",
+            message => message.GetProperty("state").GetString() == "idle");
+        Assert.AreEqual("1.0.0-fake", update.GetProperty("currentVersion").GetString());
     }
 
     [TestMethod]
@@ -490,6 +535,10 @@ public sealed class AcpAgentSessionServiceTests
         Assert.IsTrue(permission.TryGetProperty("schema", out var schema));
         Assert.IsTrue(schema.GetProperty("properties").TryGetProperty("q0", out _));
         Assert.IsTrue(schema.GetProperty("properties").TryGetProperty("q0_other", out _));
+        Assert.AreEqual("", permission.GetProperty("message").GetString());
+        Assert.AreEqual(
+            "",
+            schema.GetProperty("properties").GetProperty("q0_other").GetProperty("title").GetString());
         Assert.AreEqual(0, schema.GetProperty("required").GetArrayLength());
 
         var requestId = permission.GetProperty("requestId").GetString();

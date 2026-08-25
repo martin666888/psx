@@ -71,6 +71,29 @@ function configEvent(workspaceId) {
   };
 }
 
+function protocolConfigEvent(workspaceId) {
+  return {
+    type: 'agent_config_options',
+    workspaceId,
+    options: [
+      {
+        id: 'mode',
+        type: 'select',
+        name: '模式',
+        currentValue: 'default',
+        options: [{ value: 'default', name: 'Default' }]
+      },
+      {
+        id: 'model',
+        type: 'select',
+        name: '模型',
+        currentValue: 'k3',
+        options: [{ value: 'k3', name: 'K3' }]
+      }
+    ]
+  };
+}
+
 function rejectEvent(workspaceId) {
   return { type: 'agent_command_rejected', workspaceId, command: '/nope', reason: 'unsupported' };
 }
@@ -137,10 +160,31 @@ test('ComposerController renders composer controls from modes and config options
   const controlled = composerSnapshot(panel);
 
   assert.equal(controlled.mode.value, 'Plan');
-  assert.equal(controlled.mode.ariaLabel, '模式: Plan');
+  assert.equal(controlled.mode.ariaLabel, 'Mode: Plan');
   assert.match(controlled.configOptionsHtml, /Verbosity/);
   assert.equal(panel.querySelectorAll('[data-slot="select-trigger"]').length, 2);
   assert.equal(panel.querySelectorAll('.agent-config-switch').length, 2);
+});
+
+test('ComposerController keeps Mode and Model labels in English before and after provider config arrives', async () => {
+  const { app, panelFor } = await mountAgentApp();
+  createAgentWorkspace(app, WS);
+  app.handle(stateEvent(WS, false));
+  app.handle(modesEvent(WS));
+  const panel = panelFor(WS);
+  await composerReady(panel);
+
+  assert.equal(panel.querySelector('[data-role="mode"]').getAttribute('aria-label'), 'Mode: Plan');
+
+  app.handle(protocolConfigEvent(WS));
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (panel.querySelector('button[data-config-id="model"]')) break;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+
+  assert.equal(panel.querySelector('button[data-config-id="mode"]').getAttribute('aria-label'), 'Mode: Default');
+  assert.equal(panel.querySelector('button[data-config-id="model"]').getAttribute('aria-label'), 'Model: K3');
+  assert.doesNotMatch(panel.querySelector('[data-role="config-options"]').textContent, /模式|模型/);
 });
 
 test('ComposerController preserves an agent-confirmed config selection when submitting', async () => {

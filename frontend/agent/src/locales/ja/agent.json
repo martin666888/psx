@@ -86,6 +86,7 @@
     "copy": "コピー",
     "copied": "コピーしました",
     "copyFailed": "コピーに失敗しました",
+    "scrollToBottom": "一番下までスクロール",
     "showMore": "さらに表示",
     "collapse": "折りたたむ",
     "system": {
@@ -258,6 +259,7 @@
     },
     "elicitation": {
       "responseTitle": "応答",
+      "otherTitle": "その他",
       "waitingInput": "入力待ち",
       "continue": "続行",
       "decline": "辞退",

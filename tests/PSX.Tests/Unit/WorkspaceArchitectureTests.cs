@@ -104,6 +104,30 @@ public sealed class AgentProviderRegistryTests
     }
 
     [TestMethod]
+    public async Task RuntimeCoordinator_LateProgressCannotOverwriteTerminalState()
+    {
+        using var workspace = TestWorkspace.Create(nameof(RuntimeCoordinator_LateProgressCannotOverwriteTerminalState));
+        var runtime = new CountingRuntime(workspace.Path);
+        var registry = new AgentProviderRegistry(
+            [new TestProvider("first", "First", runtime, [])],
+            new AgentProviderOptions { DefaultProviderKey = "first" });
+        using var coordinator = new AgentRuntimeCoordinator(registry);
+        var states = new List<string>();
+        coordinator.UpdateStatusChanged += (_, args) =>
+        {
+            states.Add(args.State);
+            if (args.State == "up_to_date")
+                runtime.PublishStatus("late progress");
+        };
+
+        await coordinator.RequestUpdateAsync(runtime);
+
+        CollectionAssert.AreEqual(new[] { "checking", "up_to_date" }, states);
+        Assert.IsFalse(coordinator.IsUpdateInFlight(runtime));
+        Assert.AreEqual("up_to_date", coordinator.GetUpdateSnapshot(runtime)?.State);
+    }
+
+    [TestMethod]
     public void EventSink_SendEvent_AlwaysAddsWorkspaceIdAndDropsAfterDispose()
     {
         var bridge = new RecordingAgentBridgeService();

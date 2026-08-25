@@ -845,7 +845,7 @@ export class TimelineProjection {
       toolCallId: '',
       historical: false,
       schema: raw,
-      elicitationMessage: '',
+      elicitationMessage: asString(raw.message),
       elicitationMessageCode: asString(raw.message)
         ? undefined
         : loc('timeline.decision.provideInfo'),
@@ -876,7 +876,7 @@ export class TimelineProjection {
       toolCallId: '',
       historical: false,
       schema: raw,
-      elicitationMessage: '',
+      elicitationMessage: asString(raw.message),
       elicitationMessageCode: asString(raw.message) ? undefined : loc('timeline.decision.provideInfo'),
       formSubmitOptionId: ''
     });

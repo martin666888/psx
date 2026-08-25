@@ -1,0 +1,15 @@
+{
+    "files.watcherExclude": {
+        "**/TestResults/**": true
+    },
+    "search.exclude": {
+        "**/TestResults/**": true
+    },
+    "vitest.rootConfig": "tests/PSX.Web.Tests/vitest.config.ts",
+    "vitest.configSearchPatternExclude": "{**/node_modules/**,**/vendor/**,**/.*/**,**/*.d.ts,**/TestResults/**}",
+    "i18n-ally.localesPaths": [
+        "frontend/webview/src/locales",
+        "frontend/agent/src/locales",
+        "frontend/agent/src/usage/locales"
+    ]
+}

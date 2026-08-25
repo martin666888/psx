@@ -87,8 +87,8 @@ export class AgentWorkspaceRegistry {
       {
         sendGlobalCommand: (command, value, requestId) =>
           Bridge.sendAgentGlobalCommand(command, value, requestId),
-        sendAppSettingsCommand: (action, requestId, registry) =>
-          Bridge.sendAppSettingsCommand(action, requestId, registry)
+        sendAppSettingsCommand: (action, requestId, registry, localeMode) =>
+          Bridge.sendAppSettingsCommand(action, requestId, registry, localeMode)
       },
       this.usageStore
     );

@@ -600,7 +600,10 @@ export class ComposerController implements FeatureController {
       mode: {
         id: 'mode',
         role: 'mode',
-        label: i18nT('composer.mode.label', { ns: 'agent' }),
+        // ACP protocol concepts stay in English across every PSX locale. The
+        // provider may later replace this fallback with a config option; that
+        // projection uses the same fixed label below.
+        label: 'Mode',
         title: i18nT('composer.mode.title', { ns: 'agent', assistantName: this.assistantName }),
         value: this.currentModeId,
         items: this.modes.map((mode) => ({
@@ -613,7 +616,12 @@ export class ComposerController implements FeatureController {
         onValueChange: (value) => this.handleModeSelected(value)
       },
       configs: this.configOptions.map((configOption) => {
-        const label = configOption.name || configOption.id;
+        const protocolLabel = configOption.id.toLowerCase() === 'mode'
+          ? 'Mode'
+          : configOption.id.toLowerCase() === 'model'
+            ? 'Model'
+            : '';
+        const label = protocolLabel || configOption.name || configOption.id;
         const title = configOption.description || label;
         const toggleValues = this.toggleValues(configOption);
         if (configOption.type === 'boolean' || toggleValues) {

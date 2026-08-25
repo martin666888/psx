@@ -273,12 +273,21 @@ export class WorkspaceChromeController {
                 : undefined).trim();
         };
         paint();
-        this.disposeNoticeLocale.push(onLocaleChanged(() => {
+        const unsubscribeLocale = onLocaleChanged(() => {
             if (!notice.isConnected) return;
             paint();
-        }));
+        });
+        const disposeLocale = () => {
+            unsubscribeLocale();
+            const index = this.disposeNoticeLocale.indexOf(disposeLocale);
+            if (index >= 0) this.disposeNoticeLocale.splice(index, 1);
+        };
+        this.disposeNoticeLocale.push(disposeLocale);
         region.appendChild(notice);
-        window.setTimeout(() => notice.remove(), 5000);
+        window.setTimeout(() => {
+            disposeLocale();
+            notice.remove();
+        }, 5000);
     }
 
     // Injected by main.js: returns { fitsAgent, fitsTerminal,

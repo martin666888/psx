@@ -130,6 +130,7 @@ public sealed class AcpAuthRequiredTests
         Assert.AreEqual(
             SessionMessageCode.LoginRequiredTerminal,
             failure.GetProperty("code").GetString());
+        Assert.AreEqual("Fake ACP", failure.GetProperty("args").GetProperty("agentName").GetString());
 
         var state = await fixture.Bridge.WaitForEventAsync(
             "agent_state",

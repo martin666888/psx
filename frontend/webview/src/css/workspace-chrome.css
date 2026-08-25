@@ -292,6 +292,14 @@
     width: 260px;
 }
 
+/* The create placement control carries the longest label in English. Keep a
+ * language-independent width and a single-line segmented control so changing
+ * locale never changes the popover geometry or produces a two-line action. */
+.workspace-popover-create {
+    width: 360px;
+    max-width: calc(100vw - var(--workspace-rail-width) - 12px);
+}
+
 .workspace-popover-heading,
 .workspace-popover-subheading {
     margin: 0;
@@ -414,6 +422,11 @@
 .workspace-popover-action,
 .workspace-theme-confirm {
     padding: 6px 8px;
+}
+
+.workspace-segments button {
+    min-width: 0;
+    white-space: nowrap;
 }
 
 .workspace-theme-row {

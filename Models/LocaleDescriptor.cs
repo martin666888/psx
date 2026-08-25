@@ -1,4 +1,5 @@
 using System.Globalization;
+using PSX.Helpers;
 
 namespace PSX.Models;
 
@@ -33,13 +34,42 @@ public static class LocaleDescriptor
         return ResolveSystem();
     }
 
-    /// <summary>Map the Windows UI culture: any zh-* culture whose script is
+    /// <summary>Map the Windows user's preferred display language: any zh-*
+    /// culture whose script is
     /// Hant (zh-Hant, zh-Hant-HK, …) or whose region is TW/HK/MO resolves to
     /// Traditional; every other zh-* culture is Simplified; ja maps to
     /// Japanese; everything unsupported falls back to English.</summary>
     public static string ResolveSystem()
+        => ResolveSystem(WindowsUiLanguage.GetPrimaryName);
+
+    internal static string ResolveSystem(Func<string?> displayLanguageProvider)
     {
-        for (var culture = CultureInfo.CurrentUICulture;
+        ArgumentNullException.ThrowIfNull(displayLanguageProvider);
+
+        string? displayLanguage;
+        try
+        {
+            displayLanguage = displayLanguageProvider();
+        }
+        catch (Exception)
+        {
+            displayLanguage = null;
+        }
+
+        if (string.IsNullOrWhiteSpace(displayLanguage))
+            return En;
+
+        CultureInfo? culture;
+        try
+        {
+            culture = CultureInfo.GetCultureInfo(displayLanguage);
+        }
+        catch (CultureNotFoundException)
+        {
+            return En;
+        }
+
+        for (;
              culture != null && !string.IsNullOrEmpty(culture.Name);
              culture = culture.Parent)
         {

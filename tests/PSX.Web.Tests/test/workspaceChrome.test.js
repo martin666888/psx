@@ -15,6 +15,15 @@ const controllerUrl = pathToFileURL(
   path.join(repositoryRoot, 'frontend', 'webview', 'src', 'WorkspaceChromeController.js')
 ).href;
 
+test('create popover keeps one language-independent width and single-line placement labels', () => {
+  const css = fs.readFileSync(
+    path.join(repositoryRoot, 'frontend', 'webview', 'src', 'css', 'workspace-chrome.css'),
+    'utf8'
+  );
+  assert.match(css, /\.workspace-popover-create\s*\{[^}]*width:\s*360px;/s);
+  assert.match(css, /\.workspace-segments button\s*\{[^}]*white-space:\s*nowrap;/s);
+});
+
 function mountChrome() {
   document.body.innerHTML = `
     <nav id="activity-rail">

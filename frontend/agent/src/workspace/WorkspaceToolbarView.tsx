@@ -7,6 +7,8 @@
 // so each state kind keeps exactly one authoritative owner.
 
 import { useCallback, useRef, useState, type JSX, type RefObject } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { EllipsisIcon } from 'lucide-react';
 import { Button } from '../components/ui/button.js';
 import {
@@ -17,8 +19,6 @@ import {
 } from '../components/ui/tooltip.js';
 import { SessionMeta, type SessionMetaProps } from './SessionToolbar.js';
 import { runtimeUpdateFailureLabel } from './runtimeCopy.js';
-import { i18n } from '../../../webview/src/i18n.js';
-const i18nT = i18n.t.bind(i18n);
 import { useDismissibleLayer } from '../components/use-dismissible-layer.js';
 
 export interface WorkspaceToolbarProps {
@@ -60,21 +60,20 @@ const UPDATE_DISABLED_STATES: ReadonlySet<string> = new Set([
   'staged_restart_required'
 ]);
 
-function updateButtonLabel(state: string): string {
-  // Module-scope helper: resolve through the shared instance so non-hook
-  // callers still get the current language.
+function updateButtonLabel(state: string, t: TFunction<'agent'>): string {
   const key = {
     checking: 'toolbar.checking',
     up_to_date: 'toolbar.upToDate',
     staged_restart_required: 'toolbar.stagedRestart',
     failed: 'toolbar.retryUpdate'
   }[state];
-  return key ? i18nT(key, { ns: 'agent', defaultValue: i18nT('toolbar.update', { ns: 'agent' }) }) : i18nT('toolbar.update', { ns: 'agent' });
+  return key ? t(key, { defaultValue: t('toolbar.update') }) : t('toolbar.update');
 }
 
-function updateButtonTitle(update: WorkspaceToolbarProps['update']): string {
-  const t = (key: string, options?: Record<string, unknown>): string =>
-    i18nT(key, { ns: 'agent', ...options });
+function updateButtonTitle(
+  update: WorkspaceToolbarProps['update'],
+  t: TFunction<'agent'>
+): string {
   if (update.state === 'unsupported') return t('toolbar.unsupportedTitle');
   if (update.state === 'install_required') return t('toolbar.installRequiredTitle');
   if (update.state === 'unavailable') return t('toolbar.unavailableTitle');
@@ -119,9 +118,12 @@ function PlanIcon(): JSX.Element {
 }
 
 export function WorkspaceToolbar(props: WorkspaceToolbarProps): JSX.Element {
-  const planLabel = i18nT(
+  // This hook is intentionally owned by the toolbar root: disabled runtime
+  // actions and their tooltips must re-render on languageChanged even when no
+  // runtime_update_status event arrives at the same time.
+  const { t } = useTranslation('agent');
+  const planLabel = t(
     props.plan.unread ? 'toolbar.planToggleUnread' : 'toolbar.planToggle',
-    { ns: 'agent' }
   );
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement | null>(null);
@@ -146,7 +148,7 @@ export function WorkspaceToolbar(props: WorkspaceToolbarProps): JSX.Element {
           ref={moreTriggerRef}
           type="button"
           className="agent-toolbar-more-trigger"
-          aria-label={i18nT('toolbar.moreAria', { ns: 'agent' })}
+          aria-label={t('toolbar.moreAria')}
           aria-expanded={moreOpen}
           onClick={() => setMoreOpen((open) => !open)}
         >
@@ -163,7 +165,7 @@ export function WorkspaceToolbar(props: WorkspaceToolbarProps): JSX.Element {
                 title={props.session.changeCwdTitle}
                 onClick={props.session.onPickCwd}
               >
-                {i18nT('session.change', { ns: 'agent' })}
+                {t('session.change')}
               </Button>
               {props.session.sessionLabel ? <small>{props.session.sessionLabel}</small> : null}
             </div>
@@ -198,7 +200,7 @@ export function WorkspaceToolbar(props: WorkspaceToolbarProps): JSX.Element {
           size="sm"
           className="h-7 border border-input text-xs"
           disabled={UPDATE_DISABLED_STATES.has(props.update.state)}
-          title={updateButtonTitle(props.update)}
+          title={updateButtonTitle(props.update, t)}
           onClick={props.update.onRequest}
         >
           {/* Resident product version, hidden below a narrow toolbar and when
@@ -213,7 +215,7 @@ export function WorkspaceToolbar(props: WorkspaceToolbarProps): JSX.Element {
               {props.update.versionLabel}
             </span>
           ) : null}
-          {updateButtonLabel(props.update.state)}
+          {updateButtonLabel(props.update.state, t)}
         </Button>
           </div>
         </div>

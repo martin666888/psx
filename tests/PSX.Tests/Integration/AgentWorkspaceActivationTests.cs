@@ -271,6 +271,10 @@ public sealed class AgentWorkspaceActivationTests
                 "runtime_status",
                 message => message.GetProperty("workspaceId").GetString() == workspaceId.ToString()
                     && message.GetProperty("state").GetString() == "ready");
+            await fixture.Bridge.WaitForEventAsync(
+                "runtime_update_status",
+                message => message.GetProperty("workspaceId").GetString() == workspaceId.ToString()
+                    && message.GetProperty("state").GetString() == "idle");
         }
 
         foreach (var workspaceId in new[] { firstWorkspaceId, secondWorkspaceId })

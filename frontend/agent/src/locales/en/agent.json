@@ -86,6 +86,7 @@
     "copy": "Copy",
     "copied": "Copied",
     "copyFailed": "Copy failed",
+    "scrollToBottom": "Scroll to bottom",
     "showMore": "Show more",
     "collapse": "Collapse",
     "system": {
@@ -258,6 +259,7 @@
     },
     "elicitation": {
       "responseTitle": "Response",
+      "otherTitle": "Other",
       "waitingInput": "Waiting for input",
       "continue": "Continue",
       "decline": "Decline",

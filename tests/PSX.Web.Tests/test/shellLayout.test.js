@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { mountAgentApp, createAgentWorkspace, composerReady, repositoryRoot } from './agentHarness.js';
+import { i18n } from '../../../frontend/webview/src/i18n.js';
 
 // AgentShell layered layout (step 5): History dock at the bottom layer, the
 // conversation canvas above it, the Plan card as a right-edge overlay. The
@@ -117,6 +118,47 @@ test('shell: the toolbar Update button follows runtime_update_status states', as
   await until(() => update().dataset.updateState === 'up_to_date', 'up_to_date state renders');
   assert.equal(update().textContent, '已是最新');
   assert.equal(update().disabled, false);
+});
+
+test('shell: runtime action and tooltip re-localize without another status event', async () => {
+  const { app, panelFor } = await mountAgentApp();
+  createAgentWorkspace(app, WS);
+  const panel = panelFor(WS);
+  await toolbarReady(panel);
+  const update = () => role(panel, 'update');
+
+  try {
+    app.handle({
+      type: 'runtime_update_status',
+      workspaceId: WS,
+      state: 'staged_restart_required',
+      messageCode: '',
+      currentVersion: '2.1.0',
+      pendingVersion: '2.2.0',
+      versionLabel: 'OpenCode v2.1.0',
+      versionDetail: 'ACP 1.0.0'
+    });
+    for (let attempt = 0; attempt < 100 && update().dataset.updateState !== 'staged_restart_required'; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    assert.equal(update().textContent, 'OpenCode v2.1.0重启后更新');
+
+    await i18n.changeLanguage('ja');
+    for (let attempt = 0; attempt < 100 && !update().textContent.includes('再起動して適用'); attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    assert.equal(update().textContent, 'OpenCode v2.1.0再起動して適用');
+    assert.match(update().title, /更新準備完了/);
+
+    await i18n.changeLanguage('zh-Hant');
+    for (let attempt = 0; attempt < 100 && !update().textContent.includes('重新啟動以更新'); attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    assert.equal(update().textContent, 'OpenCode v2.1.0重新啟動以更新');
+    assert.match(update().title, /更新就緒/);
+  } finally {
+    await i18n.changeLanguage('zh-Hans');
+  }
 });
 
 // The resident product version label sits beside the Update button; ACP

@@ -41,7 +41,7 @@ public sealed class AcpAskUserQuestionAdapterTests
             out var schema,
             out var answerIndexes));
 
-        Assert.AreEqual("Please answer the following question(s):", message);
+        Assert.AreEqual("", message);
         CollectionAssert.AreEqual(new[] { 1 }, answerIndexes.ToArray());
 
         var schemaJson = JsonSerializer.Serialize(schema);
@@ -50,6 +50,7 @@ public sealed class AcpAskUserQuestionAdapterTests
         Assert.IsFalse(properties.TryGetProperty("q0", out _));
         Assert.IsTrue(properties.TryGetProperty("q1", out _));
         Assert.IsTrue(properties.TryGetProperty("q1_other", out _));
+        Assert.AreEqual("", properties.GetProperty("q1_other").GetProperty("title").GetString());
         Assert.AreEqual(0, schemaDoc.RootElement.GetProperty("required").GetArrayLength());
     }
 

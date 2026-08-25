@@ -7,10 +7,11 @@
 
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { appModule } from './agentHarness.js';
+import { appModule, installAgentRuntime } from './agentHarness.js';
 
 const { UsageStore } = await appModule('usage/UsageStore.js');
 const { UsageRequestBroker } = await appModule('usage/UsageRequestBroker.js');
+const { AgentWorkspaceRegistry } = await appModule('workspace/AgentWorkspaceRegistry.js');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -79,6 +80,26 @@ test('broker: fetches the profile immediately through the process-wide bridge', 
   const gets = profileGets(rig.commands);
   assert.equal(gets.length, 1, 'construction triggers exactly one bootstrap fetch');
   assert.ok(gets[0].requestId, 'the bootstrap profile_get carries a requestId');
+});
+
+test('registry seam forwards the selected locale mode to the root bridge', () => {
+  const runtime = installAgentRuntime();
+  const registry = new AgentWorkspaceRegistry({
+    bridgeFor() {
+      return null;
+    }
+  });
+
+  try {
+    registry.createUsagePanelHost().setLocale('en');
+    const command = runtime.postedMessages.find(
+      (message) => message.type === 'app_settings_command' && message.action === 'set_locale'
+    );
+    assert.ok(command, 'language selection sends an app settings command');
+    assert.equal(command.localeMode, 'en');
+  } finally {
+    registry.dispose();
+  }
 });
 
 // --- requestId matching --------------------------------------------------------

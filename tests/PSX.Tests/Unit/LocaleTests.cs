@@ -24,43 +24,44 @@ public sealed class LocaleTests
     [TestMethod]
     public void Resolve_SystemOrInvalid_FollowsWindows()
     {
-        using var culture = TestUiCulture.Create("zh-CN");
-        Assert.AreEqual(LocaleDescriptor.ZhHans, LocaleDescriptor.Resolve(LocaleDescriptor.System));
-        Assert.AreEqual(LocaleDescriptor.ZhHans, LocaleDescriptor.Resolve("bogus"));
-        Assert.AreEqual(LocaleDescriptor.ZhHans, LocaleDescriptor.Resolve(null));
+        var expected = LocaleDescriptor.ResolveSystem();
+        Assert.AreEqual(expected, LocaleDescriptor.Resolve(LocaleDescriptor.System));
+        Assert.AreEqual(expected, LocaleDescriptor.Resolve("bogus"));
+        Assert.AreEqual(expected, LocaleDescriptor.Resolve(null));
     }
 
     [TestMethod]
     public void ResolveSystem_MapsChineseRegionsToScripts()
     {
-        using var hans = TestUiCulture.Create("zh-CN");
-        Assert.AreEqual(LocaleDescriptor.ZhHans, LocaleDescriptor.ResolveSystem());
-        using var sg = TestUiCulture.Create("zh-SG");
-        Assert.AreEqual(LocaleDescriptor.ZhHans, LocaleDescriptor.ResolveSystem());
-        using var hant = TestUiCulture.Create("zh-TW");
-        Assert.AreEqual(LocaleDescriptor.ZhHant, LocaleDescriptor.ResolveSystem());
-        using var hk = TestUiCulture.Create("zh-HK");
-        Assert.AreEqual(LocaleDescriptor.ZhHant, LocaleDescriptor.ResolveSystem());
+        Assert.AreEqual(LocaleDescriptor.ZhHans, LocaleDescriptor.ResolveSystem(() => "zh-CN"));
+        Assert.AreEqual(LocaleDescriptor.ZhHans, LocaleDescriptor.ResolveSystem(() => "zh-SG"));
+        Assert.AreEqual(LocaleDescriptor.ZhHant, LocaleDescriptor.ResolveSystem(() => "zh-TW"));
+        Assert.AreEqual(LocaleDescriptor.ZhHant, LocaleDescriptor.ResolveSystem(() => "zh-HK"));
     }
 
     [TestMethod]
     public void ResolveSystem_HantScriptAndCompoundRegions_MapToTraditional()
     {
-        using var hantNeutral = TestUiCulture.Create("zh-Hant");
-        Assert.AreEqual(LocaleDescriptor.ZhHant, LocaleDescriptor.ResolveSystem());
-        using var hantHk = TestUiCulture.Create("zh-Hant-HK");
-        Assert.AreEqual(LocaleDescriptor.ZhHant, LocaleDescriptor.ResolveSystem());
-        using var twLegacy = TestUiCulture.Create("zh-TW");
-        Assert.AreEqual(LocaleDescriptor.ZhHant, LocaleDescriptor.ResolveSystem());
+        Assert.AreEqual(LocaleDescriptor.ZhHant, LocaleDescriptor.ResolveSystem(() => "zh-Hant"));
+        Assert.AreEqual(LocaleDescriptor.ZhHant, LocaleDescriptor.ResolveSystem(() => "zh-Hant-HK"));
+        Assert.AreEqual(LocaleDescriptor.ZhHant, LocaleDescriptor.ResolveSystem(() => "zh-TW"));
     }
 
     [TestMethod]
     public void ResolveSystem_MapsJapaneseAndFallsBackToEnglish()
     {
-        using var ja = TestUiCulture.Create("ja-JP");
-        Assert.AreEqual(LocaleDescriptor.Ja, LocaleDescriptor.ResolveSystem());
-        using var fr = TestUiCulture.Create("fr-FR");
-        Assert.AreEqual(LocaleDescriptor.En, LocaleDescriptor.ResolveSystem());
+        Assert.AreEqual(LocaleDescriptor.Ja, LocaleDescriptor.ResolveSystem(() => "ja-JP"));
+        Assert.AreEqual(LocaleDescriptor.En, LocaleDescriptor.ResolveSystem(() => "fr-FR"));
+        Assert.AreEqual(LocaleDescriptor.En, LocaleDescriptor.ResolveSystem(() => null));
+        Assert.AreEqual(LocaleDescriptor.En, LocaleDescriptor.ResolveSystem(() => "not-a-culture"));
+    }
+
+    [TestMethod]
+    public void ResolveSystem_IgnoresPsxThreadCulture_WhenReadingWindowsDisplayLanguage()
+    {
+        using var psxCulture = TestUiCulture.Create("zh-Hant");
+
+        Assert.AreEqual(LocaleDescriptor.ZhHans, LocaleDescriptor.ResolveSystem(() => "zh-Hans-CN"));
     }
 
     [TestMethod]

@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { act } from 'react';
+import { i18n } from '../../../frontend/webview/src/i18n.js';
 import {
   appModule,
   flushAgentAnimationFrames,
@@ -340,6 +341,8 @@ test('permission form variant renders elicitation options and posts permission J
   });
 
   assert.match(view.host.textContent, /Which wallpaper style/);
+  assert.match(view.host.querySelector('.agent-decision-title').textContent, /Ask user 1 question/);
+  assert.match(view.host.querySelector('.agent-decision-subtitle').textContent, /Which style/);
   assert.equal(view.host.querySelector('.agent-decision-raw-input'), null);
   const options = [...view.host.querySelectorAll('.agent-elicitation-option')];
   assert.equal(options.length, 2);
@@ -384,6 +387,31 @@ test('elicitation blocks an invalid required-field submission', async () => {
   assert.equal(actions.length, 0);
   assert.match(view.host.querySelector('.agent-elicitation-field-error').textContent, /请输入响应内容/);
   await view.dispose();
+});
+
+test('active elicitation title, fallback field and validation error re-localize in place', async () => {
+  const view = await renderEvents([
+    ['elicitation_request', { requestId: 'locale-form', message: '', schema: {} }]
+  ]);
+  try {
+    const continueButton = [...view.host.querySelectorAll('button')].find(
+      (button) => button.textContent === '继续'
+    );
+    await act(async () => continueButton.click());
+    assert.match(view.host.querySelector('.agent-decision-title').textContent, /Agent 需要输入/);
+    assert.match(view.host.querySelector('.agent-decision-subtitle').textContent, /请提供所需信息/);
+    assert.match(view.host.querySelector('.agent-elicitation-field').textContent, /响应/);
+    assert.match(view.host.querySelector('.agent-elicitation-field-error').textContent, /请输入响应内容/);
+
+    await act(async () => i18n.changeLanguage('en'));
+    assert.match(view.host.querySelector('.agent-decision-title').textContent, /Agent needs input/);
+    assert.match(view.host.querySelector('.agent-decision-subtitle').textContent, /Provide the requested information/);
+    assert.match(view.host.querySelector('.agent-elicitation-field').textContent, /Response/);
+    assert.match(view.host.querySelector('.agent-elicitation-field-error').textContent, /Enter a response/);
+  } finally {
+    await act(async () => i18n.changeLanguage('zh-Hans'));
+    await view.dispose();
+  }
 });
 
 test('a valid elicitation emits the exact accepted payload', async () => {

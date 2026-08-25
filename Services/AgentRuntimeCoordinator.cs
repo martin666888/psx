@@ -154,6 +154,8 @@ public sealed class AgentRuntimeCoordinator : IAgentRuntimeCoordinator, IDisposa
         var result = new AcpRuntimeOperationResult(
             AcpRuntimeOperationKind.Failed,
             "Runtime update ended unexpectedly.");
+        var finalState = "failed";
+        var finalMessageCode = RuntimeStatusCode.UpdateFailed;
         try
         {
             RaiseUpdateStatus(runtime, "checking", "");
@@ -168,30 +170,49 @@ public sealed class AgentRuntimeCoordinator : IAgentRuntimeCoordinator, IDisposa
                 result = new AcpRuntimeOperationResult(AcpRuntimeOperationKind.Failed, ex.Message);
             }
 
-            var state = result.Kind is AcpRuntimeOperationKind.Success or AcpRuntimeOperationKind.AlreadyReady
+            finalState = result.Kind is AcpRuntimeOperationKind.Success or AcpRuntimeOperationKind.AlreadyReady
                 ? (runtime.GetVersionSnapshot().HasPendingUpdate ? "staged_restart_required" : "up_to_date")
                 : "failed";
             // The wire carries a fixed outcome code derived from the result
             // kind; the raw result message stays internal (npm details,
             // exception text).
-            var messageCode = state == "failed"
+            finalMessageCode = finalState == "failed"
                 ? (result.Kind == AcpRuntimeOperationKind.NetworkUnavailable
                     ? RuntimeStatusCode.UpdateNetworkUnavailable
                     : RuntimeStatusCode.UpdateFailed)
                 : "";
-            RaiseUpdateStatus(runtime, state, messageCode);
         }
         finally
         {
-            // Drop the in-flight entry first, then complete on every path
-            // (success, failure, broadcast exception) so no runtime is ever
-            // stuck in a permanent "checking" state.
-            lock (_updateLock)
+            try
             {
-                _inFlightUpdates.Remove(runtime);
+                // Clear the in-flight marker and store the terminal snapshot
+                // atomically BEFORE broadcasting it. A late runtime progress
+                // callback can therefore never append "checking" after the
+                // terminal state and leave existing workspaces stuck there.
+                CompleteUpdateStatus(runtime, finalState, finalMessageCode);
             }
-            completion.TrySetResult(result);
+            finally
+            {
+                // Complete on every path, including a subscriber exception.
+                completion.TrySetResult(result);
+            }
         }
+    }
+
+    private void CompleteUpdateStatus(IAcpAgentRuntime runtime, string state, string messageCode)
+    {
+        lock (_updateLock)
+        {
+            _inFlightUpdates.Remove(runtime);
+            _updateSnapshots[runtime] = new RuntimeUpdateSnapshot(state, messageCode);
+        }
+        UpdateStatusChanged?.Invoke(this, new RuntimeUpdateStatusChangedEventArgs
+        {
+            Runtime = runtime,
+            State = state,
+            MessageCode = messageCode
+        });
     }
 
     private void RaiseUpdateStatus(IAcpAgentRuntime runtime, string state, string messageCode)

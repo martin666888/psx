@@ -140,7 +140,7 @@ internal sealed class AcpDecisionCoordinator
 
         var title = GetString(toolCall, "title");
         if (string.IsNullOrWhiteSpace(title))
-            title = GetString(toolCall, "name", $"{_assistantName} permission request");
+            title = GetString(toolCall, "name");
 
         if (pending.IsDocumentDecision)
         {

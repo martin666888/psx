@@ -86,6 +86,7 @@
     "copy": "複製",
     "copied": "已複製",
     "copyFailed": "複製失敗",
+    "scrollToBottom": "捲動到底部",
     "showMore": "顯示更多",
     "collapse": "收合",
     "system": {
@@ -258,6 +259,7 @@
     },
     "elicitation": {
       "responseTitle": "回應",
+      "otherTitle": "其他",
       "waitingInput": "等待輸入",
       "continue": "繼續",
       "decline": "拒絕",

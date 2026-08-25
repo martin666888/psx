@@ -532,8 +532,12 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
         // Every workspace owns a frontend runtime slice even when providers
         // share one runtime. Refresh it immediately so stale install cards and
-        // disabled composers disappear in all matching tabs.
+        // disabled composers disappear in all matching tabs. The toolbar is a
+        // separate state slice and must leave install_required at the same
+        // time; otherwise an already-installed runtime still shows a disabled
+        // Update button until that workspace is recreated.
         await PublishRuntimeStatusAsync().ConfigureAwait(false);
+        await PublishRuntimeUpdateSnapshotAsync().ConfigureAwait(false);
 
         var token = _serviceLifetimeCts.Token;
         await _sessionRestoreLock.WaitAsync(token).ConfigureAwait(false);
@@ -664,7 +668,11 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             // user can log in and retry, so do NOT fall back to transcript_only.
             _restoreBlockedByRuntime = false;
             _status = "auth_required";
-            await SendResumeFailedAsync("", null, ex.Message).ConfigureAwait(false);
+            await SendResumeFailedAsync(
+                "",
+                null,
+                ex.Message,
+                new { agentName = _provider.Descriptor.DisplayName }).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -711,7 +719,12 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         }
 
         _persistence.DeleteThread(threadId);
-        await _bridgeService.SendEventAsync(new { type = "command_result", text = "Deleted thread." }).ConfigureAwait(false);
+        await _bridgeService.SendEventAsync(new
+        {
+            type = "command_result",
+            text = "",
+            code = SessionMessageCode.ThreadDeleted
+        }).ConfigureAwait(false);
         await _bridgeService.SendEventAsync(new { type = "agent_workspace_close_requested" }).ConfigureAwait(false);
     }
 
@@ -849,7 +862,13 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 break;
             case "cwd":
                 if (string.IsNullOrWhiteSpace(e.Value))
-                    await _bridgeService.SendEventAsync(new { type = "command_result", text = $"Current working directory: {_workingDirectory}" }).ConfigureAwait(false);
+                    await _bridgeService.SendEventAsync(new
+                    {
+                        type = "command_result",
+                        text = "",
+                        code = SessionMessageCode.CwdCurrent,
+                        args = new { path = _workingDirectory }
+                    }).ConfigureAwait(false);
                 else
                     await ChangeDirectoryAsync(e.Value).ConfigureAwait(false);
                 break;
@@ -1001,6 +1020,10 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             }
 
             await PublishRuntimeStatusAsync().ConfigureAwait(false);
+            // The install card and toolbar Update action are independent
+            // frontend slices. Always refresh both when installation settles,
+            // including providers running without a workspace coordinator.
+            await PublishRuntimeUpdateSnapshotAsync().ConfigureAwait(false);
         }
     }
 
@@ -1161,7 +1184,13 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         task = command switch
         {
             "/cwd" => string.IsNullOrWhiteSpace(value)
-                ? _bridgeService.SendEventAsync(new { type = "command_result", text = $"Current working directory: {_workingDirectory}" })
+                ? _bridgeService.SendEventAsync(new
+                {
+                    type = "command_result",
+                    text = "",
+                    code = SessionMessageCode.CwdCurrent,
+                    args = new { path = _workingDirectory }
+                })
                 : ChangeDirectoryAsync(value),
             "/terminal" => OpenNativeAgentTerminalAsync(),
             "/stop" => CancelAsync(),
@@ -1495,7 +1524,8 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             {
                 type = "command_result",
                 text = "",
-                code = SessionMessageCode.LoginNoEntry
+                code = SessionMessageCode.LoginNoEntry,
+                args = new { agentName = _provider.Descriptor.DisplayName }
             }).ConfigureAwait(false);
             return;
         }
@@ -1507,6 +1537,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             type = "command_result",
             text = "",
             code = SessionMessageCode.LoginRequiredTerminal,
+            args = new { agentName = _provider.Descriptor.DisplayName },
             // Provider-authored auth hint stays raw data (never translated).
             hint = SelectAuthHint() ?? ""
         }).ConfigureAwait(false);
@@ -1616,7 +1647,11 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 // is already open and the workspace is in auth_required. Do not
                 // degrade to transcript_only; let the user finish login and
                 // re-send the prompt.
-                await SendRunFailedAsync("", null, SessionMessageCode.LoginRequiredTerminal).ConfigureAwait(false);
+                await SendRunFailedAsync(
+                    "",
+                    null,
+                    SessionMessageCode.LoginRequiredTerminal,
+                    new { agentName = _provider.Descriptor.DisplayName }).ConfigureAwait(false);
                 await PublishStateAsync().ConfigureAwait(false);
                 return;
             }
@@ -1773,7 +1808,11 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 {
                     await _bridgeService.SendEventAsync(new { type = "thinking_finished" }).ConfigureAwait(false);
                     // ex.Message carries the fixed SessionMessageCode here.
-                    await SendRunFailedAsync("", runId, ex.Message).ConfigureAwait(false);
+                    await SendRunFailedAsync(
+                        "",
+                        runId,
+                        ex.Message,
+                        new { agentName = _provider.Descriptor.DisplayName }).ConfigureAwait(false);
                 }
             }
             catch (TimeoutException ex)

@@ -323,6 +323,11 @@ interface FieldSpec {
   kind: 'boolean' | 'options' | 'array' | 'number' | 'text';
 }
 
+interface ElicitationSpecs {
+  fields: FieldSpec[];
+  usesFallbackResponse: boolean;
+}
+
 function fieldSpecs(schema: Record<string, unknown>): FieldSpec[] {
   const requiredList = Array.isArray(schema.required) ? (schema.required as unknown[]) : [];
   const required = new Set(requiredList);
@@ -469,17 +474,18 @@ function ElicitationCard({
   const schema = (raw.schema && typeof raw.schema === 'object' ? raw.schema : {}) as Record<string, unknown>;
   const mode = typeof raw.mode === 'string' ? raw.mode : '';
   const url = typeof raw.url === 'string' ? raw.url : '';
-  const specsRef = useRef<FieldSpec[] | null>(null);
+  const specsRef = useRef<ElicitationSpecs | null>(null);
   if (!specsRef.current) {
     let specs = fieldSpecs(schema);
-    if (specs.length === 0 && mode !== 'url') {
-      // The fallback field title is provider-schema data rendered verbatim;
-      // localize only PSX's own fallback label here.
-      specs = fieldSpecs({ properties: { response: { type: 'string', title: t('timeline.elicitation.responseTitle') } }, required: ['response'] });
+    const usesFallbackResponse = specs.length === 0 && mode !== 'url';
+    if (usesFallbackResponse) {
+      // Keep only semantic fallback data in component state. The label is
+      // resolved below on every render so a locale switch updates it in place.
+      specs = fieldSpecs({ properties: { response: { type: 'string' } }, required: ['response'] });
     }
-    specsRef.current = specs;
+    specsRef.current = { fields: specs, usesFallbackResponse };
   }
-  const specs = specsRef.current;
+  const { fields: specs, usesFallbackResponse } = specsRef.current;
   const [values, setValues] = useState<Record<string, unknown>>(() => {
     const initial: Record<string, unknown> = {};
     for (const spec of specs) initial[spec.name] = initialFieldValue(spec);
@@ -505,7 +511,7 @@ function ElicitationCard({
       const errorKey = validateField(spec, values[spec.name]);
       if (errorKey) {
         valid = false;
-        nextErrors[spec.name] = t(errorKey);
+        nextErrors[spec.name] = errorKey;
       }
     }
     setErrors(nextErrors);
@@ -540,7 +546,9 @@ function ElicitationCard({
             aria-hidden="true"
           />
           <InfoIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <div className="agent-decision-title text-[13px] font-semibold">{item.title}</div>
+          <div className="agent-decision-title text-[13px] font-semibold">
+            {item.title || resolveDisplay(item.titleCode, t)}
+          </div>
         </div>
         <div className="agent-decision-header-status shrink-0 text-xs text-muted-foreground">
           {disabled ? resolveDisplay(item.statusCode, t) || item.statusText : t('timeline.elicitation.waitingInput')}
@@ -556,7 +564,13 @@ function ElicitationCard({
       <form className="agent-elicitation-form mt-3 grid gap-3" noValidate>
         {specs.map((spec) => {
           const error = errors[spec.name] || '';
-          const label = (String(spec.property.title ?? '') || spec.name) + (spec.required ? ' *' : '');
+          const rawTitle = String(spec.property.title ?? '');
+          const localizedFallback = usesFallbackResponse && spec.name === 'response'
+            ? t('timeline.elicitation.responseTitle')
+            : spec.isSupplement && !rawTitle
+            ? t('timeline.elicitation.otherTitle')
+            : '';
+          const label = (rawTitle || localizedFallback || spec.name) + (spec.required ? ' *' : '');
           return (
             <div
               key={spec.name}
@@ -648,7 +662,7 @@ function ElicitationCard({
                 ></Textarea>
               )}
               <div className="agent-elicitation-error text-destructive [&[hidden]]:hidden" hidden={!error}>
-                {error}
+                {error ? t(error) : ''}
               </div>
             </div>
           );
