@@ -102,6 +102,10 @@ export interface ComposerCommandItemVM {
   source: string;
   name: string;
   label: string;
+  /** Fixed locale key for PSX-authored rows; wins over `label`. */
+  labelKey?: string;
+  /** Interpolation params for `labelKey`. */
+  labelParams?: Record<string, unknown>;
 }
 
 export interface ComposerCommandMenuProps {
@@ -232,6 +236,7 @@ function ComposerConfigControls({ controls }: { controls: ComposerControlsProps 
 }
 
 function ComposerCommandMenu({ menu }: { menu: ComposerCommandMenuProps }): JSX.Element {
+  const { t } = useTranslation('agent');
   const menuRef = useRef<HTMLDivElement | null>(null);
   const groups = Array.from(new Set(menu.items.map((item) => item.source)));
 
@@ -249,7 +254,7 @@ function ComposerCommandMenu({ menu }: { menu: ComposerCommandMenuProps }): JSX.
       id={menu.id}
       data-role="command-menu"
       className="absolute bottom-[calc(100%+var(--agent-space-2))] left-0 z-[var(--agent-layer-menu)] w-full max-w-full overflow-hidden rounded-[var(--agent-radius-card)] border bg-popover shadow-[var(--agent-shadow-popover)]"
-      aria-label="Available commands"
+      aria-label={t('composer.menu.availableCommands')}
       hidden={!menu.open}
     >
       <Command
@@ -260,7 +265,7 @@ function ComposerCommandMenu({ menu }: { menu: ComposerCommandMenuProps }): JSX.
       >
         <CommandList
           className="agent-command-menu-scroll max-h-[260px]"
-          aria-label="Available commands"
+          aria-label={t('composer.menu.availableCommands')}
         >
           {groups.map((source) => (
             <CommandGroup key={source} heading={source}>
@@ -280,7 +285,11 @@ function ComposerCommandMenu({ menu }: { menu: ComposerCommandMenuProps }): JSX.
                     onSelect={menu.onSelect}
                   >
                     <span className="font-mono text-[13px]">{item.name}</span>
-                    <small className="text-xs text-muted-foreground">{item.label}</small>
+                    <small className="text-xs text-muted-foreground">
+                      {item.labelKey
+                        ? t(item.labelKey, { defaultValue: '', ...(item.labelParams ?? {}) })
+                        : item.label}
+                    </small>
                   </CommandItem>
                 ))}
             </CommandGroup>
@@ -301,6 +310,7 @@ function ComposerTextarea(props: {
   onCompositionStart(): void;
   onDraftChange(text: string): void;
 }): JSX.Element {
+  const { t } = useTranslation('agent');
   const attachments = usePromptInputAttachments();
   return (
     <PromptInputTextarea
@@ -316,7 +326,7 @@ function ComposerTextarea(props: {
       aria-expanded={props.commands.open}
       aria-controls={props.commands.id}
       aria-activedescendant={props.commands.open ? props.commands.activeId : undefined}
-      aria-label="Message Agent"
+      aria-label={t('composer.messageAria')}
       placeholder={props.draftProps.placeholder}
       onBlur={() => setTimeout(props.commands.onDismiss, 120)}
       onChange={() => {}}
@@ -442,7 +452,7 @@ export function ComposerView(props: ComposerViewProps): JSX.Element {
           maxFiles={BridgeProtocolLimits.promptImageCount}
           maxFileSize={BridgeProtocolLimits.imageBytes}
           className="w-full [&>[data-slot=input-group]]:contents"
-          onError={(error) => props.attachmentBridge.onError(error.message)}
+          onError={(error) => props.attachmentBridge.onError(error.code || '')}
           onSubmit={async (message) => {
             setDraft('');
             try {
@@ -466,7 +476,7 @@ export function ComposerView(props: ComposerViewProps): JSX.Element {
             <section
               data-role="mode-transition-prompt"
               className="mx-[var(--agent-space-3)] mt-[var(--agent-space-3)]"
-              aria-label="Agent decision"
+              aria-label={t('composer.decisionAria')}
               hidden={!props.modeTransitionPrompt}
             >
               {props.modeTransitionPrompt ? (

@@ -67,7 +67,15 @@ public partial class MainWindow : Window
 
         DataContext = _viewModel;
         ApplyUiCulture(_environmentSettings.ResolvedLocale);
-        _environmentSettings.LocaleChanged += (_, snapshot) => ApplyUiCulture(snapshot.ResolvedLocale);
+        _viewModel.DismissWarningToolTip = PSX.Properties.Strings.DismissWarningToolTip;
+        _environmentSettings.LocaleChanged += (_, snapshot) =>
+        {
+            ApplyUiCulture(snapshot.ResolvedLocale);
+            // Re-localize the persistent startup warning and the dismiss
+            // tooltip for the new UI culture; the WebView re-renders itself.
+            _viewModel.DismissWarningToolTip = PSX.Properties.Strings.DismissWarningToolTip;
+            PublishStartupWarning();
+        };
         _bridgeService.FrontendReady += OnFrontendReady;
         _bridgeService.ThemeActionRequested += OnThemeActionRequested;
         _bridgeService.AppSettingsCommandRequested += OnAppSettingsCommandRequested;
@@ -130,8 +138,11 @@ public partial class MainWindow : Window
         {
             type = "theme_catalog",
             revision = ++_themeCatalogRevision,
-            currentLabel = picker.CurrentLabel,
-            message = picker.Message,
+            // Fixed code + state; the sentence lives in the frontend locales.
+            currentLabelState = picker.CurrentLabelState,
+            currentName = picker.CurrentThemeName,
+            messageCode = picker.MessageCode,
+            messageDetail = picker.Message,
             isMessageError = picker.IsMessageError,
             themes = picker.AllThemes.Select(item => new
             {
@@ -162,8 +173,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            if (!string.IsNullOrWhiteSpace(_settingsService?.StartupWarning))
-                _viewModel?.SetPersistentWarning(_settingsService.StartupWarning);
+            PublishStartupWarning();
 
             if (_bridgeService == null || TerminalHostControl.WebView == null)
                 return;
@@ -218,6 +228,26 @@ public partial class MainWindow : Window
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
         }
+    }
+
+    /// <summary>Formats the startup warning from its fixed code and the raw
+    /// technical detail against the current UI culture (re-run on locale
+    /// change so the persistent bottom-bar warning follows the language).</summary>
+    private void PublishStartupWarning()
+    {
+        if (_viewModel == null || _settingsService == null) return;
+        var code = _settingsService.StartupWarningCode;
+        if (string.IsNullOrWhiteSpace(code))
+            return;
+
+        var detail = _settingsService.StartupWarningDetail ?? "";
+        var template = code switch
+        {
+            "with_backup" => PSX.Properties.Strings.StartupWarningWithBackup,
+            "backup_also_invalid" => PSX.Properties.Strings.StartupWarningBackupAlsoInvalid,
+            _ => PSX.Properties.Strings.StartupWarningSafeDefaults
+        };
+        _viewModel.SetPersistentWarning(string.Format(CultureInfo.CurrentUICulture, template, detail));
     }
 
     private async Task InitializeAgentRuntimeStatusAsync()

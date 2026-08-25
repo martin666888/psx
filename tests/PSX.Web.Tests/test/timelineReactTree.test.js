@@ -186,7 +186,7 @@ test('historical mode transitions map selected, cancelled and interrupted states
   assert.equal(cards.length, 3);
   assert.deepEqual(
     cards.map((card) => card.querySelector('.agent-mode-transition-header-state').textContent),
-    ['Selected', 'Cancelled', 'Interrupted']
+    ['已选择', '已取消', '已中断']
   );
   assert.equal(cards[0].querySelector('[data-option-id="approve"]').getAttribute('aria-pressed'), 'true');
   assert.equal(cards[0].querySelectorAll('[data-option-id]').length, 1);
@@ -225,8 +225,8 @@ test('document permissions render Markdown, preserve explicit technical details 
     ['Review', 'Implement']
   );
   assert.match(document.querySelector('pre code').textContent, /const safe = true/);
-  assert.match(card.textContent, /Document details/);
-  assert.match(card.textContent, /Technical details/);
+  assert.match(card.textContent, /文档详情/);
+  assert.match(card.textContent, /技术细节/);
   assert.doesNotMatch(card.textContent, /toolCallId/);
   assert.ok(card.querySelector('.agent-mode-transition-options').classList.contains('flex-wrap'));
   assert.equal(card.querySelector('.agent-mode-transition-options').classList.contains('grid-cols-3'), false);
@@ -345,7 +345,7 @@ test('permission form variant renders elicitation options and posts permission J
   assert.equal(options.length, 2);
   await act(async () => options[1].click());
   await act(async () => {
-    const continueBtn = [...view.host.querySelectorAll('button')].find((button) => /Continue/i.test(button.textContent || ''));
+    const continueBtn = [...view.host.querySelectorAll('button')].find((button) => button.textContent === '继续');
     assert.ok(continueBtn);
     continueBtn.click();
   });
@@ -379,10 +379,10 @@ test('elicitation blocks an invalid required-field submission', async () => {
     onElicitationAction: (item, payload, statusText) =>
       actions.push({ requestId: item.requestId, payload, statusText })
   });
-  const continueButton = [...view.host.querySelectorAll('button')].find((button) => button.textContent === 'Continue');
+  const continueButton = [...view.host.querySelectorAll('button')].find((button) => button.textContent === '继续');
   await act(async () => continueButton.click());
   assert.equal(actions.length, 0);
-  assert.match(view.host.querySelector('.agent-elicitation-field-error').textContent, /Enter a response/);
+  assert.match(view.host.querySelector('.agent-elicitation-field-error').textContent, /请输入响应内容/);
   await view.dispose();
 });
 
@@ -395,7 +395,7 @@ test('a valid elicitation emits the exact accepted payload', async () => {
       actions.push({ requestId: item.requestId, payload, statusText })
   });
   const continueButton = [...view.host.querySelectorAll('button')].find(
-    (button) => button.textContent === 'Continue'
+    (button) => button.textContent === '继续'
   );
   await act(async () => continueButton.click());
   assert.deepEqual(actions, [{
@@ -404,7 +404,7 @@ test('a valid elicitation emits the exact accepted payload', async () => {
       action: 'accept',
       content: { choice: 'a', count: 3, flags: ['x'], ok: true, reason: 'Because it is safe' }
     }),
-    statusText: 'Response sent.'
+    statusText: 'elicitation.responseSent'
   }]);
   await view.dispose();
 });
@@ -440,12 +440,12 @@ test('elicitation option buttons render title and description and submit the pic
   const picked = [...view.host.querySelectorAll('.agent-elicitation-option')][1];
   assert.equal(picked.getAttribute('aria-checked'), 'true');
   const continueButton = [...view.host.querySelectorAll('button')].find(
-    (button) => button.textContent === 'Continue'
+    (button) => button.textContent === '继续'
   );
   await act(async () => continueButton.click());
   assert.deepEqual(actions, [{
     payload: JSON.stringify({ action: 'accept', content: { mode: 'safe' } }),
-    statusText: 'Response sent.'
+    statusText: 'elicitation.responseSent'
   }]);
   // Production TimelineController disables the decision after posting the
   // response; a local answer folds the card to its header, the header shows
@@ -453,11 +453,11 @@ test('elicitation option buttons render title and description and submit the pic
   const elicitation = view.projection.snapshot().rows
     .map((row) => row.item)
     .find((item) => item.type === 'decision' && item.requestId === 'e3');
-  view.projection.disableDecision(elicitation.id, 'Response sent.');
+  view.projection.disableDecision(elicitation.id, { code: 'timeline.elicitation.responseSent' });
   await view.render();
   const card = view.host.querySelector('.agent-decision-elicitation');
   assert.equal(card.dataset.state, 'closed');
-  assert.match(card.querySelector('.agent-decision-header-status').textContent, /Response sent/);
+  assert.match(card.querySelector('.agent-decision-header-status').textContent, /已发送响应/);
   await act(async () => card.querySelector('.agent-decision-header').click());
   assert.equal(view.host.querySelector('.agent-decision-elicitation').dataset.state, 'open');
   await view.dispose();

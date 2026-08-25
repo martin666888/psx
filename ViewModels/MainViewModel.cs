@@ -27,6 +27,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private bool _hasPersistentWarning;
 
+    /// <summary>Localized dismiss-button tooltip; refreshed on locale change.</summary>
+    [ObservableProperty]
+    private string _dismissWarningToolTip = "";
+
     public bool HasStatus => !string.IsNullOrEmpty(StatusMessage);
 
     public void SetPersistentWarning(string? message)

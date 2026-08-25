@@ -10,6 +10,11 @@ namespace PSX.ViewModels;
 
 public partial class ThemeItemViewModel : ObservableObject
 {
+    public ThemeItemViewModel(ThemeDescriptor descriptor)
+    {
+        Descriptor = descriptor;
+    }
+
     public ThemeDescriptor Descriptor { get; }
     public string Name => Descriptor.Name;
     public string Author => Descriptor.Author;
@@ -29,12 +34,16 @@ public partial class ThemeItemViewModel : ObservableObject
     private bool _isPreview;
 
     public bool ShowConfirm => IsPreview && IsAvailable;
-    public string StatusText => !IsAvailable ? "Invalid" : IsUpdated ? "Updated" : IsCurrent ? "Current" : "";
 
-    public ThemeItemViewModel(ThemeDescriptor descriptor)
-    {
-        Descriptor = descriptor;
-    }
+    /// <summary>Hidden WPF compatibility projection only; the WebView renders
+    /// localized state through the catalog flags.</summary>
+    public string StatusText => !IsAvailable
+        ? PSX.Properties.Strings.ThemeStatusInvalid
+        : IsUpdated
+            ? PSX.Properties.Strings.ThemeStatusUpdated
+            : IsCurrent
+                ? PSX.Properties.Strings.ThemeStatusCurrent
+                : "";
 }
 
 public partial class ThemePickerViewModel : ObservableObject
@@ -58,8 +67,19 @@ public partial class ThemePickerViewModel : ObservableObject
     [ObservableProperty]
     private bool _isMessageError;
 
+    /// <summary>Fixed theme message code (Models-level key resolved by the
+    /// frontend locales); <see cref="Message"/> keeps only the raw technical
+    /// detail line, never a PSX-composed sentence.</summary>
     [ObservableProperty]
-    private string _currentLabel = "Current: Custom";
+    private string? _messageCode;
+
+    /// <summary>Current-label state: 'named' (uses <see cref="CurrentThemeName"/>),
+    /// 'custom' or 'missing' — the sentence lives in the locales.</summary>
+    [ObservableProperty]
+    private string _currentLabelState = "custom";
+
+    [ObservableProperty]
+    private string? _currentThemeName;
 
     public bool HasUserThemes => UserThemes.Count > 0;
     public IEnumerable<ThemeItemViewModel> AllThemes => BuiltInThemes.Concat(UserThemes);
@@ -101,7 +121,7 @@ public partial class ThemePickerViewModel : ObservableObject
         var loaded = _themeService.LoadTheme(item.Descriptor.FilePath, item.Descriptor.Source);
         if (!loaded.IsValid || loaded.Descriptor.Appearance == null)
         {
-            SetMessage(loaded.Descriptor.DiagnosticSummary, isError: true);
+            SetMessage(ThemeMessageCode.InvalidFile, isError: true, detail: loaded.Descriptor.DiagnosticSummary);
             RefreshThemeList();
             return;
         }
@@ -111,7 +131,7 @@ public partial class ThemePickerViewModel : ObservableObject
 
         _previewFingerprint = loaded.Descriptor.Fingerprint;
         await _appearanceService.ApplyAsync(loaded.Descriptor.Appearance);
-        SetMessage("Previewing — confirm to keep this theme.", isError: false);
+        SetMessage(ThemeMessageCode.Previewing, isError: false);
     }
 
     [RelayCommand]
@@ -123,7 +143,7 @@ public partial class ThemePickerViewModel : ObservableObject
         var loaded = _themeService.LoadTheme(item.Descriptor.FilePath, item.Descriptor.Source);
         if (!loaded.IsValid || loaded.Descriptor.Appearance == null)
         {
-            SetMessage(loaded.Descriptor.DiagnosticSummary, isError: true);
+            SetMessage(ThemeMessageCode.InvalidFile, isError: true, detail: loaded.Descriptor.DiagnosticSummary);
             return;
         }
 
@@ -131,7 +151,7 @@ public partial class ThemePickerViewModel : ObservableObject
         {
             _previewFingerprint = loaded.Descriptor.Fingerprint;
             await _appearanceService.ApplyAsync(loaded.Descriptor.Appearance);
-            SetMessage("Theme file changed. Review the new preview, then confirm again.", isError: false);
+            SetMessage(ThemeMessageCode.FileChanged, isError: false);
             return;
         }
 
@@ -147,7 +167,7 @@ public partial class ThemePickerViewModel : ObservableObject
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
         {
-            SetMessage($"Unable to apply theme: {ex.Message}", isError: true);
+            SetMessage(ThemeMessageCode.ApplyFailed, isError: true, detail: ex.Message);
         }
     }
 
@@ -167,7 +187,7 @@ public partial class ThemePickerViewModel : ObservableObject
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Win32Exception)
         {
-            SetMessage(ex.Message, isError: true);
+            SetMessage(ThemeMessageCode.FolderOpenFailed, isError: true, detail: ex.Message);
         }
     }
 
@@ -195,7 +215,7 @@ public partial class ThemePickerViewModel : ObservableObject
         {
             // Keep the previously-rendered lists rather than clearing them on
             // a directory-level failure.
-            SetMessage($"无法读取主题目录：{ex.Message}", isError: true);
+            SetMessage(ThemeMessageCode.ScanFailed, isError: true, detail: ex.Message);
             return;
         }
 
@@ -216,20 +236,40 @@ public partial class ThemePickerViewModel : ObservableObject
         var current = BuiltInThemes.Concat(UserThemes).FirstOrDefault(t => t.IsCurrent);
         var source = BuiltInThemes.Concat(UserThemes).FirstOrDefault(t =>
             string.Equals(t.Descriptor.Key, currentSettings.ActiveThemeKey, StringComparison.OrdinalIgnoreCase));
-        CurrentLabel = current != null
-            ? $"Current: {current.Name}"
-            : source != null
-                ? $"Current: {source.Name}"
-                : string.IsNullOrWhiteSpace(currentSettings.ActiveThemeKey)
-                    ? "Current: Custom"
-                    : "Theme source missing";
+        if (current != null)
+        {
+            CurrentLabelState = "named";
+            CurrentThemeName = current.Name;
+        }
+        else if (source != null)
+        {
+            CurrentLabelState = "named";
+            CurrentThemeName = source.Name;
+        }
+        else
+        {
+            CurrentLabelState = string.IsNullOrWhiteSpace(currentSettings.ActiveThemeKey) ? "custom" : "missing";
+            CurrentThemeName = null;
+        }
         OnPropertyChanged(nameof(HasUserThemes));
     }
 
-    private void SetMessage(string? text, bool isError)
+    private void SetMessage(string? code, bool isError, string? detail = null)
     {
-        Message = text;
+        MessageCode = code;
+        Message = detail;
         IsMessageError = isError;
+    }
+
+    /// <summary>Fixed theme message codes; sentences live in the frontend locales.</summary>
+    public static class ThemeMessageCode
+    {
+        public const string Previewing = "theme.previewing";
+        public const string FileChanged = "theme.file_changed";
+        public const string ApplyFailed = "theme.apply_failed";
+        public const string FolderOpenFailed = "theme.folder_open_failed";
+        public const string ScanFailed = "theme.scan_failed";
+        public const string InvalidFile = "theme.invalid_file";
     }
 
     public async Task HandleWebActionAsync(string action, string? themeKey)

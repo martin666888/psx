@@ -21,7 +21,6 @@ import './css/agent/index.css';
 import './css/runtime-diagnostics.css';
 import { Bridge } from './Bridge.js';
 import { BridgeEventType } from './BridgeMessages.js';
-import { workspaceNoticeLabel } from './WorkspaceNoticeCopy.js';
 import { t, onLocaleChanged } from './i18n.js';
 import { colorSchemeForBackground } from './colorScheme.js';
 import { PaneLayoutController } from './PaneLayoutController.js';
@@ -373,7 +372,9 @@ installRuntimeDiagnostics();
                 workspaceChrome.applyThemeCatalog(message);
                 return;
             case BridgeEventType.WorkspaceNotice:
-                workspaceChrome.showNotice(workspaceNoticeLabel(message.code, message.args));
+                // The chrome keeps code+args so the 5s notice re-localizes on
+                // a language switch instead of holding a frozen sentence.
+                workspaceChrome.showNotice(message);
                 return;
             case BridgeEventType.PaneZoomToggle:
                 paneLayout.toggleZoom();

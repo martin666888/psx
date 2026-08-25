@@ -9,7 +9,12 @@
 
 import type { AgentHistoryThread, AgentProviderCatalogItem } from '../contracts/agent-history.js';
 
-export const UNKNOWN_WORKSPACE_GROUP = 'Unknown workspace';
+/**
+ * The unknown-workspace group carries no name: the React list resolves the
+ * localized label at render time (history.unknownWorkspace) whenever a group
+ * name is empty.
+ */
+export const UNKNOWN_WORKSPACE_GROUP = '';
 
 /** Dock resize geometry shared by the controller (clamp + persistence) and
  * the React view (resizer aria value triple + keyboard Home/End targets). */

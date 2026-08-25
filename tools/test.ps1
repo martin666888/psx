@@ -26,11 +26,11 @@ $webSummaryPath = Join-Path $webResults "test-summary.json"
 $frontendToolchain = $null
 
 $minimumTests = @{
-    Unit = 663
+    Unit = 664
     Integration = 107
     Desktop = 2
-    Fast = 770
-    Full = 772
+    Fast = 771
+    Full = 773
     Frontend = 405
 }
 

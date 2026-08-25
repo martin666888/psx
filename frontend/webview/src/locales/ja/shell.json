@@ -6,7 +6,8 @@
     "completed": "完了"
   },
   "workspace": {
-    "fallbackTitle": "ワークスペース"
+    "fallbackTitle": "ワークスペース",
+    "columnAria": "列内のワークスペース"
   },
   "tab": {
     "closeTitle": "{{title}} を閉じる"
@@ -20,7 +21,12 @@
   "create": {
     "placementFocused": "現在の列",
     "placementNewRight": "右に新しい列",
-    "columnCapTitle": "列は最大 3 列までです"
+    "columnCapTitle": "列は最大 3 列までです",
+    "terminal": "ターミナル",
+    "webApps": "ウェブアプリ",
+    "kimiWeb": "Kimi Code Web",
+    "dsh": "DeepSeek Harness",
+    "agents": "Agent（ACP）"
   },
   "common": {
     "widthInsufficient": "ウィンドウの幅が足りず、新しい列を追加できません",
@@ -34,7 +40,18 @@
     "updated": "更新済み",
     "current": "現在",
     "confirm": "確認",
-    "openFolder": "テーマフォルダーを開く"
+    "openFolder": "テーマフォルダーを開く",
+    "currentNamed": "現在：{{name}}",
+    "currentCustom": "現在：カスタム",
+    "sourceMissing": "テーマソースが見つかりません",
+    "message": {
+      "previewing": "プレビュー中 — 確認するとこのテーマを保持します。",
+      "file_changed": "テーマファイルが変更されました。新しいプレビューを確認して、もう一度確認してください。",
+      "apply_failed": "テーマを適用できませんでした：{{detail}}",
+      "folder_open_failed": "テーマフォルダーを開けませんでした：{{detail}}",
+      "scan_failed": "テーマディレクトリを読み取れませんでした：{{detail}}",
+      "invalid_file": "テーマファイルが無効なため、適用しませんでした。"
+    }
   },
   "pane": {
     "layoutSection": "レイアウト",

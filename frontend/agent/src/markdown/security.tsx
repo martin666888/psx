@@ -1,4 +1,5 @@
 import type { ComponentPropsWithoutRef, ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { defaultSchema } from 'rehype-sanitize';
 import rehypeSanitize from 'rehype-sanitize';
 import { BlockPolicy, harden } from 'rehype-harden';
@@ -182,8 +183,11 @@ function PsxMarkdownAnchor({ children, href, node: _node, ...props }: MarkdownAn
 }
 
 function PsxMarkdownImage({ alt, src, node: _node, ...props }: MarkdownImageProps) {
+  const { t } = useTranslation('agent');
   const safeSource = normalizePsxImageSource(src);
-  if (!safeSource) return <span data-streamdown="blocked-image">{alt || 'Image unavailable'}</span>;
+  if (!safeSource) {
+    return <span data-streamdown="blocked-image">{alt || t('timeline.imageUnavailable')}</span>;
+  }
   return <img {...props} alt={alt || ''} loading="lazy" src={safeSource} />;
 }
 
@@ -198,7 +202,8 @@ export const psxMarkdownComponents: Components = {
 };
 
 export function MermaidErrorNotice(_props: { chart: string; error: string; retry: () => void }): ReactNode {
-  return <div className="psx-markdown-error" role="status">Diagram could not be rendered.</div>;
+  const { t } = useTranslation('agent');
+  return <div className="psx-markdown-error" role="status">{t('markdown.diagramFailed')}</div>;
 }
 
 /** Caller-independent Mermaid policy; document content cannot override these options. */

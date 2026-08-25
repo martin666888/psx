@@ -8,8 +8,13 @@
 // and every semantic anchor (agent-history-* classes, data-thread-id,
 // data-folded, aria-current/expanded). All interaction state stays with the
 // controller and arrives as props.
+//
+// PSX-authored copy is never stored translated: state errors arrive as fixed
+// locale keys and resolve here at render so a language switch re-localizes
+// every visible row.
 
 import type { JSX } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { AgentHistoryState } from '../contracts/agent-history.js';
 import {
   buildHistoryGroups,
@@ -70,10 +75,11 @@ function ThreadRow(
     onOpenThread(threadId: string): void;
   }
 ): JSX.Element {
-  const titleText = thread.title || 'Agent Chat';
+  const { t } = useTranslation('agent');
+  const titleText = thread.title || t('history.fallbackTitle');
   const isActive = thread.threadId === activeThreadId;
   const isOpenElsewhere = !isActive && !!thread.threadId && openedElsewhere.has(thread.threadId);
-  const badgeText = isActive ? 'Current' : isOpenElsewhere ? 'Open' : '';
+  const badgeText = isActive ? t('history.badge.current') : isOpenElsewhere ? t('history.badge.open') : '';
 
   const parts: string[] = [];
   if (thread.providerDisplay) parts.push(thread.providerDisplay);
@@ -108,12 +114,12 @@ function ThreadRow(
         <strong className="agent-history-title min-w-0 flex-1 font-medium text-[13px]">{titleText}</strong>
         {isActive && (
           <Badge className="agent-history-current shrink-0 rounded-full text-[10px]" variant="secondary">
-            Current
+            {t('history.badge.current')}
           </Badge>
         )}
         {isOpenElsewhere && (
           <Badge className="agent-history-open shrink-0 rounded-full text-[10px]" variant="outline">
-            Open
+            {t('history.badge.open')}
           </Badge>
         )}
         <small className="shrink-0 truncate text-muted-foreground text-xs">
@@ -127,6 +133,7 @@ function ThreadRow(
 function HistoryGroup(
   { group, isSearching, props }: { group: HistoryGroupView; isSearching: boolean; props: HistoryListProps }
 ): JSX.Element {
+  const { t } = useTranslation('agent');
   const allThreads = group.threads;
   const showAll = isSearching || props.expandedGroups.has(group.key);
   const visibleThreads = showAll ? allThreads : allThreads.slice(0, PREVIEW_LIMIT);
@@ -146,7 +153,7 @@ function HistoryGroup(
           {folded ? <FolderIcon className="size-3.5" /> : <FolderOpenIcon className="size-3.5" />}
         </span>
         <span className="agent-history-group-label grid min-w-0 flex-1 gap-px">
-          <strong className="truncate font-semibold text-xs">{group.name}</strong>
+          <strong className="truncate font-semibold text-xs">{group.name || t('history.unknownWorkspace')}</strong>
           {group.path && (
             <small className="truncate text-[11px] text-muted-foreground" title={group.path}>
               {group.path}
@@ -159,7 +166,7 @@ function HistoryGroup(
         {hasActive && (
           <span
             className="agent-history-group-active size-[7px] shrink-0 rounded-full bg-primary"
-            aria-label="Contains the active session"
+            aria-label={t('history.activeDotAria')}
           />
         )}
       </button>
@@ -180,7 +187,7 @@ function HistoryGroup(
             className="agent-history-show-more mt-1 w-full justify-start px-2 text-muted-foreground text-xs"
             onClick={() => props.onExpandGroup(group.key)}
           >
-            {'Show all ' + allThreads.length + ' threads'}
+            {t('history.showAll', { count: allThreads.length })}
           </Button>
         )}
       </div>
@@ -189,19 +196,23 @@ function HistoryGroup(
 }
 
 export function HistoryList(props: HistoryListProps): JSX.Element {
+  const { t } = useTranslation('agent');
   const { state } = props;
   if (state.status === 'initial-loading') {
-    return <StateBox name="loading" text="Loading history…" />;
+    return <StateBox name="loading" text={t('history.loading')} />;
   }
   if (state.status === 'unavailable') {
-    return <StateBox name="empty" text="Agent history is unavailable." />;
+    return <StateBox name="empty" text={t('history.unavailable')} />;
   }
   if (state.status === 'error') {
     return (
       <div className="agent-history-state agent-history-error text-[13px] text-destructive leading-normal" role="alert">
-        <p className="mt-0 mb-2.5">{state.errorText || 'Unable to load Agent thread history.'}</p>
+        <p className="mt-0 mb-2.5">{t(state.errorKey || 'history.loadFailed')}</p>
+        {state.errorDetail ? (
+          <p className="agent-history-error-detail mt-0 mb-2.5 break-words font-mono text-[11px]">{state.errorDetail}</p>
+        ) : null}
         <Button variant="outline" size="sm" className="agent-history-retry" onClick={props.onRetryRefresh}>
-          Retry
+          {t('common.retry')}
         </Button>
       </div>
     );
@@ -219,7 +230,12 @@ export function HistoryList(props: HistoryListProps): JSX.Element {
       className="agent-history-open-error mb-3 rounded-md border border-yellow-600/50 bg-yellow-600/10 p-2 text-xs leading-normal"
       role="alert"
     >
-      <p className="m-0">{state.threadOpenError.text || 'PSX could not open the selected Agent thread. Try again.'}</p>
+      <p className="m-0">{t(state.threadOpenError.code || 'history.openFailed')}</p>
+      {state.threadOpenError.detail ? (
+        <p className="agent-history-error-detail m-0 mt-1 break-words font-mono text-[11px]">
+          {state.threadOpenError.detail}
+        </p>
+      ) : null}
       <div className="agent-history-open-error-actions mt-2 flex gap-2">
         <Button
           variant="outline"
@@ -227,10 +243,10 @@ export function HistoryList(props: HistoryListProps): JSX.Element {
           className="agent-history-retry"
           onClick={() => props.onOpenThread(state.threadOpenError!.threadId)}
         >
-          Retry
+          {t('common.retry')}
         </Button>
         <Button variant="ghost" size="sm" className="agent-history-dismiss" onClick={props.onDismissOpenError}>
-          Dismiss
+          {t('common.dismiss')}
         </Button>
       </div>
     </div>
@@ -240,7 +256,7 @@ export function HistoryList(props: HistoryListProps): JSX.Element {
     return (
       <>
         {notice}
-        <StateBox name="empty" text={state.loaded ? 'No saved Agent threads.' : 'Loading history…'} />
+        <StateBox name="empty" text={state.loaded ? t('history.empty') : t('history.loading')} />
       </>
     );
   }
@@ -248,7 +264,7 @@ export function HistoryList(props: HistoryListProps): JSX.Element {
     return (
       <>
         {notice}
-        <StateBox name="empty" text="No threads match the current search or filter." />
+        <StateBox name="empty" text={t('history.noMatches')} />
       </>
     );
   }

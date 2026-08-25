@@ -59,19 +59,16 @@ const USAGE_GAP_REASONS = new Set<UsageGapReason>([
   'damaged_thread_files',
   'unregistered_provider'
 ]);
-const TIMEOUT_TEXT = 'Loading usage timed out.';
-const DEFAULT_ERROR_TEXT = 'Unable to load usage.';
-import { i18n } from '../../../webview/src/i18n.js';
-
-const TIMEOUT_CONFIG_TEXT = 'Loading config timed out.';
-const DEFAULT_PROFILE_ERROR_TEXT_KEY = 'profile.saveFailed';
-
-// Fixed config-report error codes resolve through the settings locales.
-function configErrorText(code?: string | null): string {
-  const key = code ? `config.notes.${code.replace(/^config\.note\./, '')}` : '';
-  const localized = key ? i18n.t(key, { ns: 'settings', defaultValue: '' }) : '';
-  return localized || i18n.t('config.loadFailed', { ns: 'settings' });
-}
+/** Fixed settings-locale keys — the sentence is resolved at render so a
+ *  language switch re-localizes any visible error. Backend error strings are
+ *  technical detail and never reach the DOM. */
+const USAGE_TIMEOUT_KEY = 'usage.timeout';
+const USAGE_LOAD_FAILED_KEY = 'usage.loadFailed';
+const CONFIG_TIMEOUT_KEY = 'config.timeout';
+const CONFIG_LOAD_FAILED_KEY = 'config.loadFailed';
+const PROFILE_SAVE_FAILED_KEY = 'profile.saveFailed';
+const REGISTRY_SAVE_FAILED_KEY = 'registry.saveFailed';
+const LANGUAGE_SAVE_FAILED_KEY = 'language.saveFailed';
 
 function num(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
@@ -91,13 +88,6 @@ function str(value: unknown): string {
 
 function strOrNull(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
-}
-
-function safeProfileError(value: string): string {
-  const text = value.trim();
-  if (!text || text.length > 160 || /[\\/]|[A-Za-z]:[\\/]/.test(text) || text.includes('\n'))
-    return i18n.t(DEFAULT_PROFILE_ERROR_TEXT_KEY, { ns: 'settings' });
-  return text;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -373,9 +363,11 @@ export class UsageRequestBroker {
     const error = strOrNull(raw.error);
     if (error) {
       // Only a matching in-flight request may surface an error; broadcasts and
-      // late replies stay silent so a superseded save cannot clobber a newer one.
+      // late replies stay silent so a superseded save cannot clobber a newer
+      // one. The backend error text stays internal — the panel shows the
+      // fixed save-failed copy.
       if (matchedPending) {
-        this.store.applyProfileError(safeProfileError(error), {
+        this.store.applyProfileError(PROFILE_SAVE_FAILED_KEY, {
           saving: Boolean(this.profileMutationId)
         });
       }
@@ -397,12 +389,10 @@ export class UsageRequestBroker {
 
     const error = strOrNull(raw.error);
     if (error || !raw.report || !raw.completeness) {
-      // Fixed backend codes resolve through the settings locales; anything
-      // else is unexpected and falls back to the generic copy.
+      // Fixed backend codes resolve through the settings locales at render;
+      // anything unexpected falls back to the generic copy.
       this.store.applyUsageError(
-        error === 'usage.scan_failed'
-          ? i18n.t('usage.scanFailed', { ns: 'settings' })
-          : DEFAULT_ERROR_TEXT);
+        error === 'usage.scan_failed' ? 'usage.scanFailed' : USAGE_LOAD_FAILED_KEY);
       return;
     }
     this.store.applyUsageReport(
@@ -422,9 +412,9 @@ export class UsageRequestBroker {
 
     const error = strOrNull(raw.error);
     if (error || !raw.report) {
-      // `error` is a fixed note code (Models/AgentConfigModels.cs); map it
-      // to display copy here so raw keys never reach the DOM.
-      this.store.applyConfigError(configErrorText(error));
+      // `error` is either empty or a fixed note code (Models/AgentConfigModels.cs);
+      // ConfigPanel resolves the locale key at render time.
+      this.store.applyConfigError(error || CONFIG_LOAD_FAILED_KEY);
       return;
     }
     this.store.applyConfigReport(normalizeConfigReport(raw.report), str(raw.generatedAt));
@@ -443,14 +433,14 @@ export class UsageRequestBroker {
       this.settingsRequestId = '';
       this.pendingSettingsAction = '';
 
-      // Save failures surface the fixed copy for the section that owns the
-      // request — the backend's composed errorMessage never reaches the DOM.
+      // Save failures surface the fixed key for the section that owns the
+      // request — the backend's composed errorMessage never reaches the DOM,
+      // and the panel resolves the sentence at render time.
       const failed = strOrNull(raw.errorClass) !== null;
-      const failedKey = action === 'set_locale' ? 'language.saveFailed' : 'registry.saveFailed';
       this.applySettingsSnapshot(raw, {
         fromReply: true,
-        error: failed && action !== 'set_locale' ? i18n.t(failedKey, { ns: 'settings' }) : '',
-        languageError: failed && action === 'set_locale' ? i18n.t(failedKey, { ns: 'settings' }) : ''
+        error: failed && action !== 'set_locale' ? REGISTRY_SAVE_FAILED_KEY : '',
+        languageError: failed && action === 'set_locale' ? LANGUAGE_SAVE_FAILED_KEY : ''
       });
       return;
     }
@@ -529,7 +519,7 @@ export class UsageRequestBroker {
       this.sendUsage();
       return;
     }
-    this.store.applyUsageError(TIMEOUT_TEXT);
+    this.store.applyUsageError(USAGE_TIMEOUT_KEY);
   }
 
   private onConfigTimeout(requestId: string): void {
@@ -541,7 +531,7 @@ export class UsageRequestBroker {
       this.sendConfig();
       return;
     }
-    this.store.applyConfigError(TIMEOUT_CONFIG_TEXT);
+    this.store.applyConfigError(CONFIG_TIMEOUT_KEY);
   }
 
   private clearUsageTimer(): void {

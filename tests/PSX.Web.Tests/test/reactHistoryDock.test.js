@@ -106,7 +106,7 @@ function dispatchPointer(target, type, { clientX, pointerId = 1, button = 0 }) {
 test('loading, grouped list and empty states render semantically', async () => {
   const { app, content, posted } = await fixture();
   await settle(() => {}, () => !!content().querySelector('.agent-history-state'));
-  assert.match(content().textContent, /Loading/);
+  assert.match(content().textContent, /加载中/);
   await settle(
     () => app.handle(agentThreads(posted, THREADS)),
     () => !!content().querySelector('.agent-history-group')
@@ -130,7 +130,7 @@ test('loading, grouped list and empty states render semantically', async () => {
     },
     () => !!content().querySelector('.agent-history-empty')
   );
-  assert.match(content().textContent, /No saved Agent threads/);
+  assert.match(content().textContent, /暂无已保存的 Agent 线程/);
 });
 
 test('clicking a row emits the exact load_thread bridge command', async () => {
@@ -228,12 +228,14 @@ test('thread-open error remains local and supports dismiss', async () => {
       type: 'agent_thread_open_error',
       workspaceId: WS,
       threadId: 't1',
-      text: 'Disk error'
+      code: 'history.open_failed',
+      detail: 'Disk error'
     });
   });
   const notice = content().querySelector('.agent-history-open-error');
   assert.equal(notice.getAttribute('role'), 'alert');
   assert.match(notice.textContent, /Disk error/);
+  assert.match(notice.textContent, /无法打开选定的 Agent 线程/);
   await act(async () => notice.querySelector('.agent-history-dismiss').click());
   assert.equal(content().querySelector('.agent-history-open-error'), null);
 });

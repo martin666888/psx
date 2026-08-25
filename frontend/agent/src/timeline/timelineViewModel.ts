@@ -13,48 +13,20 @@
 // while remaining independent from React and the bridge decoder.
 
 import type { RawHostMessage } from '../contracts/host-events.js';
-import { i18n } from '../../../webview/src/i18n.js';
-
-/** Fixed backend session codes -> localized display copy. */
-function systemMessageText(code: string, assistantName: string, hint = ''): string {
-  const localized = i18n.t(`timeline.system.${code}`, {
-    ns: 'agent',
-    agentName: assistantName,
-    defaultValue: ''
-  });
-  if (!localized) return '';
-  return hint ? `${localized} ${hint}` : localized;
-}
+import { asParams, loc, type DisplayText } from './copy.js';
 
 function asString(value: unknown): string {
-  return typeof value === 'string' ? value : '';
+    return typeof value === 'string' ? value : '';
 }
 
 function asMessageArray(value: unknown): RawHostMessage[] {
-  return Array.isArray(value) ? (value as RawHostMessage[]) : [];
+    return Array.isArray(value) ? (value as RawHostMessage[]) : [];
 }
 
-// Faithful ports of _modeTransitionStateLabel / _modeTransitionStatusText for
-// the non-active states C# actually persists: selected / cancelled /
-// interrupted (DocumentDecisionSnapshotMerger folds pending/sending into
-// interrupted on save).
-function modeTransitionHeaderLabel(state: string): string {
-  if (state === 'selected') return 'Selected';
-  if (state === 'cancelled') return 'Cancelled';
-  return 'Interrupted';
-}
-
-function modeTransitionStatusText(
-  state: string,
-  options: readonly DecisionOptionVM[],
-  selectedOptionId: string
-): string {
-  if (state === 'selected') {
-    const selected = options.find((option) => option.optionId === selectedOptionId);
-    return selected ? 'Selected: ' + selected.name : 'Selection recorded.';
-  }
-  if (state === 'cancelled') return 'Request cancelled.';
-  return 'This request is no longer active.';
+/** Backend session codes resolve under timeline.system.* in the locales;
+ *  resolution happens at render time (TimelineView), never here. */
+export function systemMessageKey(code: string): string {
+    return `timeline.system.${code}`;
 }
 
 // --- Item model ------------------------------------------------------------
@@ -91,11 +63,14 @@ export interface ThinkingItem {
 
 export interface ToolCardVM {
   toolCallId: string;
+  /** Raw or provider-provided summary; empty falls back to a localized label. */
   summary: string;
   /** Explicit tool input (rawInput); never intermediate param snapshots. */
   input: string;
   /** Tool output / terminal stream; never mixed with pending JSON params. */
   output: string;
+  /** True when a finished card has neither input nor output ('Finished.'). */
+  emptyDone?: boolean;
   /** When true, the Input section starts collapsed (long input). */
   inputCollapsed: boolean;
   /** normalized: running | done | error | cancelled | fallback */
@@ -122,8 +97,15 @@ export interface InlineToolItem {
   type: 'tool';
   id: string;
   variant: 'inline';
+  /** Raw or provider-provided title; empty falls back to a localized label. */
   name: string;
   text: string;
+  /** PSX-authored title resolved at render (run-failed error cards). */
+  nameCode?: DisplayText;
+  /** PSX-authored body resolved at render (raw terminal fallback, run errors). */
+  textCode?: DisplayText;
+  /** Localized status line appended below the output ('Finished.'). */
+  suffixCode?: string;
   /** agent-tool-<state>: output | done | error | fallback */
   state: string;
 }
@@ -131,7 +113,14 @@ export interface InlineToolItem {
 export interface SystemItem {
   type: 'system';
   id: string;
+  /** Raw text (user/provider/history content) rendered as-is. */
   text: string;
+  /** Fixed backend session code; resolution happens in TimelineView. */
+  code?: string;
+  /** Interpolation args for `code`. */
+  params?: Record<string, unknown>;
+  /** Raw provider hint appended after the localized sentence (auth methods). */
+  hint?: string;
 }
 
 export interface RecoveryItem {
@@ -139,6 +128,9 @@ export interface RecoveryItem {
   id: string;
   variant: 'recovery';
   message: string;
+  /** Fixed session code for the message line; wins over `message`. */
+  messageCode?: string;
+  messageParams?: Record<string, unknown>;
   detail: string;
 }
 
@@ -155,7 +147,10 @@ export interface DecisionItem {
   requestId: string;
   /** Optional persisted snapshot key; live resolve stays requestId-based. */
   decisionSnapshotId?: string;
+  /** Raw or provider-provided title; empty falls back to a localized label. */
   title: string;
+  /** PSX-authored title resolved at render (fallback headers). */
+  titleCode?: DisplayText;
   /** Raw input JSON / message / document markdown depending on kind. */
   text: string;
   /** Ordinary permission one-line explanation; never document body. */
@@ -169,9 +164,11 @@ export interface DecisionItem {
   collapsed: boolean;
   selectedOptionId: string;
   selectedOptionName: string;
-  /** Status line for cancelled/interrupted cards ('' hides it). */
+  /** Raw status line (never PSX-authored after the code migration). */
   statusText: string;
-  /** Document decisions: Pending / Selected / Cancelled / Interrupted header state. */
+  /** Fixed status code; wins over `statusText` and re-localizes on switch. */
+  statusCode?: DisplayText;
+  /** Document decisions: pending | selected | cancelled | interrupted | sending. */
   headerState: string;
   /** Document decision: the replaced tool card id. */
   toolCallId: string;
@@ -179,7 +176,9 @@ export interface DecisionItem {
   historical: boolean;
   /** elicitation / permission-form raw schema payload (form rendering source). */
   schema: RawHostMessage | null;
+  /** Raw elicitation prompt; empty falls back to the localized default. */
   elicitationMessage: string;
+  elicitationMessageCode?: DisplayText;
   /**
    * Permission form variant: offered optionId to send with answers on Continue.
    * Empty for ordinary permission / elicitation cards.
@@ -248,10 +247,12 @@ export class TimelineProjection {
         return true;
       case 'command_result': {
         const code = asString(raw.code);
-        const text = code
-          ? systemMessageText(code, assistantName, asString(raw.hint))
-          : asString(raw.text);
-        if (text) this.appendSystem(text);
+        if (code) {
+          this.appendSystemCode(code, asParams(raw.args), asString(raw.hint));
+        } else {
+          const text = asString(raw.text);
+          if (text) this.appendSystem(text);
+        }
         return true;
       }
       case 'user_message':
@@ -282,13 +283,13 @@ export class TimelineProjection {
         this.hideThinking();
         this.finalizeRunGroup();
         this.currentTurnId = null;
-        this.interruptDocumentDecisions('This request is no longer active.');
+        this.interruptDocumentDecisions(loc('timeline.decision.inactive'));
         return true;
       case 'tool_started':
         this.ensureRunGroup(asString(raw.runId));
         this.createToolCard(
           asString(raw.toolCallId) || ('local-' + Date.now()),
-          asString(raw.summary) || asString(raw.name) || 'Tool',
+          asString(raw.summary) || asString(raw.name),
           asString(raw.input),
           '',
           'running'
@@ -311,14 +312,14 @@ export class TimelineProjection {
         if (card) {
           card.output += asString(raw.text);
         } else {
-          this.appendInlineToolDelta(asString(raw.name) || 'Tool output', asString(raw.text));
+          this.appendInlineToolDelta(asString(raw.name), asString(raw.text));
         }
         return true;
       }
       case 'tool_finished': {
         const card = this.resolveToolCard(raw);
         if (card) {
-          if (!card.output.trim() && !card.input.trim()) card.output = 'Finished.';
+          if (!card.output.trim() && !card.input.trim()) card.emptyDone = true;
           card.state = normalizeToolState(asString(raw.status) || 'done');
           card.open = false;
           this.forgetToolCard(card.toolCallId);
@@ -328,15 +329,19 @@ export class TimelineProjection {
         this.currentToolCardId = null;
         return true;
       }
-      case 'raw_terminal_fallback':
-        this.appendInlineTool(
-          'Raw terminal fallback',
-          asString(raw.text) || 'Unsupported interaction requires terminal fallback.',
+      case 'raw_terminal_fallback': {
+        const fallbackCode = asString(raw.code);
+        this.appendInlineToolDisplay(
+          loc('timeline.rawTerminal.title'),
+          fallbackCode
+            ? loc(systemMessageKey(fallbackCode), asParams(raw.args))
+            : asString(raw.text),
           'fallback'
         );
         return true;
-      case 'run_failed':
-        this.interruptDocumentDecisions('The request ended before a selection was completed.');
+      }
+      case 'run_failed': {
+        this.interruptDocumentDecisions(loc('timeline.decision.endedBeforeSelection'));
         this.hideThinking();
         if (this.currentGroup) {
           this.currentGroup.error = true;
@@ -347,23 +352,27 @@ export class TimelineProjection {
         this.finalizeRunGroup();
         {
           const runCode = asString(raw.code);
-          const runText = runCode
-            ? systemMessageText(runCode, assistantName)
-            : asString(raw.text) || 'Unknown error.';
-          this.appendInlineTool(assistantName + ' error', runText, 'error');
+          const runText: DisplayText = runCode
+            ? loc(systemMessageKey(runCode), asParams(raw.args))
+            : asString(raw.text) || loc('timeline.unknownError');
+          this.appendInlineToolDisplay(
+            loc('timeline.runErrorTitle', { agentName: assistantName }),
+            runText,
+            'error'
+          );
           const visionCode = asString(raw.visionContextHintCode);
-          if (visionCode) {
-            const visionText = i18n.t('timeline.visionContextHint', { ns: 'agent', defaultValue: '' });
-            if (visionText) this.appendSystem(visionText);
-          }
+          if (visionCode) this.appendSystemCode(visionCode);
         }
         return true;
+      }
       case 'resume_failed': {
         const resumeCode = asString(raw.code);
-        const resumeText = resumeCode
-          ? systemMessageText(resumeCode, assistantName)
-          : asString(raw.message) || asString(raw.text) || (assistantName + ' could not resume this session.');
-        this.appendRecovery(resumeText, asString(raw.detail));
+        const resumeMessage: DisplayText = resumeCode
+          ? loc(systemMessageKey(resumeCode), asParams(raw.args))
+          : asString(raw.message) ||
+            asString(raw.text) ||
+            loc('timeline.couldNotResume', { agentName: assistantName });
+        this.appendRecoveryDisplay(resumeMessage, asString(raw.detail));
         return true;
       }
       // --- decisions domain (same thread subtree, same React tree) ---------
@@ -389,7 +398,7 @@ export class TimelineProjection {
         return true;
       case 'permission_cancelled':
       case 'elicitation_cancelled':
-        this.cancelDecision(asString(raw.requestId), asString(raw.text) || 'Request cancelled.');
+        this.cancelDecision(asString(raw.requestId), asString(raw.code));
         return true;
       default:
         return false;
@@ -407,24 +416,29 @@ export class TimelineProjection {
     item.selectedOptionId = optionId;
     item.selectedOptionName = optionName;
     if (item.kind === 'mode_transition' || item.kind === 'document_permission') {
-      item.headerState = 'Sending';
+      item.headerState = 'sending';
     }
   }
 
   /** External hook: a locally-resolved elicitation (legacy disableDecisionCard).
    *  Collapses the card like selectDecisionOption: only a local answer folds
    *  the form; external cancels leave the user's toggle alone. */
-  disableDecision(itemId: string, statusText: string): void {
+  disableDecision(itemId: string, status: DisplayText): void {
     const item = this.findDecisionById(itemId);
     if (!item || item.decisionState !== 'active') return;
     item.decisionState = 'disabled';
     item.collapsed = true;
-    item.statusText = statusText;
+    setStatus(item, status);
   }
 
-  /** Composer/notice seam: append a system row (legacy _appendSystem). */
+  /** Composer/notice seam: append a raw system row (legacy _appendSystem). */
   appendSystemMessage(text: string): void {
     this.appendSystem(text);
+  }
+
+  /** Composer seam for PSX-authored rows: stored as code, resolved at render. */
+  appendSystemCodeRow(code: string, params?: Record<string, unknown>): void {
+    this.appendSystemCode(code, params);
   }
 
   // --- turns / system ---------------------------------------------------------
@@ -433,11 +447,23 @@ export class TimelineProjection {
     this.currentTurnId = this.nextId('turn');
   }
 
-  private appendSystem(text: string): void {
-    this.append({ type: 'system', id: this.nextId('sys'), text });
+  private appendSystem(text: DisplayText): void {
+    const localized = typeof text === 'string' ? { text } : {};
+    this.append({
+      type: 'system',
+      id: this.nextId('sys'),
+      text: localized.text ?? '',
+      code: typeof text === 'object' ? text.code : undefined,
+      params: typeof text === 'object' ? text.params : undefined
+    });
   }
 
-  private appendRecovery(message: string, detail: string): void {
+  /** Backend session code row; TimelineView resolves the sentence at render. */
+  private appendSystemCode(code: string, params?: Record<string, unknown>, hint = ''): void {
+    this.append({ type: 'system', id: this.nextId('sys'), text: '', code, params, hint: hint || undefined });
+  }
+
+  private appendRecoveryDisplay(message: DisplayText, detail: string): void {
     // Singleton card: reuse and move to the end of the thread (legacy re-appends).
     const index = this.rows.findIndex(
       (row) => row.item.type === 'system' && (row.item as RecoveryItem).variant === 'recovery'
@@ -448,7 +474,15 @@ export class TimelineProjection {
     } else {
       item = { type: 'system', id: this.nextId('rec'), variant: 'recovery', message: '', detail: '' };
     }
-    item.message = message;
+    if (typeof message === 'string') {
+      item.message = message;
+      item.messageCode = undefined;
+      item.messageParams = undefined;
+    } else {
+      item.message = '';
+      item.messageCode = message.code;
+      item.messageParams = message.params;
+    }
     item.detail = typeof detail === 'string' ? detail.trim() : '';
     // Recovery is appended to the thread root, never inside a turn.
     this.rows.push({ turnId: null, item });
@@ -627,7 +661,7 @@ export class TimelineProjection {
     const toolCallId = requestedId || ('orphan-' + Date.now());
     return this.createToolCard(
       toolCallId,
-      asString(raw.summary) || asString(raw.name) || 'Tool output',
+      asString(raw.summary) || asString(raw.name),
       asString(raw.input),
       asString(raw.output),
       'running'
@@ -668,6 +702,17 @@ export class TimelineProjection {
     return item;
   }
 
+  /** Inline card whose title/body are PSX-authored and resolve at render. */
+  private appendInlineToolDisplay(name: DisplayText, text: DisplayText, state: string): void {
+    const item = this.appendInlineTool(
+      typeof name === 'string' ? name : '',
+      typeof text === 'string' ? text : '',
+      state
+    );
+    if (typeof name !== 'string') item.nameCode = name;
+    if (typeof text !== 'string') item.textCode = text;
+  }
+
   private appendInlineToolDelta(name: string, text: string): void {
     if (!this.currentInlineTool) {
       this.currentInlineTool = this.appendInlineTool(name, '', 'output');
@@ -677,12 +722,13 @@ export class TimelineProjection {
 
   private finishInlineTool(): void {
     if (!this.currentInlineTool) {
-      this.appendInlineTool('Tool', 'Finished.', 'done');
+      const finished = this.appendInlineTool('', '', 'done');
+      finished.suffixCode = 'timeline.tool.finished';
       return;
     }
-    this.currentInlineTool.text = this.currentInlineTool.text.trim()
-      ? this.currentInlineTool.text + '\n\nFinished.'
-      : 'Finished.';
+    // A localized "Finished." line renders below the output; the accumulated
+    // body itself stays raw so language switches never rewrite history.
+    this.currentInlineTool.suffixCode = 'timeline.tool.finished';
     this.currentInlineTool = null;
   }
 
@@ -718,32 +764,31 @@ export class TimelineProjection {
 
   private appendDecision(raw: RawHostMessage, kind: 'permission' | 'question', assistantName: string): void {
     const hasStructuredOptions = Array.isArray(raw.options);
+    // Auto-generated option names stay empty: the pills resolve the
+    // localized label from the well-known optionId at render time.
     const options = hasStructuredOptions
       ? (raw.options as RawHostMessage[]).map((option) => ({
           optionId: asString(option.optionId),
-          name: asString(option.name) || asString(option.optionId) || 'Select',
+          name: asString(option.name) || asString(option.optionId),
           kind: asString(option.kind)
         }))
       : [
-          {
-            optionId: kind === 'permission' ? 'allow' : 'yes',
-            name: kind === 'permission' ? 'Allow' : 'Yes',
-            kind: ''
-          },
-          {
-            optionId: kind === 'permission' ? 'reject' : 'no',
-            name: kind === 'permission' ? 'Reject' : 'No',
-            kind: ''
-          }
+          { optionId: kind === 'permission' ? 'allow' : 'yes', name: '', kind: '' },
+          { optionId: kind === 'permission' ? 'reject' : 'no', name: '', kind: '' }
         ];
+    const hasTitle = !!asString(raw.title);
     this.append({
       type: 'decision',
       id: this.nextId('dec'),
       kind,
       requestId: asString(raw.requestId),
       decisionSnapshotId: asString(raw.decisionSnapshotId) || undefined,
-      title:
-        asString(raw.title) || (kind === 'permission' ? 'Permission request' : assistantName + ' question'),
+      title: hasTitle ? asString(raw.title) : '',
+      titleCode: hasTitle
+        ? undefined
+        : kind === 'permission'
+        ? loc('timeline.decision.permissionTitle')
+        : loc('timeline.decision.questionTitle', { agentName: assistantName }),
       text: asString(raw.text),
       description: asString(raw.description),
       rawText: '',
@@ -753,6 +798,7 @@ export class TimelineProjection {
       selectedOptionId: '',
       selectedOptionName: '',
       statusText: '',
+      statusCode: undefined,
       headerState: '',
       toolCallId: '',
       historical: false,
@@ -772,17 +818,19 @@ export class TimelineProjection {
     const options = hasStructuredOptions
       ? (raw.options as RawHostMessage[]).map((option) => ({
           optionId: asString(option.optionId),
-          name: asString(option.name) || asString(option.optionId) || 'Select',
+          name: asString(option.name) || asString(option.optionId),
           kind: asString(option.kind)
         }))
       : [];
+    const hasTitle = !!asString(raw.title);
     this.append({
       type: 'decision',
       id: this.nextId('dec'),
       kind: 'permission',
       requestId: asString(raw.requestId),
       decisionSnapshotId: asString(raw.decisionSnapshotId) || undefined,
-      title: asString(raw.title) || assistantName + ' Agent needs input',
+      title: hasTitle ? asString(raw.title) : '',
+      titleCode: hasTitle ? undefined : loc('timeline.decision.needsInputTitle', { agentName: assistantName }),
       text: '',
       description: '',
       rawText: '',
@@ -792,11 +840,15 @@ export class TimelineProjection {
       selectedOptionId: '',
       selectedOptionName: '',
       statusText: '',
+      statusCode: undefined,
       headerState: '',
       toolCallId: '',
       historical: false,
       schema: raw,
-      elicitationMessage: asString(raw.message) || 'Provide the requested information to continue.',
+      elicitationMessage: '',
+      elicitationMessageCode: asString(raw.message)
+        ? undefined
+        : loc('timeline.decision.provideInfo'),
       formSubmitOptionId: asString(raw.formSubmitOptionId)
     });
   }
@@ -808,7 +860,8 @@ export class TimelineProjection {
       kind: 'elicitation',
       requestId: asString(raw.requestId),
       decisionSnapshotId: asString(raw.decisionSnapshotId) || undefined,
-      title: assistantName + ' Agent needs input',
+      title: '',
+      titleCode: loc('timeline.decision.needsInputTitle', { agentName: assistantName }),
       text: '',
       description: '',
       rawText: '',
@@ -818,11 +871,13 @@ export class TimelineProjection {
       selectedOptionId: '',
       selectedOptionName: '',
       statusText: '',
+      statusCode: undefined,
       headerState: '',
       toolCallId: '',
       historical: false,
       schema: raw,
-      elicitationMessage: asString(raw.message) || 'Provide the requested information to continue.',
+      elicitationMessage: '',
+      elicitationMessageCode: asString(raw.message) ? undefined : loc('timeline.decision.provideInfo'),
       formSubmitOptionId: ''
     });
   }
@@ -834,27 +889,32 @@ export class TimelineProjection {
   ): void {
     if (!historical && kind === 'mode_transition') {
       // legacy: a newer pending transition interrupts the older one.
-      this.interruptModeTransition('A newer mode transition request replaced this one.');
+      this.interruptModeTransition(loc('timeline.decision.replacedByNewer'));
     }
     if (!historical && asString(raw.toolCallId)) {
       this.removeToolCardForDocumentDecision(asString(raw.toolCallId));
     }
     if (!this.currentTurnId && historical) this.startTurn();
     // C# persists selected / cancelled / interrupted document decisions.
-    const storedState = asString(raw.decisionState) || (historical ? 'interrupted' : 'pending');
+    const storedStateRaw = (asString(raw.decisionState) || (historical ? 'interrupted' : 'pending'))
+      .toLowerCase();
+    const storedState =
+      storedStateRaw === 'selected' || storedStateRaw === 'cancelled' ? storedStateRaw : 'interrupted';
     const options = asMessageArray(raw.options).map((option) => ({
       optionId: asString(option.optionId),
-      name: asString(option.name) || asString(option.optionId) || 'Select',
+      name: asString(option.name) || asString(option.optionId),
       kind: asString(option.kind)
     }));
     const selectedOptionId = historical ? asString(raw.selectedOptionId) : '';
+    const hasTitle = !!asString(raw.title) || !!asString(raw.name);
     this.append({
       type: 'decision',
       id: this.nextId('dec'),
       kind,
       requestId: asString(raw.requestId),
       decisionSnapshotId: asString(raw.decisionSnapshotId) || undefined,
-      title: asString(raw.title) || asString(raw.name) || 'Review the proposed direction',
+      title: hasTitle ? asString(raw.title) || asString(raw.name) : '',
+      titleCode: hasTitle ? undefined : loc('timeline.decision.reviewDirection'),
       text: asString(raw.documentText) || asString(raw.text),
       description: '',
       rawText: asString(raw.text),
@@ -863,8 +923,11 @@ export class TimelineProjection {
       collapsed: historical,
       selectedOptionId,
       selectedOptionName: '',
-      statusText: historical ? modeTransitionStatusText(storedState, options, selectedOptionId) : '',
-      headerState: historical ? modeTransitionHeaderLabel(storedState) : 'Pending',
+      statusText: '',
+      statusCode: historical
+        ? documentDecisionStatus(storedState, options, selectedOptionId)
+        : undefined,
+      headerState: historical ? storedState : 'pending',
       toolCallId: asString(raw.toolCallId),
       historical,
       schema: null,
@@ -894,33 +957,35 @@ export class TimelineProjection {
     // Remote resolve updates selection state only — never forces collapse.
     if (item.kind === 'mode_transition' || item.kind === 'document_permission') {
       item.selectedOptionId = optionId;
-      item.headerState = 'Selected';
-      item.statusText = optionName ? 'Selected: ' + optionName : 'Selection recorded.';
+      item.headerState = 'selected';
+      item.statusText = '';
+      item.statusCode = optionName
+        ? loc('timeline.decision.selectedOption', { name: optionName })
+        : loc('timeline.decision.selectionRecorded');
       return;
     }
     if (optionId) item.selectedOptionId = optionId;
     if (optionName) item.selectedOptionName = optionName;
     item.statusText = '';
+    item.statusCode = undefined;
   }
 
-  private cancelDecision(requestId: string, text: string): void {
+  private cancelDecision(requestId: string, code: string): void {
     const item = this.findLiveDecisionByRequestId(requestId);
     if (!item) return;
     item.decisionState = 'disabled';
     if (item.kind === 'mode_transition' || item.kind === 'document_permission') {
-      item.headerState = 'Cancelled';
-      item.statusText = text;
-      return;
+      item.headerState = 'cancelled';
     }
-    item.statusText = text;
+    setStatus(item, code ? loc(systemMessageKey(code)) : loc('timeline.decision.requestCancelled'));
   }
 
-  private interruptModeTransition(text: string): void {
-    this.interruptDocumentDecisions(text, 'mode_transition');
+  private interruptModeTransition(status: DisplayText): void {
+    this.interruptDocumentDecisions(status, 'mode_transition');
   }
 
   private interruptDocumentDecisions(
-    text: string,
+    status: DisplayText,
     kind?: 'mode_transition' | 'document_permission'
   ): void {
     for (const row of this.rows) {
@@ -932,8 +997,8 @@ export class TimelineProjection {
         item.decisionState === 'active'
       ) {
         item.decisionState = 'disabled';
-        item.headerState = 'Interrupted';
-        item.statusText = text;
+        item.headerState = 'interrupted';
+        setStatus(item, status);
       }
     }
   }
@@ -973,7 +1038,7 @@ export class TimelineProjection {
     const output = asString(msg.toolOutput) || (!input ? asString(msg.text) : '');
     this.historyGroup.cards.push({
       toolCallId: asString(msg.toolCallId),
-      summary: asString(msg.summary) || asString(msg.name) || 'Tool',
+      summary: asString(msg.summary) || asString(msg.name),
       input,
       output,
       inputCollapsed: shouldCollapseToolInput(input),
@@ -1047,7 +1112,7 @@ export class TimelineProjection {
       this.historyGroup = null;
       lastRunId = null;
       if (role === 'tool') {
-        this.appendInlineTool(asString(msg.name) || 'Tool', asString(msg.text), 'done');
+        this.appendInlineTool(asString(msg.name), asString(msg.text), 'done');
       } else if (role === 'system') {
         this.appendSystem(asString(msg.text));
       } else {
@@ -1058,13 +1123,38 @@ export class TimelineProjection {
     this.currentTurnId = null;
 
     if (messages.length === 0) {
-      this.appendSystem(
-        'Ready. ' +
-          assistantName +
-          ' will start on the first message. Working directory and session state are shown above.'
-      );
+      // PSX-authored welcome row: stored as a fixed code, localized at render.
+      this.appendSystemCode('thread.ready', { agentName: assistantName });
     }
   }
+}
+
+/** Store a status value on a decision card: raw text or a fixed code. */
+function setStatus(item: DecisionItem, status: DisplayText): void {
+  if (typeof status === 'string') {
+    item.statusText = status;
+    item.statusCode = undefined;
+  } else {
+    item.statusText = '';
+    item.statusCode = status;
+  }
+}
+
+/** Persisted document-decision status as render-time copy (selected/cancelled/
+ *  interrupted; pending and sending fold into interrupted on save). */
+function documentDecisionStatus(
+  state: string,
+  options: readonly DecisionOptionVM[],
+  selectedOptionId: string
+): DisplayText {
+  if (state === 'selected') {
+    const selected = options.find((option) => option.optionId === selectedOptionId);
+    return selected && selected.name
+      ? loc('timeline.decision.selectedOption', { name: selected.name })
+      : loc('timeline.decision.selectionRecorded');
+  }
+  if (state === 'cancelled') return loc('timeline.decision.requestCancelled');
+  return loc('timeline.decision.inactive');
 }
 
 /** Faithful port of _setToolCardState's normalization. */
@@ -1097,10 +1187,11 @@ export function shouldCollapseToolInput(input: string): boolean {
   return false;
 }
 
-export const TOOL_STATE_LABELS: Readonly<Record<string, string>> = {
-  running: 'Running',
-  done: 'Done',
-  error: 'Failed',
-  cancelled: 'Cancelled',
-  fallback: 'Needs terminal'
+/** Tool state → locale key (timeline.toolState.*); resolved at render. */
+export const TOOL_STATE_KEYS: Readonly<Record<string, string>> = {
+  running: 'timeline.toolState.running',
+  done: 'timeline.toolState.done',
+  error: 'timeline.toolState.error',
+  cancelled: 'timeline.toolState.cancelled',
+  fallback: 'timeline.toolState.fallback'
 };

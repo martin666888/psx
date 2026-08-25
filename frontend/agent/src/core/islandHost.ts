@@ -4,6 +4,8 @@
 // the latest props while a dynamic import is pending and contains failures to
 // the island host. It never falls back to an alternate DOM renderer.
 
+import { i18n, onLocaleChanged } from '../../../webview/src/i18n.js';
+
 /** What a mounted island exposes back to its controller. */
 export interface IslandHandle<TProps> {
   render(props: TProps): void;
@@ -55,6 +57,11 @@ function errorMessage(error: unknown): string {
   return text || 'Unknown error';
 }
 
+function islandText(key: string, params?: Record<string, unknown>): string {
+  const localized = i18n.t(key, { ns: 'agent', defaultValue: '', ...(params ?? {}) });
+  return localized || '';
+}
+
 function renderFailure(
   host: HTMLElement,
   name: string,
@@ -72,26 +79,41 @@ function renderFailure(
   card.dataset.island = name;
   card.dataset.failurePhase = phase;
 
-  const title = document.createElement('strong');
-  title.className = 'agent-island-error-title';
-  title.textContent = name + ' could not be displayed';
+  // Failure copy resolves through the locales; a language switch while a
+  // failure card is visible re-renders it in place.
+  const paint = (): void => {
+    const title = document.createElement('strong');
+    title.className = 'agent-island-error-title';
+    title.textContent = islandText('island.failureTitle', { name });
 
-  const message = document.createElement('p');
-  message.className = 'agent-island-error-message';
-  message.textContent =
-    phase === 'import'
-      ? 'Restart PSX to reload this interface. If the problem continues, replace or reinstall the PSX package.'
-      : 'This part of the interface stopped unexpectedly.';
+    const message = document.createElement('p');
+    message.className = 'agent-island-error-message';
+    message.textContent =
+      phase === 'import'
+        ? islandText('island.failureImport')
+        : islandText('island.failureRender');
 
-  card.append(title, message);
-  if (retry) {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'agent-island-error-retry';
-    button.textContent = 'Retry';
-    button.addEventListener('click', retry);
-    card.appendChild(button);
-  }
+    card.replaceChildren(title, message);
+    if (retry) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'agent-island-error-retry';
+      button.textContent = islandText('common.retry');
+      button.addEventListener('click', retry);
+      card.appendChild(button);
+    }
+  };
+  paint();
+  const unsubscribeLocale = onLocaleChanged(paint);
+  // The card dies with the next replaceChildren (retry/dispose); detach on
+  // removal so the subscription cannot outlive the node.
+  new MutationObserver((_entries, observer) => {
+    if (!card.isConnected) {
+      observer.disconnect();
+      unsubscribeLocale();
+    }
+  }).observe(host, { childList: true, subtree: false });
+
   host.appendChild(card);
 
   console.error(

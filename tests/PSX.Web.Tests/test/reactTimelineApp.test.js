@@ -167,7 +167,7 @@ test('reused ACP requestId only folds the live permission card', async () => {
   );
   assert.equal(foldedLive.dataset.decisionState, 'disabled');
   assert.equal(foldedLive.dataset.state, 'closed', 'live card collapses after local select');
-  assert.match(foldedLive.textContent, /Selection recorded/);
+  assert.match(foldedLive.textContent, /已记录所选选项/);
   assert.equal(untouchedHistorical.dataset.decisionState, 'disabled');
 });
 
@@ -212,7 +212,7 @@ test('mode transition owns the composer prompt and restores it after resolution'
   const promptOptions = prompt.querySelector('.agent-composer-decision-options');
   assert.ok(promptOptions.classList.contains('flex-wrap'));
   assert.ok(promptOptions.querySelector('[data-option-id="approve"]').classList.contains('rounded-full'));
-  const stopButton = prompt.querySelector('button[title^="Stop "]');
+  const stopButton = prompt.querySelector('button[title^="停止 "]');
   assert.ok(stopButton.classList.contains('rounded-full'));
   assert.equal(stopButton.classList.contains('bg-destructive'), false);
   await flushReact(async () => prompt.querySelector('[data-option-id="approve"]').click());

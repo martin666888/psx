@@ -37,6 +37,12 @@ public static class Strings
     public static string StartupWarningBackupAlsoInvalid => Get("StartupWarningBackupAlsoInvalid");
 
     public static string ZipArchiveFilter => Get("ZipArchiveFilter");
+    public static string DismissWarningToolTip => Get("DismissWarningToolTip");
+    public static string ThemeStatusInvalid => Get("ThemeStatusInvalid");
+    public static string ThemeStatusUpdated => Get("ThemeStatusUpdated");
+    public static string ThemeStatusCurrent => Get("ThemeStatusCurrent");
+    public static string DshWorkspaceLabel => Get("DshWorkspaceLabel");
+    public static string KimiWorkspaceLabel => Get("KimiWorkspaceLabel");
 
     public static string TabNewToRightColumn => Get("TabNewToRightColumn");
 

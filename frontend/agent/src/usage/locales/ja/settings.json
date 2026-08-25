@@ -55,7 +55,7 @@
     "envKeyTitle": "環境変数キー（値は非表示）",
     "headerKeyTitle": "ヘッダーキー（値は非表示）",
     "scanFailed": "構成情報を読み取れませんでした。再試行してください。",
-    "loadFailed": "構成を読み込めませんでした。",
+    "loadFailed": "設定情報を読み取れませんでした。再試行してください。",
     "facts": {
       "env_var_keys": "環境変数キー",
       "default_model": "既定のモデル",
@@ -79,7 +79,8 @@
       "no_editable_config": "この Agent にはユーザーが編集できる構成ファイルがありません",
       "home_missing": "ユーザー構成ディレクトリが見つかりません",
       "scan_failed": "構成情報を読み取れませんでした。再試行してください。"
-    }
+    },
+    "timeout": "設定の読み込みがタイムアウトしました。"
   },
   "usage": {
     "windowGroupAria": "集計期間",
@@ -121,6 +122,8 @@
       "unregistered_provider": "一部のセッションの Agent は既に利用できません"
     },
     "noExactRecords": "利用できる正確な Token 記録はまだありません",
-    "scanFailed": "使用量データを読み取れませんでした。再試行してください。"
+    "scanFailed": "使用量データを読み取れませんでした。再試行してください。",
+    "timeout": "使用量の読み込みがタイムアウトしました。",
+    "loadFailed": "使用量データを読み取れませんでした。再試行してください。"
   }
 }

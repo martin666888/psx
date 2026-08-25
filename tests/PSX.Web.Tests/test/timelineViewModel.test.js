@@ -100,7 +100,9 @@ test('run_failed marks running cards, closes the group and appends the error too
   assert.equal(group.open, true, 'error groups stay open');
   assert.equal(group.cards[0].state, 'error');
   const inline = list.find((item) => item.type === 'tool' && item.variant === 'inline');
-  assert.equal(inline.name, NAME + ' error');
+  // PSX-authored titles/bodies stay as render-time codes, never sentences.
+  assert.deepEqual(inline.nameCode, { code: 'timeline.runErrorTitle', params: { agentName: NAME } });
+  assert.equal(inline.name, '');
   assert.equal(inline.text, 'boom');
   assert.equal(inline.state, 'error');
 });
@@ -156,7 +158,8 @@ test('replay folds history groups per runId and the ready system row for empty t
   const empty = fold([['agent_thread_loaded', { clear: true, messages: [] }]]);
   const emptyList = items(empty);
   assert.equal(emptyList.length, 1);
-  assert.match(emptyList[0].text, /^Ready\. Claude will start/);
+  assert.equal(emptyList[0].code, 'thread.ready');
+  assert.deepEqual(emptyList[0].params, { agentName: 'Claude' });
 });
 
 test('replay keeps tool cards when assistant text interleaves inside the same runId', () => {
@@ -215,7 +218,8 @@ test('permission and question requests fold into decision items with default opt
   assert.equal(permission.text, '{"cmd":"ls"}');
   assert.deepEqual(permission.options.map((option) => option.optionId), ['allow', 'reject']);
   const question = list[2];
-  assert.equal(question.title, NAME + ' question');
+  assert.equal(question.title, '');
+  assert.deepEqual(question.titleCode, { code: 'timeline.decision.questionTitle', params: { agentName: NAME } });
   assert.deepEqual(question.options, [{ optionId: 'a', name: 'Alpha', kind: 'allow_once' }]);
 
   projection.selectDecisionOption(permission.id, 'allow', 'Allow');
@@ -226,9 +230,10 @@ test('permission and question requests fold into decision items with default opt
   assert.equal(permission.selectedOptionId, 'allow');
   assert.equal(permission.collapsed, true, 'remote resolve does not reopen or re-fold');
 
-  projection.apply('permission_cancelled', { requestId: 'q1', text: 'Too late.' }, NAME);
+  projection.apply('permission_cancelled', { requestId: 'q1', code: '' }, NAME);
   assert.equal(question.decisionState, 'disabled');
-  assert.equal(question.statusText, 'Too late.');
+  assert.equal(question.statusCode.code, 'timeline.decision.requestCancelled');
+  assert.equal(question.statusText, '');
 });
 
 test('permission form presentation folds schema without raw input text', () => {
@@ -263,7 +268,8 @@ test('permission form presentation folds schema without raw input text', () => {
   assert.equal(form.kind, 'permission');
   assert.equal(form.formSubmitOptionId, 'proceed_once');
   assert.equal(form.text, '', 'form variant suppresses raw input dump');
-  assert.equal(form.elicitationMessage, 'Please answer the following question(s):');
+  assert.equal(form.elicitationMessage, '');
+  assert.equal(form.elicitationMessageCode, undefined);
   assert.ok(form.schema);
   assert.equal(form.schema.presentation, 'form');
   assert.deepEqual(form.options.map((option) => option.optionId), ['proceed_once', 'cancel']);
@@ -390,15 +396,15 @@ test('a live mode transition replaces its tool card and is interrupted by run_fi
   assert.equal(group.visible, false, 'an emptied run group hides');
   const transition = list.find((item) => item.type === 'decision');
   assert.equal(transition.kind, 'mode_transition');
-  assert.equal(transition.headerState, 'Pending');
+  assert.equal(transition.headerState, 'pending');
   assert.equal(transition.text, '# Proposal');
   assert.equal(transition.collapsed, false, 'live document decisions start expanded');
 
   projection.selectDecisionOption(transition.id, 'go', 'Proceed');
   assert.equal(transition.collapsed, true);
-  assert.equal(transition.headerState, 'Sending');
+  assert.equal(transition.headerState, 'sending');
   projection.apply('permission_resolved', { requestId: 'mt1', optionId: 'go', optionName: 'Proceed' }, NAME);
-  assert.equal(transition.headerState, 'Selected');
+  assert.equal(transition.headerState, 'selected');
   assert.equal(transition.collapsed, true, 'remote resolve does not change collapse');
 
   const interrupted = fold([
@@ -417,8 +423,8 @@ test('a live mode transition replaces its tool card and is interrupted by run_fi
   ]);
   const interruptedDecision = items(interrupted).find((item) => item.type === 'decision');
   assert.equal(interruptedDecision.decisionState, 'disabled');
-  assert.equal(interruptedDecision.headerState, 'Interrupted');
-  assert.equal(interruptedDecision.statusText, 'This request is no longer active.');
+  assert.equal(interruptedDecision.headerState, 'interrupted');
+  assert.equal(interruptedDecision.statusCode.code, 'timeline.decision.inactive');
 });
 
 test('historical document decisions start collapsed', () => {
@@ -468,7 +474,7 @@ test('a document permission renders its document, replaces its tool card and is 
 
   projection.apply('run_failed', {}, NAME);
   assert.equal(document.decisionState, 'disabled');
-  assert.equal(document.headerState, 'Interrupted');
+  assert.equal(document.headerState, 'interrupted');
 });
 
 test('historical mode transitions replay with the real C# decisionState values', () => {
@@ -498,17 +504,17 @@ test('historical mode transitions replay with the real C# decisionState values',
   const selected = items(replay('selected', 'go')).find((item) => item.type === 'decision');
   assert.equal(selected.historical, true);
   assert.equal(selected.decisionState, 'disabled');
-  assert.equal(selected.headerState, 'Selected');
+  assert.equal(selected.headerState, 'selected');
   assert.equal(selected.selectedOptionId, 'go');
-  assert.equal(selected.statusText, 'Selected: Proceed');
+  assert.deepEqual(selected.statusCode, { code: 'timeline.decision.selectedOption', params: { name: 'Proceed' } });
 
   const cancelled = items(replay('cancelled', '')).find((item) => item.type === 'decision');
-  assert.equal(cancelled.headerState, 'Cancelled');
-  assert.equal(cancelled.statusText, 'Request cancelled.');
+  assert.equal(cancelled.headerState, 'cancelled');
+  assert.equal(cancelled.statusCode.code, 'timeline.decision.requestCancelled');
 
   const interrupted = items(replay('interrupted', '')).find((item) => item.type === 'decision');
-  assert.equal(interrupted.headerState, 'Interrupted');
-  assert.equal(interrupted.statusText, 'This request is no longer active.');
+  assert.equal(interrupted.headerState, 'interrupted');
+  assert.equal(interrupted.statusCode.code, 'timeline.decision.inactive');
 });
 
 test('historical document permissions replay as disabled document decisions', () => {
@@ -536,7 +542,7 @@ test('historical document permissions replay as disabled document decisions', ()
   assert.equal(document.kind, 'document_permission');
   assert.equal(document.historical, true);
   assert.equal(document.decisionState, 'disabled');
-  assert.equal(document.headerState, 'Selected');
+  assert.equal(document.headerState, 'selected');
   assert.equal(document.selectedOptionId, 'approve');
 });
 

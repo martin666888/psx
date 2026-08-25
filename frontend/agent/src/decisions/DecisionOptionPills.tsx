@@ -16,6 +16,7 @@ export function DecisionOptionPills<TOption extends DecisionPillOption>({
   className,
   buttonClassName,
   firstOptionRef,
+  labelFor,
   onSelect
 }: {
   options: readonly TOption[];
@@ -25,6 +26,8 @@ export function DecisionOptionPills<TOption extends DecisionPillOption>({
   className?: string;
   buttonClassName?: string;
   firstOptionRef?: Ref<HTMLButtonElement>;
+  /** Optional render-time label override; defaults to the raw option name. */
+  labelFor?(option: TOption): string;
   onSelect(option: TOption): void;
 }) {
   const selectedOption = selectedOptionId
@@ -62,7 +65,7 @@ export function DecisionOptionPills<TOption extends DecisionPillOption>({
               if (!disabled) onSelect(option);
             }}
           >
-            {option.name}
+            {labelFor ? labelFor(option) : option.name}
           </Button>
         );
       })}

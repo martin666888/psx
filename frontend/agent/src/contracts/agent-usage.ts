@@ -115,13 +115,15 @@ export interface UsageState {
   generatedAt: string;
   timezone: string;
   status: 'idle' | 'loading' | 'error';
-  errorText: string;
+  /** Fixed settings-locale key resolved at render (never display text). */
+  errorKey: string;
   panelOpen: boolean;
   activeTab: SettingsSection;
   configReport: ConfigReport | null;
   configGeneratedAt: string;
   configStatus: 'idle' | 'loading' | 'error';
-  configErrorText: string;
+  /** Fixed settings-locale key or backend note code resolved at render. */
+  configErrorKey: string;
   /** True after the first successful or failed config load in this process. */
   configLoadedOnce: boolean;
   settingsRevision: number;
@@ -148,13 +150,13 @@ export function createInitialUsageState(): UsageState {
     generatedAt: '',
     timezone: '',
     status: 'idle',
-    errorText: '',
+    errorKey: '',
     panelOpen: false,
     activeTab: 'profile',
     configReport: null,
     configGeneratedAt: '',
     configStatus: 'idle',
-    configErrorText: '',
+    configErrorKey: '',
     configLoadedOnce: false,
     settingsRevision: -1,
     dshRegistry: 'official',

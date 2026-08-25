@@ -63,4 +63,39 @@ public sealed class WireProducerChineseScanTests
             "Chinese literals in wire-producing services (map to fixed codes + frontend locales): "
             + string.Join("; ", problems));
     }
+
+    /// <summary>ViewModels and the MainWindow also produce wire payloads
+    /// (theme_catalog, workspace notices, startup warnings). The same
+    /// no-PSX-authored-Chinese-on-the-wire contract applies there; display
+    /// copy lives in .resx satellites or frontend locales.</summary>
+    [TestMethod]
+    public void WireProducerViewModels_ContainNoChineseStringLiterals()
+    {
+        var repoRoot = TestWorkspace.RepositoryRoot;
+        var pattern = new Regex("\"[^\"]*\\p{IsCJKUnifiedIdeographs}[^\"]*\"");
+        var problems = new List<string>();
+
+        foreach (var directory in new[] { "ViewModels", "." })
+        {
+            var root = Path.Combine(repoRoot, directory);
+            var searchPattern = directory == "ViewModels" ? "*.cs" : "MainWindow.xaml.cs";
+            foreach (var path in Directory.EnumerateFiles(root, searchPattern, SearchOption.TopDirectoryOnly))
+            {
+                var relative = Path.GetRelativePath(repoRoot, path);
+                var lines = File.ReadAllLines(path);
+                for (var index = 0; index < lines.Length; index++)
+                {
+                    var line = lines[index];
+                    var withoutComments = Regex.Replace(line, @"//.*$", "");
+                    if (pattern.IsMatch(withoutComments))
+                        problems.Add($"{relative}:{index + 1}: {line.Trim()[..Math.Min(90, line.Trim().Length)]}");
+                }
+            }
+        }
+
+        Assert.IsEmpty(
+            problems,
+            "Chinese literals in wire-producing ViewModels/MainWindow (map to fixed codes + locales/resx): "
+            + string.Join("; ", problems));
+    }
 }

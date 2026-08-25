@@ -14,7 +14,8 @@ import { useEffect, useLayoutEffect, useRef, useState, type JSX, type ReactNode 
 import { useTranslation } from 'react-i18next';
 import { AnnounceContext, useAnnounceLive } from '../ui/announce.js';
 import {
-  TOOL_STATE_LABELS,
+  systemMessageKey,
+  TOOL_STATE_KEYS,
   type DecisionItem,
   type InlineToolItem,
   type MessageItem,
@@ -24,6 +25,7 @@ import {
   type TimelineRow,
   type ToolGroupItem
 } from './timelineViewModel.js';
+import { resolveDisplay } from './copy.js';
 import { DecisionCard, type DecisionCallbacks } from './TimelineDecisions.js';
 import { Button } from '../components/ui/button.js';
 import {
@@ -137,11 +139,26 @@ export function useProjectionOpen(
   return [open, setOpen];
 }
 
+/** Resolve a system row at render: backend code rows localize through
+ *  timeline.system.*; the raw provider hint (never translated) trails. */
+function systemRowText(item: SystemItem, t: (key: string, options?: Record<string, unknown>) => string): string {
+  if (!item.code) return item.text;
+  const localized = t(systemMessageKey(item.code), {
+    defaultValue: '',
+    agentName: '',
+    ...(item.params ?? {})
+  });
+  if (!localized) return '';
+  return item.hint ? `${localized} ${item.hint}` : localized;
+}
+
 function SystemRow({ item }: { item: SystemItem }): JSX.Element {
-  return <div className="agent-system mb-4 text-muted-foreground text-xs">{item.text}</div>;
+  const { t } = useTranslation('agent');
+  return <div className="agent-system mb-4 text-muted-foreground text-xs">{systemRowText(item, t)}</div>;
 }
 
 function RecoveryCard({ item, callbacks }: { item: RecoveryItem; callbacks: TimelineCallbacks }): JSX.Element {
+  const { t } = useTranslation('agent');
   const live = useAnnounceLive();
   return (
     <section
@@ -151,11 +168,17 @@ function RecoveryCard({ item, callbacks }: { item: RecoveryItem; callbacks: Time
       aria-atomic="true"
     >
       <div className="agent-recovery-content grid min-w-0 gap-2">
-        <div className="agent-recovery-title font-semibold text-[13px] leading-snug">Session could not be resumed</div>
-        <p className="agent-recovery-message m-0 break-words text-[13px] leading-normal">{item.message}</p>
+        <div className="agent-recovery-title font-semibold text-[13px] leading-snug">
+          {t('timeline.recovery.title')}
+        </div>
+        <p className="agent-recovery-message m-0 break-words text-[13px] leading-normal">
+          {item.messageCode
+            ? t(item.messageCode, { defaultValue: '', ...(item.messageParams ?? {}) })
+            : item.message}
+        </p>
         <Collapsible className="agent-recovery-details min-w-0 text-muted-foreground text-xs" hidden={!item.detail}>
           <CollapsibleTrigger className="w-fit cursor-pointer select-none font-semibold hover:text-foreground">
-            Technical details
+            {t('timeline.recovery.technicalDetails')}
           </CollapsibleTrigger>
           <CollapsibleContent forceMount className="data-[state=closed]:hidden">
             <pre className="agent-recovery-technical agent-native-scroll mt-2 max-h-44 overflow-auto whitespace-pre-wrap break-words rounded-md border bg-muted/50 p-3 font-mono text-[11px] leading-normal">
@@ -166,7 +189,7 @@ function RecoveryCard({ item, callbacks }: { item: RecoveryItem; callbacks: Time
       </div>
       <div className="agent-recovery-actions flex flex-wrap gap-2">
         <Button variant="outline" size="sm" onClick={() => callbacks.onOpenTerminal()}>
-          Open terminal
+          {t('timeline.recovery.openTerminal')}
         </Button>
       </div>
     </section>
@@ -174,6 +197,7 @@ function RecoveryCard({ item, callbacks }: { item: RecoveryItem; callbacks: Time
 }
 
 function ThinkingRowView({ item }: { item: ThinkingItem }): JSX.Element {
+  const { t } = useTranslation('agent');
   const live = useAnnounceLive();
   if (item.variant === 'row') {
     return (
@@ -184,7 +208,7 @@ function ThinkingRowView({ item }: { item: ThinkingItem }): JSX.Element {
         aria-busy="true"
       >
         <Shimmer as="span" duration={1}>
-          Thinking…
+          {t('timeline.thinking.running')}
         </Shimmer>
       </div>
     );
@@ -199,6 +223,7 @@ function ThinkingRowView({ item }: { item: ThinkingItem }): JSX.Element {
  *  through the Shimmer so the live wording matches the finished
  *  "Thought for N seconds" phrasing. */
 function ThinkingElapsed(): JSX.Element {
+  const { t } = useTranslation('agent');
   const startRef = useRef(Date.now());
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
@@ -207,27 +232,32 @@ function ThinkingElapsed(): JSX.Element {
     }, 1000);
     return () => clearInterval(timer);
   }, []);
-  const text =
-    elapsed < 1
-      ? 'Thinking…'
-      : 'Thinking for ' + elapsed + (elapsed === 1 ? ' second' : ' seconds');
-  return <Shimmer duration={1}>{text}</Shimmer>;
+  return (
+    <Shimmer duration={1}>
+      {elapsed < 1 ? t('timeline.thinking.running') : t('timeline.thinking.forSeconds', { seconds: elapsed })}
+    </Shimmer>
+  );
 }
 
 /** ReasoningTrigger message with a live timer while streaming; once the
- *  stream ends it falls back to the upstream duration wording. */
-const getLiveThinkingMessage = (isStreaming: boolean, duration?: number): ReactNode => {
-  if (isStreaming || duration === 0) {
-    return <ThinkingElapsed />;
-  }
-  if (duration === undefined) {
-    return <p>Thought for a few seconds</p>;
-  }
-  return <p>Thought for {duration} seconds</p>;
-};
+ *  stream ends it falls back to the upstream duration wording. Render-time
+ *  resolution keeps every wording on the active locale. */
+function useLiveThinkingMessage(t: (key: string, options?: Record<string, unknown>) => string) {
+  return (isStreaming: boolean, duration?: number): ReactNode => {
+    if (isStreaming || duration === 0) {
+      return <ThinkingElapsed />;
+    }
+    if (duration === undefined) {
+      return <p>{t('timeline.thinking.thoughtFew')}</p>;
+    }
+    return <p>{t('timeline.thinking.thoughtFor', { seconds: duration })}</p>;
+  };
+}
 
 function ThinkingBlock({ item }: { item: ThinkingItem }): JSX.Element {
+  const { t } = useTranslation('agent');
   const [open, setOpen] = useProjectionOpen(item.running);
+  const getLiveThinkingMessage = useLiveThinkingMessage(t);
   return (
     <Reasoning
       className={'agent-thinking-block' + (item.running ? ' agent-thinking-running' : '')}
@@ -267,11 +297,13 @@ function ToolCardView({
 }: {
   card: ToolGroupItem['cards'][number];
 }): JSX.Element {
+  const { t } = useTranslation('agent');
   const [open, setOpen] = useProjectionOpen(card.open);
   const [inputOpen, setInputOpen] = useProjectionOpen(!card.inputCollapsed);
-  const label = TOOL_STATE_LABELS[card.state] || TOOL_STATE_LABELS.done;
+  const label = t(TOOL_STATE_KEYS[card.state] || TOOL_STATE_KEYS.done);
   const hasInput = card.input.trim().length > 0;
   const hasOutput = card.output.trim().length > 0;
+  const summary = card.summary || t('timeline.tool.untitled');
   return (
     <Tool
       className={'agent-tool-card agent-tool-card-' + card.state + ' mb-0 rounded-none border-0'}
@@ -281,8 +313,8 @@ function ToolCardView({
       onOpenChange={setOpen}
     >
       <ToolHeader
-        title={card.summary}
-        type={card.summary}
+        title={summary}
+        type={summary}
         state={TOOL_UI_STATE[card.state] ?? 'output-available'}
         badge={label}
         titleClassName="agent-tool-card-summary text-left"
@@ -300,7 +332,7 @@ function ToolCardView({
             >
               <CollapsibleTrigger className="flex cursor-pointer select-none items-center gap-2 py-1 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground">
                 <ChevronRightIcon className="size-2.5 shrink-0 transition-transform group-data-[state=open]/tool-input:rotate-90" aria-hidden="true" />
-                Input
+                {t('timeline.toolSection.input')}
               </CollapsibleTrigger>
               <CollapsibleContent forceMount className="data-[state=closed]:hidden">
                 <pre className="agent-tool-card-input-content agent-native-scroll m-0 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/50 p-3">
@@ -311,9 +343,18 @@ function ToolCardView({
           ) : null}
           {hasOutput ? (
             <div className="agent-tool-card-output">
-              <div className="mb-1 text-xs font-semibold text-muted-foreground">Output</div>
+              <div className="mb-1 text-xs font-semibold text-muted-foreground">{t('timeline.toolSection.output')}</div>
               <pre className="agent-tool-card-content agent-native-scroll max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/50 p-3">
                 {card.output}
+              </pre>
+            </div>
+          ) : card.emptyDone ? (
+            // Finished with neither input nor output: keep the localized
+            // marker visible where legacy wrote a literal sentence.
+            <div className="agent-tool-card-output">
+              <div className="mb-1 text-xs font-semibold text-muted-foreground">{t('timeline.toolSection.output')}</div>
+              <pre className="agent-tool-card-content whitespace-pre-wrap break-words rounded-md bg-muted/50 p-3">
+                {t('timeline.tool.finished')}
               </pre>
             </div>
           ) : null}
@@ -326,13 +367,10 @@ function ToolCardView({
 // Items are mutated in place by the projection, so components stay unmemoized:
 // keyed reconciliation already preserves DOM node identity across renders.
 function ToolGroup({ item }: { item: ToolGroupItem }): JSX.Element {
+  const { t } = useTranslation('agent');
   const [open, setOpen] = useProjectionOpen(item.open);
   const total = item.cards.length;
   const running = item.cards.filter((card) => card.state === 'running').length;
-  const label =
-    total === 0
-      ? 'Tool activity'
-      : 'Tool activity \u00b7 ' + total + ' call' + (total > 1 ? 's' : '') + (item.live && running > 0 ? ' \u00b7 ' + running + ' running' : '');
   return (
     <Task
       className={'agent-run-group not-prose mb-4 w-full' + (item.error ? ' agent-run-group-error' : '')}
@@ -341,11 +379,18 @@ function ToolGroup({ item }: { item: ToolGroupItem }): JSX.Element {
       onOpenChange={setOpen}
       style={item.visible ? undefined : { display: 'none' }}
     >
-      <TaskTrigger title={label}>
+      <TaskTrigger title={t('timeline.runGroup.summary', { count: total })}>
         <div className="agent-run-group-header flex w-full cursor-pointer items-center gap-2 text-muted-foreground transition-colors hover:text-foreground">
           <WrenchIcon className="size-4" />
-          <span className="agent-run-group-summary font-medium">{label}</span>
-          {item.error ? <span className="font-medium text-destructive">{'\u00b7 Failed'}</span> : null}
+          <span className="agent-run-group-summary font-medium">
+            {t('timeline.runGroup.summary', { count: total })}
+            {item.live && running > 0
+              ? ' \u00b7 ' + t('timeline.runGroup.live', { running })
+              : ''}
+          </span>
+          {item.error ? (
+            <span className="font-medium text-destructive">{'\u00b7 ' + t('timeline.runGroup.failed')}</span>
+          ) : null}
           <ChevronDownIcon className="size-4 transition-transform group-data-[state=open]:rotate-180" />
         </div>
       </TaskTrigger>
@@ -370,7 +415,19 @@ const INLINE_TOOL_BADGE_STATE: Record<string, ToolState> = {
 };
 
 function InlineTool({ item }: { item: InlineToolItem }): JSX.Element {
-  const statusLabel = item.state === 'error' ? 'Failed' : item.state === 'fallback' ? 'Needs terminal' : 'Done';
+  const { t } = useTranslation('agent');
+  const statusLabel = t(
+    item.state === 'error'
+      ? TOOL_STATE_KEYS.error
+      : item.state === 'fallback'
+      ? TOOL_STATE_KEYS.fallback
+      : TOOL_STATE_KEYS.done
+  );
+  const name = resolveDisplay(item.nameCode, t) || item.name || t('timeline.tool.untitled');
+  const body =
+    resolveDisplay(item.textCode, t) ||
+    item.text ||
+    (item.suffixCode ? '' : '');
   return (
     <Tool
       defaultOpen
@@ -381,8 +438,8 @@ function InlineTool({ item }: { item: InlineToolItem }): JSX.Element {
       data-state={item.state}
     >
       <ToolHeader
-        type={'tool-' + item.name}
-        title={item.name}
+        type={'tool-' + (item.name || 'inline')}
+        title={name}
         state={INLINE_TOOL_BADGE_STATE[item.state] ?? 'output-available'}
         badge={statusLabel}
         titleClassName="agent-tool-name"
@@ -390,15 +447,20 @@ function InlineTool({ item }: { item: InlineToolItem }): JSX.Element {
       {/* forceMount keeps the collapsed output in the DOM (old static-card
           semantics) for text search and replay tooling. */}
       <ToolContent forceMount className="data-[state=closed]:hidden">
-        <pre className="agent-tool-output agent-native-scroll max-h-72 overflow-auto whitespace-pre-wrap break-words px-3 pb-3">{item.text}</pre>
+        <pre className="agent-tool-output agent-native-scroll max-h-72 overflow-auto whitespace-pre-wrap break-words px-3 pb-3">{body}</pre>
+        {item.suffixCode ? (
+          <div className="agent-tool-suffix px-3 pb-3 text-xs text-muted-foreground">{t(item.suffixCode)}</div>
+        ) : null}
       </ToolContent>
     </Tool>
   );
 }
 
-/** legacy _appendMessage image-JSON cleanup for user messages. */
-function cleanUserText(text: string): string {
-  return (text || '').replace(/\{"type":"image"[^}]*\}/g, '\n\n[image attachment]\n\n');
+/** legacy _appendMessage image-JSON cleanup for user messages; the visible
+ *  placeholder is localized at render time. */
+function useCleanUserText(t: (key: string, options?: Record<string, unknown>) => string) {
+  return (text: string): string =>
+    (text || '').replace(/\{"type":"image"[^}]*\}/g, '\n\n' + t('timeline.imageAttachment') + '\n\n');
 }
 
 /** Attachment grid host: tiles are composer-built DOM (legacy seam). */
@@ -429,6 +491,7 @@ function UserMessageBody({
   callbacks: TimelineCallbacks;
 }): JSX.Element {
   const { t } = useTranslation('agent');
+  const cleanUserText = useCleanUserText(t);
   const body = useRef<HTMLDivElement | null>(null);
   const content = useRef<HTMLDivElement | null>(null);
   const [collapsible, setCollapsible] = useState(false);
@@ -533,8 +596,9 @@ const MessageRow = function MessageRow({
   assistantName: string;
   callbacks: TimelineCallbacks;
 }): JSX.Element {
+  const { t } = useTranslation('agent');
   const isUser = item.role === 'user';
-  const ariaLabel = isUser ? 'You' : assistantName;
+  const ariaLabel = isUser ? t('timeline.message.you') : assistantName;
   const showActions = !isUser && item.finalized && !!item.raw.trim();
   return (
     <Message
@@ -632,6 +696,7 @@ function renderItem(
 }
 
 export function TimelineView({ rows, assistantName, announce, callbacks }: TimelineViewProps): JSX.Element {
+  const { t } = useTranslation('agent');
   // Group rows by turn id into agent-turn sections. Rows of one turn always
   // collect into a single block anchored at the turn's first row — mirroring
   // legacy, where the turn <section> node persists and later rows keep
@@ -661,7 +726,7 @@ export function TimelineView({ rows, assistantName, announce, callbacks }: Timel
     <Conversation
       data-role="thread"
       className="agent-thread"
-      aria-label="Agent conversation"
+      aria-label={t('timeline.conversationLabel')}
       aria-live={announce !== false ? 'polite' : 'off'}
       aria-relevant="additions"
       initial="instant"
@@ -671,8 +736,8 @@ export function TimelineView({ rows, assistantName, announce, callbacks }: Timel
         {rows.length === 0 ? (
           <ConversationEmptyState
             className="agent-conversation-empty"
-            title="No messages yet"
-            description="Send a message to start the conversation."
+            title={t('timeline.empty.title')}
+            description={t('timeline.empty.description')}
           />
         ) : (
           blocks.map((block) =>

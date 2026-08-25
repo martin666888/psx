@@ -151,7 +151,7 @@ test('create menu disables new-right on pixel capacity and on the 3-column cap',
   assert.equal(segment('右侧新列').disabled, true);
   assert.equal(segment('右侧新列').title, '窗口宽度不足以容纳新列');
   assert.equal(segment('当前列').disabled, false);
-  assert.equal(row('Terminal').disabled, false, 'terminal row unaffected at focused placement');
+  assert.equal(row('终端').disabled, false, 'terminal row unaffected at focused placement');
   assert.equal(chrome.createPlacement, 'focused');
   document.querySelector('[data-role="workspace-create-toggle"]').click();
 
@@ -162,8 +162,8 @@ test('create menu disables new-right on pixel capacity and on the 3-column cap',
   segment('右侧新列').click();
   assert.equal(chrome.createPlacement, 'new_right');
   assert.equal(segment('右侧新列').disabled, false, 'agent capacity still fits');
-  assert.equal(row('Terminal').disabled, true);
-  assert.equal(row('Terminal').title, '窗口宽度不足以容纳新列');
+  assert.equal(row('终端').disabled, true);
+  assert.equal(row('终端').title, '窗口宽度不足以容纳新列');
   document.querySelector('[data-role="workspace-create-toggle"]').click();
 
   // Column cap reached (3 requested columns): the C# count blocks new-right
@@ -202,7 +202,7 @@ test('create menu gates the DeepSeek Harness row with its own fitsDsh capacity',
   segment('右侧新列').click();
   assert.equal(row('DeepSeek Harness').disabled, true);
   assert.equal(row('DeepSeek Harness').title, '窗口宽度不足以容纳新列');
-  assert.equal(row('Terminal').disabled, false, 'fitsDsh never gates the shared new-right segment or Terminal row');
+  assert.equal(row('终端').disabled, false, 'fitsDsh never gates the shared new-right segment or Terminal row');
   chrome.dispose();
 });
 
@@ -226,11 +226,11 @@ test('create menu lists web apps under WEB APP and ACP providers under AGENT (AC
   document.querySelector('[data-role="workspace-create-toggle"]').click();
   const labels = [...document.querySelectorAll('.workspace-popover .workspace-menu-row .workspace-menu-primary, .workspace-popover .workspace-popover-subheading')]
     .map((node) => node.textContent);
-  const terminal = labels.indexOf('Terminal');
-  const webApp = labels.indexOf('WEB APP');
+  const terminal = labels.indexOf('终端');
+  const webApp = labels.indexOf('网页应用');
   const kimiWeb = labels.indexOf('Kimi Code Web');
   const dsh = labels.indexOf('DeepSeek Harness');
-  const agent = labels.indexOf('AGENT (ACP)');
+  const agent = labels.indexOf('Agent（ACP）');
   const claude = labels.indexOf('Claude Code');
   assert.ok(terminal >= 0 && webApp > terminal, 'WEB APP heading follows Terminal');
   assert.ok(kimiWeb > webApp, 'Kimi Code Web opens the WEB APP group');
@@ -861,7 +861,7 @@ test('create menu gates the Kimi Code Web row with its own fitsKimiWeb capacity'
   assert.equal(row('Kimi Code Web').disabled, true);
   assert.equal(row('Kimi Code Web').title, '窗口宽度不足以容纳新列');
   assert.equal(row('DeepSeek Harness').disabled, false, 'fitsKimiWeb never gates the DSH row');
-  assert.equal(row('Terminal').disabled, false, 'fitsKimiWeb never gates the Terminal row');
+  assert.equal(row('终端').disabled, false, 'fitsKimiWeb never gates the Terminal row');
   chrome.dispose();
 });
 

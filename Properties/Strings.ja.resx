@@ -105,4 +105,22 @@ WebView2 は PSX のインターフェイス描画に必要なコンポーネン
   <data name="ZipArchiveFilter" xml:space="preserve">
     <value>ZIP アーカイブ (*.zip)|*.zip</value>
   </data>
+  <data name="DismissWarningToolTip" xml:space="preserve">
+    <value>警告を閉じる</value>
+  </data>
+  <data name="ThemeStatusInvalid" xml:space="preserve">
+    <value>無効</value>
+  </data>
+  <data name="ThemeStatusUpdated" xml:space="preserve">
+    <value>更新済み</value>
+  </data>
+  <data name="ThemeStatusCurrent" xml:space="preserve">
+    <value>現在</value>
+  </data>
+  <data name="DshWorkspaceLabel" xml:space="preserve">
+    <value>DeepSeek Harness ワークスペース</value>
+  </data>
+  <data name="KimiWorkspaceLabel" xml:space="preserve">
+    <value>Kimi Code Web ワークスペース</value>
+  </data>
 </root>

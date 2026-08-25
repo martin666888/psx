@@ -64,7 +64,7 @@ test('session status, cwd, session id and context bands update semantically', as
   await settle(app, panel, stateEvent());
   assert.equal(panel.querySelector('[data-role="status"]').dataset.status, 'ready');
   assert.equal(panel.querySelector('[data-role="cwd"]').textContent, '/tmp/project');
-  assert.equal(panel.querySelector('[data-role="session"]').textContent, 'session: abcdef123456');
+  assert.equal(panel.querySelector('[data-role="session"]').textContent, '会话：abcdef123456');
   assert.equal(panel.querySelector('[data-role="context-used"]').dataset.contextState, 'accent');
   assert.match(panel.querySelector('[data-role="context-used"]').getAttribute('aria-label'), /4\.2K/);
 
@@ -90,7 +90,7 @@ test('provider-prefixed ACP session ids remain complete', async () => {
   await settle(app, panel, stateEvent({ sessionId: kimiSessionId }));
   assert.equal(
     panel.querySelector('[data-role="session"]').textContent,
-    'session: ' + kimiSessionId
+    '会话：' + kimiSessionId
   );
 });
 
@@ -110,7 +110,7 @@ test('draft Change button emits pick_cwd and locks after session start', async (
 
   await settle(app, panel, stateEvent({ isDraft: false }));
   assert.equal(change.disabled, true);
-  assert.match(change.title, /new Agent tab/);
+  assert.match(change.title, /新建 Agent 标签页/);
 });
 
 test('repeated updates preserve the context ring DOM node', async () => {
@@ -183,5 +183,5 @@ test('toolbar More session label hides without a session id and shows it once se
   await settle(app, panel, stateEvent());
   const small = panel.querySelector('.agent-toolbar-more-session small');
   assert.ok(small, 'session label renders once a session id exists');
-  assert.equal(small.textContent, 'session: abcdef123456');
+  assert.equal(small.textContent, '会话：abcdef123456');
 });

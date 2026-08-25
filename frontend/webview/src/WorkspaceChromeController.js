@@ -10,6 +10,7 @@
 import { Bridge } from './Bridge.js';
 import { createProviderIconSvg } from './ProviderIcons.js';
 import { t, onLocaleChanged, applyLocaleChange } from './i18n.js';
+import { workspaceNoticeLabel } from './WorkspaceNoticeCopy.js';
 import {
     dshSourceLabel,
     dshSwitchCta,
@@ -77,6 +78,8 @@ export class WorkspaceChromeController {
         this.themeRevision = -1;
         this.catalog = { workspaces: [], providers: [], maxColumns: 3 };
         this.themeCatalog = { themes: [] };
+        // Active notice nodes keep their code; locale switches re-localize them.
+        this.disposeNoticeLocale = [];
         this.layout = null;
         this.rects = new Map();
         this.openMenu = null;
@@ -145,6 +148,7 @@ export class WorkspaceChromeController {
     }
 
     dispose() {
+        for (const dispose of this.disposeNoticeLocale.splice(0)) dispose();
         this.disposeLocaleChanged?.();
         document.removeEventListener('pointerdown', this.onDocumentPointerDown, true);
         document.removeEventListener('keydown', this.onDocumentKeyDown);
@@ -250,13 +254,29 @@ export class WorkspaceChromeController {
         if (this.openMenu === 'pane') this.renderOpenMenu();
     }
 
-    showNotice(message) {
-        if (typeof message !== 'string' || !message.trim()) return;
+    /** Shows a workspace notice from its fixed code + args. The node keeps
+     *  the code so a language switch re-localizes it during the 5s window. */
+    showNotice(entry) {
+        const code = entry && typeof entry.code === 'string' ? entry.code : '';
+        if (!code) return;
         const region = document.getElementById('workspace-notices');
         if (!region) return;
         const notice = document.createElement('div');
         notice.className = 'workspace-notice';
-        notice.textContent = message.trim();
+        notice.dataset.noticeCode = code;
+        if (entry.args && typeof entry.args === 'object') {
+            notice.dataset.noticeArgs = JSON.stringify(entry.args);
+        }
+        const paint = () => {
+            notice.textContent = workspaceNoticeLabel(code, notice.dataset.noticeArgs
+                ? JSON.parse(notice.dataset.noticeArgs)
+                : undefined).trim();
+        };
+        paint();
+        this.disposeNoticeLocale.push(onLocaleChanged(() => {
+            if (!notice.isConnected) return;
+            paint();
+        }));
         region.appendChild(notice);
         window.setTimeout(() => notice.remove(), 5000);
     }
@@ -285,7 +305,7 @@ export class WorkspaceChromeController {
                 strip.className = 'workspace-tab-strip';
                 strip.dataset.columnId = column.columnId;
                 strip.setAttribute('role', 'group');
-                strip.setAttribute('aria-label', 'Workspaces in column');
+                strip.setAttribute('aria-label', t('workspace.columnAria'));
                 // Wheel over an overflowed strip scrolls horizontally; a strip
                 // that fits its column leaves the wheel untouched.
                 strip.addEventListener('wheel', (event) => {
@@ -550,7 +570,7 @@ export class WorkspaceChromeController {
         menu.appendChild(segments);
         const terminalBlocked = this.createPlacement === 'new_right' && capacity !== null && !capacity.fitsTerminal;
         menu.appendChild(this.menuRow(
-            'Terminal',
+            t('create.terminal'),
             '',
             () => this.createWorkspace('terminal'),
             terminalBlocked,
@@ -559,10 +579,10 @@ export class WorkspaceChromeController {
         // Kimi Code Web and DeepSeek Harness are shell-owned web-app
         // workspaces, not ACP providers: list them under WEB APP above the
         // AGENT group. C# deduplicates on create; fitsKimiWeb / fitsDsh gate only their rows.
-        menu.appendChild(this.subheading('WEB APP'));
+        menu.appendChild(this.subheading(t('create.webApps')));
         const kimiWebBlocked = this.createPlacement === 'new_right' && capacity !== null && !capacity.fitsKimiWeb;
         menu.appendChild(this.menuRow(
-            'Kimi Code Web',
+            t('create.kimiWeb'),
             '',
             () => this.createWorkspace('kimi_web'),
             kimiWebBlocked,
@@ -570,13 +590,13 @@ export class WorkspaceChromeController {
         ));
         const dshBlocked = this.createPlacement === 'new_right' && capacity !== null && !capacity.fitsDsh;
         menu.appendChild(this.menuRow(
-            'DeepSeek Harness',
+            t('create.dsh'),
             '',
             () => this.createWorkspace('dsh_web'),
             dshBlocked,
             dshBlocked ? t('common.widthInsufficient') : ''
         ));
-        menu.appendChild(this.subheading('AGENT (ACP)'));
+        menu.appendChild(this.subheading(t('create.agents')));
         for (const provider of this.catalog.providers) {
             menu.appendChild(this.menuRow(provider.displayName, '', () => this.createWorkspace('agent', provider.key)));
         }
@@ -592,8 +612,15 @@ export class WorkspaceChromeController {
         const top = document.createElement('div');
         top.className = 'workspace-popover-heading-row';
         top.append(this.heading(t('menu.theme')));
+        // The backend sends a label state + theme name (data); the sentence
+        // resolves here so language switches re-localize the header.
+        const currentLabel = this.themeCatalog.currentLabelState === 'named'
+            ? t('theme.currentNamed', { name: this.themeCatalog.currentName || '' })
+            : this.themeCatalog.currentLabelState === 'missing'
+                ? t('theme.sourceMissing')
+                : t('theme.currentCustom');
         const current = document.createElement('span');
-        current.textContent = this.themeCatalog.currentLabel || '';
+        current.textContent = currentLabel;
         top.append(current);
         menu.appendChild(top);
         const themes = Array.isArray(this.themeCatalog.themes) ? this.themeCatalog.themes : [];
@@ -626,11 +653,15 @@ export class WorkspaceChromeController {
                 menu.appendChild(row);
             }
         }
-        if (this.themeCatalog.message) {
+        if (this.themeCatalog.messageCode) {
+            // Fixed theme message code; raw technical detail trails as data.
             const message = document.createElement('p');
             message.className = 'workspace-popover-message';
             message.dataset.error = this.themeCatalog.isMessageError ? 'true' : 'false';
-            message.textContent = this.themeCatalog.message;
+            const sentence = t(`theme.message.${this.themeCatalog.messageCode}`, { defaultValue: '' });
+            message.textContent = this.themeCatalog.messageDetail && sentence
+                ? `${sentence} ${this.themeCatalog.messageDetail}`
+                : (sentence || this.themeCatalog.messageDetail || '');
             menu.appendChild(message);
         }
         const footer = document.createElement('div');

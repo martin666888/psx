@@ -82,9 +82,10 @@ export function planStatusMarker(status: unknown): string {
   return '\u25cb';
 }
 
+/** Fixed locale keys under plan.status.*; resolved at render. */
 export function planStatusLabel(status: unknown): string {
   const value = String(status ?? '').toLowerCase();
-  if (value === 'completed') return 'Completed';
-  if (IN_PROGRESS_STATES.includes(value)) return 'Current';
-  return 'Pending';
+  if (value === 'completed') return 'plan.status.completed';
+  if (IN_PROGRESS_STATES.includes(value)) return 'plan.status.current';
+  return 'plan.status.pending';
 }

@@ -310,7 +310,7 @@ test('broker: times out, retries once, then enters the error state', async () =>
   await sleep(50);
   const failed = rig.store.getState();
   assert.equal(failed.status, 'error');
-  assert.match(failed.errorText, /timed out/);
+  assert.equal(failed.errorKey, 'history.timeout');
   assert.equal(failed.dirty, false);
 
   // Manual retry is still possible from the error state.

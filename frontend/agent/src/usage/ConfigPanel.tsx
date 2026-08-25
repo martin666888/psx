@@ -26,6 +26,16 @@ export interface ConfigPanelProps {
 
 
 /** Local HH:MM for the cached-report timestamp; '' when unparsable. */
+
+/** Backend config errors are fixed codes ('config.note.*' notes or empty);
+ *  resolve them to settings-locale keys at render. */
+function configErrorKey(code: string): string {
+  if (!code) return 'config.loadFailed';
+  if (code.startsWith('config.note.')) {
+    return `config.notes.${code.slice('config.note.'.length)}`;
+  }
+  return code;
+}
 function formatUpdatedAt(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '';
@@ -225,7 +235,7 @@ export function ConfigPanel(props: ConfigPanelProps): JSX.Element {
 
       {state.configStatus === 'error' ? (
         <div className="agent-usage-error" data-role="config-error" role="alert">
-          <span>{state.configErrorText}</span>
+          <span>{t(configErrorKey(state.configErrorKey))}</span>
           <Button variant="outline" size="sm" data-role="config-retry" onClick={props.onRetry}>
             {t('common.retry')}
           </Button>

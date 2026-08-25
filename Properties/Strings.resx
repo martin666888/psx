@@ -107,4 +107,22 @@ WebView2 is required to render the PSX interface.</value>
   <data name="ZipArchiveFilter" xml:space="preserve">
     <value>ZIP archive (*.zip)|*.zip</value>
   </data>
+  <data name="DismissWarningToolTip" xml:space="preserve">
+    <value>Dismiss warning</value>
+  </data>
+  <data name="ThemeStatusInvalid" xml:space="preserve">
+    <value>Invalid</value>
+  </data>
+  <data name="ThemeStatusUpdated" xml:space="preserve">
+    <value>Updated</value>
+  </data>
+  <data name="ThemeStatusCurrent" xml:space="preserve">
+    <value>Current</value>
+  </data>
+  <data name="DshWorkspaceLabel" xml:space="preserve">
+    <value>DeepSeek Harness workspace</value>
+  </data>
+  <data name="KimiWorkspaceLabel" xml:space="preserve">
+    <value>Kimi Code Web workspace</value>
+  </data>
 </root>

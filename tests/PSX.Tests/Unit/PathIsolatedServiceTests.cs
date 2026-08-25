@@ -77,7 +77,7 @@ public sealed class SettingsServiceTests
 
         Assert.AreEqual(16, loaded.FontSize);
         Assert.AreEqual("Backup Mono", loaded.AgentMonoFontFamily);
-        Assert.IsNotNull(recoveredService.StartupWarning);
+        Assert.IsNotNull(recoveredService.StartupWarningCode);
     }
 
     [TestMethod]

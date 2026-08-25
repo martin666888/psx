@@ -250,7 +250,7 @@ test('keeps transcript-only workspaces read-only even when their runtime is read
   const send = role(panel, 'send');
   assert.equal(input.disabled, true);
   assert.equal(send.disabled, true);
-  assert.equal(role(panel, 'send').getAttribute('aria-label'), 'Read only');
+  assert.equal(role(panel, 'send').getAttribute('aria-label'), '只读');
 });
 
 test('renders each provider identity independently and stays brand-neutral for unknown providers', async () => {
@@ -277,7 +277,7 @@ test('renders each provider identity independently and stays brand-neutral for u
   assert.match(second, /Beta/);
   assert.doesNotMatch(second, /Alpha/);
   // Unknown provider falls back to the neutral 'Agent', not a hardcoded brand.
-  assert.match(third, /Message Agent Agent/);
+  assert.match(third, /给 Agent 发消息/);
   for (const text of [first, second, third]) assert.doesNotMatch(text, /Claude/);
 });
 

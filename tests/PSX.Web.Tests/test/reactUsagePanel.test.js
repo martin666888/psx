@@ -128,7 +128,7 @@ test('panel: a failed profile save stays on the homepage as an alert', async () 
   );
   const alert = document.querySelector('[data-role="usage-profile-error"]');
   assert.equal(alert.getAttribute('role'), 'alert');
-  assert.equal(alert.textContent, 'Unable to write profile.');
+  assert.equal(alert.textContent, '无法保存个人资料，请重试。');
   assert.equal(document.querySelector('[data-role="usage-profile-name"]').textContent, 'neo wang');
 });
 

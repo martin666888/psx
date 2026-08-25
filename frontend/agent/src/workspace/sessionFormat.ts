@@ -1,7 +1,9 @@
-// sessionFormat.ts — pure session/context formatting shared by the legacy
-// Pure session/context formatting used by the React session island.
+// sessionFormat.ts — pure session/context formatting used by the React session
+// island. PSX-authored wording stays as fixed locale keys + interpolation
+// params; the React view resolves them at render so language switches apply.
 
-/** Mirrors legacy _formatStatus. */
+/** Mirrors legacy _formatStatus: a status-token prettifier for the wire enum.
+ *  The result is a capitalized token ('auth required'), never a sentence. */
 export function formatStatus(status: string): string {
   return String(status || 'ready')
     .split('_')
@@ -25,16 +27,25 @@ export function formatCost(amount: number, currency: string): string {
   return amount.toFixed(2).replace(/\.00$/, '') + ' ' + currency;
 }
 
-/** Everything the Context ring renders, derived from the session slice. */
+/** Everything the Context ring renders, derived from the session slice.
+ *  `summaryKey`/`detailKey`/`costKey` are agent-locale keys; params carry
+ *  preformatted numbers (locale-neutral data). The React view resolves them
+ *  with useTranslation at render. */
 export interface ContextUsageView {
   state: 'unknown' | 'accent' | 'warning' | 'error';
   percent: number;
-  summary: string;
-  detail: string;
-  ariaLabel: string;
+  summaryKey: string;
+  summaryParams: Record<string, unknown>;
+  detailKey: string;
+  detailParams: Record<string, unknown>;
   /** '' hides the cost row. */
-  cost: string;
+  costKey: string;
+  costParams: Record<string, unknown>;
 }
+
+const NO_USAGE_SUMMARY = 'session.context.noUsageSummary';
+const NO_USAGE_DETAIL = 'session.context.noUsageDetail';
+const NO_LIMIT_DETAIL = 'session.context.noLimitDetail';
 
 export function computeContextUsageView(
   used: number | null,
@@ -46,25 +57,38 @@ export function computeContextUsageView(
   const percent = hasLimit ? Math.min(100, Math.max(0, (used / size) * 100)) : 0;
   const state = !hasLimit ? 'unknown' : percent >= 90 ? 'error' : percent >= 75 ? 'warning' : 'accent';
 
-  let summary = 'Agent has not reported context usage';
-  let detail = 'Context usage will appear when the Agent reports it.';
+  let summaryKey = NO_USAGE_SUMMARY;
+  let summaryParams: Record<string, unknown> = {};
+  let detailKey = NO_USAGE_DETAIL;
+  let detailParams: Record<string, unknown> = {};
   if (hasLimit) {
-    summary = formatPercent(percent) + ' · ' + formatTokens(used) + ' / ' + formatTokens(size);
-    detail = formatTokens(Math.max(0, size - used)) + ' remaining';
+    summaryKey = 'session.context.limitedSummary';
+    summaryParams = {
+      percent: formatPercent(percent),
+      used: formatTokens(used as number),
+      size: formatTokens(size as number)
+    };
+    detailKey = 'session.context.remainingDetail';
+    detailParams = { remaining: formatTokens(Math.max(0, (size as number) - (used as number))) };
   } else if (used !== null) {
-    summary = formatTokens(used) + ' used';
-    detail = 'Agent did not report a context limit.';
+    summaryKey = 'session.context.usedSummary';
+    summaryParams = { used: formatTokens(used) };
+    detailKey = NO_LIMIT_DETAIL;
   } else if (size === null) {
-    detail = 'Agent did not report a context limit.';
+    detailKey = NO_LIMIT_DETAIL;
   }
 
   const hasCost = costAmount !== null && !!costCurrency;
   return {
     state,
     percent,
-    summary,
-    detail,
-    ariaLabel: 'Context: ' + summary + '. ' + detail,
-    cost: hasCost ? 'Cost · ' + formatCost(costAmount as number, costCurrency) : ''
+    summaryKey,
+    summaryParams,
+    detailKey,
+    detailParams,
+    costKey: hasCost ? 'session.context.costLine' : '',
+    costParams: hasCost
+      ? { amount: formatCost(costAmount as number, costCurrency) }
+      : {}
   };
 }

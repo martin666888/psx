@@ -73,7 +73,7 @@ test('fast removal aborts blob reconstruction before upload starts', async () =>
 
   attach(panel, file);
   await waitFor(() => releaseFetch);
-  const remove = await waitFor(() => panel.querySelector('[aria-label="Remove attachment"]'));
+  const remove = await waitFor(() => panel.querySelector('[aria-label="移除附件"]'));
   await flushReact(async () => remove.click());
   releaseFetch();
   await new Promise((resolve) => setTimeout(resolve, 20));

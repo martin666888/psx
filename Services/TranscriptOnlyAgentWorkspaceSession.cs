@@ -54,7 +54,8 @@ internal sealed class TranscriptOnlyAgentWorkspaceSession : IAgentWorkspaceSessi
             {
                 type = "agent_history_error",
                 requestId = string.IsNullOrWhiteSpace(requestId) ? null : requestId,
-                text = $"Unable to load Agent thread history. {ex.Message}"
+                code = SessionMessageCode.HistoryLoadFailed,
+                detail = ex.Message
             }).ConfigureAwait(false);
         }
     }
@@ -115,7 +116,9 @@ internal sealed class TranscriptOnlyAgentWorkspaceSession : IAgentWorkspaceSessi
         await _bridge.SendEventAsync(new
         {
             type = "resume_failed",
-            message = $"This thread belongs to an unsupported Agent provider ({_thread.Provider}). Showing local transcript only."
+            message = "",
+            code = SessionMessageCode.ResumeUnsupportedProvider,
+            args = new { provider = _thread.Provider }
         }).ConfigureAwait(false);
         await PublishStateAsync().ConfigureAwait(false);
     }
@@ -129,7 +132,9 @@ internal sealed class TranscriptOnlyAgentWorkspaceSession : IAgentWorkspaceSessi
         {
             type = "agent_attachment_failed",
             clientId = args.ClientId,
-            text = "This saved transcript is read-only. Create a new Agent tab to continue."
+            text = "",
+            code = SessionMessageCode.TranscriptReadOnlyRun,
+            args = (object?)null
         });
     }
 
@@ -156,7 +161,7 @@ internal sealed class TranscriptOnlyAgentWorkspaceSession : IAgentWorkspaceSessi
                 break;
             case "delete":
                 _threadStore.DeleteThread(_thread.ThreadId);
-                await _bridge.SendEventAsync(new { type = "command_result", text = "Deleted thread." }).ConfigureAwait(false);
+                await _bridge.SendEventAsync(new { type = "command_result", text = "", code = SessionMessageCode.ThreadDeleted }).ConfigureAwait(false);
                 await _bridge.SendEventAsync(new { type = "agent_workspace_close_requested" }).ConfigureAwait(false);
                 break;
             case "cwd":
@@ -165,7 +170,9 @@ internal sealed class TranscriptOnlyAgentWorkspaceSession : IAgentWorkspaceSessi
                     await _bridge.SendEventAsync(new
                     {
                         type = "command_result",
-                        text = $"Current working directory: {_thread.Cwd}"
+                        text = "",
+                        code = SessionMessageCode.CwdCurrent,
+                        args = new { path = _thread.Cwd }
                     }).ConfigureAwait(false);
                 }
                 else
@@ -174,13 +181,14 @@ internal sealed class TranscriptOnlyAgentWorkspaceSession : IAgentWorkspaceSessi
                 }
                 break;
             case "stop":
-                await _bridge.SendEventAsync(new { type = "command_result", text = "No Agent run is currently active." }).ConfigureAwait(false);
+                await _bridge.SendEventAsync(new { type = "command_result", text = "", code = SessionMessageCode.TranscriptStopInactive }).ConfigureAwait(false);
                 break;
             case "help":
                 await _bridge.SendEventAsync(new
                 {
                     type = "command_result",
-                    text = "This transcript is read-only. You can use /history, /cwd, or /delete. Create a new Agent tab to continue with a provider."
+                    text = "",
+                    code = SessionMessageCode.TranscriptReadOnlyHelp
                 }).ConfigureAwait(false);
                 break;
             default:
@@ -194,7 +202,11 @@ internal sealed class TranscriptOnlyAgentWorkspaceSession : IAgentWorkspaceSessi
         return _bridge.SendEventAsync(new
         {
             type = "run_failed",
-            text = "This saved transcript is read-only. Create a new Agent tab to continue."
+            text = "",
+            code = SessionMessageCode.TranscriptReadOnlyRun,
+            args = (object?)null,
+            runId = (string?)null,
+            visionContextHintCode = ""
         });
     }
 

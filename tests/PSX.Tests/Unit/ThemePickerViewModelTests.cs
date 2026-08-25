@@ -42,7 +42,7 @@ public sealed class ThemePickerViewModelTests
 
         Assert.AreEqual("#abcdef", fixture.Appearance.Applied[1].ThemeColors.Background);
         Assert.IsFalse(fixture.ViewModel.BuiltInThemes[0].IsPreview);
-        Assert.IsNull(fixture.ViewModel.Message);
+        Assert.IsNull(fixture.ViewModel.MessageCode);
     }
 
     [TestMethod]
@@ -81,7 +81,7 @@ public sealed class ThemePickerViewModelTests
         Assert.IsTrue(fixture.ViewModel.IsOpen);
         Assert.HasCount(2, fixture.Appearance.Applied);
         Assert.AreEqual("#222222", fixture.Appearance.Applied[1].ThemeColors.Background);
-        StringAssert.Contains(fixture.ViewModel.Message, "changed");
+        Assert.AreEqual(ThemePickerViewModel.ThemeMessageCode.FileChanged, fixture.ViewModel.MessageCode);
     }
 
     [TestMethod]
@@ -121,6 +121,7 @@ public sealed class ThemePickerViewModelTests
         Assert.IsTrue(fixture.ViewModel.IsOpen);
         Assert.IsTrue(item.IsPreview);
         Assert.IsTrue(fixture.ViewModel.IsMessageError);
+        Assert.AreEqual(ThemePickerViewModel.ThemeMessageCode.ApplyFailed, fixture.ViewModel.MessageCode);
         StringAssert.Contains(fixture.ViewModel.Message, "disk full");
     }
 
@@ -136,6 +137,7 @@ public sealed class ThemePickerViewModelTests
 
         Assert.HasCount(1, fixture.ViewModel.BuiltInThemes);
         Assert.IsTrue(fixture.ViewModel.IsMessageError);
+        Assert.AreEqual(ThemePickerViewModel.ThemeMessageCode.ScanFailed, fixture.ViewModel.MessageCode);
         StringAssert.Contains(fixture.ViewModel.Message, "themes unavailable");
     }
 
@@ -198,7 +200,8 @@ public sealed class ThemePickerViewModelTests
     {
         public AppSettings Current { get; } = new();
         public string ConfigPath => "test-psx.ini";
-        public string? StartupWarning => null;
+        public string? StartupWarningCode => null;
+        public string? StartupWarningDetail => null;
         public int SaveCount { get; private set; }
         public string? SavedThemeKey { get; private set; }
         public string? SavedFingerprint { get; private set; }

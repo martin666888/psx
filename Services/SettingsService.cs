@@ -12,7 +12,12 @@ public interface ISettingsService
     void SaveSettings(AppSettings settings);
     void SaveThemeSettings(AppSettings settings, string activeThemeKey, string themeFingerprint);
     string ConfigPath { get; }
-    string? StartupWarning { get; }
+    /// <summary>Fixed startup-warning code ('with_backup' | 'safe_defaults' |
+    /// 'backup_also_invalid'); the sentence is formatted from .resx at render
+    /// time so a locale switch re-localizes it.</summary>
+    string? StartupWarningCode { get; }
+    /// <summary>Raw technical detail (exception message) interpolated as {0}.</summary>
+    string? StartupWarningDetail { get; }
     List<ShellProfile> GetProfiles();
     ShellProfile GetDefaultProfile();
 }
@@ -23,7 +28,8 @@ public sealed class SettingsService : ISettingsService
     private AppSettings? _settings;
     private List<ShellProfile>? _profiles;
     public string ConfigPath => _configPath;
-    public string? StartupWarning { get; private set; }
+    public string? StartupWarningCode { get; private set; }
+    public string? StartupWarningDetail { get; private set; }
 
     public SettingsService()
         : this(Path.Combine(AppContext.BaseDirectory, "psx.ini"))
@@ -57,23 +63,14 @@ public sealed class SettingsService : ISettingsService
             try
             {
                 _settings = File.Exists(backupPath) ? LoadSettingsFile(backupPath) : new AppSettings();
-                StartupWarning = File.Exists(backupPath)
-                    ? string.Format(
-                        System.Globalization.CultureInfo.CurrentUICulture,
-                        PSX.Properties.Strings.StartupWarningWithBackup,
-                        activeError.Message)
-                    : string.Format(
-                        System.Globalization.CultureInfo.CurrentUICulture,
-                        PSX.Properties.Strings.StartupWarningSafeDefaults,
-                        activeError.Message);
+                StartupWarningCode = File.Exists(backupPath) ? "with_backup" : "safe_defaults";
+                StartupWarningDetail = activeError.Message;
             }
             catch (Exception backupError)
             {
                 _settings = new AppSettings();
-                StartupWarning = string.Format(
-                System.Globalization.CultureInfo.CurrentUICulture,
-                PSX.Properties.Strings.StartupWarningBackupAlsoInvalid,
-                backupError.Message);
+                StartupWarningCode = "backup_also_invalid";
+                StartupWarningDetail = backupError.Message;
             }
         }
 

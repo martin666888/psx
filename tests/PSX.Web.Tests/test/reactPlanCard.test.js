@@ -75,7 +75,7 @@ test('plan entries, document mode and empty state render in place', async () => 
     () => !!host.querySelector('.agent-plan-empty'),
     () => app.handle({ type: 'agent_thread_loaded', workspaceId: WS, clear: true, messages: [] })
   );
-  assert.match(host.querySelector('.agent-plan-empty').textContent, /No active plan/);
+  assert.match(host.querySelector('.agent-plan-empty').textContent, /暂无活动计划/);
 });
 
 test('updates preserve existing row nodes', async () => {
@@ -109,11 +109,11 @@ test('a hidden update raises unread without forcing the card open', async () => 
     () => !!role(panel, 'plan-card').querySelector('.agent-plan-list'),
     () => app.handle(event([{ content: 'Hidden update', status: 'pending' }]))
   );
-  await settle(app, () => /updated/.test(role(panel, 'plan-toggle')?.getAttribute('aria-label') || ''), () => {});
+  await settle(app, () => /已更新/.test(role(panel, 'plan-toggle')?.getAttribute('aria-label') || ''), () => {});
   assert.equal(role(panel, 'plan-card').hidden, true);
   await act(async () => role(panel, 'plan-toggle').click());
   assert.equal(role(panel, 'plan-card').hidden, false);
-  await settle(app, () => !/updated/.test(role(panel, 'plan-toggle')?.getAttribute('aria-label') || ''), () => {});
+  await settle(app, () => !/已更新/.test(role(panel, 'plan-toggle')?.getAttribute('aria-label') || ''), () => {});
 });
 
 test('closing the workspace unmounts plan content', async () => {

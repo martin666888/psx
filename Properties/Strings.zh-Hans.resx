@@ -107,4 +107,22 @@ WebView2 是 PSX 界面渲染所必需的组件。</value>
   <data name="ZipArchiveFilter" xml:space="preserve">
     <value>ZIP 归档 (*.zip)|*.zip</value>
   </data>
+  <data name="DismissWarningToolTip" xml:space="preserve">
+    <value>关闭警告</value>
+  </data>
+  <data name="ThemeStatusInvalid" xml:space="preserve">
+    <value>无效</value>
+  </data>
+  <data name="ThemeStatusUpdated" xml:space="preserve">
+    <value>已更新</value>
+  </data>
+  <data name="ThemeStatusCurrent" xml:space="preserve">
+    <value>当前</value>
+  </data>
+  <data name="DshWorkspaceLabel" xml:space="preserve">
+    <value>DeepSeek Harness 工作区</value>
+  </data>
+  <data name="KimiWorkspaceLabel" xml:space="preserve">
+    <value>Kimi Code Web 工作区</value>
+  </data>
 </root>

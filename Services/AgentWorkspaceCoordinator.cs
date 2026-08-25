@@ -531,7 +531,9 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
     {
         type = "agent_workspace_limit_reached",
         limit = MaxAgentWorkspaces,
-        text = $"You can open up to {MaxAgentWorkspaces} Agent tabs at the same time."
+        // Fixed code + arg; the sentence lives in the frontend locales.
+        code = "workspace.agent_limit_reached",
+        text = ""
     });
 
     private void OnSubmit(object? sender, AgentSubmitEventArgs args)
@@ -668,7 +670,9 @@ public sealed class AgentWorkspaceCoordinator : IAgentWorkspaceCoordinator
                 {
                     type = "agent_thread_open_error",
                     threadId,
-                    text = "PSX could not open the selected Agent thread. Try again or refresh History.",
+                    // Fixed code + raw technical detail; the sentence lives in
+                    // the frontend locales.
+                    code = "history.open_failed",
                     detail = ex.Message
                 }).ConfigureAwait(false);
             }

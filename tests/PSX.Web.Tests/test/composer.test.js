@@ -160,7 +160,7 @@ test('submits normal text and clears the draft only after validation succeeds', 
 test('turns submission into Stop while a run is busy', async () => {
   const { app, panel, posted } = await mount();
   app.handle({ type: 'agent_state', workspaceId: WS, status: 'running', busy: true, cwd: '/tmp' });
-  await waitFor(() => role(panel, 'send').getAttribute('aria-label') === 'Stop');
+  await waitFor(() => role(panel, 'send').getAttribute('aria-label') === '停止');
 
   setDraft(panel, 'must not send');
   const before = posted.length;

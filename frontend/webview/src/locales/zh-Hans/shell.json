@@ -6,7 +6,8 @@
     "completed": "已完成"
   },
   "workspace": {
-    "fallbackTitle": "工作区"
+    "fallbackTitle": "工作区",
+    "columnAria": "列内工作区"
   },
   "tab": {
     "closeTitle": "关闭 {{title}}"
@@ -20,7 +21,12 @@
   "create": {
     "placementFocused": "当前列",
     "placementNewRight": "右侧新列",
-    "columnCapTitle": "最多支持 3 列"
+    "columnCapTitle": "最多支持 3 列",
+    "terminal": "终端",
+    "webApps": "网页应用",
+    "kimiWeb": "Kimi Code Web",
+    "dsh": "DeepSeek Harness",
+    "agents": "Agent（ACP）"
   },
   "common": {
     "widthInsufficient": "窗口宽度不足以容纳新列",
@@ -34,7 +40,18 @@
     "updated": "已更新",
     "current": "当前",
     "confirm": "确认",
-    "openFolder": "打开主题文件夹"
+    "openFolder": "打开主题文件夹",
+    "currentNamed": "当前：{{name}}",
+    "currentCustom": "当前：自定义",
+    "sourceMissing": "主题来源缺失",
+    "message": {
+      "previewing": "正在预览——确认后保留此主题。",
+      "file_changed": "主题文件已变化，请查看新预览后再次确认。",
+      "apply_failed": "应用主题失败：{{detail}}",
+      "folder_open_failed": "打开主题文件夹失败：{{detail}}",
+      "scan_failed": "无法读取主题目录：{{detail}}",
+      "invalid_file": "主题文件无效，未能应用。"
+    }
   },
   "pane": {
     "layoutSection": "布局",

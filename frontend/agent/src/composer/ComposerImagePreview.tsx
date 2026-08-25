@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type JSX } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Dialog,
   DialogContent,
@@ -12,6 +13,7 @@ export interface ComposerPreviewProps {
 }
 
 export function ComposerImagePreview({ preview }: { preview: ComposerPreviewProps }): JSX.Element {
+  const { t } = useTranslation('agent');
   const [open, setOpen] = useState(false);
   const returnFocusRef = useRef<HTMLElement | null>(null);
 
@@ -38,11 +40,11 @@ export function ComposerImagePreview({ preview }: { preview: ComposerPreviewProp
           setTimeout(() => returnTarget?.focus(), 0);
         }}
       >
-        <DialogTitle className="sr-only">Image preview</DialogTitle>
+        <DialogTitle className="sr-only">{t('composer.previewTitle')}</DialogTitle>
         <img
           data-role="image-preview-img"
           src={preview.src || undefined}
-          alt="Image preview"
+          alt={t('composer.previewTitle')}
           className="max-h-[88vh] w-full rounded-[var(--agent-radius-card)] object-contain shadow-[var(--agent-shadow-dialog)]"
         />
       </DialogContent>

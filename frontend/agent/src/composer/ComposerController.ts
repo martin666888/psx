@@ -19,7 +19,7 @@
 // seam so the thread keeps a single writer.
 
 import type { AgentBridgePort } from '../contracts/bridge-port.js';
-import { t as i18nT } from '../../../webview/src/i18n.js';
+import { t as i18nT, onLocaleChanged } from '../../../webview/src/i18n.js';
 import { BridgeProtocolLimits } from '../contracts/bridgeProtocolLimits.generated.js';
 import type { FeatureController } from '../contracts/feature-controller.js';
 import type { AgentWorkspaceEvent, RawHostMessage } from '../contracts/host-events.js';
@@ -51,6 +51,8 @@ export interface ComposerHost {
   bridgeFor(workspaceId: string): AgentBridgePort | null;
   /** Render a composer-initiated system message via the timeline engine. */
   appendSystemMessage(workspaceId: string, text: string): void;
+  /** Render a PSX-authored system row stored as a fixed locale key. */
+  appendSystemCodeRow(workspaceId: string, key: string, params?: Record<string, unknown>): void;
   /** Open the global History dock and refresh it through the broker. */
   openHistory(sourceWorkspaceId: string): void;
 }
@@ -59,7 +61,12 @@ export interface ComposerHost {
 interface MenuCommand {
   source: string;
   name: string;
+  /** Provider-provided display label (raw data). */
   label: string;
+  /** Fixed locale key for PSX-authored rows; wins over `label`. */
+  labelKey?: string;
+  /** Interpolation params for `labelKey` (assistantName). */
+  labelParams?: Record<string, unknown>;
   command?: string;
   fill?: string;
   agent?: boolean;
@@ -125,6 +132,8 @@ export class ComposerController implements FeatureController {
   private draftText = '';
   private draftToken = 0;
   private focusToken = 0;
+  /** Language switches re-render every controller-owned transient label. */
+  private disposeLocaleChanged: (() => void) | null = null;
 
   // The island loader retains the latest projection while its dynamic import
   // is pending. The host is the only composer DOM node cached here.
@@ -138,6 +147,10 @@ export class ComposerController implements FeatureController {
     this.workspaceId = workspaceId;
     this.host = host;
     this.state = createInitialWorkspaceState(workspaceId);
+    this.disposeLocaleChanged = onLocaleChanged(() => {
+      this.rebuildPsxCommands();
+      this.renderComposerIsland();
+    });
   }
 
   mount(): void {
@@ -219,6 +232,8 @@ export class ComposerController implements FeatureController {
   }
 
   dispose(): void {
+    this.disposeLocaleChanged?.();
+    this.disposeLocaleChanged = null;
     for (const reader of this.attachmentReaders.values()) reader.abort();
     this.attachmentReaders.clear();
     this.pendingAttachments = [];
@@ -278,25 +293,32 @@ export class ComposerController implements FeatureController {
   }
 
   private allCommands(): MenuCommand[] {
+    const agentName = this.agentName;
+    const assistantName = this.assistantName;
     const agentCommands: MenuCommand[] = this.state.composer.agentCommands.map((command) => ({
       source: command.source,
       name: command.name,
+      // Provider-provided labels are data; a missing one localizes at render.
       label: command.label,
+      labelKey: command.label ? undefined : 'composer.cmd.sendTo',
+      labelParams: command.label ? undefined : { assistantName, agentName },
       agent: true
     }));
     return this.psxCommands.concat(agentCommands);
   }
 
   private rebuildPsxCommands(): void {
-    const assistant = this.assistantName;
+    // PSX-authored labels are locale keys resolved at render; provider
+    // command labels from available_commands_update stay raw data.
+    const assistantName = this.assistantName;
     this.psxCommands = [
-      { source: 'PSX', name: '/cwd', label: 'Show current working directory', command: 'cwd' },
-      { source: 'PSX', name: '/cwd <path>', label: 'Change this draft Agent working directory', fill: '/cwd ' },
-      { source: 'PSX', name: '/terminal', label: 'Open raw ' + assistant + ' terminal here', command: 'terminal' },
-      { source: 'PSX', name: '/stop', label: 'Stop the current ' + assistant + ' run', command: 'stop' },
-      { source: 'PSX', name: '/history', label: 'Show saved Agent threads', command: 'history' },
-      { source: 'PSX', name: '/delete', label: 'Delete the current thread', command: 'delete' },
-      { source: 'PSX', name: '/help', label: 'Show PSX Agent commands', command: 'help' }
+      { source: 'PSX', name: '/cwd', label: '', labelKey: 'composer.cmd.cwd', command: 'cwd' },
+      { source: 'PSX', name: '/cwd <path>', label: '', labelKey: 'composer.cmd.cwdPath', fill: '/cwd ' },
+      { source: 'PSX', name: '/terminal', label: '', labelKey: 'composer.cmd.terminal', labelParams: { assistantName }, command: 'terminal' },
+      { source: 'PSX', name: '/stop', label: '', labelKey: 'composer.cmd.stop', labelParams: { assistantName }, command: 'stop' },
+      { source: 'PSX', name: '/history', label: '', labelKey: 'composer.cmd.history', command: 'history' },
+      { source: 'PSX', name: '/delete', label: '', labelKey: 'composer.cmd.delete', command: 'delete' },
+      { source: 'PSX', name: '/help', label: '', labelKey: 'composer.cmd.help', command: 'help' }
     ];
   }
 
@@ -330,17 +352,14 @@ export class ComposerController implements FeatureController {
       throw new Error('busy');
     }
     if (text.length > BridgeProtocolLimits.agentPromptTextCharacters) {
-      this.host.appendSystemMessage(this.workspaceId, 'Messages must be 1MB or smaller.');
+      this.host.appendSystemCodeRow(this.workspaceId, 'composer.error.messageTooLarge');
       throw new Error('message_too_large');
     }
 
     const attachmentIds = this.pendingAttachmentIds();
     if (!text && attachmentIds.length === 0) throw new Error('empty');
     if (submittedFileCount !== this.attachmentSnapshot.length) {
-      this.host.appendSystemMessage(
-        this.workspaceId,
-        'Attachments changed while sending. Review them, then send again.'
-      );
+      this.host.appendSystemCodeRow(this.workspaceId, 'composer.error.attachmentsChanged');
       throw new Error('attachment_snapshot_mismatch');
     }
 
@@ -351,10 +370,7 @@ export class ComposerController implements FeatureController {
     }
     text = commandValidation.text ?? text;
     if (!this.attachmentsReady()) {
-      this.host.appendSystemMessage(
-        this.workspaceId,
-        'Images are still uploading. Wait for upload to finish, then send again.'
-      );
+      this.host.appendSystemCodeRow(this.workspaceId, 'composer.error.attachmentsUploading');
       throw new Error('attachments_uploading');
     }
     this.clearCommandHint();
@@ -554,7 +570,9 @@ export class ComposerController implements FeatureController {
       id: this.commandOptionId(index),
       source: command.source,
       name: command.name,
-      label: command.label
+      label: command.label,
+      labelKey: command.labelKey,
+      labelParams: command.labelParams
     }));
     return {
       id: this.commandMenuId(),
@@ -582,8 +600,8 @@ export class ComposerController implements FeatureController {
       mode: {
         id: 'mode',
         role: 'mode',
-        label: 'mode',
-        title: this.assistantName + ' Agent mode',
+        label: i18nT('composer.mode.label', { ns: 'agent' }),
+        title: i18nT('composer.mode.title', { ns: 'agent', assistantName: this.assistantName }),
         value: this.currentModeId,
         items: this.modes.map((mode) => ({
           value: mode.id,
@@ -700,20 +718,27 @@ export class ComposerController implements FeatureController {
     };
     reader.onerror = () => {
       this.attachmentReaders.delete(item.clientId);
-      this.markAttachmentReadError(item.clientId, 'Failed to read image file.');
+      this.markAttachmentReadError(item.clientId);
     };
     reader.readAsDataURL(file);
   }
 
-  private handleAttachmentConstraintError(message: string): void {
-    const normalized = message === 'All files exceed the maximum size.'
-      ? 'Images must be 20MB or smaller.'
-      : message === 'Too many files. Some were not added.'
-      ? 'You can attach at most 5 images at once.'
-      : message === 'No files match the accepted types.'
-      ? 'Only image attachments are supported.'
-      : message;
-    this.host.appendSystemMessage(this.workspaceId, normalized);
+  /** PromptInput constraint codes → composer locale keys. */
+  private static readonly CONSTRAINT_ERROR_KEYS: Readonly<Record<string, string>> = {
+    max_file_size: 'composer.error.imagesTooLarge',
+    max_files: 'composer.error.tooManyImages',
+    accept: 'composer.error.onlyImages',
+    total_too_large: 'composer.error.totalTooLarge'
+  };
+
+  private handleAttachmentConstraintError(code: string): void {
+    const key = ComposerController.CONSTRAINT_ERROR_KEYS[code];
+    if (key) {
+      this.host.appendSystemCodeRow(this.workspaceId, key);
+      return;
+    }
+    // Unknown payloads keep their raw text as technical detail.
+    if (code) this.host.appendSystemMessage(this.workspaceId, code);
   }
 
   private handleAttachmentUploaded(raw: RawHostMessage): void {
@@ -730,27 +755,37 @@ export class ComposerController implements FeatureController {
   /** Marks the failed tile and emits a system message through the timeline seam. */
   private handleAttachmentFailed(raw: RawHostMessage): void {
     const clientId = asString(raw.clientId);
-    const message = asString(raw.text) || 'Image upload failed.';
+    const code = asString(raw.code);
+    const technical = asString(raw.text);
     const item = this.pendingAttachments.find((entry) => entry.clientId === clientId);
     if (!item) {
-      this.host.appendSystemMessage(this.workspaceId, message);
+      this.emitAttachmentFailure(code, technical);
       return;
     }
     item.status = 'failed';
-    item.error = message;
-    this.host.appendSystemMessage(this.workspaceId, message);
+    item.error = code || technical;
+    this.emitAttachmentFailure(code, technical);
     this.renderPendingAttachments();
   }
 
-  private markAttachmentReadError(clientId: string, message: string): void {
+  /** Fixed backend attachment codes localize through timeline.system.*. */
+  private emitAttachmentFailure(code: string, technical: string): void {
+    if (code) {
+      this.host.appendSystemCodeRow(this.workspaceId, `timeline.system.${code}`);
+    } else if (technical) {
+      this.host.appendSystemMessage(this.workspaceId, technical);
+    }
+  }
+
+  private markAttachmentReadError(clientId: string): void {
     const item = this.pendingAttachments.find((entry) => entry.clientId === clientId);
     if (!item) {
-      this.host.appendSystemMessage(this.workspaceId, message);
+      this.host.appendSystemCodeRow(this.workspaceId, 'composer.error.imageReadFailed');
       return;
     }
     item.status = 'failed';
-    item.error = message;
-    this.host.appendSystemMessage(this.workspaceId, message);
+    item.error = 'image_read_failed';
+    this.host.appendSystemCodeRow(this.workspaceId, 'composer.error.imageReadFailed');
     this.renderPendingAttachments();
   }
 
@@ -780,8 +815,10 @@ export class ComposerController implements FeatureController {
       attachDisabled:
         !this.runtimeReady() || !this.supportsImage || this.isBusy || this.isRestoring || this.isTranscriptOnly,
       attachTitle: this.supportsImage
-        ? (this.runtimeReady() ? 'Attach images' : 'Install the Agent runtime before attaching images')
-        : 'Current ACP Agent does not support image input',
+        ? (this.runtimeReady()
+            ? i18nT('composer.attach.ready', { ns: 'agent' })
+            : i18nT('composer.attach.installRuntime', { ns: 'agent' }))
+        : i18nT('composer.attach.unsupportedAgent', { ns: 'agent' }),
       canPick: this.runtimeReady() && this.supportsImage && !this.isBusy && !this.isRestoring
     };
   }
@@ -823,25 +860,28 @@ export class ComposerController implements FeatureController {
         disabled: !this.runtimeReady() || this.isRestoring || this.isTranscriptOnly,
         busy: this.isBusy,
         placeholder: this.isTranscriptOnly
-          ? 'Read-only transcript - create a new Agent tab to continue'
+          ? i18nT('composer.placeholder.readOnly', { ns: 'agent' })
           : !this.runtimeReady()
-          ? 'Install the Agent runtime to start messaging'
-          : 'Message ' + this.assistantName + ' Agent - / for commands',
+          ? i18nT('composer.placeholder.installRuntime', { ns: 'agent' })
+          : i18nT('composer.placeholder.message', {
+              ns: 'agent',
+              assistantName: this.assistantName
+            }),
         submitDisabled: !this.runtimeReady() || this.isRestoring || this.isTranscriptOnly,
         submitLabel: this.isRestoring
-          ? 'Loading'
+          ? i18nT('composer.submit.loading', { ns: 'agent' })
           : this.isTranscriptOnly
-          ? 'Read only'
+          ? i18nT('composer.submit.readOnly', { ns: 'agent' })
           : this.isBusy
-          ? 'Stop'
-          : 'Send',
+          ? i18nT('composer.submit.stop', { ns: 'agent' })
+          : i18nT('composer.submit.send', { ns: 'agent' }),
         submitTitle: this.isRestoring
-          ? 'ACP history is loading'
+          ? i18nT('composer.submit.loadingTitle', { ns: 'agent' })
           : this.isTranscriptOnly
-          ? 'Create a new Agent tab to continue'
+          ? i18nT('composer.submit.newTabTitle', { ns: 'agent' })
           : this.isBusy
-          ? 'Stop ' + this.assistantName
-          : 'Send message',
+          ? i18nT('composer.submit.stopTitle', { ns: 'agent', assistantName: this.assistantName })
+          : i18nT('composer.submit.sendTitle', { ns: 'agent' }),
         onDraftChange: (text) => this.handleDraftChange(text),
         onSubmit: (message) => this.submit(message.text, message.files.length),
         onCancel: () => this.cancel()
@@ -879,22 +919,29 @@ export class ComposerController implements FeatureController {
   private createAttachmentTile(attachment: PendingAttachment): HTMLElement {
     const shell = document.createElement('div');
     shell.className = 'agent-attachment-shell';
+    // Tile copy resolves once at build time (filename usually dominates);
+    // the visible name is user data, only fallbacks localize.
+    const fallbackName = i18nT('composer.attachment.image', { ns: 'agent' });
+    const fallbackAlt = i18nT('composer.attachment.imageAttachment', { ns: 'agent' });
 
     const tile = document.createElement('button');
     tile.type = 'button';
     tile.className = 'agent-attachment-tile agent-attachment-' + (attachment.status || 'ready');
-    tile.title = attachment.fileName || 'Image attachment';
-    tile.setAttribute('aria-label', 'Preview ' + (attachment.fileName || 'image attachment'));
+    tile.title = attachment.fileName || fallbackName;
+    tile.setAttribute('aria-label', i18nT('composer.attachment.previewAria', {
+      ns: 'agent',
+      fileName: attachment.fileName || fallbackAlt
+    }));
 
     const image = document.createElement('img');
     // History-loaded attachments keep their original URL, but the backing file
     // may be long gone (cleaned .psx data, portable moves, provider transcript
     // replays). Swap in a neutral glyph and disable the preview instead of
     // showing the browser's broken-image icon.
-    image.alt = attachment.fileName || 'Image attachment';
+    image.alt = attachment.fileName || fallbackAlt;
     image.addEventListener('error', () => {
       tile.classList.add('agent-attachment-broken');
-      tile.title = (attachment.fileName || 'Image attachment') + ' (image unavailable)';
+      tile.title = (attachment.fileName || fallbackName) + ' (' + i18nT('composer.attachment.unavailable', { ns: 'agent' }) + ')';
       image.replaceWith(ComposerController.createAttachmentGlyph());
     });
     if (attachment.url) {
@@ -903,13 +950,13 @@ export class ComposerController implements FeatureController {
     }
     else {
       tile.classList.add('agent-attachment-broken');
-      tile.title = (attachment.fileName || 'Image attachment') + ' (image unavailable)';
+      tile.title = (attachment.fileName || fallbackName) + ' (' + i18nT('composer.attachment.unavailable', { ns: 'agent' }) + ')';
       tile.appendChild(ComposerController.createAttachmentGlyph());
     }
 
     const name = document.createElement('span');
     name.className = 'agent-attachment-name';
-    name.textContent = attachment.fileName || 'Image';
+    name.textContent = attachment.fileName || fallbackName;
     tile.appendChild(name);
 
     if (attachment.status === 'uploading') {

@@ -42,7 +42,7 @@ test('an import failure renders a non-retryable local diagnostic', async () => {
     await tick();
     assert.equal(node.dataset.islandState, 'failed');
     assert.equal(node.querySelector('[role="alert"]').dataset.failurePhase, 'import');
-    assert.match(node.textContent, /Restart PSX/);
+    assert.match(node.textContent, /重启 PSX/);
     assert.equal(node.querySelector('button'), null);
     loader.retry();
     await tick();

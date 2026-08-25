@@ -141,7 +141,8 @@ export function AttachmentBridge(props: AttachmentBridgeProps): JSX.Element | nu
         const mediaType = item.mediaType || blob.type;
         const filename = item.filename || sourceFile?.name || 'image';
         if (!ALLOWED_IMAGE_TYPES.has(mediaType)) {
-          callbacksRef.current.onError('Only PNG, JPEG, WebP, and GIF images are supported.');
+          // Fixed constraint code; the composer controller localizes it.
+          callbacksRef.current.onError('no_match');
           attachments.remove(item.id);
           return null;
         }
@@ -149,7 +150,7 @@ export function AttachmentBridge(props: AttachmentBridgeProps): JSX.Element | nu
         const currentTotal = Array.from(acceptedSizesRef.current.values())
           .reduce((sum, size) => sum + size, 0);
         if (currentTotal + blob.size > BridgeProtocolLimits.promptImageBytes) {
-          callbacksRef.current.onError('Images in one message must total 50MB or less.');
+          callbacksRef.current.onError('total_too_large');
           attachments.remove(item.id);
           return null;
         }

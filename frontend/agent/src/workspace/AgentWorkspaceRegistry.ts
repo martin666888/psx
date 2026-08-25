@@ -60,7 +60,7 @@ export class AgentWorkspaceRegistry {
   private planVisibilityListener: ((expanded: boolean) => void) | null = null;
   // Routes an active-workspace notice (agent_workspace_limit_reached) to that
   // workspace's timeline, keeping the thread's single-writer invariant.
-  private readonly noticeSinks = new Map<string, (text: string) => void>();
+  private readonly noticeSinks = new Map<string, (key: string, params?: Record<string, unknown>) => void>();
 
   constructor(host: WorkspaceHost, diagnostics?: DecoderDiagnostics) {
     this.host = host;
@@ -253,7 +253,11 @@ export class AgentWorkspaceRegistry {
           // A failed load_thread reports straight to the global dock: it must
           // not enter the source conversation, and it stays visible even when
           // the source workspace (or its in-flight channel) is already gone.
-          this.historyStore.applyThreadOpenError(event.threadId ?? '', event.text ?? '');
+          this.historyStore.applyThreadOpenError(
+            event.threadId ?? '',
+            event.raw && typeof event.raw.code === 'string' ? event.raw.code : '',
+            event.raw && typeof event.raw.detail === 'string' ? event.raw.detail : ''
+          );
         } else if (event.type === 'agent_profile') {
           // Profile events are global: requester replies and broadcasts both
           // fold into the single UsageStore (revision-guarded).
@@ -265,7 +269,10 @@ export class AgentWorkspaceRegistry {
         } else if (event.type === 'app_settings_snapshot') {
           this.usageBroker.handleAppSettings(event.raw);
         } else if (event.type === 'agent_workspace_limit_reached') {
-          this.showNotice(event.text ?? '');
+          this.showNotice(
+            event.raw && typeof event.raw.code === 'string' ? event.raw.code : '',
+            event.raw && typeof event.raw.limit === 'number' ? { limit: event.raw.limit } : undefined
+          );
         }
         return;
 
@@ -325,10 +332,12 @@ export class AgentWorkspaceRegistry {
     return map;
   }
 
-  private showNotice(text: string): void {
-    // Notices belong to the active Agent workspace's timeline. If the active
-    // workspace is a terminal (with no Agent controller), this is a no-op.
-    this.noticeSinks.get(this.host.activeWorkspace())?.(text || 'Unable to create Agent workspace.');
+  /** Notices belong to the active Agent workspace's timeline as fixed locale
+   *  keys (timeline.system.*) — never PSX-composed sentences. If the active
+   *  workspace is a terminal (with no Agent controller), this is a no-op. */
+  private showNotice(code: string, params?: Record<string, unknown>): void {
+    const key = code ? `timeline.system.${code}` : 'timeline.system.workspace.createFailed';
+    this.noticeSinks.get(this.host.activeWorkspace())?.(key, params);
   }
 
   private setResponsiveLayout(narrow: boolean, collapseHistoryForReading: boolean): void {
@@ -373,6 +382,7 @@ export class AgentWorkspaceRegistry {
       getPanel: (id) => this.host.getPanel(id),
       bridgeFor: (id) => this.host.bridgeFor(id),
       appendSystemMessage: (_id, text) => timeline.appendSystemMessage(text),
+      appendSystemCodeRow: (_id, key, params) => timeline.appendSystemCodeRow(key, params),
       openHistory: (id) => this.historyDock?.openHistory(id)
     };
     const composer = new ComposerController(workspaceId, composerHost);
@@ -399,7 +409,7 @@ export class AgentWorkspaceRegistry {
       timeline
     ]);
     this.controllers.set(workspaceId, controller);
-    this.noticeSinks.set(workspaceId, (text) => timeline.appendSystemMessage(text));
+    this.noticeSinks.set(workspaceId, (key, params) => timeline.appendSystemCodeRow(key, params));
     this.historyBroker.registerWorkspace(workspaceId);
     controller.mount();
     this.historyDock?.updateOpenState();

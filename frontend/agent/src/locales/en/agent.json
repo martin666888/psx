@@ -5,7 +5,82 @@
       "commandsLoading": "The Agent command list is still loading — please retry shortly.",
       "unsupported": "Unrecognized command: {{command}}\nPSX only supports the commands shown in the command menu. Type / to see the available commands; some {{agentName}} commands must run in a native terminal."
     },
-    "compactConfigAria": "Agent configuration"
+    "compactConfigAria": "Agent configuration",
+    "cmd": {
+      "cwd": "Show current working directory",
+      "cwdPath": "Change this draft Agent working directory",
+      "terminal": "Open raw {{assistantName}} terminal here",
+      "stop": "Stop the current {{assistantName}} run",
+      "history": "Show saved Agent threads",
+      "delete": "Delete the current thread",
+      "help": "Show PSX Agent commands",
+      "sendTo": "Send to {{assistantName}}"
+    },
+    "menu": {
+      "availableCommands": "Available commands"
+    },
+    "messageAria": "Message Agent",
+    "decisionAria": "Agent decision",
+    "placeholder": {
+      "readOnly": "Read-only transcript - create a new Agent tab to continue",
+      "installRuntime": "Install the Agent runtime to start messaging",
+      "message": "Message {{assistantName}} Agent - / for commands"
+    },
+    "submit": {
+      "loading": "Loading",
+      "readOnly": "Read only",
+      "stop": "Stop",
+      "send": "Send",
+      "loadingTitle": "ACP history is loading",
+      "newTabTitle": "Create a new Agent tab to continue",
+      "stopTitle": "Stop {{assistantName}}",
+      "sendTitle": "Send message"
+    },
+    "mode": {
+      "label": "mode",
+      "title": "{{assistantName}} Agent mode"
+    },
+    "attach": {
+      "ready": "Attach images",
+      "installRuntime": "Install the Agent runtime before attaching images",
+      "unsupportedAgent": "Current ACP Agent does not support image input"
+    },
+    "uploadAria": "Upload files",
+    "error": {
+      "messageTooLarge": "Messages must be 1MB or smaller.",
+      "attachmentsChanged": "Attachments changed while sending. Review them, then send again.",
+      "attachmentsUploading": "Images are still uploading. Wait for upload to finish, then send again.",
+      "imagesTooLarge": "Images must be 20MB or smaller.",
+      "tooManyImages": "You can attach at most 5 images at once.",
+      "onlyImages": "Only image attachments are supported.",
+      "totalTooLarge": "Images in one message must total 50MB or less.",
+      "imageReadFailed": "Failed to read image file."
+    },
+    "attachment": {
+      "image": "Image",
+      "file": "Attachment",
+      "imageAttachment": "Image attachment",
+      "previewAria": "Preview {{fileName}}",
+      "unavailable": "image unavailable",
+      "uploading": "uploading",
+      "failed": "upload failed",
+      "removeAria": "Remove attachment"
+    },
+    "transition": {
+      "chooseHow": "选择如何继续",
+      "stopTitle": "停止 {{assistantName}}",
+      "stopping": "正在停止",
+      "stop": "停止",
+      "status": {
+        "waitingSelection": "Agent 正在等待你的选择。",
+        "invalidResponseData": "Agent 返回的数据无效，请求无法继续。",
+        "stoppingRun": "正在停止当前 Agent 运行……",
+        "sendingOption": "正在发送 {{name}}……"
+      },
+      "error": {
+        "invalidRequestId": "ACP Agent 未返回有效的请求标识。"
+      }
+    }
   },
   "timeline": {
     "copy": "Copy",
@@ -20,9 +95,177 @@
       },
       "run_failed": {
         "vision_context": "Hint: images were sent earlier in this conversation. This error may occur because the current model or provider does not support image context, or the model is not multimodal — consider switching to a multimodal model."
+      },
+      "thread": {
+        "deleted": "Thread deleted.",
+        "cwd_changed": "Working directory changed to: {{path}}",
+        "cwd_current": "Current working directory: {{path}}",
+        "ready": "Ready. {{agentName}} will start on the first message. Working directory and session state are shown above."
+      },
+      "run": {
+        "stopped": "ACP run stopped.",
+        "inactive": "No ACP run is currently active.",
+        "install_first": "Install the Agent runtime before sending a message.",
+        "history_loading": "ACP history is still loading. Wait for restore to finish.",
+        "still_responding": "{{assistantName}} is still responding. Wait for the current run to finish or use /stop.",
+        "cwd_locked": "The working directory is locked after the first message. Create a new Agent tab to use another directory."
+      },
+      "cwd": {
+        "not_found": "Directory does not exist: {{path}}"
+      },
+      "help": {
+        "commands": "PSX commands: /cwd, /cwd <path>, /terminal, /stop, /history, /delete, /help. ACP commands are sent through {{assistantName}}."
+      },
+      "terminal": {
+        "no_entry": "{{displayName}} does not provide a native Terminal entry point.",
+        "fallback_opened": "Opened a raw {{displayName}} terminal tab in the current working directory."
+      },
+      "resume": {
+        "replay_note": "ACP session loaded, but no transcript was replayed. Keeping the local snapshot.",
+        "prepare_failed": "PSX could not prepare the Agent session. The saved local transcript is still available to read.",
+        "unsupported_provider": "This thread belongs to an unsupported Agent provider ({{provider}}). Showing local transcript only.",
+        "no_session_id": "This thread has no ACP session ID. The saved local transcript is still available to read.",
+        "runtime_missing": "Install the Agent runtime to continue this saved session. PSX will retry automatically when the runtime is ready.",
+        "replay_unavailable": "The Agent session loaded, but its transcript could not be replayed. The saved local transcript is still available to read.",
+        "restore_failed": "PSX could not restore the Agent session. The saved local transcript is still available to read.",
+        "runtime_lost": "The Agent runtime became unavailable while restoring this session. PSX will retry automatically when it is ready.",
+        "reconnect_failed": "PSX could not restore the Agent session after reconnecting. The saved local transcript is still available to read.",
+        "transcript_only_prompt": "This conversation is available as a local transcript only. Start a new thread or open terminal to continue."
+      },
+      "transcript": {
+        "read_only_run": "This saved transcript is read-only. Create a new Agent tab to continue.",
+        "read_only_help": "This transcript is read-only. You can use /history, /cwd, or /delete. Create a new Agent tab to continue with a provider.",
+        "stop_inactive": "No Agent run is currently active."
+      },
+      "attachment": {
+        "unsupported_agent": "The current ACP Agent does not support image input.",
+        "unsupported_type": "Only PNG, JPEG, WebP, and GIF images are supported.",
+        "too_large": "Each image must be 20MB or smaller.",
+        "invalid_data": "The uploaded image data is invalid.",
+        "size_mismatch": "The image size did not match the file metadata."
+      },
+      "prompt": {
+        "too_many_images": "You can attach at most {{limit}} images at once.",
+        "image_not_found": "One or more image attachments were not found. Remove them and try again.",
+        "images_too_large": "Images in a single message must total 50MB or less."
+      },
+      "decision": {
+        "cancelled_run_stopped": "Request cancelled because the current run stopped."
+      },
+      "elicitation": {
+        "cancelled_run_stopped": "Input request cancelled because the current run stopped."
+      },
+      "workspace": {
+        "agent_limit_reached": "You can open up to {{limit}} Agent tabs at the same time."
       }
     },
-    "visionContextHint": "Hint: images were sent earlier in this conversation. This error may occur because the current model or provider does not support image context, or the model is not multimodal — consider switching to a multimodal model."
+    "decision": {
+      "inactive": "This request is no longer active.",
+      "selectedOption": "Selected: {{name}}",
+      "selectionRecorded": "Selection recorded.",
+      "requestCancelled": "Request cancelled.",
+      "endedBeforeSelection": "The request ended before a selection was completed.",
+      "replacedByNewer": "A newer mode transition request replaced this one.",
+      "waitingSelection": "The Agent is waiting for your selection.",
+      "required": "Decision required",
+      "headerState": {
+        "pending": "Pending",
+        "selected": "Selected",
+        "cancelled": "Cancelled",
+        "interrupted": "Interrupted",
+        "sending": "Sending"
+      },
+      "permissionSubtitle": "{{agentName}} needs your approval before continuing.",
+      "questionSubtitle": "{{agentName}} is waiting for your answer.",
+      "permissionTitle": "Permission request",
+      "questionTitle": "{{agentName}} question",
+      "needsInputTitle": "{{agentName}} Agent needs input",
+      "provideInfo": "Provide the requested information to continue.",
+      "reviewDirection": "Review the proposed direction",
+      "modeTransitionTitle": "Mode transition",
+      "noOptions": "The Agent did not provide any response options.",
+      "noOptionsAcp": "The ACP Agent did not provide any response options.",
+      "rawInput": "Raw Input",
+      "choosePermission": "Choose a permission response",
+      "chooseAnswer": "Choose an answer",
+      "chooseHow": "Choose how to continue",
+      "chooseResponse": "Choose a response",
+      "proposalDetails": "Proposal details",
+      "documentDetails": "Document details",
+      "option": {
+        "allow": "Allow",
+        "reject": "Reject",
+        "yes": "Yes",
+        "no": "No",
+        "select": "Select"
+      },
+      "validation": {
+        "chooseOption": "Choose an option to continue.",
+        "chooseOne": "Choose at least one option to continue.",
+        "enterNumber": "Enter a number to continue.",
+        "wholeNumber": "Enter a whole number.",
+        "validNumber": "Enter a valid number.",
+        "enterResponse": "Enter a response to continue."
+      }
+    },
+    "recovery": {
+      "title": "Session could not be resumed",
+      "technicalDetails": "Technical details",
+      "openTerminal": "Open terminal"
+    },
+    "thinking": {
+      "running": "Thinking…",
+      "forSeconds": "Thinking for {{seconds}} seconds",
+      "thoughtFew": "Thought for a few seconds",
+      "thoughtFor": "Thought for {{seconds}} seconds"
+    },
+    "toolSection": {
+      "input": "Input",
+      "output": "Output"
+    },
+    "tool": {
+      "finished": "Finished.",
+      "untitled": "Tool"
+    },
+    "toolState": {
+      "running": "Running",
+      "done": "Done",
+      "error": "Failed",
+      "cancelled": "Cancelled",
+      "fallback": "Needs terminal"
+    },
+    "rawTerminal": {
+      "title": "Raw terminal fallback"
+    },
+    "runErrorTitle": "{{agentName}} error",
+    "unknownError": "Unknown error.",
+    "couldNotResume": "{{agentName}} could not resume this session.",
+    "imageAttachment": "[image attachment]",
+    "imageUnavailable": "Image unavailable",
+    "message": {
+      "you": "You"
+    },
+    "conversationLabel": "Agent conversation",
+    "empty": {
+      "title": "No messages yet",
+      "description": "Send a message to start the conversation."
+    },
+    "runGroup": {
+      "summary_one": "Tool activity · {{count}} call",
+      "summary_other": "Tool activity · {{count}} calls",
+      "live": "{{running}} running",
+      "failed": "Failed"
+    },
+    "elicitation": {
+      "responseTitle": "Response",
+      "waitingInput": "Waiting for input",
+      "continue": "Continue",
+      "decline": "Decline",
+      "cancel": "Cancel",
+      "responseSent": "Response sent.",
+      "declined": "Declined.",
+      "cancelled": "Cancelled."
+    }
   },
   "runtime": {
     "notInstalled": "Agent runtime is not installed.",
@@ -52,7 +295,9 @@
     "stagedWithPending": "Restart PSX to apply the update.",
     "stagedWithoutPending": "Update is ready; restart PSX to apply.",
     "checkTooltip": "Check for Agent runtime updates",
-    "moreAria": "More Agent actions"
+    "moreAria": "More Agent actions",
+    "planToggle": "Toggle Plan card",
+    "planToggleUnread": "Toggle Plan card, plan updated"
   },
   "sessionCard": {
     "titles": {
@@ -66,5 +311,69 @@
     "install": "Install runtime",
     "retryInstallation": "Retry installation",
     "cancel": "Cancel"
+  },
+  "common": {
+    "retry": "Retry",
+    "dismiss": "Dismiss",
+    "remove": "Remove",
+    "close": "Close"
+  },
+  "history": {
+    "fallbackTitle": "Agent Chat",
+    "badge": {
+      "current": "Current",
+      "open": "Open"
+    },
+    "activeDotAria": "Contains the active session",
+    "showAll": "Show all {{count}} threads",
+    "loading": "Loading history…",
+    "unavailable": "Agent history is unavailable.",
+    "loadFailed": "Unable to load Agent thread history.",
+    "timeout": "Loading Agent thread history timed out.",
+    "openFailed": "PSX could not open the selected Agent thread. Try again.",
+    "empty": "No saved Agent threads.",
+    "noMatches": "No threads match the current search or filter.",
+    "unknownWorkspace": "Unknown workspace",
+    "dockAria": "Agent history",
+    "searchPlaceholder": "Search threads",
+    "searchAria": "Search history",
+    "filterAria": "Filter by provider",
+    "allProviders": "All providers",
+    "refreshAria": "Refresh history",
+    "resizeAria": "Resize Agent history"
+  },
+  "plan": {
+    "title": "Plan",
+    "empty": "No active plan",
+    "noItems": "No plan items.",
+    "status": {
+      "completed": "Completed",
+      "current": "Current",
+      "pending": "Pending"
+    }
+  },
+  "session": {
+    "change": "Change",
+    "changeDraftTitle": "Change draft working directory",
+    "changeLockedTitle": "Create a new Agent tab to use another working directory",
+    "idLabel": "session: {{sessionId}}",
+    "context": {
+      "noUsageSummary": "Agent has not reported context usage",
+      "noUsageDetail": "Context usage will appear when the Agent reports it.",
+      "limitedSummary": "{{percent}} · {{used}} / {{size}}",
+      "remainingDetail": "{{remaining}} remaining",
+      "usedSummary": "{{used}} used",
+      "noLimitDetail": "Agent did not report a context limit.",
+      "aria": "Context: {{summary}}. {{detail}}",
+      "costLine": "Cost · {{amount}}"
+    }
+  },
+  "island": {
+    "failureTitle": "{{name}} could not be displayed",
+    "failureImport": "Restart PSX to reload this interface. If the problem continues, replace or reinstall the PSX package.",
+    "failureRender": "This part of the interface stopped unexpectedly."
+  },
+  "markdown": {
+    "diagramFailed": "Diagram could not be rendered."
   }
 }

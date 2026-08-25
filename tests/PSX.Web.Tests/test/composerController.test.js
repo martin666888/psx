@@ -137,7 +137,7 @@ test('ComposerController renders composer controls from modes and config options
   const controlled = composerSnapshot(panel);
 
   assert.equal(controlled.mode.value, 'Plan');
-  assert.equal(controlled.mode.ariaLabel, 'mode: Plan');
+  assert.equal(controlled.mode.ariaLabel, '模式: Plan');
   assert.match(controlled.configOptionsHtml, /Verbosity/);
   assert.equal(panel.querySelectorAll('[data-slot="select-trigger"]').length, 2);
   assert.equal(panel.querySelectorAll('.agent-config-switch').length, 2);
@@ -208,8 +208,8 @@ test('ComposerController flips Send into Stop while a run is busy', async () => 
   const panel = await drive([stateEvent(WS, true)]);
   const controlled = composerSnapshot(panel);
 
-  assert.equal(controlled.send.text, 'Stop');
-  assert.equal(controlled.send.ariaLabel, 'Stop');
+  assert.equal(controlled.send.text, '停止');
+  assert.equal(controlled.send.ariaLabel, '停止');
   assert.equal(controlled.send.stop, true);
 });
 
@@ -222,7 +222,7 @@ test('ComposerController keeps the Stop affordance live and the composer interac
   // stopping is a busy state: the button stays a live Stop and neither it nor
   // the input is disabled, so the user can press Stop again / keep typing while
   // the forced-reset watchdog runs.
-  assert.equal(controlled.send.text, 'Stop');
+  assert.equal(controlled.send.text, '停止');
   assert.equal(controlled.send.stop, true);
   assert.equal(controlled.send.disabled, false);
   assert.equal(controlled.input.disabled, false);

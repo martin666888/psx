@@ -37,11 +37,11 @@ interface RawAgentCommand {
 
 /** Normalizes the wire `agent_commands` list into displayable AgentCommand[]. */
 export function normalizeAgentCommands(commands: unknown, assistantName: string): AgentCommand[] {
-  const fallbackLabel = 'Send to ' + assistantName + ' Agent';
+  void assistantName;
   const list = Array.isArray(commands) ? commands : [];
   return list
     .map((command): RawAgentCommand => {
-      if (typeof command === 'string') return { name: command, description: fallbackLabel };
+      if (typeof command === 'string') return { name: command };
       return (command as RawAgentCommand) || {};
     })
     .filter((command): command is { name: string; description?: unknown } =>
@@ -52,7 +52,8 @@ export function normalizeAgentCommands(commands: unknown, assistantName: string)
       return {
         source: assistantName + ' Agent',
         name,
-        label: typeof command.description === 'string' && command.description ? command.description : fallbackLabel,
+        // Empty label = PSX fallback; the composer menu localizes it at render.
+        label: typeof command.description === 'string' && command.description ? command.description : '',
         agent: true as const
       };
     });

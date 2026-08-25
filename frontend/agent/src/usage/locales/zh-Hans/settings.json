@@ -55,7 +55,7 @@
     "envKeyTitle": "环境变量键（值已隐藏）",
     "headerKeyTitle": "请求头键（值已隐藏）",
     "scanFailed": "无法读取配置信息，请重试。",
-    "loadFailed": "Unable to load config.",
+    "loadFailed": "无法读取配置信息，请重试。",
     "facts": {
       "env_var_keys": "环境变量键",
       "default_model": "默认模型",
@@ -79,7 +79,8 @@
       "no_editable_config": "该 Agent 无用户可编辑配置文件",
       "home_missing": "未找到用户配置目录",
       "scan_failed": "无法读取配置信息，请重试。"
-    }
+    },
+    "timeout": "加载配置超时。"
   },
   "usage": {
     "windowGroupAria": "统计窗口",
@@ -121,6 +122,8 @@
       "unregistered_provider": "部分会话所属 Agent 已不可用"
     },
     "noExactRecords": "当前没有可用的精确 Token 记录",
-    "scanFailed": "无法读取用量数据，请重试。"
+    "scanFailed": "无法读取用量数据，请重试。",
+    "timeout": "加载用量超时。",
+    "loadFailed": "无法读取用量数据，请重试。"
   }
 }

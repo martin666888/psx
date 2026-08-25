@@ -92,6 +92,12 @@ export class TimelineController implements FeatureController {
     this.render();
   }
 
+  /** Fixed-locale-key system rows from composer/registry seams. */
+  appendSystemCodeRow(key: string, params?: Record<string, unknown>): void {
+    this.projection.appendSystemCodeRow(key, params);
+    this.render();
+  }
+
   private scheduleRender(): void {
     if (!this.visible) {
       this.renderPending = true;
@@ -133,14 +139,14 @@ export class TimelineController implements FeatureController {
       copyText: (text) => this.copyText(text),
       onOpenTerminal: () => this.bridge()?.sendAgentCommand('terminal'),
       onDecisionOption: (item, option) => this.resolveDecision(item, option),
-      onElicitationAction: (item, payload, statusText) => {
+      onElicitationAction: (item, payload, statusCode) => {
         if (!item.requestId) return;
         if (item.kind === 'permission' && item.schema) {
-          this.resolvePermissionForm(item, payload, statusText);
+          this.resolvePermissionForm(item, payload, statusCode);
           return;
         }
         this.bridge()?.sendAgentElicitationResponse(item.requestId, payload);
-        this.projection.disableDecision(item.id, statusText);
+        this.projection.disableDecision(item.id, { code: `timeline.${statusCode}` });
         this.render();
       },
       createAttachmentTile: (attachment) =>
@@ -171,13 +177,12 @@ export class TimelineController implements FeatureController {
     this.projection.selectDecisionOption(item.id, option.optionId, option.name);
     this.render();
   }
-
   /**
    * Ask-user permission form: stay on agent_permission_response. Accept sends
    * JSON `{ optionId, content }`; decline/cancel send an offered reject option
    * or the shared `__cancelled__` sentinel.
    */
-  private resolvePermissionForm(item: DecisionItem, payload: string, statusText: string): void {
+  private resolvePermissionForm(item: DecisionItem, payload: string, statusCode: string): void {
     if (!item.requestId) return;
     let action = 'cancel';
     let content: Record<string, unknown> = {};
@@ -196,14 +201,16 @@ export class TimelineController implements FeatureController {
         item.requestId,
         JSON.stringify({ optionId, content })
       );
-      this.projection.selectDecisionOption(item.id, optionId, 'Continue');
+      // No raw option label crosses into state; the card falls back to the
+      // localized "selection recorded" wording.
+      this.projection.selectDecisionOption(item.id, optionId, '');
       this.render();
       return;
     }
 
     const cancelId = resolveCancelOptionId(item.options);
     this.bridge()?.sendAgentPermissionResponse(item.requestId, cancelId || '__cancelled__');
-    this.projection.disableDecision(item.id, statusText);
+    this.projection.disableDecision(item.id, { code: `timeline.${statusCode}` });
     this.render();
   }
 

@@ -32,18 +32,18 @@ test('plan: normalizePlanEntries trims content and drops blank entries', () => {
 test('plan: status class/marker/label map every state family', () => {
   assert.equal(plan.planStatusClass('completed'), 'agent-plan-item-completed');
   assert.equal(plan.planStatusMarker('completed'), '\u2713');
-  assert.equal(plan.planStatusLabel('completed'), 'Completed');
+  assert.equal(plan.planStatusLabel('completed'), 'plan.status.completed');
 
   for (const status of ['in_progress', 'in-progress', 'running', 'current']) {
     assert.equal(plan.planStatusClass(status), 'agent-plan-item-in-progress', `class ${status}`);
     assert.equal(plan.planStatusMarker(status), '\u25c9', `marker ${status}`);
-    assert.equal(plan.planStatusLabel(status), 'Current', `label ${status}`);
+    assert.equal(plan.planStatusLabel(status), 'plan.status.current', `label ${status}`);
   }
 
   for (const status of ['pending', 'weird', '']) {
     assert.equal(plan.planStatusClass(status), 'agent-plan-item-pending', `class ${status}`);
     assert.equal(plan.planStatusMarker(status), '\u25cb', `marker ${status}`);
-    assert.equal(plan.planStatusLabel(status), 'Pending', `label ${status}`);
+    assert.equal(plan.planStatusLabel(status), 'plan.status.pending', `label ${status}`);
   }
 });
 

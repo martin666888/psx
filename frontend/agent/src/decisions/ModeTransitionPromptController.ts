@@ -84,7 +84,8 @@ export class ModeTransitionPromptController implements FeatureController {
         const optionId = asString(option.optionId);
         return {
           optionId,
-          name: asString(option.name) || optionId || 'Select',
+          // Empty names fall back to the localized pill label at render.
+          name: asString(option.name) || optionId,
           kind: asString(option.kind)
         };
       })
@@ -98,13 +99,17 @@ export class ModeTransitionPromptController implements FeatureController {
     this.activeRequestId = requestId;
     this.host.setComposerPrompt(this.workspaceId, {
       requestId,
-      title: asString(event.title) || 'Mode transition',
+      // PSX-authored fallback title/error are locale keys resolved by the
+      // React view; provider titles stay raw data.
+      title: asString(event.title),
       assistantName: this.assistantName,
       autoFocus: composerHadFocus,
       interactive,
-      errorText: requestId
-        ? 'The ACP Agent did not provide any response options.'
-        : 'The ACP Agent did not provide a valid request identifier.',
+      errorText: !requestId
+        ? 'composer.transition.error.invalidRequestId'
+        : !interactive
+        ? 'timeline.decision.noOptionsAcp'
+        : '',
       options,
       onRespond: (optionId) => {
         if (this.activeRequestId !== requestId || !optionId) return;

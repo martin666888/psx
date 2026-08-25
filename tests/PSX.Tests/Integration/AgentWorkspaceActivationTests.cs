@@ -398,7 +398,7 @@ public sealed class AgentWorkspaceActivationTests
         // after the source workspace is gone (no workspaceId required).
         var failure = await bridge.WaitForEventAsync(
             "agent_thread_open_error",
-            message => message.GetProperty("text").GetString()!.Contains("could not open"));
+            message => message.GetProperty("code").GetString() == "history.open_failed");
         Assert.AreEqual("boom", failure.GetProperty("threadId").GetString());
         Assert.Contains("Simulated thread store failure", failure.GetProperty("detail").GetString()!);
         Assert.AreEqual(0, bridge.Events.Count(message =>

@@ -79,7 +79,8 @@
       "no_editable_config": "This Agent has no user-editable configuration file",
       "home_missing": "The user configuration directory was not found",
       "scan_failed": "Could not read the configuration — please retry."
-    }
+    },
+    "timeout": "Loading config timed out."
   },
   "usage": {
     "windowGroupAria": "Statistics window",
@@ -121,6 +122,8 @@
       "unregistered_provider": "Some sessions belong to an Agent that is no longer available"
     },
     "noExactRecords": "There are no exact token records available yet",
-    "scanFailed": "Unable to read usage data. Please retry."
+    "scanFailed": "Unable to read usage data. Please retry.",
+    "timeout": "Loading usage timed out.",
+    "loadFailed": "Unable to load usage."
   }
 }

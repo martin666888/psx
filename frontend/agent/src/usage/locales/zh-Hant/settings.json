@@ -55,7 +55,7 @@
     "envKeyTitle": "環境變數索引鍵（值已隱藏）",
     "headerKeyTitle": "標頭索引鍵（值已隱藏）",
     "scanFailed": "無法讀取組態資訊，請重試。",
-    "loadFailed": "無法載入組態。",
+    "loadFailed": "無法讀取設定資訊，請重試。",
     "facts": {
       "env_var_keys": "環境變數索引鍵",
       "default_model": "預設模型",
@@ -79,7 +79,8 @@
       "no_editable_config": "此 Agent 沒有使用者可編輯的組態檔",
       "home_missing": "找不到使用者組態目錄",
       "scan_failed": "無法讀取組態資訊，請重試。"
-    }
+    },
+    "timeout": "載入設定逾時。"
   },
   "usage": {
     "windowGroupAria": "統計視窗",
@@ -121,6 +122,8 @@
       "unregistered_provider": "部分工作階段所屬的 Agent 已無法使用"
     },
     "noExactRecords": "目前沒有可用的精確 Token 記錄",
-    "scanFailed": "無法讀取用量資料，請重試。"
+    "scanFailed": "無法讀取用量資料，請重試。",
+    "timeout": "載入用量逾時。",
+    "loadFailed": "無法讀取用量資料，請重試。"
   }
 }

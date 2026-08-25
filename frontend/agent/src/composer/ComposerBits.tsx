@@ -4,6 +4,7 @@
 
 import { PaperclipIcon } from 'lucide-react';
 import type { JSX } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   PromptInputAttachment,
   PromptInputAttachments,
@@ -23,6 +24,7 @@ export interface AttachmentStripProps {
 }
 
 export function AttachmentStrip(props: AttachmentStripProps): JSX.Element {
+  const { t } = useTranslation('agent');
   const statuses = new Map(
     props.attachments.map((attachment) => [attachment.clientId, attachment.status])
   );
@@ -30,6 +32,7 @@ export function AttachmentStrip(props: AttachmentStripProps): JSX.Element {
     <PromptInputAttachments className="agent-attachments-strip p-0">
       {(attachment) => {
         const status = statuses.get(attachment.id) ?? 'uploading';
+        const name = attachment.filename || t('composer.attachment.image');
         return (
           <PromptInputAttachment
             data={attachment}
@@ -41,12 +44,16 @@ export function AttachmentStrip(props: AttachmentStripProps): JSX.Element {
               (status === 'failed' ? ' border-destructive text-destructive' : '') +
               (status === 'uploading' ? ' opacity-70' : '')
             }
-            aria-label={'Preview ' + (attachment.filename || 'image attachment')}
+            aria-label={t('composer.attachment.previewAria', { fileName: name })}
             role="button"
             tabIndex={0}
             title={
-              (attachment.filename || 'Image attachment') +
-              (status === 'uploading' ? ' (uploading)' : status === 'failed' ? ' (upload failed)' : '')
+              name +
+              (status === 'uploading'
+                ? ' (' + t('composer.attachment.uploading') + ')'
+                : status === 'failed'
+                ? ' (' + t('composer.attachment.failed') + ')'
+                : '')
             }
             onClick={() => props.onPreview(attachment.url)}
             onKeyDown={(event) => {
@@ -69,6 +76,7 @@ export interface ComposerActionsProps {
 }
 
 export function ComposerActions(props: ComposerActionsProps): JSX.Element {
+  const { t } = useTranslation('agent');
   const attachments = usePromptInputAttachments();
   return (
     <PromptInputButton
@@ -76,7 +84,7 @@ export function ComposerActions(props: ComposerActionsProps): JSX.Element {
       className="size-8"
       type="button"
       title={props.attachTitle}
-      aria-label="Attach images"
+      aria-label={t('composer.attach.ready')}
       disabled={props.attachDisabled}
       onClick={() => {
         if (props.canPick) attachments.openFileDialog();

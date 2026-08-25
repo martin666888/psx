@@ -6,7 +6,8 @@
     "completed": "已完成"
   },
   "workspace": {
-    "fallbackTitle": "工作區"
+    "fallbackTitle": "工作區",
+    "columnAria": "欄內工作區"
   },
   "tab": {
     "closeTitle": "關閉 {{title}}"
@@ -20,7 +21,12 @@
   "create": {
     "placementFocused": "目前欄位",
     "placementNewRight": "右側新增欄位",
-    "columnCapTitle": "最多支援 3 欄"
+    "columnCapTitle": "最多支援 3 欄",
+    "terminal": "終端",
+    "webApps": "網頁應用",
+    "kimiWeb": "Kimi Code Web",
+    "dsh": "DeepSeek Harness",
+    "agents": "Agent（ACP）"
   },
   "common": {
     "widthInsufficient": "視窗寬度不足以容納新欄位",
@@ -34,7 +40,18 @@
     "updated": "已更新",
     "current": "目前",
     "confirm": "確認",
-    "openFolder": "開啟佈景主題資料夾"
+    "openFolder": "開啟佈景主題資料夾",
+    "currentNamed": "目前：{{name}}",
+    "currentCustom": "目前：自訂",
+    "sourceMissing": "主題來源遺失",
+    "message": {
+      "previewing": "預覽中——確認後保留此主題。",
+      "file_changed": "主題檔案已變更，請檢視新預覽後再次確認。",
+      "apply_failed": "套用主題失敗：{{detail}}",
+      "folder_open_failed": "無法開啟主題資料夾：{{detail}}",
+      "scan_failed": "無法讀取主題目錄：{{detail}}",
+      "invalid_file": "主題檔案無效，未能套用。"
+    }
   },
   "pane": {
     "layoutSection": "版面配置",

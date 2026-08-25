@@ -2,6 +2,7 @@
 // Owns the toolbar metadata and Composer Context usage ring.
 
 import type { JSX } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { ContextUsageView } from './sessionFormat.js';
 import { Button } from '../components/ui/button.js';
 import {
@@ -22,6 +23,7 @@ export interface SessionMetaProps {
 }
 
 export function SessionMeta(props: SessionMetaProps): JSX.Element {
+  const { t } = useTranslation('agent');
   return (
     <>
       <span data-role="status" data-status={props.status}>
@@ -37,7 +39,7 @@ export function SessionMeta(props: SessionMetaProps): JSX.Element {
         title={props.changeCwdTitle}
         onClick={props.onPickCwd}
       >
-        Change
+        {t('session.change')}
       </Button>
       <span data-role="session">{props.sessionLabel}</span>
     </>
@@ -49,6 +51,9 @@ export interface ContextUsageProps {
 }
 
 export function ContextUsage({ view }: ContextUsageProps): JSX.Element {
+  const { t } = useTranslation('agent');
+  const summary = t(view.summaryKey, { defaultValue: '', ...view.summaryParams });
+  const detail = t(view.detailKey, { defaultValue: '', ...view.detailParams });
   return (
     <TooltipProvider>
       <Tooltip>
@@ -59,7 +64,7 @@ export function ContextUsage({ view }: ContextUsageProps): JSX.Element {
             role="img"
             tabIndex={0}
             data-context-state={view.state}
-            aria-label={view.ariaLabel}
+            aria-label={t('session.context.aria', { summary, detail })}
           >
             <svg className="agent-context-ring" viewBox="0 0 20 20" aria-hidden="true">
               <circle className="agent-context-ring-track" cx="10" cy="10" r="7.5" pathLength="100" />
@@ -77,10 +82,10 @@ export function ContextUsage({ view }: ContextUsageProps): JSX.Element {
         </TooltipTrigger>
         <TooltipContent className="agent-context-tooltip">
           <div className="flex flex-col">
-            <strong data-role="context-tooltip-summary">{view.summary}</strong>
-            <span data-role="context-tooltip-detail">{view.detail}</span>
-            <span data-role="context-tooltip-cost" hidden={!view.cost}>
-              {view.cost}
+            <strong data-role="context-tooltip-summary">{summary}</strong>
+            <span data-role="context-tooltip-detail">{detail}</span>
+            <span data-role="context-tooltip-cost" hidden={!view.costKey}>
+              {view.costKey ? t(view.costKey, view.costParams) : ''}
             </span>
           </div>
         </TooltipContent>

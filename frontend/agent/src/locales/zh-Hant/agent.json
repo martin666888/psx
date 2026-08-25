@@ -5,7 +5,82 @@
       "commandsLoading": "Agent 指令清單仍在載入，請稍後再試。",
       "unsupported": "無法識別的指令：{{command}}\nPSX 僅支援指令選單中顯示的指令。輸入 / 可查看可用指令；部分 {{agentName}} 指令需在原生終端機中使用。"
     },
-    "compactConfigAria": "Agent 設定"
+    "compactConfigAria": "Agent 設定",
+    "cmd": {
+      "cwd": "顯示目前工作目錄",
+      "cwdPath": "修改此草稿 Agent 的工作目錄",
+      "terminal": "在此處開啟原始 {{assistantName}} 終端",
+      "stop": "停止 {{assistantName}} 的目前執行",
+      "history": "檢視已儲存的 Agent 線程",
+      "delete": "刪除目前線程",
+      "help": "檢視 PSX Agent 指令",
+      "sendTo": "傳送到 {{assistantName}}"
+    },
+    "menu": {
+      "availableCommands": "可用指令"
+    },
+    "messageAria": "傳訊息給 Agent",
+    "decisionAria": "Agent 決策",
+    "placeholder": {
+      "readOnly": "唯讀轉錄——請建立新的 Agent 分頁繼續",
+      "installRuntime": "安裝 Agent 執行環境後即可傳送訊息",
+      "message": "傳訊息給 {{assistantName}} —— 輸入 / 檢視指令"
+    },
+    "submit": {
+      "loading": "載入中",
+      "readOnly": "唯讀",
+      "stop": "停止",
+      "send": "傳送",
+      "loadingTitle": "ACP 歷史載入中",
+      "newTabTitle": "建立新的 Agent 分頁以繼續",
+      "stopTitle": "停止 {{assistantName}}",
+      "sendTitle": "傳送訊息"
+    },
+    "mode": {
+      "label": "模式",
+      "title": "{{assistantName}} Agent 模式"
+    },
+    "attach": {
+      "ready": "附加圖片",
+      "installRuntime": "請先安裝 Agent 執行環境再附加圖片",
+      "unsupportedAgent": "目前 ACP Agent 不支援圖片輸入"
+    },
+    "uploadAria": "上傳檔案",
+    "error": {
+      "messageTooLarge": "訊息大小不得超過 1MB。",
+      "attachmentsChanged": "傳送期間附件發生變化，請檢查後重新傳送。",
+      "attachmentsUploading": "圖片仍在上傳，請等待上傳完成後再傳送。",
+      "imagesTooLarge": "圖片必須不超過 20MB。",
+      "tooManyImages": "一次最多附加 5 張圖片。",
+      "onlyImages": "僅支援圖片附件。",
+      "totalTooLarge": "單則訊息的圖片總量不得超過 50MB。",
+      "imageReadFailed": "讀取圖片檔案失敗。"
+    },
+    "attachment": {
+      "image": "圖片",
+      "file": "附件",
+      "imageAttachment": "圖片附件",
+      "previewAria": "預覽 {{fileName}}",
+      "unavailable": "圖片不可用",
+      "uploading": "上傳中",
+      "failed": "上傳失敗",
+      "removeAria": "移除附件"
+    },
+    "transition": {
+      "chooseHow": "选择如何继续",
+      "stopTitle": "停止 {{assistantName}}",
+      "stopping": "正在停止",
+      "stop": "停止",
+      "status": {
+        "waitingSelection": "Agent 正在等待你的选择。",
+        "invalidResponseData": "Agent 返回的数据无效，请求无法继续。",
+        "stoppingRun": "正在停止当前 Agent 运行……",
+        "sendingOption": "正在发送 {{name}}……"
+      },
+      "error": {
+        "invalidRequestId": "ACP Agent 未返回有效的请求标识。"
+      }
+    }
   },
   "timeline": {
     "copy": "複製",
@@ -20,9 +95,177 @@
       },
       "run_failed": {
         "vision_context": "提示：目前對話曾傳送過圖片，這個錯誤可能是因為目前模型或供應商不支援圖片上下文，或目前模型不是多模態模型所致，建議切換至多模態模型。"
+      },
+      "thread": {
+        "deleted": "已刪除會話。",
+        "cwd_changed": "工作目錄已切換到：{{path}}",
+        "cwd_current": "目前工作目錄：{{path}}",
+        "ready": "就緒。{{agentName}} 將從第一則訊息開始處理；工作目錄與會話狀態顯示於上方。"
+      },
+      "run": {
+        "stopped": "已停止目前執行。",
+        "inactive": "目前沒有正在執行的請求。",
+        "install_first": "請先安裝 Agent 執行環境，再傳送訊息。",
+        "history_loading": "ACP 歷史仍在載入，請等待還原完成後再傳送。",
+        "still_responding": "{{assistantName}} 仍在回應中。請等待目前執行結束，或使用 /stop。",
+        "cwd_locked": "第一則訊息之後工作目錄即被鎖定；請建立新的 Agent 分頁以使用其他目錄。"
+      },
+      "cwd": {
+        "not_found": "目錄不存在：{{path}}"
+      },
+      "help": {
+        "commands": "PSX 指令：/cwd、/cwd <路徑>、/terminal、/stop、/history、/delete、/help。ACP 指令透過 {{assistantName}} 傳送。"
+      },
+      "terminal": {
+        "no_entry": "{{displayName}} 未提供原生終端入口。",
+        "fallback_opened": "已在目前工作目錄開啟原始 {{displayName}} 終端分頁。"
+      },
+      "resume": {
+        "replay_note": "ACP 會話已載入，但未重播任何轉錄；已保留本機快照。",
+        "prepare_failed": "PSX 無法準備 Agent 會話；本機轉錄仍可檢視。",
+        "unsupported_provider": "此會話屬於不受支援的 Agent 提供方（{{provider}}），僅顯示本機轉錄。",
+        "no_session_id": "此會話缺少 ACP 會話 ID；本機轉錄仍可檢視。",
+        "runtime_missing": "尚未安裝 Agent 執行環境，無法繼續此會話；執行環境就緒後 PSX 會自動重試。",
+        "replay_unavailable": "Agent 會話已載入，但其轉錄無法重播；本機轉錄仍可檢視。",
+        "restore_failed": "PSX 無法還原此 Agent 會話；本機轉錄仍可檢視。",
+        "runtime_lost": "還原期間 Agent 執行環境變為不可用；執行環境就緒後 PSX 會自動重試。",
+        "reconnect_failed": "重新連線後 PSX 無法還原此 Agent 會話；本機轉錄仍可檢視。",
+        "transcript_only_prompt": "此會話僅剩本機轉錄可讀。請建立新對話串或開啟終端機繼續。"
+      },
+      "transcript": {
+        "read_only_run": "這份已儲存的轉錄是唯讀的。請建立新的 Agent 分頁繼續。",
+        "read_only_help": "此轉錄為唯讀。可用 /history、/cwd 或 /delete；如需繼續使用，請建立新的 Agent 分頁並選擇提供方。",
+        "stop_inactive": "目前沒有正在執行的 Agent 請求。"
+      },
+      "attachment": {
+        "unsupported_agent": "目前 ACP Agent 不支援圖片輸入。",
+        "unsupported_type": "僅支援 PNG、JPEG、WebP 與 GIF 圖片。",
+        "too_large": "單張圖片不得超過 20MB。",
+        "invalid_data": "圖片上傳資料無效。",
+        "size_mismatch": "圖片大小與檔案中繼資料不一致。"
+      },
+      "prompt": {
+        "too_many_images": "一次最多附加 {{limit}} 張圖片。",
+        "image_not_found": "部分圖片附件未找到，請移除後重試。",
+        "images_too_large": "單則訊息中的圖片總量不得超過 50MB。"
+      },
+      "decision": {
+        "cancelled_run_stopped": "因目前執行停止而取消該請求。"
+      },
+      "elicitation": {
+        "cancelled_run_stopped": "因目前執行停止而取消該輸入請求。"
+      },
+      "workspace": {
+        "agent_limit_reached": "最多可同時開啟 {{limit}} 個 Agent 分頁。"
       }
     },
-    "visionContextHint": "提示：目前對話曾傳送過圖片，這個錯誤可能是因為目前模型或供應商不支援圖片上下文，或目前模型不是多模態模型所致，建議切換至多模態模型。"
+    "decision": {
+      "inactive": "此請求已不再可用。",
+      "selectedOption": "已選擇：{{name}}",
+      "selectionRecorded": "已記錄所選選項。",
+      "requestCancelled": "已取消該請求。",
+      "endedBeforeSelection": "執行已結束，未能完成選擇。",
+      "replacedByNewer": "較新的模式切換請求已取代此請求。",
+      "waitingSelection": "Agent 正在等待你的選擇。",
+      "required": "需要決策",
+      "headerState": {
+        "pending": "待處理",
+        "selected": "已選擇",
+        "cancelled": "已取消",
+        "interrupted": "已中斷",
+        "sending": "正在傳送"
+      },
+      "permissionSubtitle": "{{agentName}} 需要你的核准才能繼續。",
+      "questionSubtitle": "{{agentName}} 正在等待你的回答。",
+      "permissionTitle": "權限請求",
+      "questionTitle": "{{agentName}} 的提問",
+      "needsInputTitle": "{{agentName}} Agent 需要輸入",
+      "provideInfo": "請提供所需資訊以繼續。",
+      "reviewDirection": "請審閱提議的方向",
+      "modeTransitionTitle": "模式切換",
+      "noOptions": "Agent 未提供任何可選回應。",
+      "noOptionsAcp": "ACP Agent 未提供任何可選回應。",
+      "rawInput": "原始輸入",
+      "choosePermission": "選擇權限回應",
+      "chooseAnswer": "選擇一個回答",
+      "chooseHow": "選擇如何繼續",
+      "chooseResponse": "選擇一個回應",
+      "proposalDetails": "提案詳情",
+      "documentDetails": "文件詳情",
+      "option": {
+        "allow": "允許",
+        "reject": "拒絕",
+        "yes": "是",
+        "no": "否",
+        "select": "選擇"
+      },
+      "validation": {
+        "chooseOption": "請先選擇一個選項。",
+        "chooseOne": "請至少選擇一個選項。",
+        "enterNumber": "請輸入數字。",
+        "wholeNumber": "請輸入整數。",
+        "validNumber": "請輸入有效數字。",
+        "enterResponse": "請輸入回應內容。"
+      }
+    },
+    "recovery": {
+      "title": "無法還原會話",
+      "technicalDetails": "技術細節",
+      "openTerminal": "開啟終端機"
+    },
+    "thinking": {
+      "running": "正在思考…",
+      "forSeconds": "思考中 · {{seconds}} 秒",
+      "thoughtFew": "思考了片刻",
+      "thoughtFor": "思考了 {{seconds}} 秒"
+    },
+    "toolSection": {
+      "input": "輸入",
+      "output": "輸出"
+    },
+    "tool": {
+      "finished": "已完成。",
+      "untitled": "工具"
+    },
+    "toolState": {
+      "running": "執行中",
+      "done": "完成",
+      "error": "失敗",
+      "cancelled": "已取消",
+      "fallback": "需要終端機"
+    },
+    "rawTerminal": {
+      "title": "原始終端回退"
+    },
+    "runErrorTitle": "{{agentName}} 執行出錯",
+    "unknownError": "未知錯誤。",
+    "couldNotResume": "{{agentName}} 無法還原該會話。",
+    "imageAttachment": "[圖片附件]",
+    "imageUnavailable": "圖片不可用",
+    "message": {
+      "you": "你"
+    },
+    "conversationLabel": "Agent 對話",
+    "empty": {
+      "title": "還沒有訊息",
+      "description": "傳送一則訊息開始對話。"
+    },
+    "runGroup": {
+      "summary_one": "工具活動 · {{count}} 次呼叫",
+      "summary_other": "工具活動 · {{count}} 次呼叫",
+      "live": "{{running}} 個執行中",
+      "failed": "失敗"
+    },
+    "elicitation": {
+      "responseTitle": "回應",
+      "waitingInput": "等待輸入",
+      "continue": "繼續",
+      "decline": "拒絕",
+      "cancel": "取消",
+      "responseSent": "已傳送回應。",
+      "declined": "已拒絕。",
+      "cancelled": "已取消。"
+    }
   },
   "runtime": {
     "notInstalled": "Agent 執行階段尚未安裝。",
@@ -52,7 +295,9 @@
     "stagedWithPending": "重新啟動 PSX 以套用更新。",
     "stagedWithoutPending": "更新已就緒；重新啟動 PSX 以套用。",
     "checkTooltip": "檢查 Agent 執行階段更新",
-    "moreAria": "更多 Agent 動作"
+    "moreAria": "更多 Agent 動作",
+    "planToggle": "切換 Plan 卡片",
+    "planToggleUnread": "切換 Plan 卡片，計畫已更新"
   },
   "sessionCard": {
     "titles": {
@@ -66,5 +311,69 @@
     "install": "安裝執行階段",
     "retryInstallation": "重試安裝",
     "cancel": "取消"
+  },
+  "common": {
+    "retry": "重試",
+    "dismiss": "關閉",
+    "remove": "移除",
+    "close": "關閉"
+  },
+  "history": {
+    "fallbackTitle": "Agent 聊天",
+    "badge": {
+      "current": "目前",
+      "open": "已開啟"
+    },
+    "activeDotAria": "包含活動會話",
+    "showAll": "顯示全部 {{count}} 個線程",
+    "loading": "歷史載入中…",
+    "unavailable": "Agent 歷史不可用。",
+    "loadFailed": "無法載入 Agent 歷史記錄。",
+    "timeout": "載入 Agent 歷史逾時。",
+    "openFailed": "無法開啟選定的 Agent 線程，請重試。",
+    "empty": "尚無已儲存的 Agent 線程。",
+    "noMatches": "沒有符合搜尋或篩選條件的線程。",
+    "unknownWorkspace": "未知工作區",
+    "dockAria": "Agent 歷史",
+    "searchPlaceholder": "搜尋線程",
+    "searchAria": "搜尋歷史",
+    "filterAria": "依提供方篩選",
+    "allProviders": "全部提供方",
+    "refreshAria": "重新整理歷史",
+    "resizeAria": "調整 Agent 歷史寬度"
+  },
+  "plan": {
+    "title": "計畫",
+    "empty": "暫無活動計畫",
+    "noItems": "暫無計畫項目。",
+    "status": {
+      "completed": "已完成",
+      "current": "進行中",
+      "pending": "待處理"
+    }
+  },
+  "session": {
+    "change": "變更",
+    "changeDraftTitle": "變更草稿工作目錄",
+    "changeLockedTitle": "建立新的 Agent 分頁以使用其他目錄",
+    "idLabel": "會話：{{sessionId}}",
+    "context": {
+      "noUsageSummary": "Agent 尚未回報上下文用量",
+      "noUsageDetail": "Agent 回報後將顯示上下文用量。",
+      "limitedSummary": "{{percent}} · {{used}} / {{size}}",
+      "remainingDetail": "剩餘 {{remaining}}",
+      "usedSummary": "已用 {{used}}",
+      "noLimitDetail": "Agent 未回報上下文上限。",
+      "aria": "上下文：{{summary}}。{{detail}}",
+      "costLine": "成本 · {{amount}}"
+    }
+  },
+  "island": {
+    "failureTitle": "{{name}} 無法顯示",
+    "failureImport": "重啟 PSX 以重新載入此介面；如果問題持續，請更換或重新安裝 PSX 安裝包。",
+    "failureRender": "此部分介面意外停止。"
+  },
+  "markdown": {
+    "diagramFailed": "圖表無法渲染。"
   }
 }

@@ -79,7 +79,7 @@ test('attachment upload, confirmation and removal update the React strip', async
     () => !!panel.querySelector('.agent-attachment-uploaded')
   );
   await settle(
-    () => panel.querySelector('[aria-label="Remove attachment"]').click(),
+    () => panel.querySelector('[aria-label="移除附件"]').click(),
     () => panel.querySelector('.agent-attachments-strip [data-status]') === null
   );
   assert.equal(role(panel, 'attachments-strip').hidden, true);
@@ -92,12 +92,12 @@ test('attach action reflects image support', async () => {
     () => !!role(panel, 'attach')
   );
   assert.equal(role(panel, 'attach').disabled, false);
-  assert.equal(role(panel, 'attach').title, 'Attach images');
+  assert.equal(role(panel, 'attach').title, '附带图片');
   await act(async () => {
     app.handle({ type: 'agent_state', workspaceId: WS, status: 'ready', supportsImage: false });
   });
   assert.equal(role(panel, 'attach').disabled, true);
-  assert.match(role(panel, 'attach').title, /does not support image input/);
+  assert.match(role(panel, 'attach').title, /不支持图片输入/);
 });
 
 test('command rejection hint appears and clears on input', async () => {

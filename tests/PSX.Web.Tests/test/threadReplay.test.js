@@ -81,7 +81,7 @@ describe('Thread replay', () => {
       () => !!panel.querySelector('[data-role="thread"] .agent-system')
     );
     const thread = panel.querySelector('[data-role="thread"]');
-    assert.match(thread.querySelector('.agent-system').textContent, /will start on the first message/);
+    assert.match(thread.querySelector('.agent-system').textContent, /将从第一条消息开始处理/);
   });
 });
 

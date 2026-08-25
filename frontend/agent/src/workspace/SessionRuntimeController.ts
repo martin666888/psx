@@ -18,6 +18,7 @@ import { computeContextUsageView, formatStatus } from './sessionFormat.js';
 import type { ContextUsageProps, SessionMetaProps } from './SessionToolbar.js';
 import type { RuntimeIslandProps } from './SessionRuntimeCard.js';
 import type { WorkspaceToolbarController } from './WorkspaceToolbarController.js';
+import { t as i18nT } from '../../../webview/src/i18n.js';
 
 export interface SessionRuntimeHost {
   getPanel(workspaceId: string): HTMLElement | null;
@@ -103,13 +104,17 @@ export class SessionRuntimeController implements FeatureController {
     const meta: SessionMetaProps = {
       statusText: formatStatus(session.status),
       status: session.status,
-      cwd: session.cwd || 'cwd not set',
-      sessionLabel: session.sessionId ? 'session: ' + session.sessionId : '',
+      // Fixed locale keys resolved by the React toolbar at render; the cwd
+      // and session id themselves stay raw data.
+      cwd: session.cwd,
+      sessionLabel: session.sessionId
+        ? i18nT('session.idLabel', { ns: 'agent', sessionId: session.sessionId })
+        : '',
       changeCwdDisabled:
         !session.isDraft || session.busy || session.isRestoring || session.isTranscriptOnly,
       changeCwdTitle: session.isDraft
-        ? 'Change draft working directory'
-        : 'Create a new Agent tab to use another working directory',
+        ? i18nT('session.changeDraftTitle', { ns: 'agent' })
+        : i18nT('session.changeLockedTitle', { ns: 'agent' }),
       onPickCwd: () => {
         this.host.bridgeFor(this.workspaceId)?.sendAgentCommand('pick_cwd');
       }

@@ -54,16 +54,17 @@ export class UsageStore {
     this.set({ ...this.state, profileSaving: true, profileError: '' });
   }
 
-  applyProfileError(text: string, options?: { saving?: boolean }): void {
+  /** `key` is a fixed settings-locale key; backend sentences never cross. */
+  applyProfileError(key: string, options?: { saving?: boolean }): void {
     this.set({
       ...this.state,
-      profileError: text,
+      profileError: key,
       profileSaving: options?.saving ?? false
     });
   }
 
   applyUsageLoading(): void {
-    this.set({ ...this.state, status: 'loading', errorText: '' });
+    this.set({ ...this.state, status: 'loading', errorKey: '' });
   }
 
   applyUsageReport(
@@ -79,16 +80,16 @@ export class UsageStore {
       generatedAt,
       timezone,
       status: 'idle',
-      errorText: ''
+      errorKey: ''
     });
   }
 
-  applyUsageError(text: string): void {
-    this.set({ ...this.state, status: 'error', errorText: text });
+  applyUsageError(key: string): void {
+    this.set({ ...this.state, status: 'error', errorKey: key });
   }
 
   applyConfigLoading(): void {
-    this.set({ ...this.state, configStatus: 'loading', configErrorText: '' });
+    this.set({ ...this.state, configStatus: 'loading', configErrorKey: '' });
   }
 
   applyConfigReport(report: ConfigReport, generatedAt: string): void {
@@ -97,16 +98,16 @@ export class UsageStore {
       configReport: report,
       configGeneratedAt: generatedAt,
       configStatus: 'idle',
-      configErrorText: '',
+      configErrorKey: '',
       configLoadedOnce: true
     });
   }
 
-  applyConfigError(text: string): void {
+  applyConfigError(key: string): void {
     this.set({
       ...this.state,
       configStatus: 'error',
-      configErrorText: text,
+      configErrorKey: key,
       configLoadedOnce: true
     });
   }

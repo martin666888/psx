@@ -386,7 +386,7 @@ interface AgentGenericEvent extends AgentWorkspaceEventBase {
     code?: string;
     /** Provider-authored auth hint riding along a login code (raw data). */
     hint?: string;
-    /** Fixed vision-context code on run_failed (timeline.visionContextHint). */
+    /** Fixed vision-context code on run_failed (timeline.system.run_failed.vision_context). */
     visionContextHintCode?: string;
 }
 

@@ -2,6 +2,7 @@
 // mode-transition thread cards.
 
 import { useRef, useState, type JSX } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAnnounceLive } from '../ui/announce.js';
 import {
   defaultOptionValue,
@@ -13,6 +14,7 @@ import {
 import { MarkdownContent } from '../markdown/MarkdownContent.js';
 import { normalizePsxHref } from '../markdown/security.js';
 import { DecisionOptionPills } from '../decisions/DecisionOptionPills.js';
+import { resolveDisplay } from './copy.js';
 import type { DecisionItem, DecisionOptionVM } from './timelineViewModel.js';
 import { CopyButton, useProjectionOpen } from './TimelineView.js';
 import { Button } from '../components/ui/button.js';
@@ -28,9 +30,51 @@ import { ChevronRightIcon, InfoIcon } from 'lucide-react';
 export interface DecisionCallbacks {
   /** Permission/question option chosen (posts the bridge response). */
   onDecisionOption(item: DecisionItem, option: DecisionOptionVM): void;
-  /** Elicitation resolved locally: value is the JSON action payload. */
-  onElicitationAction(item: DecisionItem, payload: string, statusText: string): void;
+  /** Elicitation resolved locally: value is the JSON action payload; the
+   *  status is a fixed code resolved at render (never a composed sentence). */
+  onElicitationAction(item: DecisionItem, payload: string, statusCode: string): void;
   copyText(text: string): Promise<boolean>;
+}
+
+/** Well-known synthesized option ids resolve to localized pill labels. */
+function optionLabel(option: DecisionOptionVM, t: (key: string, options?: Record<string, unknown>) => string): string {
+  if (option.name) return option.name;
+  const wellKnown = ['allow', 'reject', 'yes', 'no'];
+  return wellKnown.includes(option.optionId)
+    ? t(`timeline.decision.option.${option.optionId}`)
+    : t('timeline.decision.option.select');
+}
+
+function DecisionOptionPillsLocalized({
+  options,
+  selectedOptionId,
+  disabled,
+  ariaLabel,
+  className,
+  buttonClassName,
+  onSelect
+}: {
+  options: DecisionOptionVM[];
+  selectedOptionId?: string;
+  disabled?: boolean;
+  ariaLabel: string;
+  className?: string;
+  buttonClassName?: string;
+  onSelect(option: DecisionOptionVM): void;
+}): JSX.Element {
+  const { t } = useTranslation('agent');
+  return (
+    <DecisionOptionPills
+      options={options}
+      selectedOptionId={selectedOptionId}
+      disabled={disabled}
+      ariaLabel={ariaLabel}
+      className={className}
+      buttonClassName={buttonClassName}
+      labelFor={(option) => optionLabel(option, t)}
+      onSelect={onSelect}
+    />
+  );
 }
 
 function PermissionQuestionCard({
@@ -42,6 +86,7 @@ function PermissionQuestionCard({
   assistantName: string;
   callbacks: DecisionCallbacks;
 }): JSX.Element {
+  const { t } = useTranslation('agent');
   // legacy: the card starts open and only a local option click closes it;
   // external resolve/cancel leaves the user's toggle alone (projection-lifecycle
   // open sync, same contract as the old uncontrolled <details>).
@@ -54,11 +99,12 @@ function PermissionQuestionCard({
   const selected =
     item.options.find((option) => resolvedId && option.optionId === resolvedId) ||
     (resolvedName ? item.options.find((option) => option.name === resolvedName) : undefined);
+  const statusLine = resolveDisplay(item.statusCode, t);
   const subtitle = selected
-    ? 'Selection recorded.'
+    ? t('timeline.decision.selectionRecorded')
     : item.kind === 'permission'
-    ? assistantName + ' Agent needs your approval before continuing.'
-    : assistantName + ' Agent is waiting for your answer.';
+    ? t('timeline.decision.permissionSubtitle', { agentName: assistantName })
+    : t('timeline.decision.questionSubtitle', { agentName: assistantName });
   return (
     <Collapsible
       open={open}
@@ -79,7 +125,9 @@ function PermissionQuestionCard({
             <span className="agent-decision-chevron inline-flex shrink-0 text-muted-foreground" aria-hidden="true">
               <ChevronRightIcon className="size-3 transition-transform group-data-[state=open]/decision:rotate-90" />
             </span>
-            <span className="agent-decision-header-title text-[13px] font-semibold">{item.title}</span>
+            <span className="agent-decision-header-title text-[13px] font-semibold">
+              {item.title || resolveDisplay(item.titleCode, t)}
+            </span>
           </div>
           <span className="agent-decision-header-subtitle text-xs text-muted-foreground">{subtitle}</span>
         </div>
@@ -101,7 +149,7 @@ function PermissionQuestionCard({
           >
             <CollapsibleTrigger className="agent-decision-raw-input-summary flex cursor-pointer select-none items-center gap-2 px-3 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:bg-accent">
               <ChevronRightIcon className="size-2.5 shrink-0 transition-transform group-data-[state=open]/raw:rotate-90" aria-hidden="true" />
-              Raw Input
+              {t('timeline.decision.rawInput')}
             </CollapsibleTrigger>
             {/* forceMount keeps the collapsed raw payload in the DOM (old
                 <details> semantics) for text search and replay tooling. */}
@@ -113,15 +161,17 @@ function PermissionQuestionCard({
         <div className="agent-decision-actions mt-2.5">
           {item.options.length === 0 ? (
             <div className="agent-decision-status agent-decision-options-error mt-0 flex-[1_1_100%] text-xs text-destructive">
-              The Agent did not provide any response options.
+              {t('timeline.decision.noOptions')}
             </div>
           ) : null}
           {item.options.length > 0 ? (
-            <DecisionOptionPills
+            <DecisionOptionPillsLocalized
               options={item.options}
               selectedOptionId={selected?.optionId}
               disabled={disabled}
-              ariaLabel={item.kind === 'permission' ? 'Choose a permission response' : 'Choose an answer'}
+              ariaLabel={item.kind === 'permission'
+                ? t('timeline.decision.choosePermission')
+                : t('timeline.decision.chooseAnswer')}
               className="agent-decision-option-list"
               buttonClassName="agent-decision-option"
               onSelect={(option) => {
@@ -131,8 +181,8 @@ function PermissionQuestionCard({
             />
           ) : null}
         </div>
-        {disabled && !selected && item.statusText ? (
-          <div className="agent-decision-status mt-2.5 text-xs text-muted-foreground">{item.statusText}</div>
+        {disabled && !selected && (statusLine || item.statusText) ? (
+          <div className="agent-decision-status mt-2.5 text-xs text-muted-foreground">{statusLine || item.statusText}</div>
         ) : null}
       </div>
       </CollapsibleContent>
@@ -147,22 +197,34 @@ function DocumentDecisionCard({
   item: DecisionItem;
   callbacks: DecisionCallbacks;
 }): JSX.Element {
+  const { t } = useTranslation('agent');
   const live = useAnnounceLive();
   const isModeTransition = item.kind === 'mode_transition';
   const pending = item.decisionState === 'active';
   const [technicalDetailsOpen, setTechnicalDetailsOpen] = useState(false);
-  // Uncontrolled: historical cards start collapsed, live ones start open;
-  // afterwards the user toggles freely (legacy openedOnce-on-mount semantics).
-  const statusText = item.statusText
+  // Status precedence: fixed statusCode (render-time localized) → raw
+  // statusText (legacy persisted rows) → state-derived default.
+  const statusLine = resolveDisplay(item.statusCode, t);
+  const statusText = statusLine
+    ? statusLine
+    : item.statusText
     ? item.statusText
     : pending
-    ? 'The Agent is waiting for your selection.'
+    ? t('timeline.decision.waitingSelection')
     : item.selectedOptionId
     ? (() => {
         const selected = item.options.find((option) => option.optionId === item.selectedOptionId);
-        return selected ? 'Selected: ' + selected.name : 'Selection recorded.';
+        return selected && selected.name
+          ? t('timeline.decision.selectedOption', { name: selected.name })
+          : t('timeline.decision.selectionRecorded');
       })()
-    : 'This request is no longer active.';
+    : t('timeline.decision.inactive');
+  const headerStateKey =
+    item.headerState === 'selected' || item.headerState === 'cancelled'
+      ? `timeline.decision.headerState.${item.headerState}`
+      : !pending
+      ? 'timeline.decision.headerState.interrupted'
+      : '';
   return (
     <section
       className={
@@ -174,15 +236,17 @@ function DocumentDecisionCard({
       data-tool-call-id={item.toolCallId || undefined}
     >
       <header className="agent-mode-transition-header flex items-baseline justify-between gap-3 border-b px-4 py-3">
-        <div className="agent-mode-transition-title min-w-0 break-words text-[13px] font-semibold leading-snug">{item.title}</div>
+        <div className="agent-mode-transition-title min-w-0 break-words text-[13px] font-semibold leading-snug">
+          {item.title || resolveDisplay(item.titleCode, t)}
+        </div>
         <span className="agent-mode-transition-header-state shrink-0 text-xs font-semibold text-muted-foreground">
-          {pending ? 'Decision required' : item.headerState || 'Interrupted'}
+          {pending ? t('timeline.decision.required') : t(headerStateKey || 'timeline.decision.headerState.interrupted')}
         </span>
       </header>
       <Collapsible defaultOpen={!item.historical} className="agent-mode-transition-details group/mt bg-background">
         <CollapsibleTrigger className="agent-mode-transition-summary flex w-full cursor-pointer select-none items-center gap-2 px-4 py-2 text-left text-xs font-semibold text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
           <ChevronRightIcon className="size-2.5 shrink-0 transition-transform group-data-[state=open]/mt:rotate-90" aria-hidden="true" />
-          {isModeTransition ? 'Proposal details' : 'Document details'}
+          {isModeTransition ? t('timeline.decision.proposalDetails') : t('timeline.decision.documentDetails')}
         </CollapsibleTrigger>
         {/* forceMount keeps the collapsed proposal in the DOM (old <details>
             semantics) for text search and replay tooling. */}
@@ -204,7 +268,7 @@ function DocumentDecisionCard({
           >
             <CollapsibleTrigger className="flex w-full cursor-pointer select-none items-center gap-2 px-4 py-2 text-left text-xs font-semibold text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
               <ChevronRightIcon className="size-2.5 shrink-0 transition-transform group-data-[state=open]/document-details:rotate-90" aria-hidden="true" />
-              Technical details
+              {t('timeline.recovery.technicalDetails')}
             </CollapsibleTrigger>
             <CollapsibleContent forceMount className="data-[state=closed]:hidden">
               <pre className="m-0 whitespace-pre-wrap break-words border-t bg-background px-4 py-3 font-mono text-xs leading-normal">{item.rawText}</pre>
@@ -213,18 +277,18 @@ function DocumentDecisionCard({
         ) : null}
         <div className="agent-mode-transition-decision border-t px-4 pt-3">
           <div className="agent-mode-transition-decision-label mb-2 text-xs font-semibold text-muted-foreground">
-            {isModeTransition ? 'Choose how to continue' : 'Choose a response'}
+            {isModeTransition ? t('timeline.decision.chooseHow') : t('timeline.decision.chooseResponse')}
           </div>
           {item.options.length === 0 ? (
             <div className="agent-mode-transition-error rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs leading-normal text-destructive">
-              The ACP Agent did not provide any response options.
+              {t('timeline.decision.noOptionsAcp')}
             </div>
           ) : (
-            <DecisionOptionPills
+            <DecisionOptionPillsLocalized
               options={item.options}
               selectedOptionId={item.selectedOptionId}
               disabled={!pending}
-              ariaLabel={isModeTransition ? 'Choose how to continue' : 'Choose a response'}
+              ariaLabel={isModeTransition ? t('timeline.decision.chooseHow') : t('timeline.decision.chooseResponse')}
               className="agent-mode-transition-options"
               buttonClassName="agent-mode-transition-option"
               onSelect={(option) => {
@@ -298,34 +362,36 @@ function initialFieldValue(spec: FieldSpec): unknown {
     : '';
 }
 
-/** legacy per-kind validate(); returns the error message or ''. */
+/** legacy per-kind validate(); returns a fixed locale key or ''. Errors
+ *  resolve at render so a language switch re-localizes them. */
 function validateField(spec: FieldSpec, value: unknown): string {
   if (spec.kind === 'options') {
-    if (spec.required && (value === undefined || value === null || value === '')) {
-      return 'Choose an option to continue.';
-    }
-    return '';
+    return spec.required && (value === undefined || value === null || value === '')
+      ? 'timeline.decision.validation.chooseOption'
+      : '';
   }
   if (spec.kind === 'array') {
-    if (spec.required && (value as Set<unknown>).size === 0) {
-      return 'Choose at least one option to continue.';
-    }
-    return '';
+    return spec.required && (value as Set<unknown>).size === 0
+      ? 'timeline.decision.validation.chooseOne'
+      : '';
   }
   if (spec.kind === 'number') {
     const raw = String(value ?? '').trim();
-    if (spec.required && raw === '') return 'Enter a number to continue.';
+    if (spec.required && raw === '') return 'timeline.decision.validation.enterNumber';
     if (raw !== '') {
       const numeric = Number(raw);
       if (!Number.isFinite(numeric) || (spec.property.type === 'integer' && !Number.isInteger(numeric))) {
-        return spec.property.type === 'integer' ? 'Enter a whole number.' : 'Enter a valid number.';
+        return spec.property.type === 'integer'
+          ? 'timeline.decision.validation.wholeNumber'
+          : 'timeline.decision.validation.validNumber';
       }
     }
     return '';
   }
   if (spec.kind === 'text') {
-    if (spec.required && String(value ?? '').trim() === '') return 'Enter a response to continue.';
-    return '';
+    return spec.required && String(value ?? '').trim() === ''
+      ? 'timeline.decision.validation.enterResponse'
+      : '';
   }
   return '';
 }
@@ -398,6 +464,7 @@ function ElicitationCard({
   item: DecisionItem;
   callbacks: DecisionCallbacks;
 }): JSX.Element {
+  const { t } = useTranslation('agent');
   const raw = (item.schema ?? {}) as Record<string, unknown>;
   const schema = (raw.schema && typeof raw.schema === 'object' ? raw.schema : {}) as Record<string, unknown>;
   const mode = typeof raw.mode === 'string' ? raw.mode : '';
@@ -406,7 +473,9 @@ function ElicitationCard({
   if (!specsRef.current) {
     let specs = fieldSpecs(schema);
     if (specs.length === 0 && mode !== 'url') {
-      specs = fieldSpecs({ properties: { response: { type: 'string', title: 'Response' } }, required: ['response'] });
+      // The fallback field title is provider-schema data rendered verbatim;
+      // localize only PSX's own fallback label here.
+      specs = fieldSpecs({ properties: { response: { type: 'string', title: t('timeline.elicitation.responseTitle') } }, required: ['response'] });
     }
     specsRef.current = specs;
   }
@@ -433,10 +502,10 @@ function ElicitationCard({
     const nextErrors: Record<string, string> = {};
     let valid = true;
     for (const spec of specs) {
-      const message = validateField(spec, values[spec.name]);
-      if (message) {
+      const errorKey = validateField(spec, values[spec.name]);
+      if (errorKey) {
         valid = false;
-        nextErrors[spec.name] = message;
+        nextErrors[spec.name] = t(errorKey);
       }
     }
     setErrors(nextErrors);
@@ -446,7 +515,7 @@ function ElicitationCard({
       const value = readField(spec, values[spec.name]);
       if (value !== undefined) content[spec.name] = value;
     }
-    callbacks.onElicitationAction(item, JSON.stringify({ action: 'accept', content }), 'Response sent.');
+    callbacks.onElicitationAction(item, JSON.stringify({ action: 'accept', content }), 'elicitation.responseSent');
   };
 
   const safeUrl = url ? normalizePsxHref(url) : '';
@@ -474,14 +543,16 @@ function ElicitationCard({
           <div className="agent-decision-title text-[13px] font-semibold">{item.title}</div>
         </div>
         <div className="agent-decision-header-status shrink-0 text-xs text-muted-foreground">
-          {disabled ? item.statusText : 'Waiting for input'}
+          {disabled ? resolveDisplay(item.statusCode, t) || item.statusText : t('timeline.elicitation.waitingInput')}
         </div>
       </CollapsibleTrigger>
       {/* forceMount keeps the collapsed form in the DOM (old <details>
           semantics) for text search and replay tooling. */}
       <CollapsibleContent forceMount className="data-[state=closed]:hidden">
       <div className="agent-decision-body p-3">
-      <div className="agent-decision-subtitle break-words text-sm leading-normal">{item.elicitationMessage}</div>
+      <div className="agent-decision-subtitle break-words text-sm leading-normal">
+        {item.elicitationMessage || resolveDisplay(item.elicitationMessageCode, t)}
+      </div>
       <form className="agent-elicitation-form mt-3 grid gap-3" noValidate>
         {specs.map((spec) => {
           const error = errors[spec.name] || '';
@@ -596,7 +667,7 @@ function ElicitationCard({
       </form>
       <div className="agent-decision-actions agent-elicitation-actions mt-2.5 flex flex-wrap gap-2">
         <Button type="button" size="sm" disabled={disabled} onClick={() => act(submit)}>
-          Continue
+          {t('timeline.elicitation.continue')}
         </Button>
         <Button
           type="button"
@@ -604,10 +675,10 @@ function ElicitationCard({
           size="sm"
           disabled={disabled}
           onClick={() =>
-            act(() => callbacks.onElicitationAction(item, JSON.stringify({ action: 'decline' }), 'Declined.'))
+            act(() => callbacks.onElicitationAction(item, JSON.stringify({ action: 'decline' }), 'elicitation.declined'))
           }
         >
-          Decline
+          {t('timeline.elicitation.decline')}
         </Button>
         <Button
           type="button"
@@ -615,13 +686,17 @@ function ElicitationCard({
           size="sm"
           disabled={disabled}
           onClick={() =>
-            act(() => callbacks.onElicitationAction(item, JSON.stringify({ action: 'cancel' }), 'Cancelled.'))
+            act(() => callbacks.onElicitationAction(item, JSON.stringify({ action: 'cancel' }), 'elicitation.cancelled'))
           }
         >
-          Cancel
+          {t('timeline.elicitation.cancel')}
         </Button>
       </div>
-      {disabled && item.statusText ? <div className="agent-decision-status mt-2.5 text-xs text-muted-foreground">{item.statusText}</div> : null}
+      {disabled && (item.statusText || resolveDisplay(item.statusCode, t)) ? (
+        <div className="agent-decision-status mt-2.5 text-xs text-muted-foreground">
+          {resolveDisplay(item.statusCode, t) || item.statusText}
+        </div>
+      ) : null}
       </div>
       </CollapsibleContent>
     </Collapsible>

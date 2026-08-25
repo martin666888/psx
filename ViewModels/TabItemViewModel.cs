@@ -68,11 +68,17 @@ public partial class TabItemViewModel : ObservableObject
         if (workspace.Kind == WorkspaceKind.Terminal)
             return workspace.Title;
 
+        // Hidden WPF compatibility projection: localized through .resx at
+        // format time so no PSX-authored sentence is hardcoded here.
         if (workspace.Kind == WorkspaceKind.DshWeb)
-            return workspace.Title + "\nDeepSeek Harness 工作区";
+            return workspace.Title + "\n" + string.Format(
+                System.Globalization.CultureInfo.CurrentUICulture,
+                PSX.Properties.Strings.DshWorkspaceLabel);
 
         if (workspace.Kind == WorkspaceKind.KimiWeb)
-            return workspace.Title + "\nKimi Code Web 工作区";
+            return workspace.Title + "\n" + string.Format(
+                System.Globalization.CultureInfo.CurrentUICulture,
+                PSX.Properties.Strings.KimiWorkspaceLabel);
 
         var state = workspace.AgentState?.ToString() ?? "Idle";
         return $"{workspace.ProviderName ?? workspace.ProviderKey ?? "Agent"}\n" +

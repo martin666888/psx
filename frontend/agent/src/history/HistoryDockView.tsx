@@ -18,6 +18,7 @@ import {
   type KeyboardEvent,
   type PointerEvent
 } from 'react';
+import { useTranslation } from 'react-i18next';
 import { RefreshCwIcon } from 'lucide-react';
 import { Button } from '../components/ui/button.js';
 import { Input } from '../components/ui/input.js';
@@ -65,6 +66,7 @@ function clampWidth(width: number): number {
 }
 
 export function HistoryDockView(props: HistoryDockViewProps): JSX.Element {
+  const { t } = useTranslation('agent');
   const contentRef = useRef<HTMLDivElement | null>(null);
   const resizerRef = useRef<HTMLDivElement | null>(null);
   // Pointer-capture drag state: recorded on pointerdown, cleared on release.
@@ -192,7 +194,7 @@ export function HistoryDockView(props: HistoryDockViewProps): JSX.Element {
       className="agent-history-dock"
       data-role="history-dock"
       data-agent-font-surface=""
-      aria-label="Agent history"
+      aria-label={t('history.dockAria')}
       hidden={!props.open}
     >
       <div className="agent-history-dock-bar">
@@ -200,8 +202,8 @@ export function HistoryDockView(props: HistoryDockViewProps): JSX.Element {
           type="search"
           className="agent-history-search h-8 text-xs [grid-column:1/-1]"
           data-role="history-search"
-          placeholder="Search threads"
-          aria-label="Search history"
+          placeholder={t('history.searchPlaceholder')}
+          aria-label={t('history.searchAria')}
           value={props.query}
           onChange={(event) => props.onQueryChange(event.target.value)}
         />
@@ -213,12 +215,12 @@ export function HistoryDockView(props: HistoryDockViewProps): JSX.Element {
             className="agent-history-provider-filter w-full min-w-0 text-xs"
             size="sm"
             data-role="history-provider-filter"
-            aria-label="Filter by provider"
+            aria-label={t('history.filterAria')}
           >
-            <SelectValue placeholder="All providers" />
+            <SelectValue placeholder={t('history.allProviders')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={ALL_PROVIDERS}>All providers</SelectItem>
+            <SelectItem value={ALL_PROVIDERS}>{t('history.allProviders')}</SelectItem>
             {props.providers.map((provider) => (
               <SelectItem key={provider.key} value={provider.key}>
                 {provider.label}
@@ -231,8 +233,8 @@ export function HistoryDockView(props: HistoryDockViewProps): JSX.Element {
           size="icon"
           className="agent-history-refresh size-8 shrink-0 border-input"
           data-role="history-refresh"
-          title="Refresh history"
-          aria-label="Refresh history"
+          title={t('history.refreshAria')}
+          aria-label={t('history.refreshAria')}
           onClick={props.onRefresh}
         >
           <RefreshCwIcon className="size-3.5" aria-hidden="true" />
@@ -258,7 +260,7 @@ export function HistoryDockView(props: HistoryDockViewProps): JSX.Element {
         className="agent-history-dock-resizer"
         data-role="history-dock-resizer"
         role="separator"
-        aria-label="Resize Agent history"
+        aria-label={t('history.resizeAria')}
         aria-orientation="vertical"
         // role=separator requires the value triple when focusable (axe
         // aria-required-attr); the controller clamps every committed width.

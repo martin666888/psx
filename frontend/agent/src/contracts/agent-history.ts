@@ -28,11 +28,13 @@ export interface AgentProviderCatalogItem {
 }
 
 /** A failed load_thread action. This is independent from the catalog request
- * status so the cached thread list remains usable and Retry can reopen the
- * exact row that failed. */
+ *  status so the cached thread list remains usable and Retry can reopen the
+ *  exact row that failed. `code` is a fixed locale key (history.*); detail
+ *  carries optional raw technical text, never a PSX-composed sentence. */
 export interface AgentThreadOpenError {
   threadId: string;
-  text: string;
+  code: string;
+  detail: string;
 }
 
 /** Request status machine owned by AgentHistoryRequestBroker. */
@@ -46,7 +48,10 @@ export type AgentHistoryRequestStatus =
 export interface AgentHistoryState {
   threads: AgentHistoryThread[];
   status: AgentHistoryRequestStatus;
-  errorText: string;
+  /** Fixed locale key for the load failure (resolved at render). */
+  errorKey: string;
+  /** Raw technical detail from the host, rendered as a secondary line. */
+  errorDetail: string;
   // A load was desired but could not complete (no channel, carrier closed);
   // the broker retries dirty state when a workspace is created/activated.
   dirty: boolean;
@@ -71,7 +76,8 @@ export function createInitialAgentHistoryState(): AgentHistoryState {
   return {
     threads: [],
     status: 'idle',
-    errorText: '',
+    errorKey: '',
+    errorDetail: '',
     dirty: false,
     inFlightWorkspaceId: '',
     loaded: false,

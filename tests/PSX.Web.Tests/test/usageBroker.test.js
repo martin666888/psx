@@ -169,14 +169,14 @@ test('broker: a usage reply carrying the scan-failed code surfaces localized cop
 
   const state = rig.store.getState();
   assert.equal(state.status, 'error');
-  // Fixed backend codes resolve through the settings locales; arbitrary text
-  // falls back to the generic copy instead of crossing into the DOM.
-  assert.equal(state.errorText, '无法读取用量数据，请重试。');
+  // Fixed backend codes resolve through the settings locales at render;
+  // the store keeps the key only.
+  assert.equal(state.errorKey, 'usage.scanFailed');
 
   rig.broker.requestUsage(false);
   const second = usageCommands(rig.commands).at(-1);
   rig.broker.handleUsageReport({ requestId: second.requestId, error: 'something unexpected' });
-  assert.equal(rig.store.getState().errorText, 'Unable to load usage.');
+  assert.equal(rig.store.getState().errorKey, 'usage.loadFailed');
 });
 
 test('broker: requesting usage without an Agent workspace uses the global bridge', () => {
@@ -224,7 +224,7 @@ test('broker: a profile reply carrying an error leaves the stored revision untou
   assert.equal(state.profile.displayName, 'Trinity');
   assert.equal(state.profile.revision, 3);
   assert.equal(state.profileSaving, false);
-  assert.equal(state.profileError, 'blank name');
+  assert.equal(state.profileError, 'profile.saveFailed');
 });
 
 test('broker: unmatched profile errors stay silent and never apply', () => {
@@ -252,7 +252,7 @@ test('broker: unmatched profile errors stay silent and never apply', () => {
     revision: 9
   });
   state = rig.store.getState();
-  assert.equal(state.profileError, 'first failed');
+  assert.equal(state.profileError, 'profile.saveFailed');
   assert.equal(state.profileSaving, true, 'a newer in-flight save keeps the busy state');
 
   const second = rig.commands.at(-1);
@@ -264,7 +264,7 @@ test('broker: unmatched profile errors stay silent and never apply', () => {
   state = rig.store.getState();
   assert.equal(state.profile.displayName, 'Neo');
   assert.equal(state.profileSaving, false);
-  assert.equal(state.profileError, '无法保存个人资料，请重试。');
+  assert.equal(state.profileError, 'profile.saveFailed');
 });
 
 test('broker: a late profile read cannot clear a newer mutation error', () => {
@@ -281,7 +281,7 @@ test('broker: a late profile read cannot clear a newer mutation error', () => {
     revision: 3,
     displayName: 'Trinity'
   });
-  assert.equal(rig.store.getState().profileError, 'Unable to write profile.');
+  assert.equal(rig.store.getState().profileError, 'profile.saveFailed');
 
   rig.broker.handleProfile({
     requestId: bootstrap.requestId,
@@ -290,7 +290,7 @@ test('broker: a late profile read cannot clear a newer mutation error', () => {
   });
   const state = rig.store.getState();
   assert.equal(state.profile.displayName, 'Trinity');
-  assert.equal(state.profileError, 'Unable to write profile.');
+  assert.equal(state.profileError, 'profile.saveFailed');
   assert.equal(state.profileSaving, false);
 });
 
@@ -324,7 +324,7 @@ test('broker: times out, retries once on the global bridge, then errors', async 
   await sleep(50);
   const state = rig.store.getState();
   assert.equal(state.status, 'error');
-  assert.match(state.errorText, /timed out/i);
+  assert.equal(state.errorKey, 'usage.timeout');
 });
 
 // --- config_report (Usage panel「配置」tab) -----------------------------------
@@ -399,7 +399,8 @@ test('broker: config error payload surfaces in the config slice', () => {
   rig.broker.handleConfigReport({ requestId: sent.requestId, error: 'config.note.scan_failed' });
   const state = rig.store.getState();
   assert.equal(state.configStatus, 'error');
-  assert.match(state.configErrorText, /无法读取配置/);
+  // The note code is stored raw; ConfigPanel maps it to locale copy at render.
+  assert.equal(state.configErrorKey, 'config.note.scan_failed');
   assert.equal(state.configLoadedOnce, true);
 });
 
@@ -450,7 +451,7 @@ test('broker: a broadcast never unbinds a pending locale mutation', () => {
     errorMessage: '后端拼接的中文句子'
   });
   const state = rig.store.getState();
-  assert.equal(state.languageError, '无法保存语言设置。');
+  assert.equal(state.languageError, 'language.saveFailed');
   assert.equal(state.settingsError, '');
 });
 

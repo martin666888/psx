@@ -6,7 +6,8 @@
     "completed": "Completed"
   },
   "workspace": {
-    "fallbackTitle": "Workspace"
+    "fallbackTitle": "Workspace",
+    "columnAria": "Workspaces in column"
   },
   "tab": {
     "closeTitle": "Close {{title}}"
@@ -20,7 +21,12 @@
   "create": {
     "placementFocused": "This column",
     "placementNewRight": "New column on the right",
-    "columnCapTitle": "At most 3 columns are supported"
+    "columnCapTitle": "At most 3 columns are supported",
+    "terminal": "Terminal",
+    "webApps": "Web apps",
+    "kimiWeb": "Kimi Code Web",
+    "dsh": "DeepSeek Harness",
+    "agents": "Agents (ACP)"
   },
   "common": {
     "widthInsufficient": "Window is too narrow for another column",
@@ -34,7 +40,18 @@
     "updated": "Updated",
     "current": "Current",
     "confirm": "Confirm",
-    "openFolder": "Open theme folder"
+    "openFolder": "Open theme folder",
+    "currentNamed": "Current: {{name}}",
+    "currentCustom": "Current: Custom",
+    "sourceMissing": "Theme source missing",
+    "message": {
+      "previewing": "Previewing — confirm to keep this theme.",
+      "file_changed": "Theme file changed. Review the new preview, then confirm again.",
+      "apply_failed": "Unable to apply theme: {{detail}}",
+      "folder_open_failed": "Unable to open the theme folder: {{detail}}",
+      "scan_failed": "Unable to read the theme directory: {{detail}}",
+      "invalid_file": "The theme file is invalid and was not applied."
+    }
   },
   "pane": {
     "layoutSection": "Layout",

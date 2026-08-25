@@ -450,7 +450,7 @@ function ProfileCard({
       </div>
       {state.profileError ? (
         <p className="agent-usage-error" data-role="usage-profile-error" role="alert">
-          {state.profileError}
+          {t(state.profileError, { ns: 'settings', defaultValue: t('profile.saveFailed') })}
         </p>
       ) : null}
     </div>
@@ -604,7 +604,7 @@ export function UsagePanel(props: UsagePanelProps): JSX.Element {
 
               {state.status === 'error' ? (
                 <div className="agent-usage-error" data-role="usage-error" role="alert">
-                  <span>{state.errorText}</span>
+                  <span>{t(state.errorKey || 'usage.loadFailed', { ns: 'settings' })}</span>
                   <Button variant="outline" size="sm" data-role="usage-retry" onClick={props.onRetry}>
                     {t('common.retry')}
                   </Button>
@@ -694,7 +694,7 @@ function RegistrySection({
       ))}
       {state.settingsError ? (
         <p className="agent-usage-error" data-role="settings-registry-error" role="alert">
-          {state.settingsError}
+          {t(state.settingsError, { ns: 'settings', defaultValue: t('registry.saveFailed') })}
         </p>
       ) : null}
       <Button
@@ -762,7 +762,7 @@ function LanguageSection({
       })}
       {state.languageError ? (
         <p className="agent-usage-error" data-role="settings-language-error" role="alert">
-          {state.languageError}
+          {t(state.languageError, { ns: 'settings', defaultValue: t('language.saveFailed') })}
         </p>
       ) : null}
     </div>

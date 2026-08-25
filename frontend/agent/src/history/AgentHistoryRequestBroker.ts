@@ -42,8 +42,8 @@ export interface AgentHistoryRequestBrokerOptions {
 
 const DEFAULT_TIMEOUT_MS = 10000;
 const GLOBAL_CHANNEL = '@global';
-const TIMEOUT_ERROR_TEXT = 'Loading Agent thread history timed out.';
-const DEFAULT_ERROR_TEXT = 'Unable to load Agent thread history.';
+/** Fixed locale keys — the sentence lives in the agent locales. */
+const TIMEOUT_ERROR_KEY = 'history.timeout';
 
 function asString(value: unknown): string {
   return typeof value === 'string' ? value : '';
@@ -166,7 +166,9 @@ export class AgentHistoryRequestBroker {
     if (!this.inFlightWorkspaceId || this.inFlightWorkspaceId !== channel) return;
     this.clearInFlight();
     this.refreshQueued = false;
-    this.store.applyError(asString(raw.text) || DEFAULT_ERROR_TEXT);
+    // Fixed code + raw technical detail from the host; the sentence is
+    // resolved at render time.
+    this.store.applyError(asString(raw.code) || 'history.loadFailed', asString(raw.detail));
   }
 
   /** Sends a non-history command through the best available channel (used by
@@ -269,7 +271,7 @@ export class AgentHistoryRequestBroker {
         return;
       }
     }
-    this.store.applyError(TIMEOUT_ERROR_TEXT);
+    this.store.applyError(TIMEOUT_ERROR_KEY);
   }
 
   private clearInFlight(): void {

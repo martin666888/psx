@@ -5,7 +5,82 @@
       "commandsLoading": "Agent のコマンドリストはまだ読み込み中です。しばらくしてから再試行してください。",
       "unsupported": "コマンドを認識できません: {{command}}\nPSX がサポートするのはコマンドメニューに表示されているコマンドだけです。/ と入力すると利用可能なコマンドを確認できます。一部の {{agentName}} コマンドはネイティブのターミナルで実行する必要があります。"
     },
-    "compactConfigAria": "Agent 設定"
+    "compactConfigAria": "Agent 設定",
+    "cmd": {
+      "cwd": "現在の作業ディレクトリを表示",
+      "cwdPath": "この下書き Agent の作業ディレクトリを変更",
+      "terminal": "ここで {{assistantName}} の生ターミナルを開く",
+      "stop": "{{assistantName}} の現在の実行を停止",
+      "history": "保存済み Agent スレッドを表示",
+      "delete": "現在のスレッドを削除",
+      "help": "PSX Agent コマンドを表示",
+      "sendTo": "{{assistantName}} に送信"
+    },
+    "menu": {
+      "availableCommands": "利用可能なコマンド"
+    },
+    "messageAria": "Agent にメッセージ",
+    "decisionAria": "Agent の決定",
+    "placeholder": {
+      "readOnly": "読み取り専用のトランスクリプト — 新しい Agent タブで続行してください",
+      "installRuntime": "メッセージ送信には Agent ランタイムのインストールが必要です",
+      "message": "{{assistantName}} へメッセージ — / でコマンド表示"
+    },
+    "submit": {
+      "loading": "読み込み中",
+      "readOnly": "読み取り専用",
+      "stop": "停止",
+      "send": "送信",
+      "loadingTitle": "ACP 履歴を読み込み中",
+      "newTabTitle": "続行するには新しい Agent タブを作成",
+      "stopTitle": "{{assistantName}} を停止",
+      "sendTitle": "メッセージを送信"
+    },
+    "mode": {
+      "label": "モード",
+      "title": "{{assistantName}} Agent モード"
+    },
+    "attach": {
+      "ready": "画像を添付",
+      "installRuntime": "画像を添付する前に Agent ランタイムをインストールしてください",
+      "unsupportedAgent": "現在の ACP Agent は画像入力に対応していません"
+    },
+    "uploadAria": "ファイルをアップロード",
+    "error": {
+      "messageTooLarge": "メッセージは 1MB 以下にしてください。",
+      "attachmentsChanged": "送信中に添付が変更されました。確認してから再度送信してください。",
+      "attachmentsUploading": "画像は アップロード中です。完了してから送信してください。",
+      "imagesTooLarge": "画像は 20MB 以下にしてください。",
+      "tooManyImages": "一度に添付できる画像は 5 枚までです。",
+      "onlyImages": "画像の添付のみ対応しています。",
+      "totalTooLarge": "1 つのメッセージの画像合計は 50MB 以下にしてください。",
+      "imageReadFailed": "画像ファイルの読み取りに失敗しました。"
+    },
+    "attachment": {
+      "image": "画像",
+      "file": "添付",
+      "imageAttachment": "画像の添付",
+      "previewAria": "{{fileName}} をプレビュー",
+      "unavailable": "画像を表示できません",
+      "uploading": "アップロード中",
+      "failed": "アップロード失敗",
+      "removeAria": "添付を削除"
+    },
+    "transition": {
+      "chooseHow": "选择如何继续",
+      "stopTitle": "停止 {{assistantName}}",
+      "stopping": "正在停止",
+      "stop": "停止",
+      "status": {
+        "waitingSelection": "Agent 正在等待你的选择。",
+        "invalidResponseData": "Agent 返回的数据无效，请求无法继续。",
+        "stoppingRun": "正在停止当前 Agent 运行……",
+        "sendingOption": "正在发送 {{name}}……"
+      },
+      "error": {
+        "invalidRequestId": "ACP Agent 未返回有效的请求标识。"
+      }
+    }
   },
   "timeline": {
     "copy": "コピー",
@@ -20,9 +95,177 @@
       },
       "run_failed": {
         "vision_context": "ヒント: この会話では以前に画像が送信されています。現在のモデルまたはプロバイダーが画像コンテキストに対応していないか、マルチモーダルモデルでないことが原因の可能性があります。マルチモーダルモデルへの切り替えをおすすめします。"
+      },
+      "thread": {
+        "deleted": "スレッドを削除しました。",
+        "cwd_changed": "作業ディレクトリを切り替えました：{{path}}",
+        "cwd_current": "現在の作業ディレクトリ：{{path}}",
+        "ready": "準備完了。最初のメッセージから {{agentName}} が処理を始めます。作業ディレクトリとセッション状態は上に表示されます。"
+      },
+      "run": {
+        "stopped": "現在の実行を停止しました。",
+        "inactive": "現在実行中のリクエストはありません。",
+        "install_first": "メッセージを送る前に Agent ランタイムをインストールしてください。",
+        "history_loading": "ACP 履歴を読み込み中です。復元が完了してから送信してください。",
+        "still_responding": "{{assistantName}} はまだ応答中です。現在の実行の完了を待つか、/stop を使用してください。",
+        "cwd_locked": "最初のメッセージの後、作業ディレクトリはロックされます。別のディレクトリを使うには新しい Agent タブを作成してください。"
+      },
+      "cwd": {
+        "not_found": "ディレクトリが存在しません：{{path}}"
+      },
+      "help": {
+        "commands": "PSX コマンド：/cwd、/cwd <パス>、/terminal、/stop、/history、/delete、/help。ACP コマンドは {{assistantName}} を通じて送信されます。"
+      },
+      "terminal": {
+        "no_entry": "{{displayName}} はネイティブターミナルの入口を提供していません。",
+        "fallback_opened": "現在の作業ディレクトリで {{displayName}} の生ターミナルタブを開きました。"
+      },
+      "resume": {
+        "replay_note": "ACP セッションを読み込みましたが、トランスクリプトを再生できませんでした。ローカルのスナップショットを保持します。",
+        "prepare_failed": "PSX は Agent セッションを準備できませんでした。保存されたローカルのトランスクリプトは引き続き閲覧できます。",
+        "unsupported_provider": "このスレッドは未対応の Agent プロバイダー（{{provider}}）に属しているため、ローカルのトランスクリプトのみ表示します。",
+        "no_session_id": "このスレッドには ACP セッション ID がありません。ローカルのトランスクリプトは引き続き閲覧できます。",
+        "runtime_missing": "このセッションを続けるには Agent ランタイムのインストールが必要です。ランタイムが準備できると PSX が自動的に再試行します。",
+        "replay_unavailable": "Agent セッションは読み込まれましたが、トランスクリプトを再生できませんでした。ローカルのトランスクリプトは引き続き閲覧できます。",
+        "restore_failed": "PSX はこの Agent セッションを復元できませんでした。ローカルのトランスクリプトは引き続き閲覧できます。",
+        "runtime_lost": "復元中に Agent ランタイムが利用できなくなりました。ランタイムが準備できると PSX が自動的に再試行します。",
+        "reconnect_failed": "再接続後に PSX はこの Agent セッションを復元できませんでした。ローカルのトランスクリプトは引き続き閲覧できます。",
+        "transcript_only_prompt": "このやり取りはローカルのトランスクリプトのみ読めます。新しいスレッドを作成するか、ターミナルを開いて続けてください。"
+      },
+      "transcript": {
+        "read_only_run": "この保存済みトランスクリプトは読み取り専用です。新しい Agent タブを作成して続行してください。",
+        "read_only_help": "このトランスクリプトは読み取り専用です。/history、/cwd、/delete が使用できます。プロバイダーと共に続けるには新しい Agent タブを作成してください。",
+        "stop_inactive": "現在実行中の Agent リクエストはありません。"
+      },
+      "attachment": {
+        "unsupported_agent": "現在の ACP Agent は画像入力に対応していません。",
+        "unsupported_type": "PNG・JPEG・WebP・GIF の画像のみ対応しています。",
+        "too_large": "1 枚の画像は 20MB 以下にしてください。",
+        "invalid_data": "画像アップロードのデータが無効です。",
+        "size_mismatch": "画像サイズがファイルのメタデータと一致しません。"
+      },
+      "prompt": {
+        "too_many_images": "一度に添付できる画像は {{limit}} 枚までです。",
+        "image_not_found": "一部の画像添付が見つかりません。削除して再試行してください。",
+        "images_too_large": "1 つのメッセージの画像合計は 50MB 以下にしてください。"
+      },
+      "decision": {
+        "cancelled_run_stopped": "現在の実行が停止したため、リクエストをキャンセルしました。"
+      },
+      "elicitation": {
+        "cancelled_run_stopped": "現在の実行が停止したため、インプット要求をキャンセルしました。"
+      },
+      "workspace": {
+        "agent_limit_reached": "同時に開ける Agent タブは {{limit}} 個までです。"
       }
     },
-    "visionContextHint": "ヒント: この会話では以前に画像が送信されています。現在のモデルまたはプロバイダーが画像コンテキストに対応していないか、マルチモーダルモデルでないことが原因の可能性があります。マルチモーダルモデルへの切り替えをおすすめします。"
+    "decision": {
+      "inactive": "このリクエストは既に無効です。",
+      "selectedOption": "選択済み：{{name}}",
+      "selectionRecorded": "選択を記録しました。",
+      "requestCancelled": "リクエストをキャンセルしました。",
+      "endedBeforeSelection": "選択が完了する前にリクエストが終了しました。",
+      "replacedByNewer": "より新しいモード移行リクエストがこれを置き換えました。",
+      "waitingSelection": "エージェントがあなたの選択を待っています。",
+      "required": "決定が必要",
+      "headerState": {
+        "pending": "保留中",
+        "selected": "選択済み",
+        "cancelled": "キャンセル済み",
+        "interrupted": "中断",
+        "sending": "送信中"
+      },
+      "permissionSubtitle": "続行するには {{agentName}} の承認が必要です。",
+      "questionSubtitle": "{{agentName}} があなたの回答を待っています。",
+      "permissionTitle": "権限リクエスト",
+      "questionTitle": "{{agentName}} の質問",
+      "needsInputTitle": "{{agentName}} Agent の入力が必要です",
+      "provideInfo": "続行するには必要な情報を入力してください。",
+      "reviewDirection": "提案された方向性を確認してください",
+      "modeTransitionTitle": "モード移行",
+      "noOptions": "エージェントが選択肢を提供しませんでした。",
+      "noOptionsAcp": "ACP エージェントが選択肢を提供しませんでした。",
+      "rawInput": "生の入力",
+      "choosePermission": "権限の応答を選択",
+      "chooseAnswer": "回答を選択",
+      "chooseHow": "続行方法を選択",
+      "chooseResponse": "応答を選択",
+      "proposalDetails": "提案の詳細",
+      "documentDetails": "ドキュメントの詳細",
+      "option": {
+        "allow": "許可",
+        "reject": "拒否",
+        "yes": "はい",
+        "no": "いいえ",
+        "select": "選択"
+      },
+      "validation": {
+        "chooseOption": "先にオプションを選択してください。",
+        "chooseOne": "少なくとも 1 つのオプションを選択してください。",
+        "enterNumber": "数値を入力してください。",
+        "wholeNumber": "整数を入力してください。",
+        "validNumber": "有効な数値を入力してください。",
+        "enterResponse": "回答を入力してください。"
+      }
+    },
+    "recovery": {
+      "title": "セッションを復元できませんでした",
+      "technicalDetails": "技術的な詳細",
+      "openTerminal": "ターミナルを開く"
+    },
+    "thinking": {
+      "running": "考えています…",
+      "forSeconds": "{{seconds}} 秒考えています",
+      "thoughtFew": "数秒考えました",
+      "thoughtFor": "{{seconds}} 秒考えました"
+    },
+    "toolSection": {
+      "input": "入力",
+      "output": "出力"
+    },
+    "tool": {
+      "finished": "完了。",
+      "untitled": "ツール"
+    },
+    "toolState": {
+      "running": "実行中",
+      "done": "完了",
+      "error": "失敗",
+      "cancelled": "キャンセル済み",
+      "fallback": "ターミナルが必要"
+    },
+    "rawTerminal": {
+      "title": "生ターミナルフォールバック"
+    },
+    "runErrorTitle": "{{agentName}} のエラー",
+    "unknownError": "不明なエラー。",
+    "couldNotResume": "{{agentName}} はこのセッションを復元できませんでした。",
+    "imageAttachment": "[画像の添付]",
+    "imageUnavailable": "画像を表示できません",
+    "message": {
+      "you": "あなた"
+    },
+    "conversationLabel": "Agent の会話",
+    "empty": {
+      "title": "まだメッセージがありません",
+      "description": "メッセージを送って会話を始めましょう。"
+    },
+    "runGroup": {
+      "summary_one": "ツール活動 · {{count}} 回",
+      "summary_other": "ツール活動 · {{count}} 回",
+      "live": "{{running}} 件が実行中",
+      "failed": "失敗"
+    },
+    "elicitation": {
+      "responseTitle": "応答",
+      "waitingInput": "入力待ち",
+      "continue": "続行",
+      "decline": "辞退",
+      "cancel": "キャンセル",
+      "responseSent": "応答を送信しました。",
+      "declined": "辞退しました。",
+      "cancelled": "キャンセルしました。"
+    }
   },
   "runtime": {
     "notInstalled": "Agent ランタイムがインストールされていません。",
@@ -52,7 +295,9 @@
     "stagedWithPending": "PSX を再起動すると更新が適用されます。",
     "stagedWithoutPending": "更新の準備ができました。PSX を再起動して適用してください。",
     "checkTooltip": "Agent ランタイムの更新を確認",
-    "moreAria": "その他の Agent 操作"
+    "moreAria": "その他の Agent 操作",
+    "planToggle": "Planカードを切り替え",
+    "planToggleUnread": "Planカードを切り替え（プラン更新あり）"
   },
   "sessionCard": {
     "titles": {
@@ -66,5 +311,69 @@
     "install": "ランタイムをインストール",
     "retryInstallation": "インストールを再試行",
     "cancel": "キャンセル"
+  },
+  "common": {
+    "retry": "再試行",
+    "dismiss": "閉じる",
+    "remove": "削除",
+    "close": "閉じる"
+  },
+  "history": {
+    "fallbackTitle": "Agent チャット",
+    "badge": {
+      "current": "現在",
+      "open": "開いている"
+    },
+    "activeDotAria": "アクティブなセッションを含む",
+    "showAll": "すべての {{count}} 件のスレッドを表示",
+    "loading": "履歴を読み込み中…",
+    "unavailable": "Agent 履歴は利用できません。",
+    "loadFailed": "Agent スレッド履歴を読み込めませんでした。",
+    "timeout": "Agent スレッド履歴の読み込みがタイムアウトしました。",
+    "openFailed": "選択した Agent スレッドを開けませんでした。再試行してください。",
+    "empty": "保存済みの Agent スレッドはありません。",
+    "noMatches": "検索またはフィルターに一致するスレッドはありません。",
+    "unknownWorkspace": "不明なワークスペース",
+    "dockAria": "Agent 履歴",
+    "searchPlaceholder": "スレッドを検索",
+    "searchAria": "履歴を検索",
+    "filterAria": "プロバイダーで絞り込み",
+    "allProviders": "すべてのプロバイダー",
+    "refreshAria": "履歴を更新",
+    "resizeAria": "Agent 履歴の幅を変更"
+  },
+  "plan": {
+    "title": "プラン",
+    "empty": "実行中のプランはありません",
+    "noItems": "プラン項目はありません。",
+    "status": {
+      "completed": "完了",
+      "current": "進行中",
+      "pending": "保留中"
+    }
+  },
+  "session": {
+    "change": "変更",
+    "changeDraftTitle": "下書きの作業ディレクトリを変更",
+    "changeLockedTitle": "別の作業ディレクトリには新しい Agent タブを使用",
+    "idLabel": "セッション：{{sessionId}}",
+    "context": {
+      "noUsageSummary": "Agent はまだコンテキスト使用量を報告していません",
+      "noUsageDetail": "Agent が報告するとコンテキスト使用量が表示されます。",
+      "limitedSummary": "{{percent}} · {{used}} / {{size}}",
+      "remainingDetail": "残り {{remaining}}",
+      "usedSummary": "使用済み {{used}}",
+      "noLimitDetail": "Agent はコンテキスト上限を報告していません。",
+      "aria": "コンテキスト：{{summary}}。{{detail}}",
+      "costLine": "コスト · {{amount}}"
+    }
+  },
+  "island": {
+    "failureTitle": "{{name}} を表示できません",
+    "failureImport": "このインターフェイスを再読み込みするには PSX を再起動してください。問題が続く場合は、PSX パッケージを入れ替えるか再インストールしてください。",
+    "failureRender": "この部分のインターフェイスが予期せず停止しました。"
+  },
+  "markdown": {
+    "diagramFailed": "図を描画できませんでした。"
   }
 }

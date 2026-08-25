@@ -167,11 +167,11 @@ function configOptionRank(id: string): number {
 /** Mirrors legacy _setAgentCommands normalization. */
 function normalizeAgentCommands(value: unknown, assistantName: string): ComposerCommand[] {
   const list = Array.isArray(value) ? value : [];
-  const source = assistantName + ' Agent';
+  const source = assistantName;
   return list
     .map((command) => {
       if (typeof command === 'string') {
-        return { name: command, description: 'Send to ' + source } as Record<string, unknown>;
+        return { name: command } as Record<string, unknown>;
       }
       return (command ?? {}) as Record<string, unknown>;
     })
@@ -183,7 +183,8 @@ function normalizeAgentCommands(value: unknown, assistantName: string): Composer
       return {
         source,
         name,
-        label: typeof description === 'string' && description ? description : 'Send to ' + source,
+        // Empty label = PSX fallback; the composer menu localizes it at render.
+        label: typeof description === 'string' && description ? description : '',
         agent: true
       };
     });

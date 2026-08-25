@@ -15,7 +15,21 @@ import type {
 } from '../contracts/agent-history.js';
 import { createInitialAgentHistoryState } from '../contracts/agent-history.js';
 
-const DEFAULT_ERROR_TEXT = 'Unable to load Agent thread history.';
+/** Fixed locale keys — never stored display sentences. */
+export const HISTORY_ERROR_KEYS = {
+  loadFailed: 'history.loadFailed',
+  openFailed: 'history.openFailed'
+} as const;
+
+/** Backend wire codes → agent-locale keys. */
+const WIRE_CODE_MAP: Record<string, string> = {
+  'history.load_failed': HISTORY_ERROR_KEYS.loadFailed,
+  'history.open_failed': HISTORY_ERROR_KEYS.openFailed
+};
+
+function toLocaleKey(code: string, fallback: string): string {
+  return WIRE_CODE_MAP[code] ?? (code || fallback);
+}
 
 function asString(value: unknown): string {
   return typeof value === 'string' ? value : '';
@@ -84,7 +98,8 @@ export class AgentHistoryStore {
         ...this.state,
         threads,
         status: 'idle',
-        errorText: '',
+        errorKey: '',
+        errorDetail: '',
         dirty: false,
         inFlightWorkspaceId: '',
         loaded: true
@@ -93,13 +108,16 @@ export class AgentHistoryStore {
     );
   }
 
-  /** A load failed with a host error: keep the cached list, show the error. */
-  applyError(text: string): void {
+  /** A load failed with a host error: keep the cached list, show the error.
+   *  `key` is a fixed locale key (or backend wire code); `detail` is optional
+   *  raw technical text. */
+  applyError(key: string, detail = ''): void {
     this.set(
       {
         ...this.state,
         status: 'error',
-        errorText: text || DEFAULT_ERROR_TEXT,
+        errorKey: toLocaleKey(key, HISTORY_ERROR_KEYS.loadFailed),
+        errorDetail: detail,
         dirty: false,
         inFlightWorkspaceId: ''
       },
@@ -142,14 +160,15 @@ export class AgentHistoryStore {
   }
 
   /** A row action failed: keep the catalog and its request state intact. */
-  applyThreadOpenError(threadId: string, text: string): void {
+  applyThreadOpenError(threadId: string, code = '', detail = ''): void {
     if (!threadId) return;
     this.set(
       {
         ...this.state,
         threadOpenError: {
           threadId,
-          text: text || 'PSX could not open the selected Agent thread. Try again.'
+          code: toLocaleKey(code, HISTORY_ERROR_KEYS.openFailed),
+          detail
         }
       },
       { kind: 'thread-open-error' }

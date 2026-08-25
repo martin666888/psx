@@ -119,7 +119,10 @@ function PlanIcon(): JSX.Element {
 }
 
 export function WorkspaceToolbar(props: WorkspaceToolbarProps): JSX.Element {
-  const planLabel = props.plan.unread ? 'Toggle Plan card, plan updated' : 'Toggle Plan card';
+  const planLabel = i18nT(
+    props.plan.unread ? 'toolbar.planToggleUnread' : 'toolbar.planToggle',
+    { ns: 'agent' }
+  );
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement | null>(null);
   const moreTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -160,7 +163,7 @@ export function WorkspaceToolbar(props: WorkspaceToolbarProps): JSX.Element {
                 title={props.session.changeCwdTitle}
                 onClick={props.session.onPickCwd}
               >
-                Change
+                {i18nT('session.change', { ns: 'agent' })}
               </Button>
               {props.session.sessionLabel ? <small>{props.session.sessionLabel}</small> : null}
             </div>

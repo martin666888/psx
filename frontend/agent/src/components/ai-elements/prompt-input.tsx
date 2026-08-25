@@ -51,6 +51,7 @@ import {
   SquareIcon,
   XIcon,
 } from "lucide-react";
+import { t as i18nT } from '../../../../webview/src/i18n.js';
 import {
   type ChangeEvent,
   type ChangeEventHandler,
@@ -314,7 +315,8 @@ export function PromptInputAttachment({
     data.mediaType?.startsWith("image/") && data.url ? "image" : "file";
   const isImage = mediaType === "image";
 
-  const attachmentLabel = filename || (isImage ? "Image" : "Attachment");
+  const attachmentLabel =
+    filename || i18nT(isImage ? 'composer.attachment.image' : 'composer.attachment.file', { ns: 'agent' });
 
   const attachment = (
     <div
@@ -343,7 +345,7 @@ export function PromptInputAttachment({
         </div>
         {removable ? (
           <Button
-            aria-label="Remove attachment"
+            aria-label={i18nT('composer.attachment.removeAria', { ns: 'agent' })}
             className="absolute inset-0 size-5 cursor-pointer rounded p-0 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 focus-visible:opacity-100 [&>svg]:size-2.5"
             onClick={(e) => {
               e.stopPropagation();
@@ -353,7 +355,7 @@ export function PromptInputAttachment({
             variant="ghost"
           >
             <XIcon />
-            <span className="sr-only">Remove</span>
+            <span className="sr-only">{i18nT('common.remove', { ns: 'agent' })}</span>
           </Button>
         ) : null}
       </div>
@@ -374,7 +376,7 @@ export function PromptInputAttachment({
           {isImage && (
             <div className="flex max-h-96 w-96 items-center justify-center overflow-hidden rounded-md border">
               <img
-                alt={filename || "attachment preview"}
+                alt={filename || attachmentLabel}
                 className="max-h-full max-w-full object-contain"
                 height={384}
                 src={data.url}
@@ -385,7 +387,7 @@ export function PromptInputAttachment({
           <div className="flex items-center gap-2.5">
             <div className="min-w-0 flex-1 space-y-1 px-0.5">
               <h4 className="truncate font-semibold text-sm leading-none">
-                {filename || (isImage ? "Image" : "Attachment")}
+                {attachmentLabel}
               </h4>
               {data.mediaType && (
                 <p className="truncate font-mono text-muted-foreground text-xs">
@@ -437,7 +439,7 @@ export type PromptInputActionAddAttachmentsProps = ComponentProps<
 };
 
 export const PromptInputActionAddAttachments = ({
-  label = "Add photos or files",
+  label,
   ...props
 }: PromptInputActionAddAttachmentsProps) => {
   const attachments = usePromptInputAttachments();
@@ -805,13 +807,13 @@ export const PromptInput = ({
     <>
       <input
         accept={accept}
-        aria-label="Upload files"
+        aria-label={i18nT('composer.uploadAria', { ns: 'agent' })}
         className="hidden"
         data-role="attachment-input"
         multiple={multiple}
         onChange={handleChange}
         ref={inputRef}
-        title="Upload files"
+        title={i18nT('composer.uploadAria', { ns: 'agent' })}
         type="file"
       />
       <form
@@ -854,7 +856,7 @@ export const PromptInputTextarea = ({
   onKeyDown,
   onPaste,
   className,
-  placeholder = "What would you like to know?",
+  placeholder,
   ...props
 }: PromptInputTextareaProps) => {
   const controller = useOptionalPromptInputController();
@@ -1091,7 +1093,7 @@ export const PromptInputSubmit = ({
 
   return (
     <InputGroupButton
-      aria-label="Submit"
+      aria-label={i18nT('composer.submit.sendTitle', { ns: 'agent' })}
       className={cn(className)}
       size={size}
       type="submit"

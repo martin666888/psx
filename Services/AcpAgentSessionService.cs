@@ -14,6 +14,67 @@ public static class SessionMessageCode
     public const string LoginNoEntry = "login.no_entry";
     public const string LoginRequiredTerminal = "login.required_terminal";
     public const string VisionContext = "run_failed.vision_context";
+
+    // Run lifecycle
+    public const string RunStopped = "run.stopped";
+    public const string RunInactive = "run.inactive";
+    public const string RunInstallFirst = "run.install_first";
+    public const string RunHistoryLoading = "run.history_loading";
+    public const string RunStillResponding = "run.still_responding";
+    public const string RunCwdLocked = "run.cwd_locked";
+    public const string RunCwdCancelled = "decision.cancelled_run_stopped";
+    public const string RunInputCancelled = "elicitation.cancelled_run_stopped";
+
+    // Directories and threads
+    public const string CwdNotFound = "cwd.not_found";
+    public const string CwdChanged = "thread.cwd_changed";
+    public const string CwdCurrent = "thread.cwd_current";
+    public const string ThreadDeleted = "thread.deleted";
+    public const string HelpCommands = "help.commands";
+    public const string TerminalNoEntry = "terminal.no_entry";
+    public const string TerminalFallbackOpened = "terminal.fallback_opened";
+    public const string ResumeReplayNote = "resume.replay_note";
+    public const string HistoryLoadFailed = "history.load_failed";
+
+    // Restore / transcript-only states
+    public const string ResumePrepareFailed = "resume.prepare_failed";
+    public const string ResumeUnsupportedProvider = "resume.unsupported_provider";
+    public const string ResumeNoSessionId = "resume.no_session_id";
+    public const string ResumeRuntimeMissing = "resume.runtime_missing";
+    public const string ResumeReplayUnavailable = "resume.replay_unavailable";
+    public const string ResumeRestoreFailed = "resume.restore_failed";
+    public const string ResumeRuntimeLost = "resume.runtime_lost";
+    public const string ResumeReconnectFailed = "resume.reconnect_failed";
+    public const string ResumeTranscriptOnlyPrompt = "resume.transcript_only_prompt";
+    public const string TranscriptReadOnlyRun = "transcript.read_only_run";
+    public const string TranscriptReadOnlyHelp = "transcript.read_only_help";
+    public const string TranscriptStopInactive = "transcript.stop_inactive";
+
+    // Attachments and prompt images
+    public const string AttachmentUnsupportedAgent = "attachment.unsupported_agent";
+    public const string AttachmentUnsupportedType = "attachment.unsupported_type";
+    public const string AttachmentTooLarge = "attachment.too_large";
+    public const string AttachmentInvalidData = "attachment.invalid_data";
+    public const string AttachmentSizeMismatch = "attachment.size_mismatch";
+    public const string PromptImageTooMany = "prompt.too_many_images";
+    public const string PromptImageNotFound = "prompt.image_not_found";
+    public const string PromptImagesTooLarge = "prompt.images_too_large";
+}
+
+/// <summary>Failure carrying a fixed session message code instead of display
+/// text; the code plus optional interpolation args cross the bridge and the
+/// frontend locales own the sentence.</summary>
+public sealed class AcpSessionFailureException : Exception
+{
+    public string Code { get; }
+    public object? Args { get; }
+
+    public AcpSessionFailureException(string code, object? args = null)
+        : base(code)
+    {
+        Code = code;
+        Args = args;
+    }
 }
 
 public sealed class AcpAgentSessionService : IAgentWorkspaceSession
@@ -352,8 +413,8 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         }
 
         await _decisions.CancelAllAsync(
-            "Request cancelled because the current run stopped.",
-            "Input request cancelled because the current run stopped.").ConfigureAwait(false);
+            SessionMessageCode.RunCwdCancelled,
+            SessionMessageCode.RunInputCancelled).ConfigureAwait(false);
 
         var forceReset = false;
         if (oldTask != null)
@@ -440,7 +501,8 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             await _bridgeService.SendEventAsync(new
             {
                 type = "command_result",
-                text = hadRun ? "ACP run stopped." : "No ACP run is currently active."
+                text = "",
+                code = hadRun ? SessionMessageCode.RunStopped : SessionMessageCode.RunInactive
             }).ConfigureAwait(false);
         }
         await PublishStateAsync().ConfigureAwait(false);
@@ -518,8 +580,9 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             _restoreBlockedByRuntime = false;
             _status = "transcript_only";
             await SendResumeFailedAsync(
-                "PSX could not prepare the Agent session. The saved local transcript is still available to read.",
-                ex.Message).ConfigureAwait(false);
+                "",
+                ex.Message,
+                SessionMessageCode.ResumePrepareFailed).ConfigureAwait(false);
             await PublishStateAsync().ConfigureAwait(false);
             return;
         }
@@ -528,7 +591,10 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         {
             _restoreBlockedByRuntime = false;
             _status = "transcript_only";
-            await SendResumeFailedAsync(BuildUnsupportedProviderMessage(_currentThread.Provider)).ConfigureAwait(false);
+            await SendResumeFailedAsync(
+                "",
+                code: SessionMessageCode.ResumeUnsupportedProvider,
+                args: new { provider = _currentThread.Provider }).ConfigureAwait(false);
             await PublishStateAsync().ConfigureAwait(false);
             return;
         }
@@ -537,7 +603,9 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         {
             _restoreBlockedByRuntime = false;
             _status = "transcript_only";
-            await SendResumeFailedAsync("This thread has no ACP session ID. The saved local transcript is still available to read.").ConfigureAwait(false);
+            await SendResumeFailedAsync(
+                "",
+                code: SessionMessageCode.ResumeNoSessionId).ConfigureAwait(false);
             await PublishStateAsync().ConfigureAwait(false);
             return;
         }
@@ -547,7 +615,8 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             _restoreBlockedByRuntime = true;
             _status = "transcript_only";
             await SendResumeFailedAsync(
-                "Install the Agent runtime to continue this saved session. PSX will retry automatically when the runtime is ready.").ConfigureAwait(false);
+                "",
+                code: SessionMessageCode.ResumeRuntimeMissing).ConfigureAwait(false);
             await PublishStateAsync().ConfigureAwait(false);
 
             // Installation may finish between the readiness check above and
@@ -580,7 +649,9 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             {
                 _restoreBlockedByRuntime = false;
                 _status = "transcript_only";
-                await SendResumeFailedAsync("The Agent session loaded, but its transcript could not be replayed. The saved local transcript is still available to read.").ConfigureAwait(false);
+                await SendResumeFailedAsync(
+                "",
+                code: SessionMessageCode.ResumeReplayUnavailable).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -601,10 +672,11 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             _restoreBlockedByRuntime = !IsAgentRuntimeReady();
             _status = "transcript_only";
             await SendResumeFailedAsync(
+                "",
+                ex.Message,
                 _restoreBlockedByRuntime
-                    ? "The Agent runtime became unavailable while restoring this session. PSX will retry automatically when it is ready."
-                    : "PSX could not restore the Agent session. The saved local transcript is still available to read.",
-                ex.Message).ConfigureAwait(false);
+                    ? SessionMessageCode.ResumeRuntimeLost
+                    : SessionMessageCode.ResumeRestoreFailed).ConfigureAwait(false);
         }
 
         await PublishStateAsync().ConfigureAwait(false);
@@ -648,8 +720,8 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         if (!IsEmptyAgentDraft(_currentThread))
         {
             await SendRunFailedAsync(
-                "The working directory is locked after the first message. Create a new Agent tab to use another directory.")
-                .ConfigureAwait(false);
+                "",
+                code: SessionMessageCode.RunCwdLocked).ConfigureAwait(false);
             return;
         }
 
@@ -660,7 +732,10 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
         if (!Directory.Exists(fullPath))
         {
-            await SendRunFailedAsync($"Directory does not exist: {fullPath}").ConfigureAwait(false);
+            await SendRunFailedAsync(
+                "",
+                code: SessionMessageCode.CwdNotFound,
+                args: new { path = fullPath }).ConfigureAwait(false);
             return;
         }
 
@@ -671,7 +746,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             SaveCurrentThreadCore();
         }
         await SendThreadLoadedAsync(clear: true, selectPlan: true).ConfigureAwait(false);
-        await _bridgeService.SendEventAsync(new { type = "command_result", text = $"Working directory changed to: {fullPath}" }).ConfigureAwait(false);
+        await _bridgeService.SendEventAsync(new { type = "command_result", text = "", code = SessionMessageCode.CwdChanged, args = new { path = fullPath } }).ConfigureAwait(false);
         await PublishStateAsync().ConfigureAwait(false);
     }
 
@@ -690,11 +765,13 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     private Task SendHistoryErrorAsync(Exception exception, string? requestId = null)
     {
+        // Fixed code + raw technical detail: the sentence lives in the locales.
         return _bridgeService.SendEventAsync(new
         {
             type = "agent_history_error",
             requestId = string.IsNullOrWhiteSpace(requestId) ? null : requestId,
-            text = $"Unable to load Agent thread history. {exception.Message}"
+            code = SessionMessageCode.HistoryLoadFailed,
+            detail = exception.Message
         });
     }
 
@@ -1169,10 +1246,13 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
     private Task SendHelpAsync()
     {
+        // The command list is fixed PSX surface; the sentence lives in locales.
         return _bridgeService.SendEventAsync(new
         {
             type = "command_result",
-            text = $"PSX commands: /cwd, /cwd <path>, /terminal, /stop, /history, /delete, /help. ACP commands are sent through {_provider.Descriptor.AssistantName} Agent."
+            text = "",
+            code = SessionMessageCode.HelpCommands,
+            args = new { assistantName = _provider.Descriptor.AssistantName }
         });
     }
 
@@ -1183,13 +1263,13 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             await EnsureTransportAsync().ConfigureAwait(false);
 
             if (!_supportsImage)
-                throw new InvalidOperationException("Current ACP Agent does not support image input.");
+                throw new AcpSessionFailureException(SessionMessageCode.AttachmentUnsupportedAgent);
 
             if (!SupportedImageMimeTypes.Contains(e.MimeType))
-                throw new InvalidOperationException("Only PNG, JPEG, WebP, and GIF images are supported.");
+                throw new AcpSessionFailureException(SessionMessageCode.AttachmentUnsupportedType, new { mimeType = e.MimeType });
 
             if (e.Size <= 0 || e.Size > BridgeProtocolLimits.ImageBytes)
-                throw new InvalidOperationException("Each image must be 20MB or smaller.");
+                throw new AcpSessionFailureException(SessionMessageCode.AttachmentTooLarge);
 
             byte[] data;
             try
@@ -1216,13 +1296,26 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 attachment = ToAttachmentPayload(attachment)
             }).ConfigureAwait(false);
         }
+        catch (AcpSessionFailureException failure)
+        {
+            await _bridgeService.SendEventAsync(new
+            {
+                type = "agent_attachment_failed",
+                clientId = e.ClientId,
+                text = "",
+                code = failure.Code,
+                args = failure.Args
+            }).ConfigureAwait(false);
+        }
         catch (Exception ex)
         {
             await _bridgeService.SendEventAsync(new
             {
                 type = "agent_attachment_failed",
                 clientId = e.ClientId,
-                text = ex.Message
+                text = ex.Message,
+                code = "",
+                args = (object?)null
             }).ConfigureAwait(false);
         }
     }
@@ -1235,7 +1328,9 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             await _bridgeService.SendEventAsync(new
             {
                 type = "command_result",
-                text = $"{_provider.Descriptor.DisplayName} does not provide a native Terminal entry point."
+                text = "",
+                code = SessionMessageCode.TerminalNoEntry,
+                args = new { displayName = _provider.Descriptor.DisplayName }
             }).ConfigureAwait(false);
             return;
         }
@@ -1245,7 +1340,9 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         await _bridgeService.SendEventAsync(new
         {
             type = "raw_terminal_fallback",
-            text = $"Opened a raw {_provider.Descriptor.DisplayName} terminal tab in the current working directory."
+            text = "",
+            code = SessionMessageCode.TerminalFallbackOpened,
+            args = new { displayName = _provider.Descriptor.DisplayName }
         }).ConfigureAwait(false);
         _status = "fallback";
         await PublishStateAsync().ConfigureAwait(false);
@@ -1482,25 +1579,28 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         if (!IsAgentRuntimeReady())
         {
             await PublishRuntimeStatusAsync().ConfigureAwait(false);
-            await SendRunFailedAsync("Install the Agent runtime before sending a message.").ConfigureAwait(false);
+            await SendRunFailedAsync("", code: SessionMessageCode.RunInstallFirst).ConfigureAwait(false);
             return;
         }
 
         if (_status == "restoring")
         {
-            await SendRunFailedAsync("ACP history is still loading. Wait for restore to finish.").ConfigureAwait(false);
+            await SendRunFailedAsync("", code: SessionMessageCode.RunHistoryLoading).ConfigureAwait(false);
             return;
         }
 
         if (_status == "transcript_only")
         {
-            await SendResumeFailedAsync("This conversation is available as a local transcript only. Start a new thread or open terminal to continue.").ConfigureAwait(false);
+            await SendResumeFailedAsync("", code: SessionMessageCode.ResumeTranscriptOnlyPrompt).ConfigureAwait(false);
             return;
         }
 
         if (!Directory.Exists(_workingDirectory))
         {
-            await SendRunFailedAsync($"Directory does not exist: {_workingDirectory}").ConfigureAwait(false);
+            await SendRunFailedAsync(
+                "",
+                code: SessionMessageCode.CwdNotFound,
+                args: new { path = _workingDirectory }).ConfigureAwait(false);
             return;
         }
 
@@ -1524,8 +1624,9 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             {
                 _status = "transcript_only";
                 await SendResumeFailedAsync(
-                    "PSX could not restore the Agent session after reconnecting. The saved local transcript is still available to read.",
-                    ex.Message).ConfigureAwait(false);
+                    "",
+                    ex.Message,
+                    SessionMessageCode.ResumeReconnectFailed).ConfigureAwait(false);
                 await PublishStateAsync().ConfigureAwait(false);
                 return;
             }
@@ -1535,6 +1636,11 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         try
         {
             attachments = ResolvePromptAttachments(requestedAttachmentIds);
+        }
+        catch (AcpSessionFailureException failure)
+        {
+            await SendRunFailedAsync("", null, failure.Code, failure.Args).ConfigureAwait(false);
+            return;
         }
         catch (Exception ex)
         {
@@ -1552,7 +1658,10 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             {
                 cts.Dispose();
                 requestCts.Dispose();
-                _ = SendRunFailedAsync($"{_provider.Descriptor.AssistantName} Agent is still responding. Wait for the current run to finish or use /stop.");
+                _ = SendRunFailedAsync(
+                    "",
+                    code: SessionMessageCode.RunStillResponding,
+                    args: new { assistantName = _provider.Descriptor.AssistantName });
                 return;
             }
 
@@ -1909,7 +2018,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             else
             {
                 _acpSessionId = null;
-                await _bridgeService.SendEventAsync(new { type = "command_result", text = "ACP session loaded, but no transcript was replayed. Keeping the local snapshot." }).ConfigureAwait(false);
+                await _bridgeService.SendEventAsync(new { type = "command_result", text = "", code = SessionMessageCode.ResumeReplayNote }).ConfigureAwait(false);
             }
 
             await SendSessionReadyAsync().ConfigureAwait(false);
@@ -1968,7 +2077,9 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (!IsBoundProviderThread(_currentThread))
-            throw new InvalidOperationException(BuildUnsupportedProviderMessage(_currentThread.Provider));
+            throw new AcpSessionFailureException(
+                SessionMessageCode.ResumeUnsupportedProvider,
+                new { provider = _currentThread.Provider });
 
         var effectiveToken = GetEffectiveCancellationToken(cancellationToken);
         await _transportLifecycle.EnterAsync(effectiveToken).ConfigureAwait(false);
@@ -1983,8 +2094,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
 
             if (!IsAgentRuntimeReady())
             {
-                throw new InvalidOperationException(
-                    "Agent runtime is not installed. Open Agent mode and choose Install runtime first.");
+                throw new AcpSessionFailureException(SessionMessageCode.RunInstallFirst);
             }
 
             var logDirectory = Path.Combine(_threadStore.RootDirectory, "agent", "acp-logs");
@@ -3219,13 +3329,14 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         }
     }
 
-    private Task SendRunFailedAsync(string text, string? runId = null, string? code = null)
+    private Task SendRunFailedAsync(string text, string? runId = null, string? code = null, object? args = null)
     {
         return _bridgeService.SendEventAsync(new
         {
             type = "run_failed",
             text,
             code = code ?? "",
+            args,
             runId,
             visionContextHintCode = _currentThread.ContainsImages
                 ? SessionMessageCode.VisionContext
@@ -3233,13 +3344,14 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         });
     }
 
-    private Task SendResumeFailedAsync(string message, string? detail = null, string? code = null)
+    private Task SendResumeFailedAsync(string message, string? detail = null, string? code = null, object? args = null)
     {
         return _bridgeService.SendEventAsync(new
         {
             type = "resume_failed",
             message,
             code = code ?? "",
+            args,
             detail = string.IsNullOrWhiteSpace(detail) ? null : detail
         });
     }
@@ -3290,12 +3402,6 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         return ReferenceEquals(_providerRegistry.Find(thread.Provider), _provider);
     }
 
-    private static string BuildUnsupportedProviderMessage(string? providerKey)
-    {
-        var displayKey = string.IsNullOrWhiteSpace(providerKey) ? "(missing)" : providerKey;
-        return $"This thread belongs to an unsupported Agent provider ({displayKey}). Showing local transcript only.";
-    }
-
     private Task SendThreadLoadedAsync(bool clear, bool selectPlan = false)
     {
         return _bridgeService.SendEventAsync(
@@ -3308,18 +3414,18 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             return Array.Empty<AgentAttachment>();
 
         if (!_supportsImage)
-            throw new InvalidOperationException("Current ACP Agent does not support image input.");
+            throw new AcpSessionFailureException(SessionMessageCode.AttachmentUnsupportedAgent);
 
         if (attachmentIds.Count > MaxPromptImages)
-            throw new InvalidOperationException($"You can send at most {MaxPromptImages} images at once.");
+            throw new AcpSessionFailureException(SessionMessageCode.PromptImageTooMany, new { limit = MaxPromptImages });
 
         var attachments = _threadStore.LoadAttachments(_currentThread.ThreadId, attachmentIds);
         if (attachments.Count != attachmentIds.Count)
-            throw new InvalidOperationException("One or more image attachments were not found. Remove them and try again.");
+            throw new AcpSessionFailureException(SessionMessageCode.PromptImageNotFound);
 
         var totalBytes = attachments.Sum(attachment => attachment.Size);
         if (totalBytes > BridgeProtocolLimits.PromptImageBytes)
-            throw new InvalidOperationException("Images in a single message must total 50MB or less.");
+            throw new AcpSessionFailureException(SessionMessageCode.PromptImagesTooLarge);
 
         return attachments;
     }

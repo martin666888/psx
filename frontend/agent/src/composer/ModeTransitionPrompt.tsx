@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type JSX } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAnnounceLive } from '../ui/announce.js';
 import { Button } from '../components/ui/button.js';
 import { DecisionOptionPills } from '../decisions/DecisionOptionPills.js';
@@ -26,15 +27,15 @@ export function ModeTransitionPrompt({
 }: {
   prompt: ComposerModeTransitionPromptVM;
 }): JSX.Element {
+  const { t } = useTranslation('agent');
   const live = useAnnounceLive();
   const [decisionState, setDecisionState] = useState(
     prompt.interactive ? 'active' : 'error'
   );
-  const [status, setStatus] = useState(
-    prompt.interactive
-      ? 'The Agent is waiting for your selection.'
-      : 'The request cannot continue until the Agent provides valid ACP response data.'
+  const [statusCode, setStatusCode] = useState(
+    prompt.interactive ? 'waitingSelection' : 'invalidResponseData'
   );
+  const [statusParams, setStatusParams] = useState<Record<string, unknown> | undefined>(undefined);
   const [stopping, setStopping] = useState(false);
   const firstOptionRef = useRef<HTMLButtonElement | null>(null);
   const stopRef = useRef<HTMLButtonElement | null>(null);
@@ -58,10 +59,10 @@ export function ModeTransitionPrompt({
       <div className="mb-[var(--agent-space-3)] flex items-start justify-between gap-[var(--agent-space-3)]">
         <div className="min-w-0">
           <div className="break-words text-[13px] font-semibold leading-[1.4]">
-            {prompt.title}
+            {prompt.title || t('timeline.decision.modeTransitionTitle')}
           </div>
           <div className="mt-0.5 text-xs leading-[1.4] text-muted-foreground">
-            Choose how to continue
+            {t('composer.transition.chooseHow')}
           </div>
         </div>
         <Button
@@ -71,15 +72,15 @@ export function ModeTransitionPrompt({
           size="sm"
           className="min-w-[72px] shrink-0 rounded-full text-xs"
           disabled={stopping}
-          title={'Stop ' + prompt.assistantName}
+          title={t('composer.transition.stopTitle', { assistantName: prompt.assistantName })}
           onClick={() => {
             if (stopping) return;
             setStopping(true);
-            setStatus('Stopping the current Agent run…');
+            setStatusCode('stoppingRun');
             prompt.onStop();
           }}
         >
-          {stopping ? 'Stopping' : 'Stop'}
+          {t(stopping ? 'composer.transition.stopping' : 'composer.transition.stop')}
         </Button>
       </div>
 
@@ -87,21 +88,28 @@ export function ModeTransitionPrompt({
         <DecisionOptionPills
           options={prompt.options}
           disabled={optionsLocked}
-          ariaLabel="Choose how to continue"
+          ariaLabel={t('composer.transition.chooseHow')}
+          labelFor={(option) =>
+            option.name ||
+            t(['allow', 'reject', 'yes', 'no'].includes(option.optionId)
+              ? `timeline.decision.option.${option.optionId}`
+              : 'timeline.decision.option.select')
+          }
           className="agent-composer-decision-options"
           buttonClassName="agent-composer-decision-option"
           firstOptionRef={firstOptionRef}
           onSelect={(option) => {
             if (optionsLocked) return;
             setDecisionState('sending');
-            setStatus('Sending ' + option.name + '…');
+            setStatusParams({ name: option.name });
+            setStatusCode('sendingOption');
             prompt.onRespond(option.optionId);
           }}
         />
       ) : (
-        <div role="group" aria-label="Choose how to continue">
+        <div role="group" aria-label={t('composer.transition.chooseHow')}>
           <div className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs leading-normal text-destructive">
-            {prompt.errorText}
+            {prompt.errorText ? t(prompt.errorText) : ''}
           </div>
         </div>
       )}
@@ -114,7 +122,10 @@ export function ModeTransitionPrompt({
         role="status"
         aria-live={live}
       >
-        {status}
+        {t(`composer.transition.status.${statusCode}`, {
+          defaultValue: '',
+          ...(statusParams ?? {})
+        })}
       </div>
     </div>
   );

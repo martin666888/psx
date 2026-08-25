@@ -33,10 +33,12 @@ test('reducer: agent_commands normalizes string and object commands', () => {
   }));
 
   assert.equal(state.composer.agentCommandsReady, true);
+  // source is the assistant name; a missing provider description stays ''
+  // and the composer menu localizes the fallback label at render.
   assert.deepEqual(state.composer.agentCommands, [
-    { source: 'Foo Agent', name: '/compact', label: 'Send to Foo Agent', agent: true },
-    { source: 'Foo Agent', name: '/review', label: 'Review the diff', agent: true },
-    { source: 'Foo Agent', name: '/plan', label: 'Send to Foo Agent', agent: true }
+    { source: 'Foo', name: '/compact', label: '', agent: true },
+    { source: 'Foo', name: '/review', label: 'Review the diff', agent: true },
+    { source: 'Foo', name: '/plan', label: '', agent: true }
   ]);
 });
 

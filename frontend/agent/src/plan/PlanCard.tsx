@@ -12,6 +12,7 @@
 // owned by the shared Radix ScrollArea (hover-reveal thumb).
 
 import type { JSX } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { WorkspacePlanState } from '../contracts/workspace-state.js';
 import { planStatusClass, planStatusLabel } from '../core/plan.js';
 import { MarkdownContent } from '../markdown/MarkdownContent.js';
@@ -36,8 +37,9 @@ function StatusIcon({ status }: { status: string }): JSX.Element {
 }
 
 function PlanBody({ plan }: PlanCardProps): JSX.Element {
+  const { t } = useTranslation('agent');
   if (!plan.active) {
-    return <div className="agent-plan-empty text-[13px] text-muted-foreground">No active plan</div>;
+    return <div className="agent-plan-empty text-[13px] text-muted-foreground">{t('plan.empty')}</div>;
   }
   if (plan.entries.length === 0) {
     // Document mode: a plan without checklist entries is a full plan
@@ -47,7 +49,7 @@ function PlanBody({ plan }: PlanCardProps): JSX.Element {
       <MarkdownContent
         className="agent-plan-document agent-message-body px-3 pb-3 text-[13px] leading-normal"
         mode="static"
-        source={plan.fallbackText || 'No plan items.'}
+        source={plan.fallbackText || t('plan.noItems')}
         surface="plan"
       />
     );
@@ -59,7 +61,7 @@ function PlanBody({ plan }: PlanCardProps): JSX.Element {
           key={index}
           role="listitem"
           className={'agent-plan-item ' + planStatusClass(entry.status)}
-          aria-label={planStatusLabel(entry.status) + ': ' + entry.content}
+          aria-label={t(planStatusLabel(entry.status), { defaultValue: '' }) + ': ' + entry.content}
           data-priority={entry.priority || undefined}
         >
           <span className="agent-plan-marker flex justify-center pt-0.5">
@@ -73,10 +75,11 @@ function PlanBody({ plan }: PlanCardProps): JSX.Element {
 }
 
 export function PlanCard({ plan }: PlanCardProps): JSX.Element {
+  const { t } = useTranslation('agent');
   return (
     <Card className="min-h-0 grow gap-0 rounded-none border-0 bg-transparent py-0 shadow-none">
       <CardHeader className="flex min-h-9 flex-row items-center gap-2 px-2 pl-3">
-        <CardTitle className="min-w-0 flex-1 truncate text-[13px]">Plan</CardTitle>
+        <CardTitle className="min-w-0 flex-1 truncate text-[13px]">{t('plan.title')}</CardTitle>
       </CardHeader>
       {/* Radix ScrollArea (hover-reveal thumb) owns the panel scroll; the
         * agent-plan-panel class/data-role stay on the CardContent frame and
