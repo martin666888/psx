@@ -75,6 +75,11 @@ export class TimelineController implements FeatureController {
     if (this.projection.apply(event.type, event.raw, this.assistantName)) {
       // Streaming deltas arrive many times per frame; coalesce to one render.
       this.scheduleRender();
+    } else if (event.type === 'runtime_status') {
+      // Runtime is independent of the timeline projection, but it owns the
+      // empty-conversation copy. Render immediately on its first snapshot and
+      // on every lifecycle transition.
+      this.render();
     }
   }
 
@@ -126,9 +131,21 @@ export class TimelineController implements FeatureController {
       },
       host
     });
+    const snapshot = this.projection.snapshot();
+    const runtimeState = this.state.runtime.state;
+    const emptyKind = runtimeState === 'ready'
+      ? 'ready'
+      : runtimeState === 'installing'
+        ? 'installing'
+        : runtimeState === 'failed' || runtimeState === 'cancelled'
+          ? 'unavailable'
+          : 'missing';
     this.timelineIsland.render({
-      rows: this.projection.snapshot().rows,
+      rows: snapshot.rows,
       assistantName: this.assistantName,
+      emptyState: snapshot.rows.length === 0 && this.state.runtime.statusKnown
+        ? { kind: emptyKind, agentName: this.assistantName }
+        : null,
       announce: this.visible && this.paneFocused,
       callbacks: this.callbacks()
     });

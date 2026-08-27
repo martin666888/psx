@@ -273,6 +273,7 @@ export function reduceWorkspaceState(
         identity: mergeIdentity(state.identity, raw),
         runtime: {
           state: runtimeState,
+          statusKnown: true,
           messageCode: asString(raw.messageCode),
           canInstall: !!raw.canInstall,
           canCancel: !!raw.canCancel,

@@ -123,7 +123,7 @@ test('an empty run group is dropped on finalize', () => {
   assert.equal(list2.length, 1);
 });
 
-test('replay folds history groups per runId and the ready system row for empty threads', () => {
+test('replay folds history groups per runId and keeps empty threads out of the projection', () => {
   const projection = fold([
     [
       'agent_thread_loaded',
@@ -157,9 +157,8 @@ test('replay folds history groups per runId and the ready system row for empty t
 
   const empty = fold([['agent_thread_loaded', { clear: true, messages: [] }]]);
   const emptyList = items(empty);
-  assert.equal(emptyList.length, 1);
-  assert.equal(emptyList[0].code, 'thread.ready');
-  assert.deepEqual(emptyList[0].params, { agentName: 'Claude' });
+  assert.equal(emptyList.length, 0);
+  assert.ok(!emptyList.some((item) => item.code === 'thread.ready'));
 });
 
 test('replay keeps tool cards when assistant text interleaves inside the same runId', () => {

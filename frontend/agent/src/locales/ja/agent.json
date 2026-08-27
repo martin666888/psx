@@ -248,8 +248,18 @@
     },
     "conversationLabel": "Agent の会話",
     "empty": {
-      "title": "まだメッセージがありません",
-      "description": "メッセージを送って会話を始めましょう。"
+      "installing": {
+        "title": "Agent ランタイムを準備しています",
+        "description": "インストールが完了するとメッセージを送信できます。"
+      },
+      "missing": {
+        "title": "Agent ランタイムが必要です",
+        "description": "上のカードからランタイムをインストールして会話を開始してください。"
+      },
+      "unavailable": {
+        "title": "Agent ランタイムの準備ができていません",
+        "description": "上のランタイムカードからインストールを再試行してください。"
+      }
     },
     "runGroup": {
       "summary_one": "ツール活動 · {{count}} 回",

@@ -82,9 +82,29 @@ internal sealed class TranscriptOnlyAgentWorkspaceSession : IAgentWorkspaceSessi
             contextCostCurrency = _thread.ContextCostCurrency,
             store = _threadStore.RootDirectory
         }).ConfigureAwait(false);
+        // Unknown-provider transcripts have no live runtime, but the Agent
+        // frontend still needs one authoritative runtime_status so its empty
+        // state does not wait forever behind statusKnown=false.
+        await PublishRuntimeUnavailableAsync().ConfigureAwait(false);
         // A saved transcript has no live runtime; disable the toolbar Update
         // button instead of letting a click bounce off the read-only error.
         await PublishRuntimeUpdateUnavailableAsync().ConfigureAwait(false);
+    }
+
+    private Task PublishRuntimeUnavailableAsync()
+    {
+        return _bridge.SendEventAsync(new
+        {
+            type = "runtime_status",
+            providerKey = _thread.Provider,
+            agentName = _thread.Provider,
+            state = "failed",
+            messageCode = RuntimeStatusCode.TranscriptReadOnly,
+            canInstall = false,
+            canCancel = false,
+            ownership = "managed",
+            canGuide = false
+        });
     }
 
     private Task PublishRuntimeUpdateUnavailableAsync()

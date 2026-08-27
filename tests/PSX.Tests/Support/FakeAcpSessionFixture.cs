@@ -152,6 +152,8 @@ internal sealed class FakeAcpRuntime(TestWorkspace workspace, bool initiallyRead
     public string LogPath => Path.Combine(workspace.Path, "runtime.log");
 
     public bool SupportsSelfUpdate { get; set; } = true;
+    public int InstallCount { get; private set; }
+    public TaskCompletionSource<AcpRuntimeOperationResult>? InstallCompletion { get; set; }
 
     /// <summary>Result kind reported by <see cref="RefreshAsync"/>.</summary>
     public AcpRuntimeOperationKind RefreshResultKind { get; set; } = AcpRuntimeOperationKind.AlreadyReady;
@@ -176,15 +178,20 @@ internal sealed class FakeAcpRuntime(TestWorkspace workspace, bool initiallyRead
     public string BuildStatusText(string? suffix = null) =>
         suffix ?? (_ready ? "Fake ACP runtime ready." : "Fake ACP runtime is not installed.");
 
-    public Task<AcpRuntimeOperationResult> EnsureInstalledAsync(CancellationToken cancellationToken = default)
+    public async Task<AcpRuntimeOperationResult> EnsureInstalledAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        InstallCount++;
         var alreadyReady = _ready;
-        _ready = true;
+        var result = InstallCompletion == null
+            ? new AcpRuntimeOperationResult(
+                alreadyReady ? AcpRuntimeOperationKind.AlreadyReady : AcpRuntimeOperationKind.Success,
+                "Fake ACP runtime ready.")
+            : await InstallCompletion.Task.WaitAsync(cancellationToken);
+        if (result.Kind is AcpRuntimeOperationKind.Success or AcpRuntimeOperationKind.AlreadyReady)
+            _ready = true;
         StatusChanged?.Invoke(BuildStatusText());
-        return Task.FromResult(new AcpRuntimeOperationResult(
-            alreadyReady ? AcpRuntimeOperationKind.AlreadyReady : AcpRuntimeOperationKind.Success,
-            "Fake ACP runtime ready."));
+        return result;
     }
 
     public Task<AcpRuntimeOperationResult> RefreshAsync(CancellationToken cancellationToken = default)

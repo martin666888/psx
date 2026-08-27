@@ -248,8 +248,18 @@
     },
     "conversationLabel": "Agent 對話",
     "empty": {
-      "title": "還沒有訊息",
-      "description": "傳送一則訊息開始對話。"
+      "installing": {
+        "title": "正在準備 Agent 執行階段",
+        "description": "安裝完成後即可傳送訊息。"
+      },
+      "missing": {
+        "title": "需要 Agent 執行階段",
+        "description": "請透過上方卡片安裝執行階段後開始對話。"
+      },
+      "unavailable": {
+        "title": "Agent 執行階段尚未就緒",
+        "description": "請透過上方執行階段卡片重試安裝。"
+      }
     },
     "runGroup": {
       "summary_one": "工具活動 · {{count}} 次呼叫",

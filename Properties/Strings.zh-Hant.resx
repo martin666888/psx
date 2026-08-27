@@ -123,4 +123,10 @@ WebView2 是 PSX 介面呈現所需的元件。</value>
   <data name="KimiWorkspaceLabel" xml:space="preserve">
     <value>Kimi Code Web 工作區</value>
   </data>
+  <data name="RuntimeOperationExitTitle" xml:space="preserve">
+    <value>執行階段作業仍在進行</value>
+  </data>
+  <data name="RuntimeOperationExitBody" xml:space="preserve">
+    <value>Agent 執行階段仍在安裝或更新。選擇「是」將取消作業並結束 PSX；選擇「否」將繼續等待。</value>
+  </data>
 </root>

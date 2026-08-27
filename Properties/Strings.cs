@@ -43,6 +43,8 @@ public static class Strings
     public static string ThemeStatusCurrent => Get("ThemeStatusCurrent");
     public static string DshWorkspaceLabel => Get("DshWorkspaceLabel");
     public static string KimiWorkspaceLabel => Get("KimiWorkspaceLabel");
+    public static string RuntimeOperationExitTitle => Get("RuntimeOperationExitTitle");
+    public static string RuntimeOperationExitBody => Get("RuntimeOperationExitBody");
 
     public static string TabNewToRightColumn => Get("TabNewToRightColumn");
 

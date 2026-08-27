@@ -248,8 +248,18 @@
     },
     "conversationLabel": "Agent 对话",
     "empty": {
-      "title": "还没有消息",
-      "description": "发送一条消息开始对话。"
+      "installing": {
+        "title": "正在准备 Agent 运行时",
+        "description": "安装完成后即可发送消息。"
+      },
+      "missing": {
+        "title": "需要 Agent 运行时",
+        "description": "请通过上方卡片安装运行时后开始对话。"
+      },
+      "unavailable": {
+        "title": "Agent 运行时尚未就绪",
+        "description": "请通过上方运行时卡片重试安装。"
+      }
     },
     "runGroup": {
       "summary_one": "工具活动 · {{count}} 次调用",

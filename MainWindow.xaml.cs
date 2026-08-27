@@ -307,10 +307,41 @@ public partial class MainWindow : Window
         if (_isShuttingDown)
             return;
 
+        if (_agentRuntimeCoordinator?.HasOperationsInFlight == true)
+        {
+            var result = MessageBox.Show(
+                this,
+                PSX.Properties.Strings.RuntimeOperationExitBody,
+                PSX.Properties.Strings.RuntimeOperationExitTitle,
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning,
+                MessageBoxResult.No);
+            if (result != MessageBoxResult.Yes)
+                return;
+        }
+
         _isShuttingDown = true;
         IsEnabled = false;
 
         _workspaceManager?.BeginShutdown();
+
+        try
+        {
+            if (_agentRuntimeCoordinator != null)
+            {
+                using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                await _agentRuntimeCoordinator.CancelAllOperationsAsync(cancellation.Token).ConfigureAwait(true);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            System.Diagnostics.Debug.WriteLine(
+                "Timed out while cancelling Agent runtime installation or update during shutdown.");
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine("Agent runtime operation shutdown failed: " + ex);
+        }
 
         (_viewModel as IDisposable)?.Dispose();
         try

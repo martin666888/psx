@@ -46,6 +46,61 @@ async function fixture(workspaceId = WS) {
   return { ...mounted, panel: mounted.panelFor(workspaceId) };
 }
 
+test('empty conversation waits for runtime status and then follows its lifecycle', async () => {
+  const mounted = await mountAgentApp();
+  mounted.app.handle({
+    type: 'agent_workspace_created',
+    workspaceId: WS,
+    agentName: 'Claude Code',
+    assistantName: 'Claude'
+  });
+  const panel = mounted.panelFor(WS);
+  const thread = () => panel.querySelector('[data-role="thread"]');
+  const empty = () => thread()?.querySelector('.agent-conversation-empty');
+
+  await settle(
+    () => mounted.app.handle({
+      type: 'agent_thread_loaded',
+      workspaceId: WS,
+      clear: true,
+      messages: []
+    }),
+    () => !!thread()
+  );
+  assert.equal(empty(), null, 'the reducer default must not flash as authoritative missing state');
+
+  await settle(
+    () => mounted.app.handle({ type: 'runtime_status', workspaceId: WS, state: 'missing', agentName: 'Claude' }),
+    () => empty()?.textContent.includes('需要 Agent 运行时') === true
+  );
+  assert.match(empty().textContent, /安装运行时后开始对话/);
+
+  await settle(
+    () => mounted.app.handle({ type: 'runtime_status', workspaceId: WS, state: 'installing', agentName: 'Claude' }),
+    () => empty()?.textContent.includes('正在准备 Agent 运行时') === true
+  );
+  assert.match(empty().textContent, /安装完成后即可发送消息/);
+
+  await settle(
+    () => mounted.app.handle({ type: 'runtime_status', workspaceId: WS, state: 'failed', agentName: 'Claude' }),
+    () => empty()?.textContent.includes('尚未就绪') === true
+  );
+  assert.match(empty().textContent, /上方运行时卡片重试安装/);
+
+  await settle(
+    () => mounted.app.handle({ type: 'runtime_status', workspaceId: WS, state: 'cancelled', agentName: 'Claude' }),
+    () => empty()?.textContent.includes('尚未就绪') === true
+  );
+  assert.match(empty().textContent, /上方运行时卡片重试安装/);
+
+  await settle(
+    () => mounted.app.handle({ type: 'runtime_status', workspaceId: WS, state: 'ready', agentName: 'Claude' }),
+    () => empty()?.textContent.includes('Claude 将从第一条消息开始处理') === true
+  );
+  assert.doesNotMatch(empty().textContent, /还没有消息/);
+  assert.doesNotMatch(empty().textContent, /Start a conversation/);
+});
+
 test('a streaming turn reaches the wired React timeline', async () => {
   const { app, panel } = await fixture();
   // [data-role="thread"] is rendered by the React Conversation inside the

@@ -125,4 +125,10 @@ WebView2 is required to render the PSX interface.</value>
   <data name="KimiWorkspaceLabel" xml:space="preserve">
     <value>Kimi Code Web workspace</value>
   </data>
+  <data name="RuntimeOperationExitTitle" xml:space="preserve">
+    <value>Runtime operation in progress</value>
+  </data>
+  <data name="RuntimeOperationExitBody" xml:space="preserve">
+    <value>An Agent runtime is still being installed or updated. Choose Yes to cancel it and exit PSX, or No to keep waiting.</value>
+  </data>
 </root>

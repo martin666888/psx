@@ -73,6 +73,10 @@ export interface TimelineCallbacks extends DecisionCallbacks {
 export interface TimelineViewProps {
   rows: TimelineRow[];
   assistantName: string;
+  emptyState: {
+    kind: 'ready' | 'installing' | 'missing' | 'unavailable';
+    agentName: string;
+  } | null;
   /** Live regions only announce while the workspace's pane is focused. */
   announce?: boolean;
   callbacks: TimelineCallbacks;
@@ -695,8 +699,19 @@ function renderItem(
   }
 }
 
-export function TimelineView({ rows, assistantName, announce, callbacks }: TimelineViewProps): JSX.Element {
+export function TimelineView({ rows, assistantName, emptyState, announce, callbacks }: TimelineViewProps): JSX.Element {
   const { t } = useTranslation('agent');
+  const emptyCopy = emptyState?.kind === 'ready'
+      ? {
+        title: t('timeline.system.thread.ready', { agentName: emptyState.agentName }),
+        description: ''
+      }
+    : emptyState
+      ? {
+          title: t(`timeline.empty.${emptyState.kind}.title`),
+          description: t(`timeline.empty.${emptyState.kind}.description`)
+        }
+      : null;
   // Group rows by turn id into agent-turn sections. Rows of one turn always
   // collect into a single block anchored at the turn's first row — mirroring
   // legacy, where the turn <section> node persists and later rows keep
@@ -733,11 +748,11 @@ export function TimelineView({ rows, assistantName, announce, callbacks }: Timel
       resize="instant"
     >
       <ConversationContent scrollClassName="agent-thread-scroll" className="agent-thread-content gap-0 p-0">
-        {rows.length === 0 ? (
+        {rows.length === 0 && emptyCopy ? (
           <ConversationEmptyState
             className="agent-conversation-empty"
-            title={t('timeline.empty.title')}
-            description={t('timeline.empty.description')}
+            title={emptyCopy.title}
+            description={emptyCopy.description}
           />
         ) : (
           blocks.map((block) =>

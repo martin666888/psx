@@ -248,8 +248,18 @@
     },
     "conversationLabel": "Agent conversation",
     "empty": {
-      "title": "No messages yet",
-      "description": "Send a message to start the conversation."
+      "installing": {
+        "title": "Preparing the Agent runtime",
+        "description": "You can send a message when installation finishes."
+      },
+      "missing": {
+        "title": "Agent runtime required",
+        "description": "Install the Agent runtime above to start this conversation."
+      },
+      "unavailable": {
+        "title": "Agent runtime is not ready",
+        "description": "Use the runtime card above to retry the installation."
+      }
     },
     "runGroup": {
       "summary_one": "Tool activity · {{count}} call",

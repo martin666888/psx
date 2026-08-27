@@ -160,7 +160,6 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     private readonly object _runLock = new();
     private readonly object _sessionMutationSync = new();
     private readonly object _commandLock = new();
-    private readonly object _runtimeInstallLock = new();
     private readonly AcpTransportLifecycle _transportLifecycle = new();
     private readonly SemaphoreSlim _sessionRestoreLock = new(1, 1);
     private readonly CancellationTokenSource _serviceLifetimeCts = new();
@@ -199,10 +198,6 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
     private AcpJsonRpcTransport? _currentRunTransport;
     private long _currentRunTransportGeneration;
     private bool _agentCommandsReady;
-    private CancellationTokenSource? _runtimeInstallCts;
-    private bool _runtimeInstallInProgress;
-    private string _runtimeInstallState = "missing";
-    private string _runtimeInstallMessageCode = RuntimeStatusCode.NotInstalled;
     private bool _restoreBlockedByRuntime;
     private bool _disposed;
     private IReadOnlyList<AcpAuthMethod> _authMethods = Array.Empty<AcpAuthMethod>();
@@ -285,11 +280,6 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
             () => _workingDirectory,
             () => _transportLifecycle.Generation,
             () => _transportLifecycle.LifetimeToken ?? _serviceLifetimeCts.Token);
-        if (IsAgentRuntimeReady())
-        {
-            _runtimeInstallState = ResolveReadyRuntimeState();
-            _runtimeInstallMessageCode = RuntimeStatusCode.Ready;
-        }
         _currentThread = initialThread;
         if (IsEmptyAgentDraft(_currentThread))
             _currentThread.Provider = _provider.Descriptor.Key;
@@ -297,7 +287,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         _bridgeService.UserMessageSubmitted += OnUserMessageSubmitted;
         _bridgeService.CommandReceived += OnCommandReceived;
         _bridgeService.AttachmentUploadReceived += OnAttachmentUploadReceived;
-        _runtime.StatusChanged += OnRuntimeStatusChanged;
+        _runtimeCoordinator.InstallStatusChanged += OnRuntimeInstallStatusChanged;
         _runtimeCoordinator.UpdateStatusChanged += OnRuntimeUpdateStatusChanged;
     }
 
@@ -927,161 +917,81 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         return _runtime.IsReady();
     }
 
-    private void OnRuntimeStatusChanged(string message)
-    {
-        // The runtime's own status text stays internal (npm details); while
-        // an install runs it only triggers a republish of the fixed-code
-        // lifecycle state.
-        bool publish;
-        lock (_runtimeInstallLock)
-            publish = _runtimeInstallInProgress;
-
-        if (publish)
-            _ = PublishRuntimeStatusAsync();
-    }
-
     private async Task InstallRuntimeAsync()
     {
-        CancellationTokenSource? installCts;
-        lock (_runtimeInstallLock)
-        {
-            if (_runtimeInstallInProgress)
-                return;
-
-            if (IsAgentRuntimeReady())
-            {
-                _runtimeInstallState = ResolveReadyRuntimeState();
-                _runtimeInstallMessageCode = RuntimeStatusCode.Ready;
-                installCts = null;
-            }
-            else
-            {
-                _runtimeInstallInProgress = true;
-                _runtimeInstallState = "installing";
-                _runtimeInstallMessageCode = RuntimeStatusCode.PreparingInstall;
-                _runtimeInstallCts = new CancellationTokenSource();
-                installCts = _runtimeInstallCts;
-            }
-        }
-
-        if (installCts == null)
-        {
-            await PublishRuntimeStatusAsync().ConfigureAwait(false);
-            return;
-        }
-
-        try
-        {
-            await PublishRuntimeStatusAsync().ConfigureAwait(false);
-
-            var result = await _runtime.EnsureInstalledAsync(installCts.Token).ConfigureAwait(false);
-
-            lock (_runtimeInstallLock)
-            {
-                switch (result.Kind)
-                {
-                    case AcpRuntimeOperationKind.Success:
-                    case AcpRuntimeOperationKind.AlreadyReady:
-                        _runtimeInstallState = ResolveReadyRuntimeState();
-                        _runtimeInstallMessageCode = RuntimeStatusCode.InstallSucceeded;
-                        break;
-                    case AcpRuntimeOperationKind.Cancelled:
-                        _runtimeInstallState = "cancelled";
-                        _runtimeInstallMessageCode = RuntimeStatusCode.InstallCancelled;
-                        break;
-                    case AcpRuntimeOperationKind.NetworkUnavailable:
-                        _runtimeInstallState = "failed";
-                        _runtimeInstallMessageCode = RuntimeStatusCode.NetworkUnavailable;
-                        break;
-                    default:
-                        // Raw npm detail stays in the runtime log; the wire
-                        // carries the fixed failure code only.
-                        _runtimeInstallState = "failed";
-                        _runtimeInstallMessageCode = RuntimeStatusCode.InstallFailed;
-                        break;
-                }
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            lock (_runtimeInstallLock)
-            {
-                _runtimeInstallState = "cancelled";
-                _runtimeInstallMessageCode = RuntimeStatusCode.InstallCancelled;
-            }
-        }
-        finally
-        {
-            lock (_runtimeInstallLock)
-            {
-                _runtimeInstallInProgress = false;
-                _runtimeInstallCts?.Dispose();
-                _runtimeInstallCts = null;
-            }
-
-            await PublishRuntimeStatusAsync().ConfigureAwait(false);
-            // The install card and toolbar Update action are independent
-            // frontend slices. Always refresh both when installation settles,
-            // including providers running without a workspace coordinator.
+        await _runtimeCoordinator.RequestInstallAsync(_runtime).ConfigureAwait(false);
+        if (!_disposed)
             await PublishRuntimeUpdateSnapshotAsync().ConfigureAwait(false);
-        }
     }
 
-    private async Task CancelRuntimeInstallAsync()
+    private Task CancelRuntimeInstallAsync()
     {
-        CancellationTokenSource? installCts;
-        lock (_runtimeInstallLock)
-        {
-            installCts = _runtimeInstallCts;
-            if (!_runtimeInstallInProgress || installCts == null)
-                return;
-
-            _runtimeInstallMessageCode = RuntimeStatusCode.CancellingInstall;
-        }
-
-        try { installCts.Cancel(); } catch { }
-        await PublishRuntimeStatusAsync().ConfigureAwait(false);
+        _runtimeCoordinator.CancelInstall(_runtime);
+        return Task.CompletedTask;
     }
 
     private async Task PublishRuntimeStatusAsync()
     {
-        string state;
-        string messageCode;
-        bool canCancel;
-
-        lock (_runtimeInstallLock)
-        {
-            if (!_runtimeInstallInProgress && IsAgentRuntimeReady())
-            {
-                _runtimeInstallState = ResolveReadyRuntimeState();
-                _runtimeInstallMessageCode = RuntimeStatusCode.Ready;
-            }
-            else if (_runtimeInstallState is "ready")
-            {
-                _runtimeInstallState = "missing";
-                _runtimeInstallMessageCode = RuntimeStatusCode.NotInstalled;
-            }
-
-            state = _runtimeInstallState;
-            messageCode = _runtimeInstallMessageCode;
-            canCancel = _runtimeInstallInProgress;
-        }
+        var installInFlight = _runtimeCoordinator.IsInstallInFlight(_runtime);
+        var status = ResolveRuntimeStatus(
+            installInFlight,
+            IsAgentRuntimeReady(),
+            _runtimeCoordinator.GetInstallSnapshot(_runtime));
 
         await _bridgeService.SendEventAsync(new
         {
             type = "runtime_status",
             providerKey = _provider.Descriptor.Key,
             agentName = _provider.Descriptor.DisplayName,
-            state,
-            messageCode,
-            canInstall = state is "missing" or "failed" or "cancelled",
-            canCancel,
+            state = status.State,
+            messageCode = status.MessageCode,
+            canInstall = status.State is "missing" or "failed" or "cancelled",
+            canCancel = status.CanCancel,
             ownership = "managed",
             canGuide = false
         }).ConfigureAwait(false);
     }
 
-    private static string ResolveReadyRuntimeState() => "ready";
+    internal static (string State, string MessageCode, bool CanCancel) ResolveRuntimeStatus(
+        bool installInFlight,
+        bool isReady,
+        RuntimeInstallSnapshot? installSnapshot)
+    {
+        // A live operation remains authoritative even if npm has already
+        // materialized enough files for IsReady() to pass during its final
+        // validation. Disk readiness only wins over a stale snapshot after
+        // the coordinator has cleared the in-flight entry.
+        if (installInFlight)
+        {
+            return (
+                "installing",
+                installSnapshot is { State: "installing" }
+                    ? installSnapshot.MessageCode
+                    : RuntimeStatusCode.PreparingInstall,
+                true);
+        }
+
+        if (isReady)
+        {
+            return (
+                "ready",
+                installSnapshot is { State: "ready" }
+                    ? installSnapshot.MessageCode
+                    : RuntimeStatusCode.Ready,
+                false);
+        }
+
+        return installSnapshot is { State: not "ready" }
+            ? (installSnapshot.State, installSnapshot.MessageCode, false)
+            : ("missing", RuntimeStatusCode.NotInstalled, false);
+    }
+
+    private void OnRuntimeInstallStatusChanged(object? sender, RuntimeInstallStatusChangedEventArgs args)
+    {
+        if (!ReferenceEquals(args.Runtime, _runtime) || _disposed)
+            return;
+        _ = PublishRuntimeStatusAsync();
+    }
 
     /// <summary>
     /// User-requested update check. The runtime coordinator single-flights
@@ -4000,17 +3910,15 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         _bridgeService.UserMessageSubmitted -= OnUserMessageSubmitted;
         _bridgeService.CommandReceived -= OnCommandReceived;
         _bridgeService.AttachmentUploadReceived -= OnAttachmentUploadReceived;
-        _runtime.StatusChanged -= OnRuntimeStatusChanged;
+        _runtimeCoordinator.InstallStatusChanged -= OnRuntimeInstallStatusChanged;
         _runtimeCoordinator.UpdateStatusChanged -= OnRuntimeUpdateStatusChanged;
         try { _serviceLifetimeCts.Cancel(); } catch { }
         try { _runCts?.Cancel(); } catch { }
         try { _runRequestCts?.Cancel(); } catch { }
-        try { _runtimeInstallCts?.Cancel(); } catch { }
 
         _decisions.CancelAllWithoutEvents();
         _terminalRequests.Dispose();
 
-        _runtimeInstallCts?.Dispose();
         _runCts?.Dispose();
         _runRequestCts?.Dispose();
 

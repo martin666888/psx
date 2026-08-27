@@ -128,6 +128,118 @@ public sealed class AgentProviderRegistryTests
     }
 
     [TestMethod]
+    public async Task RuntimeCoordinator_InstallIsProcessWideSingleFlightWithLateSnapshot()
+    {
+        using var workspace = TestWorkspace.Create(nameof(RuntimeCoordinator_InstallIsProcessWideSingleFlightWithLateSnapshot));
+        var runtime = new CountingRuntime(workspace.Path)
+        {
+            Ready = false,
+            InstallCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously)
+        };
+        var registry = new AgentProviderRegistry(
+            [new TestProvider("first", "First", runtime, [])],
+            new AgentProviderOptions { DefaultProviderKey = "first" });
+        using var coordinator = new AgentRuntimeCoordinator(registry);
+        var states = new List<string>();
+        coordinator.InstallStatusChanged += (_, args) => states.Add(args.State);
+
+        var first = coordinator.RequestInstallAsync(runtime);
+        var second = coordinator.RequestInstallAsync(runtime);
+
+        Assert.AreSame(first, second);
+        Assert.AreEqual(1, runtime.InstallCount);
+        Assert.IsTrue(coordinator.HasOperationsInFlight);
+        Assert.IsTrue(coordinator.IsInstallInFlight(runtime));
+        Assert.AreEqual("installing", coordinator.GetInstallSnapshot(runtime)?.State);
+
+        runtime.InstallCompletion.SetResult(
+            new AcpRuntimeOperationResult(AcpRuntimeOperationKind.Success, "installed"));
+        var result = await first;
+
+        Assert.AreEqual(AcpRuntimeOperationKind.Success, result.Kind);
+        Assert.IsFalse(coordinator.HasOperationsInFlight);
+        Assert.AreEqual("ready", coordinator.GetInstallSnapshot(runtime)?.State);
+        Assert.AreEqual("installing", states.First());
+        Assert.AreEqual("ready", states.Last());
+    }
+
+    [TestMethod]
+    public async Task RuntimeCoordinator_AlreadyReadyInstallNeverPublishesInstallingOrRunsInstaller()
+    {
+        using var workspace = TestWorkspace.Create(nameof(RuntimeCoordinator_AlreadyReadyInstallNeverPublishesInstallingOrRunsInstaller));
+        var runtime = new CountingRuntime(workspace.Path) { Ready = true };
+        var registry = new AgentProviderRegistry(
+            [new TestProvider("first", "First", runtime, [])],
+            new AgentProviderOptions { DefaultProviderKey = "first" });
+        using var coordinator = new AgentRuntimeCoordinator(registry);
+        var states = new List<string>();
+        coordinator.InstallStatusChanged += (_, args) => states.Add(args.State);
+
+        var result = await coordinator.RequestInstallAsync(runtime);
+
+        Assert.AreEqual(AcpRuntimeOperationKind.AlreadyReady, result.Kind);
+        Assert.AreEqual(0, runtime.InstallCount);
+        CollectionAssert.AreEqual(new[] { "ready" }, states);
+        Assert.AreEqual("ready", coordinator.GetInstallSnapshot(runtime)?.State);
+        Assert.IsFalse(coordinator.IsInstallInFlight(runtime));
+    }
+
+    [TestMethod]
+    public async Task RuntimeCoordinator_CancelInstallBroadcastsCancellingThenCancelled()
+    {
+        using var workspace = TestWorkspace.Create(nameof(RuntimeCoordinator_CancelInstallBroadcastsCancellingThenCancelled));
+        var runtime = new CountingRuntime(workspace.Path)
+        {
+            Ready = false,
+            InstallCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously)
+        };
+        var registry = new AgentProviderRegistry(
+            [new TestProvider("first", "First", runtime, [])],
+            new AgentProviderOptions { DefaultProviderKey = "first" });
+        using var coordinator = new AgentRuntimeCoordinator(registry);
+        var snapshots = new List<RuntimeInstallSnapshot>();
+        coordinator.InstallStatusChanged += (_, args) =>
+            snapshots.Add(new RuntimeInstallSnapshot(args.State, args.MessageCode));
+
+        var install = coordinator.RequestInstallAsync(runtime);
+        coordinator.CancelInstall(runtime);
+        var result = await install;
+
+        Assert.AreEqual(AcpRuntimeOperationKind.Cancelled, result.Kind);
+        Assert.IsTrue(snapshots.Any(snapshot =>
+            snapshot.State == "installing"
+            && snapshot.MessageCode == RuntimeStatusCode.CancellingInstall));
+        Assert.AreEqual("cancelled", snapshots.Last().State);
+        Assert.AreEqual(RuntimeStatusCode.InstallCancelled, snapshots.Last().MessageCode);
+        Assert.IsFalse(coordinator.IsInstallInFlight(runtime));
+    }
+
+    [TestMethod]
+    public async Task RuntimeCoordinator_ShutdownCancellationSuppressesUpdateTerminalWireState()
+    {
+        using var workspace = TestWorkspace.Create(nameof(RuntimeCoordinator_ShutdownCancellationSuppressesUpdateTerminalWireState));
+        var runtime = new CountingRuntime(workspace.Path)
+        {
+            RefreshCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously)
+        };
+        var registry = new AgentProviderRegistry(
+            [new TestProvider("first", "First", runtime, [])],
+            new AgentProviderOptions { DefaultProviderKey = "first" });
+        using var coordinator = new AgentRuntimeCoordinator(registry);
+        var states = new List<string>();
+        coordinator.UpdateStatusChanged += (_, args) => states.Add(args.State);
+
+        var update = coordinator.RequestUpdateAsync(runtime);
+        await coordinator.CancelAllOperationsAsync();
+        var result = await update;
+
+        Assert.AreEqual(AcpRuntimeOperationKind.Cancelled, result.Kind);
+        CollectionAssert.AreEqual(new[] { "checking" }, states);
+        Assert.IsNull(coordinator.GetUpdateSnapshot(runtime));
+        Assert.IsFalse(coordinator.HasOperationsInFlight);
+    }
+
+    [TestMethod]
     public void EventSink_SendEvent_AlwaysAddsWorkspaceIdAndDropsAfterDispose()
     {
         var bridge = new RecordingAgentBridgeService();
@@ -349,10 +461,14 @@ public sealed class AgentWorkspaceCoordinatorTests
         Assert.AreEqual(AgentWorkspaceState.TranscriptOnly, coordinator.Workspaces.Single().AgentState);
         Assert.AreEqual("agent", coordinator.Workspaces.Single().IconKey);
         Assert.AreEqual(0, runtime.ProcessSpecCount);
-        Assert.IsFalse(bridge.Events.Any(message =>
+        Assert.IsTrue(bridge.Events.Any(message =>
             message.GetProperty("type").GetString() == "runtime_status"
             && message.TryGetProperty("workspaceId", out var eventWorkspaceId)
-            && eventWorkspaceId.GetString() == workspaceId.Value.ToString()));
+            && eventWorkspaceId.GetString() == workspaceId.Value.ToString()
+            && message.GetProperty("state").GetString() == "failed"
+            && message.GetProperty("messageCode").GetString() == RuntimeStatusCode.TranscriptReadOnly
+            && !message.GetProperty("canInstall").GetBoolean()
+            && !message.GetProperty("canCancel").GetBoolean()));
         Assert.IsTrue(bridge.Events.Any(message =>
             message.GetProperty("type").GetString() == "agent_state"
             && message.GetProperty("workspaceId").GetString() == workspaceId.Value.ToString()
@@ -903,23 +1019,38 @@ internal sealed class CountingRuntime(string root) : IAcpAgentRuntime
 {
     public event Action<string>? StatusChanged;
     public int PrepareCount { get; private set; }
+    public int InstallCount { get; private set; }
     public int RefreshCount { get; private set; }
     public int ProcessSpecCount { get; private set; }
     public bool HasPendingUpdate { get; set; }
+    public bool Ready { get; set; } = true;
+    public TaskCompletionSource<AcpRuntimeOperationResult>? InstallCompletion { get; set; }
+    public TaskCompletionSource<AcpRuntimeOperationResult>? RefreshCompletion { get; set; }
     public AcpRuntimeOperationResult RefreshResult { get; set; } =
         new(AcpRuntimeOperationKind.AlreadyReady, "Ready");
     public string LogPath => Path.Combine(root, "runtime.log");
     public bool SupportsSelfUpdate => true;
-    public bool IsReady() => true;
+    public bool IsReady() => Ready;
     public string BuildStatusText(string? suffix = null) => suffix ?? "Ready";
     public RuntimeVersionSnapshot GetVersionSnapshot() =>
         new(CurrentVersion: "1.0.0", PendingVersion: HasPendingUpdate ? "1.1.0" : null, HasPendingUpdate: HasPendingUpdate);
-    public Task<AcpRuntimeOperationResult> EnsureInstalledAsync(CancellationToken cancellationToken = default) =>
-        Task.FromResult(new AcpRuntimeOperationResult(AcpRuntimeOperationKind.AlreadyReady, "Ready"));
-    public Task<AcpRuntimeOperationResult> RefreshAsync(CancellationToken cancellationToken = default)
+    public async Task<AcpRuntimeOperationResult> EnsureInstalledAsync(CancellationToken cancellationToken = default)
+    {
+        InstallCount++;
+        var result = InstallCompletion == null
+            ? new AcpRuntimeOperationResult(AcpRuntimeOperationKind.AlreadyReady, "Ready")
+            : await InstallCompletion.Task.WaitAsync(cancellationToken);
+        if (result.Kind is AcpRuntimeOperationKind.Success or AcpRuntimeOperationKind.AlreadyReady)
+            Ready = true;
+        StatusChanged?.Invoke(BuildStatusText());
+        return result;
+    }
+    public async Task<AcpRuntimeOperationResult> RefreshAsync(CancellationToken cancellationToken = default)
     {
         RefreshCount++;
-        return Task.FromResult(RefreshResult);
+        return RefreshCompletion == null
+            ? RefreshResult
+            : await RefreshCompletion.Task.WaitAsync(cancellationToken);
     }
     public Task PrepareForStartupAsync(CancellationToken cancellationToken = default)
     {

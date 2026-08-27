@@ -243,7 +243,7 @@ export class TimelineProjection {
   apply(type: string, raw: RawHostMessage, assistantName: string): boolean {
     switch (type) {
       case 'agent_thread_loaded':
-        this.loadThread(raw, assistantName);
+        this.loadThread(raw);
         return true;
       case 'command_result': {
         const code = asString(raw.code);
@@ -1047,7 +1047,7 @@ export class TimelineProjection {
     });
   }
 
-  private loadThread(event: RawHostMessage, assistantName: string): void {
+  private loadThread(event: RawHostMessage): void {
     if (event.clear) this.reset();
 
     const messages = asMessageArray(event.messages);
@@ -1122,10 +1122,6 @@ export class TimelineProjection {
     this.historyGroup = null;
     this.currentTurnId = null;
 
-    if (messages.length === 0) {
-      // PSX-authored welcome row: stored as a fixed code, localized at render.
-      this.appendSystemCode('thread.ready', { agentName: assistantName });
-    }
   }
 }
 

@@ -74,14 +74,15 @@ describe('Thread replay', () => {
     assert.equal(panel.querySelector('[data-role="cwd"]').textContent, 'D:/replay');
   });
 
-  it('shows a ready hint when replaying an empty thread', async () => {
+  it('shows the ready empty state without synthesizing a timeline row', async () => {
     const { app, panel } = await mount();
     await render(
       () => app.handle({ type: 'agent_thread_loaded', workspaceId, clear: true, messages: [] }),
-      () => !!panel.querySelector('[data-role="thread"] .agent-system')
+      () => !!panel.querySelector('[data-role="thread"] .agent-conversation-empty')
     );
     const thread = panel.querySelector('[data-role="thread"]');
-    assert.match(thread.querySelector('.agent-system').textContent, /将从第一条消息开始处理/);
+    assert.equal(thread.querySelector('.agent-system'), null);
+    assert.match(thread.querySelector('.agent-conversation-empty').textContent, /将从第一条消息开始处理/);
   });
 });
 

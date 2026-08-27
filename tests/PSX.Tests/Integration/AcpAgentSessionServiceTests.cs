@@ -80,6 +80,75 @@ public sealed class AcpAgentSessionServiceTests
     }
 
     [TestMethod]
+    public void RuntimeStatus_InFlightWinsUntilCompletionButReadyOverridesStaleInstallingSnapshot()
+    {
+        var staleInstalling = new RuntimeInstallSnapshot(
+            "installing",
+            RuntimeStatusCode.PreparingInstall);
+
+        var inFlight = AcpAgentSessionService.ResolveRuntimeStatus(
+            installInFlight: true,
+            isReady: true,
+            staleInstalling);
+        Assert.AreEqual("installing", inFlight.State);
+        Assert.AreEqual(RuntimeStatusCode.PreparingInstall, inFlight.MessageCode);
+        Assert.IsTrue(inFlight.CanCancel);
+
+        var completed = AcpAgentSessionService.ResolveRuntimeStatus(
+            installInFlight: false,
+            isReady: true,
+            staleInstalling);
+        Assert.AreEqual("ready", completed.State);
+        Assert.AreEqual(RuntimeStatusCode.Ready, completed.MessageCode);
+        Assert.IsFalse(completed.CanCancel);
+    }
+
+    [TestMethod]
+    public async Task InstallRuntime_ClosingRequesterKeepsSharedInstallAliveForLateWorkspace()
+    {
+        using var fixture = new FakeAcpSessionFixture(
+            nameof(InstallRuntime_ClosingRequesterKeepsSharedInstallAliveForLateWorkspace));
+        fixture.Runtime.SetReady(false);
+        fixture.Runtime.InstallCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        fixture.Bridge.RaiseCommand("install_runtime");
+        await fixture.Bridge.WaitForEventAsync(
+            "runtime_status",
+            message => message.GetProperty("state").GetString() == "installing");
+
+        var lateBridge = new RecordingAgentBridgeService();
+        var lateThread = fixture.Store.CreateThread(fixture.Workspace.Path);
+        lateThread.Provider = fixture.Provider.Descriptor.Key;
+        fixture.Store.SaveThread(lateThread);
+        using var lateService = new AcpAgentSessionService(
+            Guid.NewGuid(),
+            lateBridge,
+            new NullTabManagementService(),
+            new NullTerminalBridgeService(),
+            fixture.Store,
+            new NullAgentDirectoryPicker(),
+            fixture.Registry,
+            fixture.Provider,
+            lateThread,
+            fixture.RuntimeCoordinator);
+
+        lateBridge.RaiseCommand("state");
+        var installing = await lateBridge.WaitForEventAsync(
+            "runtime_status",
+            message => message.GetProperty("state").GetString() == "installing");
+        Assert.IsTrue(installing.GetProperty("canCancel").GetBoolean());
+
+        fixture.Service.Dispose();
+        fixture.Runtime.InstallCompletion.SetResult(
+            new AcpRuntimeOperationResult(AcpRuntimeOperationKind.Success, "installed"));
+
+        await lateBridge.WaitForEventAsync(
+            "runtime_status",
+            message => message.GetProperty("state").GetString() == "ready");
+        Assert.AreEqual(1, fixture.Runtime.InstallCount);
+    }
+
+    [TestMethod]
     public async Task CheckRuntimeUpdate_BroadcastsToEveryWorkspaceSharingTheRuntime()
     {
         using var fixture = new FakeAcpSessionFixture(nameof(CheckRuntimeUpdate_BroadcastsToEveryWorkspaceSharingTheRuntime));

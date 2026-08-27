@@ -29,6 +29,8 @@ export interface WorkspaceSessionState {
 
 export interface WorkspaceRuntimeState {
   state: string;
+  /** False until the first authoritative runtime_status event arrives. */
+  statusKnown: boolean;
   messageCode: string;
   canInstall: boolean;
   canCancel: boolean;
@@ -167,6 +169,7 @@ export function createInitialWorkspaceState(workspaceId: string): AgentWorkspace
     },
     runtime: {
       state: 'missing',
+      statusKnown: false,
       messageCode: '',
       canInstall: false,
       canCancel: false,
