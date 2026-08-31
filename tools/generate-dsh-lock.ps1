@@ -345,10 +345,14 @@ function Get-OfficialDshIntegrity {
 }
 
 function Test-DshReadyUrl {
-    <#Mirrors DshWebRuntimeSupervisor.TryAcceptReadyUrl: loopback HTTP, path
-    `/`, no userinfo/fragment. A missing query is allowed; a query must be
-    exactly `?token=` plus a bounded token. Never log the token-bearing URL.#>
+    <#Mirrors DshWebRuntimeSupervisor.TryAcceptReadyUrl exactly (length cap,
+    loopback HTTP, path `/`, no userinfo/fragment). A missing query is
+    allowed; a query must be exactly `?token=` plus
+    ^[A-Za-z0-9._~-]{8,1024}$. Never log the token-bearing URL.#>
     param([string]$Candidate)
+    if ([string]::IsNullOrWhiteSpace($Candidate) -or $Candidate.Length -gt 2048) {
+        return $false
+    }
     $parsed = $null
     if (-not [Uri]::TryCreate($Candidate, [UriKind]::Absolute, [ref]$parsed)) {
         return $false
@@ -379,7 +383,7 @@ function Test-DshReadyUrl {
         return $false
     }
     $token = $query.Substring("?token=".Length)
-    return $token.Length -ge 8 -and $token.Length -le 1024
+    return $token -match '^[A-Za-z0-9._~-]{8,1024}$'
 }
 
 function Invoke-DshLaunchSmoke {

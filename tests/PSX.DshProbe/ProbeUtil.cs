@@ -34,4 +34,6 @@ internal static class ProbeUtil
 
     public static string Clip(string value, int max = 220) =>
         value.Length <= max ? value : value[..max] + "...";
+
+    public static string OriginOf(Uri url) => url.GetLeftPart(UriPartial.Authority);
 }

@@ -16,10 +16,17 @@ internal sealed partial class MockDshServer : IDisposable
     private readonly CancellationTokenSource _cts = new();
 
     public Uri BaseUri { get; }
+    public Uri TokenUrl { get; }
     public int RequestCount;
     public int DownloadCount;
+    public int TokenHits;
+    public const string LaunchToken = "abcdefgh";
 
-    private MockDshServer(int port) => BaseUri = new Uri($"http://127.0.0.1:{port}/");
+    private MockDshServer(int port)
+    {
+        BaseUri = new Uri($"http://127.0.0.1:{port}/");
+        TokenUrl = new Uri($"http://127.0.0.1:{port}/?token={LaunchToken}");
+    }
 
     public static MockDshServer Start()
     {
@@ -65,7 +72,10 @@ internal sealed partial class MockDshServer : IDisposable
                 var requestLine = head.Split("\r\n")[0].Split(' ');
                 if (requestLine.Length < 2) return;
                 var method = requestLine[0];
-                var path = requestLine[1].Split('?')[0];
+                if (!Uri.TryCreate(BaseUri, requestLine[1], out var requestUri))
+                    return;
+                var path = requestUri.AbsolutePath;
+                var query = requestUri.Query;
                 var headers = ParseHeaders(head);
 
                 if (method == "GET" && path == "/ws"
@@ -76,8 +86,35 @@ internal sealed partial class MockDshServer : IDisposable
                 }
                 if (method == "GET" && path == "/")
                 {
-                    await WriteResponseAsync(stream, "200 OK",
-                        Encoding.UTF8.GetBytes(Html), "text/html; charset=utf-8", "", token).ConfigureAwait(false);
+                    if (query.StartsWith("?token=", StringComparison.Ordinal))
+                    {
+                        Interlocked.Increment(ref TokenHits);
+                        await WriteResponseAsync(
+                            stream,
+                            "303 See Other",
+                            Array.Empty<byte>(),
+                            "text/plain",
+                            "Set-Cookie: dsh_session=probe; HttpOnly; Path=/; SameSite=Strict\r\nLocation: /",
+                            token).ConfigureAwait(false);
+                        return;
+                    }
+
+                    var cookie = headers.TryGetValue("Cookie", out var value) ? value : "";
+                    if (cookie.Contains("dsh_session=probe", StringComparison.Ordinal))
+                    {
+                        await WriteResponseAsync(stream, "200 OK",
+                            Encoding.UTF8.GetBytes(Html), "text/html; charset=utf-8", "", token)
+                            .ConfigureAwait(false);
+                        return;
+                    }
+
+                    await WriteResponseAsync(
+                        stream,
+                        "401 Unauthorized",
+                        Encoding.UTF8.GetBytes("dsh web authentication required"),
+                        "text/plain",
+                        "",
+                        token).ConfigureAwait(false);
                     return;
                 }
                 if (method == "GET" && path == "/api/session.export")

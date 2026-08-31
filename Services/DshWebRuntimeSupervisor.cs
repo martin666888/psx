@@ -1064,17 +1064,19 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         }
     }
 
-    private static async Task<bool> HealthCheckAsync(Uri url)
+    internal static async Task<bool> HealthCheckAsync(Uri url)
     {
         var origin = ToFrameOrigin(url);
         if (origin == null)
             return false;
         try
         {
-            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-            // Probe the clean root only. Opening the token URL here would
-            // consume DSH's one-time launch token before the overlay WebView
-            // can exchange it for the SameSite=Strict session cookie.
+            using var handler = new HttpClientHandler { AllowAutoRedirect = false };
+            using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(10) };
+            // Probe the clean root only and never follow redirects: a 3xx to
+            // the token URL would consume DSH's one-time launch token before
+            // the overlay WebView can exchange it for the SameSite=Strict
+            // session cookie.
             using var response = await client.GetAsync(origin + "/").ConfigureAwait(false);
             if ((int)response.StatusCode == 401)
                 return true;

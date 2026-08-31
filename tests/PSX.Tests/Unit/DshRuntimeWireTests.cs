@@ -1,4 +1,7 @@
+using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Sockets;
+using System.Text;
 using PSX.Services;
 
 namespace PSX.Tests.Unit;
@@ -180,6 +183,8 @@ public sealed class DshRuntimeWireTests
     [DataRow("http://127.0.0.1:12345/?other=abcdefgh")]
     [DataRow("http://127.0.0.1:12345/#token=abcdefgh")]
     [DataRow("http://127.0.0.1:12345/session")]
+    [DataRow("http://127.0.0.1:12345/?token=abcd!efgh")]
+    [DataRow("http://127.0.0.1:12345/?token=abcdefgh+")]
     public void TryAcceptReadyUrl_RejectsNonLoopbackHttp(string? candidate)
     {
         Assert.IsFalse(DshWebRuntimeSupervisor.TryAcceptReadyUrl(candidate, out _));
@@ -219,5 +224,107 @@ public sealed class DshRuntimeWireTests
     {
         var header = mediaType == null ? null : new MediaTypeHeaderValue(mediaType);
         Assert.AreEqual(expected, DshWebWorkspaceCoordinator.IsAllowedExportContentType(header));
+    }
+
+    [TestMethod]
+    public async Task HealthCheck_DoesNotFollowRedirectToTokenUrl()
+    {
+        using var server = TokenRedirectRootServer.Start();
+        var ready = new Uri($"{server.Origin}/?token=abcdefgh");
+        var ok = await DshWebRuntimeSupervisor.HealthCheckAsync(ready);
+        Assert.IsFalse(ok, "a 3xx from the clean root must not count as Ready");
+        Assert.AreEqual(0, server.TokenHits, "HealthCheck must not follow a redirect onto the token URL");
+        Assert.IsGreaterThanOrEqualTo(1, server.RootHits);
+    }
+
+    private sealed class TokenRedirectRootServer : IDisposable
+    {
+        private readonly TcpListener _listener;
+        private readonly CancellationTokenSource _cts = new();
+
+        public string Origin { get; }
+        public int TokenHits;
+        public int RootHits;
+
+        private TokenRedirectRootServer(int port)
+        {
+            Origin = $"http://127.0.0.1:{port}";
+            _listener = new TcpListener(IPAddress.Loopback, port);
+        }
+
+        public static TokenRedirectRootServer Start()
+        {
+            var probe = new TcpListener(IPAddress.Loopback, 0);
+            probe.Start();
+            var port = ((IPEndPoint)probe.LocalEndpoint).Port;
+            probe.Stop();
+            var server = new TokenRedirectRootServer(port);
+            server._listener.Start();
+            _ = Task.Run(server.ServeAsync);
+            return server;
+        }
+
+        private async Task ServeAsync()
+        {
+            while (!_cts.IsCancellationRequested)
+            {
+                TcpClient client;
+                try { client = await _listener.AcceptTcpClientAsync(_cts.Token).ConfigureAwait(false); }
+                catch { break; }
+                _ = Task.Run(() => HandleAsync(client, _cts.Token));
+            }
+        }
+
+        private async Task HandleAsync(TcpClient client, CancellationToken token)
+        {
+            using (client)
+            {
+                try
+                {
+                    var stream = client.GetStream();
+                    var buffer = new byte[1024];
+                    var builder = new StringBuilder();
+                    while (!builder.ToString().Contains("\r\n\r\n", StringComparison.Ordinal))
+                    {
+                        var read = await stream.ReadAsync(buffer, token).ConfigureAwait(false);
+                        if (read == 0) return;
+                        builder.Append(Encoding.ASCII.GetString(buffer, 0, read));
+                        if (builder.Length > 4096) return;
+                    }
+
+                    var requestLine = builder.ToString().Split("\r\n")[0];
+                    var target = requestLine.Split(' ').ElementAtOrDefault(1) ?? "/";
+                    if (target.Contains("token=", StringComparison.Ordinal))
+                    {
+                        Interlocked.Increment(ref TokenHits);
+                        var html = Encoding.UTF8.GetBytes("<!doctype html><title>DeepSeek Harness</title>");
+                        var ok = Encoding.ASCII.GetBytes(
+                            $"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {html.Length}\r\nConnection: close\r\n\r\n");
+                        await stream.WriteAsync(ok, token).ConfigureAwait(false);
+                        await stream.WriteAsync(html, token).ConfigureAwait(false);
+                        return;
+                    }
+
+                    Interlocked.Increment(ref RootHits);
+                    var body = Encoding.ASCII.GetBytes("redirect");
+                    var head = Encoding.ASCII.GetBytes(
+                        "HTTP/1.1 302 Found\r\nLocation: /?token=abcdefgh\r\nContent-Length: "
+                        + body.Length + "\r\nConnection: close\r\n\r\n");
+                    await stream.WriteAsync(head, token).ConfigureAwait(false);
+                    await stream.WriteAsync(body, token).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // probe listener
+                }
+            }
+        }
+
+        public void Dispose()
+        {
+            _cts.Cancel();
+            try { _listener.Stop(); } catch { }
+            _cts.Dispose();
+        }
     }
 }

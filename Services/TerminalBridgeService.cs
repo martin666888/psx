@@ -31,6 +31,7 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
     private DshSurfaceHostPolicy? _dshPolicy;
     private Uri? _dshReadyUrl;
     private Uri? _dshNavigatedUrl;
+    private long _dshReadyRevision;
     private DshSurfaceBoundsEventArgs? _dshBounds;
     private string _viewMode = "terminal";
     private bool _disposed;
@@ -200,10 +201,16 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
 
     private async Task ApplyDshReadyUrlAsync(Uri? url)
     {
+        // Capture the generation before any await. A later SetDshReadyUrl
+        // (fast restart) increments this; resuming an older call must not
+        // navigate the overlay to a consumed token.
+        var revision = ++_dshReadyRevision;
         _dshReadyUrl = url;
         var origin = DshWebRuntimeSupervisor.ToFrameOrigin(url);
         if (_dshPolicy != null)
             await _dshPolicy.SetOriginAsync(origin);
+        if (revision != _dshReadyRevision)
+            return;
 
         if (url == null || origin == null)
         {
