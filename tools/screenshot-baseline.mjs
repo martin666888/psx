@@ -40,6 +40,8 @@ const MAX_PIXEL_DIFFERENCE_RATIO = 0.0015;
 const AGENT_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const AGENT_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const TERMINAL = '11111111-1111-4111-8111-111111111111';
+const LONG_UNBROKEN_DRAFT =
+  'https://example.invalid/' + 'segment/'.repeat(600) + '?token=' + 'A'.repeat(4096);
 
 function terminalOutput(text) {
   return Buffer.from(text, 'utf8').toString('base64');
@@ -578,6 +580,94 @@ const SCENES = [
     }
   })),
   {
+    name: 'composer-long-unbroken-paste',
+    viewportWidth: 1200,
+    events: singleAgentEvents,
+    ready: `.agent-panel[data-workspace-id="${AGENT_A}"] [data-role="input"]`,
+    clipboard: true,
+    geometryOnly: true,
+    async stage(page) {
+      const input = page.locator(
+        `.agent-panel[data-workspace-id="${AGENT_A}"] [data-role="input"]`
+      );
+      await input.click();
+      await page.evaluate(
+        (draft) => window.navigator.clipboard.writeText(draft),
+        LONG_UNBROKEN_DRAFT
+      );
+      await page.keyboard.press('Control+V');
+      await page.waitForFunction(
+        (draft) => document.querySelector('[data-role="input"]')?.value === draft,
+        LONG_UNBROKEN_DRAFT
+      );
+    },
+    async verify(page) {
+      const probe = await page
+        .locator(`.agent-panel[data-workspace-id="${AGENT_A}"]`)
+        .evaluate((panel) => {
+          const rect = (element) => {
+            const bounds = element?.getBoundingClientRect();
+            return bounds
+              ? {
+                  left: bounds.left,
+                  right: bounds.right,
+                  width: bounds.width
+                }
+              : null;
+          };
+          return {
+            panel: rect(panel),
+            panelClientWidth: panel.clientWidth,
+            panelScrollWidth: panel.scrollWidth,
+            workspace: rect(panel.querySelector('.agent-workspace')),
+            readingColumn: rect(panel.querySelector('.agent-thread-content > .agent-turn')),
+            composer: rect(panel.querySelector('.agent-composer-main')),
+            input: rect(panel.querySelector('[data-role="input"]')),
+            pageScrollX: window.scrollX
+          };
+        });
+
+      const { panel, workspace, readingColumn, composer, input } = probe;
+      if (!panel || !workspace || !readingColumn || !composer || !input) {
+        throw new Error(`long-paste geometry is incomplete: ${JSON.stringify(probe)}`);
+      }
+      if (probe.panelScrollWidth > probe.panelClientWidth + 1) {
+        throw new Error(
+          `long paste widened the panel: ${probe.panelScrollWidth}px > ${probe.panelClientWidth}px`
+        );
+      }
+      for (const [name, bounds] of [
+        ['workspace', workspace],
+        ['reading column', readingColumn],
+        ['Composer', composer],
+        ['input', input]
+      ]) {
+        if (bounds.left < panel.left - 1 || bounds.right > panel.right + 1) {
+          throw new Error(`${name} escaped the Agent pane: ${JSON.stringify({ panel, bounds })}`);
+        }
+      }
+      // Conversation reserves a native scrollbar gutter while Composer does
+      // not. Centering inside those two available widths can offset either
+      // edge by up to one scrollbar, but pasted content must not add drift.
+      if (Math.abs(readingColumn.left - composer.left) > 10) {
+        throw new Error(
+          `Conversation and Composer starts diverged: ${readingColumn.left}px vs ${composer.left}px`
+        );
+      }
+      // Conversation reserves the native scrollbar gutter while Composer does
+      // not. Their trailing edges may therefore differ by one scrollbar, but
+      // never by content-driven grid expansion.
+      if (Math.abs(readingColumn.right - composer.right) > 10) {
+        throw new Error(
+          `Conversation and Composer ends diverged: ${readingColumn.right}px vs ${composer.right}px`
+        );
+      }
+      if (probe.pageScrollX !== 0) {
+        throw new Error(`long paste horizontally scrolled the page to ${probe.pageScrollX}px`);
+      }
+    }
+  },
+  {
     name: 'split-agents',
     viewportWidth: 1000,
     events: splitAgentEvents,
@@ -921,6 +1011,9 @@ try {
           colorScheme: themeName,
           reducedMotion: 'reduce'
         });
+        if (scene.clipboard) {
+          await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin });
+        }
         const page = await context.newPage();
         const runtimeErrors = [];
         page.on('console', (message) => {
@@ -950,6 +1043,12 @@ try {
         if (scene.name === 'responsive-720') await verifyGlobalDismissals(page);
         if (scene.verify) await scene.verify(page);
         await waitForStableUi(page);
+        if (runtimeErrors.length) throw new Error(runtimeErrors.join(' | '));
+
+        if (scene.geometryOnly) {
+          console.log(`PASS ${name}: locked-Chromium geometry contract`);
+          continue;
+        }
 
         const axe = await new AxeBuilder({ page })
           .withTags(['wcag2a', 'wcag2aa'])
@@ -967,8 +1066,6 @@ try {
             serious.map((violation) => `${violation.id} (${violation.nodes.length})`).join(', ')
           );
         }
-        if (runtimeErrors.length) throw new Error(runtimeErrors.join(' | '));
-
         const actualPath = path.join(resultDir, name + '--actual.png');
         await page.screenshot({ path: actualPath, fullPage: false, animations: 'disabled' });
         const result = compareOrUpdate(name, actualPath);
@@ -999,8 +1096,11 @@ if (failures.length) {
   for (const failure of failures) console.error(' - ' + failure);
   process.exitCode = 1;
 } else {
+  const themeCount = Object.keys(THEMES).length;
+  const screenshotCount = SCENES.filter((scene) => !scene.geometryOnly).length * themeCount;
+  const geometryCount = SCENES.filter((scene) => scene.geometryOnly).length * themeCount;
   console.log(
-    `\nVisual gate passed: ${SCENES.length * Object.keys(THEMES).length} screenshots, ` +
+    `\nVisual gate passed: ${screenshotCount} screenshots, ${geometryCount} geometry checks, ` +
     `threshold ${(MAX_PIXEL_DIFFERENCE_RATIO * 100).toFixed(2)}%.`
   );
 }

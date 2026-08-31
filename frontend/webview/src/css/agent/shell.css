@@ -121,6 +121,11 @@
         "runtime"
         "workspace"
         "composer";
+    /* The Composer textarea uses field-sizing: content for vertical growth.
+     * A pasted URL/token can therefore have an enormous intrinsic inline
+     * size. Keep the panel's sole track tied to the pane width so that content
+     * can scroll or wrap without moving the shared reading-column geometry. */
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto auto minmax(0, 1fr) auto;
     /* With History closed, the symmetric panel gutters make the reading
      * column panel-centred (which is also viewport-centred in a single

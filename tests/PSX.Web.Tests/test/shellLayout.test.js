@@ -401,6 +401,16 @@ test('shell: composer and conversation share the same reading-column rules', () 
   assert.match(composer, /width: var\(--agent-reading-column-max\)/);
   assert.match(composer, /margin-left: max\(0px, var\(--agent-reading-column-start\)\)/);
   assert.match(
+    shell,
+    /\.agent-panel\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\)/,
+    'panel track cannot grow to a pasted string intrinsic width'
+  );
+  assert.match(
+    composer,
+    /\.agent-composer\s*\{[\s\S]*?min-width:\s*0/,
+    'Composer grid item can shrink below textarea min-content width'
+  );
+  assert.match(
     composer,
     /\.agent-composer-card\s*\{[\s\S]*?border:\s*1px solid var\(--agent-border-strong\)/,
     'Composer uses the strong theme border instead of relying on a dark-theme shadow'

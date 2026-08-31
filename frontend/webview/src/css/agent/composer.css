@@ -1,6 +1,10 @@
 .agent-composer {
     grid-area: composer;
     position: relative;
+    /* As a grid item, opt out of the automatic min-content width. Otherwise
+     * field-sizing: content can let one unbroken pasted string widen the
+     * panel's grid track and shift both Composer and Conversation off-screen. */
+    min-width: 0;
     /* Breathing room between the card and the panel's rounded bottom edge. */
     padding: 0 0 var(--agent-composer-bottom-space);
     background: transparent;
