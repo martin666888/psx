@@ -4,6 +4,6 @@
   "version": "0.1.0",
   "description": "PSX OpenCode ACP runtime — build-time staging installs this pinned lockfile into tools/opencode so the bundled OpenCode CLI ships inside the PSX release. Depends on the platform package directly (not the opencode-ai wrapper) so no postinstall placeholder/shim is involved.",
   "dependencies": {
-    "opencode-windows-x64": "1.18.14"
+    "opencode-windows-x64": "1.18.25"
   }
 }
