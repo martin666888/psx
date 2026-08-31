@@ -28,25 +28,25 @@ function mountChrome() {
   document.body.innerHTML = `
     <nav id="activity-rail">
       <button data-role="history-toggle">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
           <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
           <path d="M3 3v5h5"></path>
           <path d="M12 7v5l4 2"></path>
         </svg>
       </button>
       <button data-role="workspace-create-toggle">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
           <path d="M5 12h14"></path>
           <path d="M12 5v14"></path>
         </svg>
       </button>
       <button data-role="theme-toggle">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
           <path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"></path>
         </svg>
       </button>
       <button data-role="app-settings-toggle">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
           <circle cx="12" cy="12" r="3"></circle>
         </svg>
       </button>
@@ -978,11 +978,35 @@ test('rail buttons render inline SVG icons and expose no workspace-list entry', 
     const svg = button.querySelector('svg');
     assert.ok(svg, 'each rail button renders an inline SVG icon');
     assert.equal(svg.getAttribute('aria-hidden'), 'true', 'rail icons are decorative');
+    assert.equal(svg.getAttribute('stroke-width'), '1.75', 'rail Lucide strokes are 1.75');
   }
   assert.equal(
     document.querySelector('[data-role="workspace-menu-toggle"]'),
     null,
     'the workspace-list entry is gone from the rail'
+  );
+  const indexHtml = fs.readFileSync(
+    path.join(repositoryRoot, 'frontend', 'webview', 'index.html'),
+    'utf8'
+  );
+  assert.equal(
+    (indexHtml.match(/stroke-width="1\.75"/g) || []).length,
+    4,
+    'shipped rail SVGs use stroke-width 1.75'
+  );
+  const css = fs.readFileSync(
+    path.join(repositoryRoot, 'frontend', 'webview', 'src', 'css', 'workspace-chrome.css'),
+    'utf8'
+  );
+  assert.match(css, /#activity-rail \.workspace-chrome-button::before\s*\{[^}]*inset:\s*4px;/s);
+  assert.match(
+    css,
+    /#activity-rail \.workspace-chrome-button\[aria-expanded="true"\]::before\s*\{[^}]*--agent-surface-muted/s
+  );
+  assert.doesNotMatch(
+    css,
+    /#activity-rail \.workspace-chrome-button\[aria-expanded="true"\]::before\s*\{[^}]*width:\s*3px;/s,
+    'expanded rail state must not use a 3px accent bar'
   );
   chrome.dispose();
 });

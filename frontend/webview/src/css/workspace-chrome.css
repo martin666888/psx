@@ -215,28 +215,54 @@
     flex: 0 0 40px;
     display: grid;
     place-items: center;
+    background: transparent;
 }
 
 /* The rail icons are lucide stroke glyphs inlined in index.html; 18px keeps
    them on the same scale as the old Unicode marks and they follow
    currentColor (stroke + any fill accents). */
 #activity-rail .workspace-chrome-button svg {
+    position: relative;
+    z-index: 1;
     width: 18px;
     height: 18px;
 }
 
-/* Expanded (open menu / open dock) mirrors the nameplate focus language: a
- * short accent bar on the rail edge plus the boosted foreground. Hover and
- * expanded background come from the shared .workspace-chrome-button rules. */
-#activity-rail .workspace-chrome-button[aria-expanded="true"]::before {
+/* Hit target stays 40×40; the visible plate is a 32×32 / 8px rounded fill
+ * inset by 4px. Hover uses the weak surface; expanded uses surfaceMuted plus
+ * an inset hairline so the 1px border never shifts the glyph. */
+#activity-rail .workspace-chrome-button::before {
     content: "";
     position: absolute;
-    top: 8px;
-    bottom: 8px;
-    left: 0;
-    width: 3px;
-    border-radius: 0 2px 2px 0;
-    background: var(--agent-accent);
+    inset: 4px;
+    border-radius: var(--agent-radius-control);
+    background: transparent;
+    pointer-events: none;
+}
+
+#activity-rail .workspace-chrome-button:hover,
+#activity-rail .workspace-chrome-button[aria-expanded="true"] {
+    color: var(--agent-text);
+    background: transparent;
+}
+
+#activity-rail .workspace-chrome-button:hover::before {
+    background: var(--agent-hover);
+}
+
+#activity-rail .workspace-chrome-button[aria-expanded="true"]::before {
+    background: var(--agent-surface-muted);
+    box-shadow: inset 0 0 0 1px var(--agent-border);
+}
+
+#activity-rail .workspace-chrome-button:disabled:hover,
+#activity-rail .workspace-chrome-button:disabled[aria-expanded="true"] {
+    color: inherit;
+}
+
+#activity-rail .workspace-chrome-button:disabled::before {
+    background: transparent;
+    box-shadow: none;
 }
 
 #activity-rail .workspace-chrome-button:disabled {

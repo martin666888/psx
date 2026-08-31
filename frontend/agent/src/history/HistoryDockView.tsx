@@ -1,9 +1,9 @@
 // HistoryDockView.tsx — React-owned chrome for the global History dock.
 //
 // Renders the whole dock frame inside the controller's portal host: the
-// <aside> shell, the search / provider-filter / refresh top bar (shadcn
-// Input, Select, Button), the single scroll node around HistoryList, and the
-// edge resizer with its pointer-capture drag and keyboard resizing.
+// <aside> shell, the three-layer top bar (title + search + provider filter),
+// the single scroll node around HistoryList, and the edge resizer with its
+// pointer-capture drag and keyboard resizing.
 // HistoryDockController keeps the business logic — the open-state machine,
 // width clamp/persistence/broadcast and the toolbar-toggle aria — and the two
 // sides meet at the HistoryDockProps contract. Every semantic anchor
@@ -19,7 +19,7 @@ import {
   type PointerEvent
 } from 'react';
 import { useTranslation } from 'react-i18next';
-import { RefreshCwIcon } from 'lucide-react';
+import { HistoryIcon, RefreshCwIcon, SearchIcon } from 'lucide-react';
 import { Button } from '../components/ui/button.js';
 import { Input } from '../components/ui/input.js';
 import { ScrollArea } from '../components/ui/scroll-area.js';
@@ -198,15 +198,33 @@ export function HistoryDockView(props: HistoryDockViewProps): JSX.Element {
       hidden={!props.open}
     >
       <div className="agent-history-dock-bar">
-        <Input
-          type="search"
-          className="agent-history-search h-8 text-xs [grid-column:1/-1]"
-          data-role="history-search"
-          placeholder={t('history.searchPlaceholder')}
-          aria-label={t('history.searchAria')}
-          value={props.query}
-          onChange={(event) => props.onQueryChange(event.target.value)}
-        />
+        <div className="agent-history-title-row" data-role="history-title">
+          <HistoryIcon className="size-[18px] shrink-0" strokeWidth={1.75} aria-hidden="true" />
+          <h2 className="agent-history-heading-text">{t('history.title')}</h2>
+          <Button
+            variant="outline"
+            size="icon"
+            className="agent-history-refresh size-8 shrink-0 border-input"
+            data-role="history-refresh"
+            title={t('history.refreshAria')}
+            aria-label={t('history.refreshAria')}
+            onClick={props.onRefresh}
+          >
+            <RefreshCwIcon className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+          </Button>
+        </div>
+        <div className="agent-history-search-wrap">
+          <SearchIcon className="agent-history-search-icon" strokeWidth={1.75} aria-hidden="true" />
+          <Input
+            type="search"
+            className="agent-history-search h-8 pl-8 pr-3 text-xs"
+            data-role="history-search"
+            placeholder={t('history.searchPlaceholder')}
+            aria-label={t('history.searchAria')}
+            value={props.query}
+            onChange={(event) => props.onQueryChange(event.target.value)}
+          />
+        </div>
         <Select
           value={props.providerFilter || ALL_PROVIDERS}
           onValueChange={(key) => props.onProviderChange(key === ALL_PROVIDERS ? '' : key)}
@@ -228,17 +246,6 @@ export function HistoryDockView(props: HistoryDockViewProps): JSX.Element {
             ))}
           </SelectContent>
         </Select>
-        <Button
-          variant="outline"
-          size="icon"
-          className="agent-history-refresh size-8 shrink-0 border-input"
-          data-role="history-refresh"
-          title={t('history.refreshAria')}
-          aria-label={t('history.refreshAria')}
-          onClick={props.onRefresh}
-        >
-          <RefreshCwIcon className="size-3.5" aria-hidden="true" />
-        </Button>
       </div>
       {/* Radix ScrollArea (hover-reveal thumb). The viewport keeps the
         * agent-history-dock-content class, data-role anchor and scroll ref so

@@ -103,7 +103,7 @@ PSX 使用 borders-only 与轻微表面色差建立层级，不混入明显投�
 
 ### 全局工具栏
 
-- 跨 Terminal 和 Agent 生效的可见操作放在 WebView activity rail（History / Create / Theme）或对应的 WebView 全局浮层；WPF 顶栏仅保留隐藏的兼容投影，不得成为第二套导航。
+- 跨 Terminal 和 Agent 生效的可见操作放在 WebView activity rail（History / Create / Theme / PSX 设置）或对应的 WebView 全局浮层；WPF 顶栏仅保留隐藏的兼容投影，不得成为第二套导航。rail 按钮的可见状态是 32×32 / 8px 圆角底板，不是左侧 accent 竖条。
 - 按钮高度、字号和密度应与 Terminal / Agent 切换控件一致。
 - 图标只有在能减少理解成本时使用；文字已经足够清楚时不添加装饰图标。
 - WPF 按钮统一使用 `Themes/Dark.xaml` 的 `SoftWorkbenchButtonStyle` / `SoftWorkbenchToggleButtonStyle` / `SoftWorkbenchIconButtonStyle`；图标使用 XAML `Path` 几何，不使用字体字形。
@@ -207,7 +207,7 @@ Theme 弹层是全局选择器的参考实现：
 - 多 Pane 的 Composer 底边始终锚定到面板底部上方 24px 的同一基线；窄 Pane 的 placeholder、草稿、附件或决策提示增加固有高度时只向上生长，响应式档位不得改写底部 inset，也不通过 JS 同步不同 Workspace 的内容高度。
 - History 在任何窗口和 Pane 宽度下都保持持久化宽度并可拖拽（220–420px）；用户保存的 `--agent-history-width` 不被任一响应式状态改写。空间不足时右侧列缩窄，History 不回落固定宽度也不覆盖列内容。
 - Plan 卡片两态：visible/hidden，workspace 运行时偏好不持久化且默认显示；窄模式以临时覆盖收起，离开窄模式时恢复偏好。工具栏图标切换，隐藏期间新计划在图标上显示未读点。runtime 安装卡等内容卡片使用与对话、Composer 相同的阅读列宽度和位置规则。
-- History 只负责全局 Thread 导航：列表、加载状态和错误只在 dock 内展示，不得写入主对话流；行高亮使用整行圆角背景（`--agent-radius-control`），不使用左侧强调条。线程行是单行结构：标题承担截断，`Current`/`Open` 文字徽标与右侧短时间不收缩，完整的 provider|时间放 tooltip；分组折叠 affordance 用文件夹开合两态图标。
+- History 只负责全局 Thread 导航：列表、加载状态和错误只在 dock 内展示，不得写入主对话流；行高亮使用整行圆角背景（`--agent-radius-control`），不使用左侧强调条。顶栏固定三层：可见 `history.title` + 刷新、带 Search 图标的全宽搜索、全宽 Provider 筛选。线程行是单行结构：标题承担截断，`Current`/`Open` 文字徽标与右侧短时间不收缩，完整的 provider|时间放 tooltip；分组折叠 affordance 用文件夹开合两态图标；包含活动会话的分组使用短标记 `history.badge.groupActive`，不得与线程的 `Current` 复用，也不得只用色点。侧边栏功能图标（rail 与 History dock）统一 Lucide `1.75` 描边；Provider 品牌图标仍为本地 SVG。
 - 持久化键：`psx.agent.historyDockOpen`、`psx.agent.historyDockWidth`；`psx.agent.planWidth`、`psx.agent.inspectorWidth`、`psx.agent.planPanelWidth` 均已退役（不再读取）。
 - 动画限制在 120–160ms，只用 opacity 和小距离 translate，并尊重 prefers-reduced-motion。
 

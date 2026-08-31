@@ -91,7 +91,7 @@ function ThreadRow(
     <button
       type="button"
       className={
-        'agent-history-item flex w-full items-start gap-2 rounded-md p-2 text-left transition-colors hover:bg-accent' +
+        'agent-history-item flex min-h-10 w-full items-center gap-2 rounded-md p-2 text-left transition-colors hover:bg-accent' +
         (isActive ? ' bg-muted' : '')
       }
       data-thread-id={thread.threadId || ''}
@@ -105,7 +105,7 @@ function ThreadRow(
       {/* Fixed 20px decorative icon slot: titles never shift when the brand
         * mark changes, and the provider name stays text-only for a11y. */}
       <span
-        className="agent-history-provider-icon mt-px inline-flex size-5 shrink-0 items-center justify-center text-muted-foreground [&>svg]:size-4"
+        className="agent-history-provider-icon inline-flex size-5 shrink-0 items-center justify-center text-muted-foreground [&>svg]:size-4"
         aria-hidden="true"
       >
         <ProviderIcon iconKey={thread.providerIcon} />
@@ -150,7 +150,7 @@ function HistoryGroup(
         onClick={() => props.onToggleFold(group.key)}
       >
         <span className="agent-history-group-folder inline-flex shrink-0 text-muted-foreground" aria-hidden="true">
-          {folded ? <FolderIcon className="size-3.5" /> : <FolderOpenIcon className="size-3.5" />}
+          {folded ? <FolderIcon className="size-3.5" strokeWidth={1.75} /> : <FolderOpenIcon className="size-3.5" strokeWidth={1.75} />}
         </span>
         <span className="agent-history-group-label grid min-w-0 flex-1 gap-px">
           <strong className="truncate font-semibold text-xs">{group.name || t('history.unknownWorkspace')}</strong>
@@ -164,10 +164,13 @@ function HistoryGroup(
           {String(allThreads.length)}
         </span>
         {hasActive && (
-          <span
-            className="agent-history-group-active size-[7px] shrink-0 rounded-full bg-primary"
+          <Badge
+            className="agent-history-group-active shrink-0 rounded-full text-[10px]"
+            variant="secondary"
             aria-label={t('history.activeDotAria')}
-          />
+          >
+            {t('history.badge.groupActive')}
+          </Badge>
         )}
       </button>
       <div className="agent-history-group-threads pl-5" hidden={folded}>

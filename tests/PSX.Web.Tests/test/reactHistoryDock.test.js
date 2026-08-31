@@ -118,10 +118,56 @@ test('loading, grouped list and empty states render semantically', async () => {
   assert.match(firstRow.title, /^Fix the build — /, 'the unclipped title remains available on hover');
   // The island host is the dock host element the portal renders into.
   assert.equal(document.querySelector('[data-role="history-dock-host"]').dataset.islandState, 'mounted');
+  const bar = document.querySelector('.agent-history-dock-bar');
+  const title = bar.querySelector('[data-role="history-title"]');
+  const search = bar.querySelector('[data-role="history-search"]');
+  const filter = bar.querySelector('[data-role="history-provider-filter"]');
+  const refresh = bar.querySelector('[data-role="history-refresh"]');
+  assert.ok(title && search && filter && refresh, 'title, search, filter and refresh all render');
+  assert.match(title.textContent, /历史记录/);
+  assert.ok(
+    title.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING,
+    'title precedes search'
+  );
+  assert.ok(
+    search.compareDocumentPosition(filter) & Node.DOCUMENT_POSITION_FOLLOWING,
+    'search precedes the provider filter'
+  );
+  assert.ok(title.contains(refresh), 'refresh stays on the title row');
+  const stroke = (svg, label) => {
+    assert.ok(svg, label + ' svg');
+    assert.equal(svg.getAttribute('stroke-width'), '1.75', label + ' uses Lucide 1.75');
+  };
+  stroke(title.querySelector('svg'), 'history title');
+  stroke(bar.querySelector('.agent-history-search-icon'), 'search');
+  stroke(refresh.querySelector('svg'), 'refresh');
+  stroke(content().querySelector('.agent-history-group-folder svg'), 'folder');
   assert.ok(
     document.querySelector('[data-role="history-refresh"]').classList.contains('border-input'),
     'refresh button must use the soft border-input token like the search/select inputs'
   );
+
+  await settle(
+    () => {
+      app.handle({ type: 'workspace_activated', workspaceId: WS, kind: 'agent' });
+      app.handle({
+        type: 'agent_thread_loaded',
+        workspaceId: WS,
+        threadId: 't1',
+        cwd: 'D:/proj',
+        messages: []
+      });
+    },
+    () => !!content().querySelector('.agent-history-group-active')
+  );
+  const groupActive = content().querySelector('.agent-history-group-active');
+  assert.match(groupActive.textContent, /活动会话/);
+  assert.equal(groupActive.getAttribute('aria-label'), '包含活动会话');
+  assert.equal(
+    content().querySelector('.agent-history-item .agent-history-current')?.textContent.trim(),
+    '当前'
+  );
+  assert.equal(groupActive.classList.contains('bg-primary'), false);
 
   await settle(
     () => {

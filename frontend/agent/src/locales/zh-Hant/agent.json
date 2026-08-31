@@ -334,7 +334,8 @@
     "fallbackTitle": "Agent 聊天",
     "badge": {
       "current": "目前",
-      "open": "已開啟"
+      "open": "已開啟",
+      "groupActive": "活動中"
     },
     "activeDotAria": "包含活動會話",
     "showAll": "顯示全部 {{count}} 個線程",
@@ -346,6 +347,7 @@
     "empty": "尚無已儲存的 Agent 線程。",
     "noMatches": "沒有符合搜尋或篩選條件的線程。",
     "unknownWorkspace": "未知工作區",
+    "title": "歷史記錄",
     "dockAria": "Agent 歷史",
     "searchPlaceholder": "搜尋線程",
     "searchAria": "搜尋歷史",

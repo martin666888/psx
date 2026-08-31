@@ -56,6 +56,7 @@ export const EllipsisIcon = createTestIcon('ellipsis');
 export const FolderIcon = createTestIcon('folder');
 export const FolderOpenIcon = createTestIcon('folder-open');
 export const GlobeIcon = createTestIcon('globe');
+export const HistoryIcon = createTestIcon('history');
 export const ImageIcon = createTestIcon('image');
 export const InfoIcon = createTestIcon('info');
 export const Loader2Icon = createTestIcon('loader-circle');
