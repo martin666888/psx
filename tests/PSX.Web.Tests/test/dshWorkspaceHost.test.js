@@ -214,4 +214,83 @@ describe('DshWorkspaceHost', () => {
       spy.mockRestore();
     }
   });
+
+  it('keeps the overlay visible and sends exclude when a chrome popover overlaps the hole', async () => {
+    const popoverRoot = document.createElement('div');
+    popoverRoot.id = 'workspace-popover-root';
+    const popover = document.createElement('section');
+    popover.className = 'workspace-popover workspace-popover-pane';
+    popoverRoot.appendChild(popover);
+    document.body.appendChild(popoverRoot);
+    stubPanelRect(popover, { left: 40, top: 44, width: 260, height: 320 });
+
+    const { DshWorkspaceHost } = await import(hostUrl);
+    const bridge = globalThis.Bridge;
+    const spy = vi.spyOn(bridge, 'sendDshSurfaceBounds');
+    try {
+      const host = new DshWorkspaceHost(document.getElementById('dsh-workspace-container'));
+      host.applyLayout(
+        {
+          focusedColumnId: 'c',
+          columns: [{ columnId: 'c', tabs: [{ workspaceId: 'd1', kind: 'dsh_web' }], activeTabId: 'd1', ratio: 1 }]
+        },
+        new Map([['c', { left: 0, top: 40, width: 800, height: 600 }]])
+      );
+      const panel = document.querySelector('.dsh-panel[data-workspace-id="d1"]');
+      stubPanelRect(panel, { left: 12, top: 52, width: 776, height: 576 });
+      host.applyRuntimeStatus({ state: 'ready', readyUrl: 'http://127.0.0.1:1234' });
+      flushAgentAnimationFrames();
+
+      document.dispatchEvent(new window.CustomEvent('psx-shell-overlay', { detail: { open: true } }));
+      flushAgentAnimationFrames();
+      const last = spy.mock.calls.at(-1)[0];
+      assert.equal(last.visible, true);
+      assert.deepEqual(last.exclude, { left: 20, top: 24, width: 300, height: 360, radius: 34 });
+
+      document.dispatchEvent(new window.CustomEvent('psx-shell-overlay', { detail: { open: false } }));
+      flushAgentAnimationFrames();
+      assert.equal(spy.mock.calls.at(-1)[0].visible, true);
+      assert.equal(spy.mock.calls.at(-1)[0].exclude, undefined);
+    } finally {
+      spy.mockRestore();
+      popoverRoot.remove();
+    }
+  });
+
+  it('keeps the overlay unclipped when a chrome popover does not overlap the hole', async () => {
+    const popoverRoot = document.createElement('div');
+    popoverRoot.id = 'workspace-popover-root';
+    const popover = document.createElement('section');
+    popover.className = 'workspace-popover';
+    popoverRoot.appendChild(popover);
+    document.body.appendChild(popoverRoot);
+    stubPanelRect(popover, { left: 0, top: 0, width: 10, height: 10 });
+
+    const { DshWorkspaceHost } = await import(hostUrl);
+    const bridge = globalThis.Bridge;
+    const spy = vi.spyOn(bridge, 'sendDshSurfaceBounds');
+    try {
+      const host = new DshWorkspaceHost(document.getElementById('dsh-workspace-container'));
+      host.applyLayout(
+        {
+          focusedColumnId: 'c',
+          columns: [{ columnId: 'c', tabs: [{ workspaceId: 'd1', kind: 'dsh_web' }], activeTabId: 'd1', ratio: 1 }]
+        },
+        new Map([['c', { left: 0, top: 40, width: 800, height: 600 }]])
+      );
+      const panel = document.querySelector('.dsh-panel[data-workspace-id="d1"]');
+      stubPanelRect(panel, { left: 12, top: 52, width: 776, height: 576 });
+      host.applyRuntimeStatus({ state: 'ready', readyUrl: 'http://127.0.0.1:1234' });
+      flushAgentAnimationFrames();
+
+      document.dispatchEvent(new window.CustomEvent('psx-shell-overlay', { detail: { open: true } }));
+      flushAgentAnimationFrames();
+      const last = spy.mock.calls.at(-1)[0];
+      assert.equal(last.visible, true);
+      assert.equal(last.exclude, undefined);
+    } finally {
+      spy.mockRestore();
+      popoverRoot.remove();
+    }
+  });
 });

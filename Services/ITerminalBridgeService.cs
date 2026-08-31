@@ -33,7 +33,10 @@ public interface ITerminalBridgeService
     void SetDshReadyUrl(Uri? url);
     /// <summary>Pixel rect of the visible DSH column hole, in shell CSS
     /// pixels (1:1 with WPF DIP at zoom 1). <c>Visible=false</c> hides the
-    /// overlay (inactive tab, status card, or a shell overlay covering it).</summary>
+    /// overlay (inactive tab, status card, or a full-window settings overlay).
+    /// A chrome popover that only partially covers the hole stays visible and
+    /// may carry <see cref="DshSurfaceBoundsEventArgs.Exclude"/> so the overlay
+    /// HWND punches a click-through hole for the menu.</summary>
     void ApplyDshSurfaceBounds(DshSurfaceBoundsEventArgs bounds);
 
     event EventHandler<TerminalInputEventArgs>? InputReceived;
@@ -98,6 +101,16 @@ public sealed class DshExportEventArgs : EventArgs
     public required string Filename { get; init; }
 }
 
+public sealed class DshSurfaceExcludeRect
+{
+    public double Left { get; init; }
+    public double Top { get; init; }
+    public double Width { get; init; }
+    public double Height { get; init; }
+    /// <summary>CSS-pixel corner radius of the hole (popover radius plus pad).</summary>
+    public double Radius { get; init; }
+}
+
 public sealed class DshSurfaceBoundsEventArgs : EventArgs
 {
     public bool Visible { get; init; }
@@ -106,6 +119,9 @@ public sealed class DshSurfaceBoundsEventArgs : EventArgs
     public double Width { get; init; }
     public double Height { get; init; }
     public string? ColumnId { get; init; }
+    /// <summary>CSS-pixel rect of a shell popover that intersects the overlay.
+    /// Null means the overlay HWND is unclipped.</summary>
+    public DshSurfaceExcludeRect? Exclude { get; init; }
 }
 
 public sealed class KimiWebExportEventArgs : EventArgs

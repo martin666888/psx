@@ -392,6 +392,27 @@ public sealed class TerminalBridgeMessageParserTests
         Assert.AreEqual(640, shownBounds.DshSurfaceBounds.Width);
         Assert.AreEqual(480, shownBounds.DshSurfaceBounds.Height);
         Assert.AreEqual("column-1", shownBounds.DshSurfaceBounds.ColumnId);
+        Assert.IsNull(shownBounds.DshSurfaceBounds.Exclude);
+
+        Assert.IsTrue(TerminalBridgeMessageParser.TryParse(
+            """{"type":"dsh_surface_bounds","visible":true,"left":40,"top":12,"width":640,"height":480,"exclude":{"left":44,"top":48,"width":260,"height":320}}""",
+            out var clippedBounds));
+        Assert.IsNotNull(clippedBounds!.DshSurfaceBounds!.Exclude);
+        Assert.AreEqual(44, clippedBounds.DshSurfaceBounds.Exclude.Left);
+        Assert.AreEqual(48, clippedBounds.DshSurfaceBounds.Exclude.Top);
+        Assert.AreEqual(260, clippedBounds.DshSurfaceBounds.Exclude.Width);
+        Assert.AreEqual(320, clippedBounds.DshSurfaceBounds.Exclude.Height);
+        Assert.AreEqual(0, clippedBounds.DshSurfaceBounds.Exclude.Radius);
+
+        Assert.IsTrue(TerminalBridgeMessageParser.TryParse(
+            """{"type":"dsh_surface_bounds","visible":true,"left":40,"top":12,"width":640,"height":480,"exclude":{"left":44,"top":48,"width":260,"height":320,"radius":34}}""",
+            out var roundedBounds));
+        Assert.AreEqual(34, roundedBounds!.DshSurfaceBounds!.Exclude!.Radius);
+
+        Assert.IsTrue(TerminalBridgeMessageParser.TryParse(
+            """{"type":"dsh_surface_bounds","visible":true,"left":40,"top":12,"width":640,"height":480,"exclude":{"left":0,"top":0,"width":0,"height":10}}""",
+            out var ignoredExclude));
+        Assert.IsNull(ignoredExclude!.DshSurfaceBounds!.Exclude);
 
         Assert.IsFalse(TerminalBridgeMessageParser.TryParse(
             """{"type":"dsh_surface_bounds","visible":true,"left":0,"top":0,"width":-1,"height":100}""",

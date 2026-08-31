@@ -7,7 +7,9 @@
 // one-time ?token= for a SameSite=Strict cookie that a psx.local iframe
 // cannot send. The shell keeps an empty column hole and reports its CSS
 // pixel rect over dsh_surface_bounds; C# top-level-navigates a second
-// WebView2 to the token URL. The token never appears in this file.
+// WebView2 to the token URL. A chrome popover that overlaps the hole
+// stays visible and sends an `exclude` rect so C# punches a click-through
+// hole in the overlay HWND. The token never appears in this file.
 
 import { Bridge } from './Bridge.js';
 import { createProviderIconSvg } from './ProviderIcons.js';
@@ -58,7 +60,51 @@ function boundsEqual(a, b) {
         && a.top === b.top
         && a.width === b.width
         && a.height === b.height
-        && a.columnId === b.columnId;
+        && a.columnId === b.columnId
+        && excludeEqual(a.exclude, b.exclude);
+}
+
+function excludeEqual(a, b) {
+    if (!a && !b) return true;
+    if (!a || !b) return false;
+    return a.left === b.left
+        && a.top === b.top
+        && a.width === b.width
+        && a.height === b.height
+        && (a.radius || 0) === (b.radius || 0);
+}
+
+function rectsIntersect(a, b) {
+    return a.left < b.left + b.width
+        && a.left + a.width > b.left
+        && a.top < b.top + b.height
+        && a.top + a.height > b.top;
+}
+
+// Popover box-shadow is 0 12px 28px; pad so the hole covers the blur.
+const POPOVER_HOLE_PAD = 20;
+const CARD_RADIUS_FALLBACK = 14;
+
+function popoverCornerRadius(el) {
+    try {
+        const raw = parseFloat(window.getComputedStyle(el).borderTopLeftRadius);
+        if (Number.isFinite(raw) && raw > 0) return raw;
+    } catch { /* jsdom may omit computed radius */ }
+    return CARD_RADIUS_FALLBACK;
+}
+
+function readChromePopoverExclude() {
+    const el = document.querySelector('#workspace-popover-root .workspace-popover');
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    if (r.width < 1 || r.height < 1) return null;
+    return {
+        left: r.left - POPOVER_HOLE_PAD,
+        top: r.top - POPOVER_HOLE_PAD,
+        width: r.width + POPOVER_HOLE_PAD * 2,
+        height: r.height + POPOVER_HOLE_PAD * 2,
+        radius: popoverCornerRadius(el) + POPOVER_HOLE_PAD
+    };
 }
 
 export class DshWorkspaceHost {
@@ -89,6 +135,8 @@ export class DshWorkspaceHost {
         this.resizeObserver = typeof ResizeObserver === 'function'
             ? new ResizeObserver(() => this.scheduleBounds())
             : null;
+        const popoverRoot = document.getElementById('workspace-popover-root');
+        if (popoverRoot) this.observePanel(popoverRoot);
     }
 
     applyLayout(snapshot, rects) {
@@ -183,8 +231,12 @@ export class DshWorkspaceHost {
         catch { /* ignore */ }
     }
 
-    shellOverlayOpen() {
-        return this.chromeOverlay || this.settingsOverlay
+    settingsOverlayOpen() {
+        return this.settingsOverlay;
+    }
+
+    chromeOverlayOpen() {
+        return this.chromeOverlay
             || document.documentElement.hasAttribute('data-psx-overlay');
     }
 
@@ -200,7 +252,7 @@ export class DshWorkspaceHost {
         const visiblePanel = [...this.panels.values()].find((panel) =>
             !panel.hidden && this.status.state === 'ready' && this.status.readyUrl);
         let payload;
-        if (!visiblePanel || this.shellOverlayOpen()) {
+        if (!visiblePanel || this.settingsOverlayOpen()) {
             payload = { visible: false };
         } else {
             const rect = visiblePanel.getBoundingClientRect();
@@ -212,6 +264,13 @@ export class DshWorkspaceHost {
                 height: rect.height,
                 columnId: visiblePanel.dataset.columnId || null
             };
+            if (this.chromeOverlayOpen()) {
+                const exclude = readChromePopoverExclude();
+                if (exclude && rectsIntersect(rect, exclude))
+                    payload.exclude = exclude;
+                else if (!exclude)
+                    payload = { visible: false };
+            }
         }
         if (boundsEqual(this.lastBounds, payload)) return;
         this.lastBounds = payload;

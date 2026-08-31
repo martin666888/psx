@@ -121,6 +121,8 @@ interface DshSurfaceBoundsPayload {
     width?: number;
     height?: number;
     columnId?: string;
+    /** CSS-pixel rect of a chrome popover intersecting the overlay. */
+    exclude?: { left: number; top: number; width: number; height: number; radius?: number };
 }
 
 interface KimiWebExportPayload {

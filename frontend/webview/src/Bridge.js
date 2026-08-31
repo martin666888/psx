@@ -196,11 +196,25 @@ export const Bridge = {
 
     /** CSS-pixel rect of the visible DSH column hole. C# sizes the overlay
      * WebView2 to this rect. `visible: false` hides it (inactive tab, status
-     * card, or a shell overlay covering the hole). The token-bearing Ready
-     * URL never travels this path.
-     * @param {{ visible: boolean, left?: number, top?: number, width?: number, height?: number, columnId?: string|null }} bounds
+     * card, or a full-window settings overlay). A chrome popover that only
+     * partially covers the hole stays visible and may carry `exclude` so the
+     * overlay HWND punches a click-through hole. The token-bearing Ready URL
+     * never travels this path.
+     * @param {{ visible: boolean, left?: number, top?: number, width?: number, height?: number, columnId?: string|null, exclude?: { left: number, top: number, width: number, height: number, radius?: number } }} bounds
      */
     sendDshSurfaceBounds(bounds) {
+        const exclude = bounds.exclude;
+        const hasExclude = exclude
+            && Number.isFinite(exclude.left)
+            && Number.isFinite(exclude.top)
+            && Number.isFinite(exclude.width)
+            && Number.isFinite(exclude.height)
+            && exclude.width >= 1
+            && exclude.height >= 1;
+        const rawRadius = exclude?.radius;
+        const radius = typeof rawRadius === 'number' && Number.isFinite(rawRadius) && rawRadius > 0
+            ? rawRadius
+            : 0;
         this.sendToHost({
             type: BridgeSendType.DshSurfaceBounds,
             visible: bounds.visible === true,
@@ -212,6 +226,17 @@ export const Bridge = {
                     height: bounds.height,
                     ...(typeof bounds.columnId === 'string' && bounds.columnId
                         ? { columnId: bounds.columnId }
+                        : {}),
+                    ...(exclude && hasExclude
+                        ? {
+                            exclude: {
+                                left: exclude.left,
+                                top: exclude.top,
+                                width: exclude.width,
+                                height: exclude.height,
+                                ...(radius > 0 ? { radius } : {})
+                            }
+                        }
                         : {})
                 }
                 : {})

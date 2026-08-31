@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
+using PSX.Helpers;
 using PSX.Models;
 
 namespace PSX.Services;
@@ -33,6 +34,7 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
     private Uri? _dshNavigatedUrl;
     private long _dshReadyRevision;
     private DshSurfaceBoundsEventArgs? _dshBounds;
+    private bool _dshOverlayZOrderHooked;
     private string _viewMode = "terminal";
     private bool _disposed;
 #if DEBUG
@@ -252,6 +254,8 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
             && bounds.Height >= 1;
         if (!show)
         {
+            UnhookDshOverlayZOrder(surface);
+            HwndClipRegion.Clear(surface);
             surface.Visibility = Visibility.Collapsed;
             surface.IsHitTestVisible = false;
             return;
@@ -262,7 +266,63 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
         surface.Height = bounds.Height;
         surface.Visibility = Visibility.Visible;
         surface.IsHitTestVisible = true;
+        // The shell WebView's HWND fills the window and sits above this
+        // overlay after Collapsed→Visible. Raise after the layout that
+        // materializes the host window, otherwise DSH paints underneath.
+        RaiseAndClipDshOverlay(surface);
+        HookDshOverlayZOrder(surface);
+        _ = surface.Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => RaiseAndClipDshOverlay(surface));
+        _ = surface.Dispatcher.BeginInvoke(DispatcherPriority.Render, () => RaiseAndClipDshOverlay(surface));
     }
+
+    private void RaiseAndClipDshOverlay(WebView2? surface)
+    {
+        if (surface == null || surface.Visibility != Visibility.Visible)
+            return;
+        HwndZOrder.BringToFront(surface);
+        ApplyDshOverlayClip(surface);
+    }
+
+    private void ApplyDshOverlayClip(WebView2 surface)
+    {
+        var bounds = _dshBounds;
+        if (bounds is { Visible: true, Exclude: { Width: > 0, Height: > 0 } exclude })
+        {
+            HwndClipRegion.ApplyHole(
+                surface,
+                bounds.Left,
+                bounds.Top,
+                bounds.Width,
+                bounds.Height,
+                exclude.Left,
+                exclude.Top,
+                exclude.Width,
+                exclude.Height,
+                exclude.Radius);
+            return;
+        }
+
+        HwndClipRegion.Clear(surface);
+    }
+
+    private void HookDshOverlayZOrder(WebView2 surface)
+    {
+        if (_dshOverlayZOrderHooked)
+            return;
+        surface.LayoutUpdated += OnDshOverlayLayoutUpdated;
+        _dshOverlayZOrderHooked = true;
+    }
+
+    private void UnhookDshOverlayZOrder(WebView2 surface)
+    {
+        if (!_dshOverlayZOrderHooked)
+            return;
+        surface.LayoutUpdated -= OnDshOverlayLayoutUpdated;
+        _dshOverlayZOrderHooked = false;
+    }
+
+    private void OnDshOverlayLayoutUpdated(object? sender, EventArgs e) =>
+        RaiseAndClipDshOverlay(_dshSurface);
 
     private void OnDshSurfaceMessage(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
@@ -615,6 +675,9 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
         {
             _dshCore.WebMessageReceived -= OnDshSurfaceMessage;
         }
+
+        if (_dshSurface != null)
+            UnhookDshOverlayZOrder(_dshSurface);
 
         InputReceived = null;
         ResizeRequested = null;

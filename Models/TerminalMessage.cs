@@ -88,6 +88,9 @@ public sealed class TerminalMessage
     [JsonPropertyName("columnId")]
     public string? ColumnId { get; set; }
 
+    [JsonPropertyName("exclude")]
+    public DshSurfaceExcludeMessage? Exclude { get; set; }
+
     [JsonPropertyName("themeKey")]
     public string? ThemeKey { get; set; }
 
@@ -102,6 +105,24 @@ public sealed class TerminalMessage
 
     [JsonPropertyName("settings")]
     public TerminalOptions? Settings { get; set; }
+}
+
+public sealed class DshSurfaceExcludeMessage
+{
+    [JsonPropertyName("left")]
+    public double? Left { get; set; }
+
+    [JsonPropertyName("top")]
+    public double? Top { get; set; }
+
+    [JsonPropertyName("width")]
+    public double? Width { get; set; }
+
+    [JsonPropertyName("height")]
+    public double? Height { get; set; }
+
+    [JsonPropertyName("radius")]
+    public double? Radius { get; set; }
 }
 
 public sealed class PaneRatioMessage

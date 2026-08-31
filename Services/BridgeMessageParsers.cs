@@ -427,7 +427,8 @@ internal static class TerminalBridgeMessageParser
                             Top = source.Top.Value,
                             Width = source.Width.Value,
                             Height = source.Height.Value,
-                            ColumnId = source.ColumnId
+                            ColumnId = source.ColumnId,
+                            Exclude = TryReadExclude(source.Exclude)
                         });
                     return true;
                 }
@@ -513,5 +514,35 @@ internal static class TerminalBridgeMessageParser
             return false;
         }
         return true;
+    }
+
+    static DshSurfaceExcludeRect? TryReadExclude(DshSurfaceExcludeMessage? source)
+    {
+        if (source == null)
+            return null;
+        if (!source.Left.HasValue || !source.Top.HasValue
+            || !source.Width.HasValue || !source.Height.HasValue
+            || !double.IsFinite(source.Left.Value)
+            || !double.IsFinite(source.Top.Value)
+            || !double.IsFinite(source.Width.Value)
+            || !double.IsFinite(source.Height.Value)
+            || source.Width.Value < 1
+            || source.Height.Value < 1)
+        {
+            return null;
+        }
+
+        return new DshSurfaceExcludeRect
+        {
+            Left = source.Left.Value,
+            Top = source.Top.Value,
+            Width = source.Width.Value,
+            Height = source.Height.Value,
+            Radius = source.Radius is { } radius
+                && double.IsFinite(radius)
+                && radius > 0
+                ? radius
+                : 0
+        };
     }
 }
