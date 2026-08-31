@@ -75,7 +75,7 @@ internal static class Program
             mode = realDsh ? "real-dsh" : "mock",
             mockOrigin = mock.BaseUri.AbsoluteUri,
             overlayOrigin = ProbeUtil.OriginOf(overlayUrl),
-            checks = ProbeChecks.Results.Select(c => new { c.Name, c.Pass, c.Note, c.KnownFinding }),
+            checks = ProbeChecks.Results.Select(c => new { c.Name, c.Pass, c.Note }),
             manual
         };
         var json = JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true });
@@ -83,11 +83,10 @@ internal static class Program
         await File.WriteAllTextAsync(reportPath, json, new UTF8Encoding(false)).ConfigureAwait(false);
         Console.WriteLine("[probe] report written: " + reportPath);
 
-        var knownFindings = ProbeChecks.Results.Count(c => !c.Pass && c.KnownFinding);
-        var failed = ProbeChecks.Results.Count(c => !c.Pass && !c.KnownFinding);
+        var failed = ProbeChecks.Results.Count(c => !c.Pass);
         Console.WriteLine(
-            $"[probe] {ProbeChecks.Results.Count - knownFindings - failed}/{ProbeChecks.Results.Count} checks passed, " +
-            $"{failed} failed, {knownFindings} known findings");
+            $"[probe] {ProbeChecks.Results.Count - failed}/{ProbeChecks.Results.Count} checks passed, " +
+            $"{failed} failed");
         Console.WriteLine("[probe] returning exit code " + (failed == 0 ? 0 : 1));
         return failed == 0 ? 0 : 1;
     }

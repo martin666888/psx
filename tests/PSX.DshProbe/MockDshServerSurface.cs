@@ -62,7 +62,7 @@ internal sealed partial class MockDshServer
         }
     }
 
-    private static async Task ServeWebSocketAsync(NetworkStream stream, string key, CancellationToken token)
+    private async Task ServeWebSocketAsync(NetworkStream stream, string key, CancellationToken token)
     {
         const string magic = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
         var accept = Convert.ToBase64String(SHA1.HashData(Encoding.ASCII.GetBytes(key + magic)));
@@ -114,6 +114,7 @@ internal sealed partial class MockDshServer
             }
 
             if (opcode == 0x8) break;
+            Interlocked.Increment(ref WebSocketMessageCount);
             var reply = Encoding.UTF8.GetBytes($"echo:{Encoding.UTF8.GetString(payload, 0, readTotal)}");
             var frame = new byte[2 + reply.Length];
             frame[0] = 0x81;

@@ -1,61 +1,56 @@
-# DSH P0 嵌入探针结论
+# DSH WebView2 覆盖层探针结论
 
-实验起于分支 `dsh`、基线 `dev@2273baf`。探针工程位于
-`tests/PSX.DshProbe/`，现已加入 `PSX.slnx` 并由 Full gate 以 mock 模式运行；
-辅助材料位于 `tools/dsh-probe/`，产物全部落 `TestResults/dsh-probe/`。
+当前生产架构不再把 DeepSeek Harness 放入 shell iframe。PSX 保持一个
+`https://psx.local` shell WebView2，并以第二个顶层 WebView2 覆盖 DSH 工作区的
+内容矩形。该覆盖层直接打开一次性 `?token=` Ready URL，使
+`SameSite=Strict` 会话 Cookie 在第一方上下文中建立；token 不经过 shell bridge。
 
-## Cluster 2 — npm 安装 + 启动(通过)
+探针工程位于 `tests/PSX.DshProbe/`，已加入 `PSX.slnx`，并由 Full 门禁以
+mock 模式运行。报告全部写入 `TestResults/dsh-probe/`。
 
-- 锁定 `@deepseek-ai/dsh@0.1.0-rc.6`,官方 registry,Node 22.23.1,走本地代理。
-- **带 lifecycle scripts** 安装成功:530 包 / 255.5 MiB / 约 3 分钟。
-- `node-pty@1.1.0` 走预编译(`prebuilds/win32-x64/*.node` + `build/Release/conpty/*`),无本地编译。
-- `koffi@3.1.5` 原生二进制来自可选依赖 `@koromix/koffi-win32-x64/win32_x64/koffi.node`,cnoke 无下载/无编译。
-- **无 VS Build Tools 依赖**(日志无 gyp/MSBuild/cl 编译迹象)。
-- `dsh web --host 127.0.0.1 --port 0` 就绪信号 `dsh web: http://127.0.0.1:<port>` 解析成功,HTTP 200,标题 "DeepSeek Harness",无 0.0.0.0 暴露。
-- **DSH_HOME 被识别**(`$DSH_HOME/profiles` + `$DSH_HOME/storages`),但 boot 仍无条件在 `~/.dsh` 双写 `profiles`/`storages`。
+## Full 门禁自动检查
 
-## Cluster 1 — WebView2 嵌入合同(mock + 真实 DSH)
+mock 模式使用与生产相同的共享 WebView2 environment 和
+`DshSurfaceHostPolicy`，验证以下合同：
 
-通过(核心否决项全绿):
-
-| 检查 | 结果 |
+| 检查 | 通过条件 |
 |---|---|
-| mixed-content-frame-loads | ✅ `https://psx.local` 嵌 `http://127.0.0.1:*` 不被混合内容拦截 |
-| frame-injection-pointerdown | ✅ 顶层 `AddScriptToExecuteOnDocumentCreatedAsync` + origin guard + frame `WebMessageReceived` 管道可用 |
-| iframe-focus-activeElement | ✅ 帧内获焦后父文档 `activeElement === iframe`(列焦点机制可行) |
-| unicode-input / websocket-echo | ✅ 中文往返;ws:// 跨源可用(偶发抖动,见下) |
-| window-open / odd-port / top-navigation / hide-restore | ✅ 事件面齐全、sandbox 挡顶层跳转、隐藏恢复保活保几何 |
-| dsh-real-smoke | ✅ 真实 DSH 页面在 iframe 中加载(title "DeepSeek Harness") |
+| shell-has-no-iframe | shell 保持 `psx.local`，且没有 DSH iframe |
+| overlay-token-first-party | 覆盖层恰好打开一次 token URL，随后落到无 token 根路径并持有 Strict Cookie |
+| health-root-unauthenticated | 无 token 根路径返回 401，且健康检查不消耗 token |
+| surface-script-focus | 覆盖层 pointerdown 经宿主消息通道上报 |
+| surface-script-export | 固定导出路径由宿主中介，不进入浏览器下载管线 |
+| unicode-input | 中文与 emoji 能在覆盖层输入控件中往返 |
+| websocket-echo | WebView2 必须实际完成 WebSocket upgrade，并收到 `echo:ping`；失败不可豁免 |
+| window/popup/navigation | 新窗口和跨 origin 导航被宿主策略收口 |
+| hide-restore | 隐藏、恢复后文档与会话仍存活，token 不被再次消费 |
 
-### 关键发现:下载管线不可用(否决原 Phase 3 下载方案)
+Mock HTTP 响应必须保持严格的头部终止位置。空的可选头不能多写一个空行，否则
+后续 `Connection` 头会落入正文并按 `Content-Length` 截断 HTML 尾部脚本。
+WebSocket 检查同时记录 upgrade 和消息帧计数，便于区分页面脚本、握手和数据帧故障。
 
-`CoreWebView2.DownloadStarting` 在**所有触发路径下都不触发**,也不落默认 Downloads 目录:
+所有自动检查失败都会让 Probe 返回非零退出码；不再存在 WebSocket
+`idle` 的 known-finding 放行路径。
 
-- 跨源 sandbox iframe 的 anchor 下载 / 帧导航到 attachment:不触发
-- 无 sandbox iframe:不触发
-- 顶层 anchor(脚本 click + **CDP 可信手势点击**,导航确已发生):不触发
-- 顶层 **blob 下载**(无 HTTP/无服务器/无跨协议):不触发
+## 真实 DSH 与安装探针
 
-结论:本 WebView2 环境(SDK 1.0.2903.40 + 系统 Evergreen runtime)不落下载管线。
-**Phase 3 的 `DownloadStarting + ResultFilePath + 保存对话框` 路线必须放弃**,现已改为
-**宿主中介导出**:注入脚本拦截 DSH 导出链接 → 把 URL 与建议文件名 `postMessage`
-给 shell → `dsh_export` 发给 C# → C# 校验当前 DSH origin 与固定导出路径、主动拉取
-受限大小的 ZIP，再弹 Windows 保存对话框原子写盘。这不依赖 WebView2 下载管线，
-且字节不会经 WebView Bridge 跨界传输。
+- `tools/dsh-probe/install-probe.ps1` 和 `launch-probe.mjs` 用于隔离环境中的安装、
+  启动与 Ready URL 验证。
+- `PSX.DshProbe --dsh-origin <ready-url>` 可用第二个顶层 WebView2 对真实 DSH
+  做加载 smoke；传入和输出日志只展示 origin，不记录一次性 token。
+- 新 DSH 版本进入锁目录前，仍必须经过 `tools/generate-dsh-lock.ps1` 的隔离安装、
+  官方 SRI 交叉校验和启动 smoke。
 
-### 次要观测
+## 导出结论
 
-- `FrameNavigationStarting` 在渲染层 CSP 强制**之前**触发(legacy `frame-src 'none'`
-  下导航事件仍发生,但帧内容被拦,错误页 title 为 hostname)。Phase 3 白名单是主防线,CSP 是纵深。
-- WebSocket 检查偶发 'idle'(离屏窗口后台节流嫌疑),已加 `--disable-background-timer-throttling`
-  等参数但未完全消除;功能已两次验证通过,归手动清单兜底。
-- 探针工程踩坑(供 Phase 3 参考):`async Main` 与 `[STAThread]` 组合不可靠,需显式同步入口;
-  `Application.Run` 返回后 UI 泵停止,任何 WinForms-context 续体都会死锁;
-  `ExecuteScriptAsync("location.reload()")` 永不返回(脚本销毁自身文档);
-  `form.Close()` 在 UI 线程同步做 WebView2 销毁会死锁(用 `Application.ExitThread()`)。
+WebView2 的浏览器下载管线在既有实验中不稳定，因此生产架构继续使用宿主中介导出：
+注入脚本拦截固定导出链接，向 C# 发送 URL 与建议文件名；C# 校验当前 DSH origin、
+固定路径、重定向、内容类型和大小后，再通过 Windows 保存对话框原子写盘。
 
-## 裁决
+## 保留的人工检查
 
-P0 核心否决项(混合内容、iframe 可行性、原生脚本、焦点、注入)全部通过;
-唯一否决级发现是下载管线,可通过**宿主中介导出**重设计解决,不构成放弃 iframe 的理由。
-建议进入 Phase 1,并把下载通道改为宿主中介导出。
+- 覆盖层内可信鼠标点击能切换列焦点与 tab 高亮
+- 真实 CJK IME composition
+- 图片拖放、附件与剪贴板粘贴
+- 原生目录选择器
+- 真实 DSH 长对话、WebSocket 稳定性和会话 ZIP 导出

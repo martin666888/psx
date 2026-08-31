@@ -10,8 +10,8 @@ internal static partial class ProbeChecks
 {
     public static readonly List<ProbeCheck> Results = new();
 
-    private static void Add(string name, bool pass, string note, bool knownFinding = false) =>
-        Results.Add(new ProbeCheck(name, pass, note, knownFinding));
+    private static void Add(string name, bool pass, string note) =>
+        Results.Add(new ProbeCheck(name, pass, note));
 
     public static async Task RunAllAsync(ProbeHost host, MockDshServer mock, bool realDsh)
     {
@@ -28,7 +28,7 @@ internal static partial class ProbeChecks
         await StepAsync("surface-script-focus", () => SurfaceScriptFocusAsync(host));
         await StepAsync("surface-script-export", () => SurfaceScriptExportAsync(host));
         await StepAsync("unicode-input", () => UnicodeInputAsync(host));
-        await StepAsync("websocket-echo", () => WebSocketEchoAsync(host));
+        await StepAsync("websocket-echo", () => WebSocketEchoAsync(host, mock));
         await StepAsync("window-open-scripted", () => WindowOpenAsync(host));
         await StepAsync("odd-port-popup-contained", () => OddPortPopupAsync(host));
         await StepAsync("overlay-escape-blocked", () => OverlayEscapeBlockedAsync(host));
@@ -100,30 +100,30 @@ internal static partial class ProbeChecks
         Add("unicode-input", echoed == sample, $"echoed = {echoed}");
     }
 
-    private static async Task WebSocketEchoAsync(ProbeHost host)
+    private static async Task WebSocketEchoAsync(ProbeHost host, MockDshServer mock)
     {
         const string success = "ok:echo:ping";
         var first = await TryWebSocketOnceAsync(host);
         if (first == success)
         {
-            Add("websocket-echo", true, $"attempt1={first}");
+            Add("websocket-echo", true,
+                $"attempt1={first}; upgrades={mock.WebSocketUpgradeCount}; messages={mock.WebSocketMessageCount}");
             return;
         }
 
         var second = await TryWebSocketOnceAsync(host);
-        var recoveredFromIdle = first == "idle" && second == success;
-        var knownIdle = first == "idle" && second == "idle";
         Add(
             "websocket-echo",
-            recoveredFromIdle,
-            $"attempt1={first}; attempt2={second}",
-            knownFinding: knownIdle);
+            second == success,
+            $"attempt1={first}; attempt2={second}; upgrades={mock.WebSocketUpgradeCount}; messages={mock.WebSocketMessageCount}");
     }
 
     private static async Task<string> TryWebSocketOnceAsync(ProbeHost host)
     {
-        await host.RunOverlayAsync(
-            "window.__probeWsResult='idle'; probeWs().then(function(v){window.__probeWsResult='ok:'+v;},function(e){window.__probeWsResult='err:'+(e && e.message ? e.message : e);}); 'started'");
+        var started = ProbeUtil.Unwrap(await host.RunOverlayAsync(
+            "window.__probeWsResult='idle'; probeWs().then(function(v){window.__probeWsResult='ok:'+v;},function(e){window.__probeWsResult='err:'+(e && e.message ? e.message : e);}); 'started'"));
+        if (started != "started")
+            return "start:" + ProbeUtil.Clip(started);
         var watch = System.Diagnostics.Stopwatch.StartNew();
         var state = "idle";
         while (watch.ElapsedMilliseconds < 12000 && state == "idle")

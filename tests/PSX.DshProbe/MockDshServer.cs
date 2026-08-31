@@ -20,6 +20,8 @@ internal sealed partial class MockDshServer : IDisposable
     public int RequestCount;
     public int DownloadCount;
     public int TokenHits;
+    public int WebSocketUpgradeCount;
+    public int WebSocketMessageCount;
     public const string LaunchToken = "abcdefgh";
 
     private MockDshServer(int port)
@@ -81,6 +83,7 @@ internal sealed partial class MockDshServer : IDisposable
                 if (method == "GET" && path == "/ws"
                     && headers.TryGetValue("Sec-WebSocket-Key", out var wsKey))
                 {
+                    Interlocked.Increment(ref WebSocketUpgradeCount);
                     await ServeWebSocketAsync(stream, wsKey, token).ConfigureAwait(false);
                     return;
                 }
@@ -163,8 +166,11 @@ internal sealed partial class MockDshServer : IDisposable
     private static async Task WriteResponseAsync(
         NetworkStream stream, string status, byte[] body, string contentType, string extraHeaders, CancellationToken token)
     {
+        var optionalHeaders = string.IsNullOrWhiteSpace(extraHeaders)
+            ? ""
+            : extraHeaders.TrimEnd('\r', '\n') + "\r\n";
         var head = Encoding.ASCII.GetBytes(
-            $"HTTP/1.1 {status}\r\nContent-Type: {contentType}\r\nContent-Length: {body.Length}\r\n{extraHeaders}\r\nConnection: close\r\n\r\n");
+            $"HTTP/1.1 {status}\r\nContent-Type: {contentType}\r\nContent-Length: {body.Length}\r\n{optionalHeaders}Connection: close\r\n\r\n");
         await stream.WriteAsync(head, token).ConfigureAwait(false);
         await stream.WriteAsync(body, token).ConfigureAwait(false);
         await stream.FlushAsync(token).ConfigureAwait(false);
