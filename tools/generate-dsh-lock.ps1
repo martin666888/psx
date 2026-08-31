@@ -215,6 +215,22 @@ function Get-FileSha256Hex {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
 }
 
+function ConvertTo-LfText {
+    param([string]$Text)
+    return $Text.Replace("`r`n", "`n").Replace("`r", "`n")
+}
+
+function Write-LfTextFile {
+    param([string]$Path, [string]$Text)
+    $utf8NoBom = New-Object Text.UTF8Encoding($false)
+    [IO.File]::WriteAllText($Path, (ConvertTo-LfText -Text $Text), $utf8NoBom)
+}
+
+function Normalize-LfTextFile {
+    param([string]$Path)
+    Write-LfTextFile -Path $Path -Text ([IO.File]::ReadAllText($Path))
+}
+
 function Write-UpdatePackageJson {
     <#Same synthetic root manifest shape DshWebRuntime.WriteUpdatePackageJson
     produces on the client; the client later copies this file verbatim.#>
@@ -230,7 +246,7 @@ function Write-UpdatePackageJson {
   }
 }
 "@
-    [IO.File]::WriteAllText((Join-Path $Directory "package.json"), $manifest)
+    Write-LfTextFile -Path (Join-Path $Directory "package.json") -Text $manifest
 }
 
 function Read-Catalog {
@@ -460,6 +476,8 @@ function Invoke-LockSolve {
     if ((Test-Path -LiteralPath (Join-Path $resumeDirectory "package-lock.json") -PathType Leaf) -and
         (Test-Path -LiteralPath (Join-Path $resumeDirectory "package.json") -PathType Leaf)) {
         Write-Host "    Reusing the existing solve output for $DshVersion."
+        Normalize-LfTextFile -Path (Join-Path $resumeDirectory "package.json")
+        Normalize-LfTextFile -Path (Join-Path $resumeDirectory "package-lock.json")
         return $resumeDirectory
     }
     $workDirectory = New-SolveWorkspace -DshVersion $DshVersion
@@ -483,6 +501,8 @@ function Invoke-LockSolve {
     if ($result.ExitCode -ne 0) {
         throw "Lock solve for $DshVersion failed (exit $($result.ExitCode)): $($result.Stderr)"
     }
+    Normalize-LfTextFile -Path (Join-Path $workDirectory "package.json")
+    Normalize-LfTextFile -Path (Join-Path $workDirectory "package-lock.json")
     return $workDirectory
 }
 
@@ -705,7 +725,7 @@ $catalogJson = [pscustomobject][ordered]@{
     blockedVersions = $blockedJson
 }
 $catalogText = ConvertTo-Json -InputObject $catalogJson -Depth 6
-[IO.File]::WriteAllText($CatalogPath, $catalogText + [Environment]::NewLine)
+Write-LfTextFile -Path $CatalogPath -Text ($catalogText + "`n")
 
 $catalogSha = Get-FileSha256Hex -Path $CatalogPath
 Write-Host ""
