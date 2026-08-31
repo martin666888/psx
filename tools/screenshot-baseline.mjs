@@ -774,6 +774,22 @@ const SCENES = [
         return dock && paneRoot ? paneRoot.left - dock.right : Number.NaN;
       });
       if (Math.abs(gap - 12) > 1) throw new Error(`History/pane gap is ${gap}px, expected 12px`);
+      await verifyHistoryHeaderWidths(page);
+    }
+  },
+  {
+    name: 'history-header-220',
+    viewportWidth: 1200,
+    events: terminalOnlyEvents,
+    ready: '.workspace-tab',
+    async stage(page) {
+      await page.locator('[data-role="history-toggle"]').click();
+      await page.waitForSelector('[data-role="history-title"]');
+      await page.waitForSelector('.agent-history-item');
+      await setHistoryDockWidth(page, 220);
+    },
+    async verify(page) {
+      await assertHistoryHeaderGeometry(page, 220);
     }
   },
   {
@@ -847,6 +863,98 @@ const SCENES = [
     }
   }
 ];
+
+async function setHistoryDockWidth(page, width) {
+  await page.evaluate((nextWidth) => {
+    const container = document.querySelector('#agent-workspace-container')
+      || document.querySelector('#agents');
+    if (!container) throw new Error('history container missing');
+    container.style.setProperty('--agent-history-width', nextWidth + 'px');
+  }, width);
+  await page.waitForFunction((nextWidth) => {
+    const dock = document.querySelector('[data-role="history-dock"]');
+    return !!dock && !dock.hidden && Math.abs(dock.getBoundingClientRect().width - nextWidth) <= 1;
+  }, width);
+}
+
+async function assertHistoryHeaderGeometry(page, width) {
+  const probe = await page.evaluate(() => {
+    const box = (element) => {
+      const bounds = element?.getBoundingClientRect();
+      return bounds
+        ? {
+          top: bounds.top,
+          bottom: bounds.bottom,
+          left: bounds.left,
+          right: bounds.right,
+          width: bounds.width,
+          height: bounds.height
+        }
+        : null;
+    };
+    const dock = document.querySelector('[data-role="history-dock"]');
+    const bar = dock?.querySelector('.agent-history-dock-bar');
+    const title = dock?.querySelector('[data-role="history-title"]');
+    const heading = title?.querySelector('.agent-history-heading-text');
+    const refresh = dock?.querySelector('[data-role="history-refresh"]');
+    const search = dock?.querySelector('[data-role="history-search"]');
+    const filter = dock?.querySelector('[data-role="history-provider-filter"]');
+    return {
+      dock: box(dock),
+      bar: box(bar),
+      title: box(title),
+      heading: box(heading),
+      refresh: box(refresh),
+      search: box(search),
+      filter: box(filter),
+      headingLines: heading ? heading.getClientRects().length : 0
+    };
+  });
+  if (!probe.dock || !probe.bar || !probe.title || !probe.heading || !probe.refresh || !probe.search || !probe.filter) {
+    throw new Error(`History header nodes missing at ${width}px`);
+  }
+  if (Math.abs(probe.dock.width - width) > 1) {
+    throw new Error(`History dock width is ${probe.dock.width}px, expected ${width}px`);
+  }
+  if (Math.abs(probe.title.top - probe.refresh.top) > 2) {
+    throw new Error(`title and refresh wrapped at ${width}px`);
+  }
+  if (probe.refresh.left + 1 < probe.heading.right) {
+    throw new Error(`refresh overlapped the title at ${width}px`);
+  }
+  if (probe.headingLines !== 1 || probe.heading.height > 34) {
+    throw new Error(`history title wrapped at ${width}px (${probe.headingLines} lines, ${probe.heading.height}px)`);
+  }
+  if (probe.search.top + 1 < probe.title.bottom) {
+    throw new Error(`search did not stack below the title at ${width}px`);
+  }
+  if (probe.filter.top + 1 < probe.search.bottom) {
+    throw new Error(`filter did not stack below search at ${width}px`);
+  }
+  if (probe.search.height > 40 || probe.filter.height > 40 || probe.refresh.height > 36) {
+    throw new Error(`History header control wrapped at ${width}px`);
+  }
+  if (probe.bar.height > 160) {
+    throw new Error(`History header is ${probe.bar.height}px at ${width}px, expected a three-row stack`);
+  }
+  if (probe.search.width + 28 < probe.bar.width) {
+    throw new Error(`search is not full width at ${width}px`);
+  }
+}
+
+async function verifyHistoryHeaderWidths(page) {
+  const original = await page.evaluate(() => {
+    const container = document.querySelector('#agent-workspace-container')
+      || document.querySelector('#agents');
+    const value = parseFloat(container?.style.getPropertyValue('--agent-history-width') || '');
+    return Number.isFinite(value) ? value : 300;
+  });
+  for (const width of [220, 280, 420]) {
+    await setHistoryDockWidth(page, width);
+    await assertHistoryHeaderGeometry(page, width);
+  }
+  await setHistoryDockWidth(page, original);
+}
 
 async function verifyComposerDismissal(page) {
   const trigger = page.locator('.agent-config-toggle');

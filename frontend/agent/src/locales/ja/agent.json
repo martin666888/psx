@@ -334,7 +334,8 @@
     "fallbackTitle": "Agent チャット",
     "badge": {
       "current": "現在",
-      "open": "開いている"
+      "open": "開いている",
+      "groupActive": "アクティブ"
     },
     "activeDotAria": "アクティブなセッションを含む",
     "showAll": "すべての {{count}} 件のスレッドを表示",
@@ -346,6 +347,7 @@
     "empty": "保存済みの Agent スレッドはありません。",
     "noMatches": "検索またはフィルターに一致するスレッドはありません。",
     "unknownWorkspace": "不明なワークスペース",
+    "title": "履歴",
     "dockAria": "Agent 履歴",
     "searchPlaceholder": "スレッドを検索",
     "searchAria": "履歴を検索",

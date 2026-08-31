@@ -334,7 +334,8 @@
     "fallbackTitle": "Agent Chat",
     "badge": {
       "current": "Current",
-      "open": "Open"
+      "open": "Open",
+      "groupActive": "Active"
     },
     "activeDotAria": "Contains the active session",
     "showAll": "Show all {{count}} threads",
@@ -346,6 +347,7 @@
     "empty": "No saved Agent threads.",
     "noMatches": "No threads match the current search or filter.",
     "unknownWorkspace": "Unknown workspace",
+    "title": "History",
     "dockAria": "Agent history",
     "searchPlaceholder": "Search threads",
     "searchAria": "Search history",

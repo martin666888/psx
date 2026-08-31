@@ -1,9 +1,9 @@
-/* History dock chrome renders through HistoryDockView.tsx: the top bar
-   controls are shadcn components (Input, Select, Button) and the content
-   scroller's box model is Tailwind. This file keeps what utilities do not
-   express — the dock's absolute frame, the two-row bar grid, the rounded
-   corners of the Radix ScrollArea viewport, the resizer affordance and the
-   open animation. */
+/* History dock chrome renders through HistoryDockView.tsx: the top bar is a
+   stacked title / search / provider-filter column (shadcn Input, Select,
+   Button) and the content scroller's box model is Tailwind. This file keeps
+   what utilities do not express — the dock's absolute frame, the three-layer
+   bar, the rounded corners of the Radix ScrollArea viewport, the resizer
+   affordance and the open animation. */
 
 /* --- Global History dock (singleton, left column) -------------------------- */
 
@@ -31,14 +31,63 @@
 }
 
 .agent-history-dock-bar {
-    /* Always two rows: the search field spans the full width, the provider
-     * filter and the refresh button share the second row — no wrap reflow. */
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    /* Always three stacked rows: title+refresh, search, provider filter.
+     * No wrap reflow at the 220px floor. */
+    display: flex;
+    flex-direction: column;
+    gap: var(--agent-space-2);
+    padding: var(--agent-space-3);
+    min-width: 0;
+    border-bottom: 1px solid var(--agent-border);
+}
+
+.agent-history-title-row {
+    display: flex;
     align-items: center;
     gap: var(--agent-space-2);
-    padding: var(--agent-space-2);
-    border-bottom: 1px solid var(--agent-border);
+    min-width: 0;
+    height: 32px;
+}
+
+.agent-history-heading-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    color: var(--agent-text);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 32px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.agent-history-search-wrap {
+    position: relative;
+    width: 100%;
+    min-width: 0;
+}
+
+.agent-history-search-icon {
+    position: absolute;
+    top: 50%;
+    left: 10px;
+    width: 14px;
+    height: 14px;
+    color: var(--agent-text-muted);
+    pointer-events: none;
+    transform: translateY(-50%);
+}
+
+.agent-history-search {
+    width: 100%;
+    padding-left: 28px;
+    border-radius: var(--agent-radius-input);
+}
+
+.agent-history-provider-filter {
+    width: 100%;
+    min-width: 0;
 }
 
 .agent-history-dock-content {
