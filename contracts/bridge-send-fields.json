@@ -15,6 +15,7 @@
     "kimi_web_command": { "required": { "name": "stop|retry" }, "optional": {} },
     "kimi_web_export": { "required": { "url": "string", "path": "string", "sessionId": "string" }, "optional": {} },
     "dsh_export": { "required": { "url": "string", "filename": "string" }, "optional": {} },
+    "dsh_surface_bounds": { "required": { "visible": "boolean" }, "optional": { "left": "number", "top": "number", "width": "number", "height": "number", "columnId": "string" } },
     "theme_action": { "required": { "action": "preview|confirm|cancel|refresh|open_folder" }, "optional": { "themeKey": "string" } },
     "app_settings_command": { "required": { "requestId": "string", "action": "get|set_dsh_registry" }, "optional": { "registry": "string" } },
     "agent_submit": { "required": { "workspaceId": "guid", "text": "string", "attachments": "string-array" }, "optional": {} },

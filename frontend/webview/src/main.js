@@ -118,9 +118,9 @@ installRuntimeDiagnostics();
                 error: '--agent-error', warning: '--agent-warning', scrollbar: '--agent-scrollbar',
                 scrollbarHover: '--agent-scrollbar-hover'
             })) set(variable, theme[key]);
-            // Cross-origin DSH iframes read prefers-color-scheme from the
-            // embedder's used color-scheme. This used to live only in the
-            // lazy Agent chunk, so a terminal/DSH-only session stayed light
+            // Cross-origin Kimi Web iframes read prefers-color-scheme from
+            // the embedder's used color-scheme. This used to live only in
+            // the lazy Agent chunk, so a terminal-only session stayed light
             // until History loaded Agent UI.
             const scheme = colorSchemeForBackground(theme.background);
             if (scheme) {

@@ -171,6 +171,7 @@ internal enum TerminalBridgeMessageKind
     WorkspaceCreate,
     DshCommand,
     DshExport,
+    DshSurfaceBounds,
     KimiWebCommand,
     KimiWebExport,
     ThemeAction,
@@ -190,6 +191,7 @@ internal sealed record TerminalBridgeMessage(
     WorkspaceCreateEventArgs? WorkspaceCreate = null,
     DshCommandEventArgs? DshCommand = null,
     DshExportEventArgs? DshExport = null,
+    DshSurfaceBoundsEventArgs? DshSurfaceBounds = null,
     KimiWebCommandEventArgs? KimiWebCommand = null,
     KimiWebExportEventArgs? KimiWebExport = null,
     ThemeActionEventArgs? ThemeAction = null,
@@ -392,6 +394,43 @@ internal static class TerminalBridgeMessageParser
                     TerminalBridgeMessageKind.DshExport,
                     DshExport: new DshExportEventArgs { Url = source.Url!, Filename = source.Filename! });
                 return true;
+
+            case "dsh_surface_bounds":
+                {
+                    var visible = source.Visible == true;
+                    if (!visible)
+                    {
+                        message = new TerminalBridgeMessage(
+                            TerminalBridgeMessageKind.DshSurfaceBounds,
+                            DshSurfaceBounds: new DshSurfaceBoundsEventArgs { Visible = false });
+                        return true;
+                    }
+
+                    if (!source.Left.HasValue || !source.Top.HasValue
+                        || !source.Width.HasValue || !source.Height.HasValue
+                        || !double.IsFinite(source.Left.Value)
+                        || !double.IsFinite(source.Top.Value)
+                        || !double.IsFinite(source.Width.Value)
+                        || !double.IsFinite(source.Height.Value)
+                        || source.Width.Value < 0
+                        || source.Height.Value < 0)
+                    {
+                        return false;
+                    }
+
+                    message = new TerminalBridgeMessage(
+                        TerminalBridgeMessageKind.DshSurfaceBounds,
+                        DshSurfaceBounds: new DshSurfaceBoundsEventArgs
+                        {
+                            Visible = true,
+                            Left = source.Left.Value,
+                            Top = source.Top.Value,
+                            Width = source.Width.Value,
+                            Height = source.Height.Value,
+                            ColumnId = source.ColumnId
+                        });
+                    return true;
+                }
 
             case "kimi_web_export" when !string.IsNullOrWhiteSpace(source.Url):
                 message = new TerminalBridgeMessage(

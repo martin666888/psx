@@ -194,11 +194,34 @@ export const Bridge = {
         });
     },
 
+    /** CSS-pixel rect of the visible DSH column hole. C# sizes the overlay
+     * WebView2 to this rect. `visible: false` hides it (inactive tab, status
+     * card, or a shell overlay covering the hole). The token-bearing Ready
+     * URL never travels this path.
+     * @param {{ visible: boolean, left?: number, top?: number, width?: number, height?: number, columnId?: string|null }} bounds
+     */
+    sendDshSurfaceBounds(bounds) {
+        this.sendToHost({
+            type: BridgeSendType.DshSurfaceBounds,
+            visible: bounds.visible === true,
+            ...(bounds.visible === true
+                ? {
+                    left: bounds.left,
+                    top: bounds.top,
+                    width: bounds.width,
+                    height: bounds.height,
+                    ...(typeof bounds.columnId === 'string' && bounds.columnId
+                        ? { columnId: bounds.columnId }
+                        : {})
+                }
+                : {})
+        });
+    },
+
     /** DSH session-log export mediation: the export URL DSH built (validated
      * host-side against the current ready origin + /api/session.export path)
-     * and a suggested archive filename. Forwarded when the DSH frame's export
-     * anchor click is intercepted by the injected script - the WebView2 native
-     * download path is never used.
+     * and a suggested archive filename. Forwarded from the overlay WebView's
+     * document-start script — the WebView2 native download path is never used.
      * @param {string} url
      * @param {string} filename
      */

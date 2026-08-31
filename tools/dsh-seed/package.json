@@ -1,9 +1,9 @@
 {
-  "private": true,
   "name": "psx-dsh-runtime",
   "version": "0.1.0",
-  "description": "PSX DeepSeek Harness runtime seed pinned for user-confirmed installation into runtime/dsh-current.",
+  "private": true,
+  "description": "PSX-managed DeepSeek Harness runtime update.",
   "dependencies": {
-    "@deepseek-ai/dsh": "0.1.1-rc.2"
+    "@deepseek-ai/dsh": "0.1.2-alpha.2"
   }
 }

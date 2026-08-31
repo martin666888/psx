@@ -29,6 +29,7 @@ describe('Bridge message type constants', () => {
       WorkspaceCreate: 'workspace_create',
       DshCommand: 'dsh_command',
       DshExport: 'dsh_export',
+      DshSurfaceBounds: 'dsh_surface_bounds',
       KimiWebCommand: 'kimi_web_command',
       KimiWebExport: 'kimi_web_export',
       ThemeAction: 'theme_action',

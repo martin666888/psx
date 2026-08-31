@@ -53,7 +53,7 @@ $PortableNodeUrl = "https://nodejs.org/dist/$PortableNodeVersion/$PortableNodeAr
 $PortableNodeExpectedSha = "7df0bc9375723f4a86b3aa1b7cc73342423d9677a8df4538aca31a049e309c29"
 
 $DshPackageName = "@deepseek-ai/dsh"
-$DshSeedVersion = "0.1.1-rc.2"
+$DshSeedVersion = "0.1.2-alpha.2"
 $OfficialRegistry = "https://registry.npmjs.org/"
 $SmokeReadyTimeoutSeconds = 120
 $SmokeKillGraceSeconds = 30
@@ -345,8 +345,9 @@ function Get-OfficialDshIntegrity {
 }
 
 function Test-DshReadyUrl {
-    <#Mirrors DshWebRuntimeSupervisor.TryAcceptReadyUrl: only the loopback
-    HTTP origin DSH is allowed to bind, no userinfo.#>
+    <#Mirrors DshWebRuntimeSupervisor.TryAcceptReadyUrl: loopback HTTP, path
+    `/`, no userinfo/fragment. A missing query is allowed; a query must be
+    exactly `?token=` plus a bounded token. Never log the token-bearing URL.#>
     param([string]$Candidate)
     $parsed = $null
     if (-not [Uri]::TryCreate($Candidate, [UriKind]::Absolute, [ref]$parsed)) {
@@ -361,7 +362,24 @@ function Test-DshReadyUrl {
     if (-not [string]::IsNullOrEmpty($parsed.UserInfo)) {
         return $false
     }
-    return $true
+    if ($parsed.IsDefaultPort -or $parsed.Port -le 0 -or $parsed.Port -gt 65535) {
+        return $false
+    }
+    if (-not [string]::Equals($parsed.AbsolutePath, "/", [StringComparison]::Ordinal)) {
+        return $false
+    }
+    if (-not [string]::IsNullOrEmpty($parsed.Fragment)) {
+        return $false
+    }
+    $query = $parsed.Query
+    if ([string]::IsNullOrEmpty($query)) {
+        return $true
+    }
+    if (-not $query.StartsWith("?token=") -or $query.Contains("&")) {
+        return $false
+    }
+    $token = $query.Substring("?token=".Length)
+    return $token.Length -ge 8 -and $token.Length -le 1024
 }
 
 function Invoke-DshLaunchSmoke {
@@ -428,11 +446,12 @@ function Invoke-DshLaunchSmoke {
             }
             throw "Smoke server never reported a valid loopback ready URL within $SmokeReadyTimeoutSeconds seconds. stderr: $tail"
         }
-        $probe = Invoke-WebRequest -Uri $readyUrl -UseBasicParsing -TimeoutSec 15
+        $probe = Invoke-WebRequest -Uri $readyUrl -UseBasicParsing -TimeoutSec 15 -MaximumRedirection 5
         if ([int]$probe.StatusCode -ge 400) {
             throw "Smoke ready URL probe returned HTTP $($probe.StatusCode)."
         }
-        Write-Host "      dsh web ready: $readyUrl (HTTP $($probe.StatusCode))"
+        $readyOrigin = ([Uri]$readyUrl).GetLeftPart([UriPartial]::Authority)
+        Write-Host "      dsh web ready: $readyOrigin (HTTP $($probe.StatusCode))"
     }
     finally {
         & taskkill /PID $server.Id /T /F | Out-Null

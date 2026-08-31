@@ -88,14 +88,14 @@ public sealed class DshRuntimeWireTests
     {
         var stdout = """
             {
-              "versions": ["0.1.1-rc.2", "0.1.1-rc.3", "0.1.1-rc.4"],
-              "dist-tags": { "latest": "0.1.1-rc.3", "next": "0.1.1-rc.4" }
+              "versions": ["0.1.2-alpha.2", "0.1.2-alpha.3", "0.1.2-alpha.4"],
+              "dist-tags": { "latest": "0.1.2-alpha.3", "next": "0.1.2-alpha.4" }
             }
             """;
         Assert.IsTrue(DshWebRuntime.TryBuildUpdateCatalog(
-            stdout, "0.1.1-rc.3", out var catalog, out var error), error);
+            stdout, "0.1.2-alpha.3", out var catalog, out var error), error);
         Assert.HasCount(1, catalog);
-        Assert.AreEqual("0.1.1-rc.4", catalog[0].Version);
+        Assert.AreEqual("0.1.2-alpha.4", catalog[0].Version);
         CollectionAssert.AreEqual(new[] { "next" }, catalog[0].Tags.ToArray());
     }
 
@@ -104,15 +104,15 @@ public sealed class DshRuntimeWireTests
     {
         var stdout = """
             {
-              "versions": ["0.1.1-rc.2", "0.1.1-rc.3", "0.1.1-rc.4"],
-              "dist-tags": { "latest": "0.1.1-rc.3", "next": "0.1.1-rc.4" }
+              "versions": ["0.1.2-alpha.2", "0.1.2-alpha.3", "0.1.2-alpha.4"],
+              "dist-tags": { "latest": "0.1.2-alpha.3", "next": "0.1.2-alpha.4" }
             }
             """;
         Assert.IsTrue(DshWebRuntime.TryBuildUpdateCatalog(
-            stdout, "0.1.1-rc.2", out var catalog, out var error), error);
+            stdout, "0.1.2-alpha.2", out var catalog, out var error), error);
         Assert.HasCount(2, catalog);
-        Assert.AreEqual("0.1.1-rc.4", catalog[0].Version);
-        Assert.AreEqual("0.1.1-rc.3", catalog[1].Version);
+        Assert.AreEqual("0.1.2-alpha.4", catalog[0].Version);
+        Assert.AreEqual("0.1.2-alpha.3", catalog[1].Version);
         CollectionAssert.AreEqual(new[] { "next" }, catalog[0].Tags.ToArray());
         CollectionAssert.AreEqual(new[] { "latest" }, catalog[1].Tags.ToArray());
     }
@@ -121,9 +121,9 @@ public sealed class DshRuntimeWireTests
     public void TryBuildUpdateCatalog_AcceptsLegacyStringFixture()
     {
         Assert.IsTrue(DshWebRuntime.TryBuildUpdateCatalog(
-            "\"0.1.1-rc.3\"", "0.1.1-rc.2", out var catalog, out var error), error);
+            "\"0.1.2-alpha.3\"", "0.1.2-alpha.2", out var catalog, out var error), error);
         Assert.HasCount(1, catalog);
-        Assert.AreEqual("0.1.1-rc.3", catalog[0].Version);
+        Assert.AreEqual("0.1.2-alpha.3", catalog[0].Version);
         Assert.IsEmpty(catalog[0].Tags);
     }
 
@@ -132,12 +132,12 @@ public sealed class DshRuntimeWireTests
     {
         var stdout = """
             {
-              "versions": ["0.1.1-rc.1", "0.1.1-rc.2", "0.1.1-rc.3"],
-              "dist-tags": { "latest": "0.1.1-rc.3" }
+              "versions": ["0.1.2-alpha.1", "0.1.2-alpha.2", "0.1.2-alpha.3"],
+              "dist-tags": { "latest": "0.1.2-alpha.3" }
             }
             """;
         Assert.IsTrue(DshWebRuntime.TryBuildUpdateCatalog(
-            stdout, "0.1.1-rc.3", out var catalog, out var error), error);
+            stdout, "0.1.2-alpha.3", out var catalog, out var error), error);
         Assert.IsEmpty(catalog);
     }
 
@@ -156,6 +156,8 @@ public sealed class DshRuntimeWireTests
     [DataRow("http://127.0.0.1:12345/")]
     [DataRow("http://127.0.0.1:12345")]
     [DataRow("HTTP://127.0.0.1:9")]
+    [DataRow("http://127.0.0.1:12345/?token=abcdefgh")]
+    [DataRow("http://127.0.0.1:9/?token=abc.def~ghi-jkl")]
     public void TryAcceptReadyUrl_LoopbackHttp_Succeeds(string candidate)
     {
         Assert.IsTrue(DshWebRuntimeSupervisor.TryAcceptReadyUrl(candidate, out var url));
@@ -173,6 +175,11 @@ public sealed class DshRuntimeWireTests
     [DataRow("not a uri")]
     [DataRow("")]
     [DataRow(null)]
+    [DataRow("http://127.0.0.1:12345/?token=short")]
+    [DataRow("http://127.0.0.1:12345/?token=abcdefgh&extra=1")]
+    [DataRow("http://127.0.0.1:12345/?other=abcdefgh")]
+    [DataRow("http://127.0.0.1:12345/#token=abcdefgh")]
+    [DataRow("http://127.0.0.1:12345/session")]
     public void TryAcceptReadyUrl_RejectsNonLoopbackHttp(string? candidate)
     {
         Assert.IsFalse(DshWebRuntimeSupervisor.TryAcceptReadyUrl(candidate, out _));
@@ -183,6 +190,9 @@ public sealed class DshRuntimeWireTests
     {
         var url = new Uri("http://127.0.0.1:4321/session?x=1");
         Assert.AreEqual("http://127.0.0.1:4321", DshWebRuntimeSupervisor.ToFrameOrigin(url));
+        Assert.AreEqual(
+            "http://127.0.0.1:4321",
+            DshWebRuntimeSupervisor.ToFrameOrigin(new Uri("http://127.0.0.1:4321/?token=abcdefgh")));
         Assert.IsNull(DshWebRuntimeSupervisor.ToFrameOrigin(new Uri("https://127.0.0.1:4321/")));
         Assert.IsNull(DshWebRuntimeSupervisor.ToFrameOrigin(null));
     }

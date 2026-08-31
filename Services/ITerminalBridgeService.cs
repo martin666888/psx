@@ -5,6 +5,9 @@ namespace PSX.Services;
 public interface ITerminalBridgeService
 {
     Task InitializeAsync(Microsoft.Web.WebView2.Wpf.WebView2 webView);
+    /// <summary>Second WebView2 that top-level-navigates the DSH Ready URL.
+    /// Shares the shell environment; call after <see cref="InitializeAsync"/>.</summary>
+    Task InitializeDshSurfaceAsync(Microsoft.Web.WebView2.Wpf.WebView2 webView);
     Task CreateTerminalAsync(Guid sessionId);
     Task SendOutputAsync(Guid sessionId, string base64Data);
     Task SwitchTerminalAsync(Guid sessionId);
@@ -21,8 +24,17 @@ public interface ITerminalBridgeService
     /// its first navigation cannot race export mediation.</summary>
     Task PrepareFrameOriginAsync(string kind, string origin);
     /// <summary>Compatibility wrapper for the DSH slot (SetFrameOrigin with
-    /// kind "dsh").</summary>
+    /// kind "dsh"). The DSH overlay no longer uses a shell iframe; prefer
+    /// <see cref="SetDshReadyUrl"/>.</summary>
     void SetDshOrigin(string? origin);
+    /// <summary>Full DSH Ready URL including the one-time <c>?token=</c>
+    /// query. The overlay WebView is the only document that opens it. Null
+    /// clears the surface. The token never crosses the shell bridge.</summary>
+    void SetDshReadyUrl(Uri? url);
+    /// <summary>Pixel rect of the visible DSH column hole, in shell CSS
+    /// pixels (1:1 with WPF DIP at zoom 1). <c>Visible=false</c> hides the
+    /// overlay (inactive tab, status card, or a shell overlay covering it).</summary>
+    void ApplyDshSurfaceBounds(DshSurfaceBoundsEventArgs bounds);
 
     event EventHandler<TerminalInputEventArgs>? InputReceived;
     event EventHandler<TerminalResizeEventArgs>? ResizeRequested;
@@ -84,6 +96,16 @@ public sealed class DshExportEventArgs : EventArgs
     public required string Url { get; init; }
     /// <summary>Suggested archive filename from the export anchor's download attribute.</summary>
     public required string Filename { get; init; }
+}
+
+public sealed class DshSurfaceBoundsEventArgs : EventArgs
+{
+    public bool Visible { get; init; }
+    public double Left { get; init; }
+    public double Top { get; init; }
+    public double Width { get; init; }
+    public double Height { get; init; }
+    public string? ColumnId { get; init; }
 }
 
 public sealed class KimiWebExportEventArgs : EventArgs

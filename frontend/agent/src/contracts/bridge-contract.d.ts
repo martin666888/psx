@@ -113,6 +113,16 @@ interface DshExportPayload {
     filename: string;
 }
 
+interface DshSurfaceBoundsPayload {
+    type: 'dsh_surface_bounds';
+    visible: boolean;
+    left?: number;
+    top?: number;
+    width?: number;
+    height?: number;
+    columnId?: string;
+}
+
 interface KimiWebExportPayload {
     type: 'kimi_web_export';
     url: string;
@@ -199,6 +209,7 @@ type BridgeOutboundMessage =
     | AppSettingsCommandPayload
     | KimiWebCommandPayload
     | DshExportPayload
+    | DshSurfaceBoundsPayload
     | KimiWebExportPayload
     | ThemeActionPayload
     | AgentSubmitPayload
@@ -427,6 +438,8 @@ interface KimiWebRuntimeStatusEvent extends BridgeInboundMessageBase {
 interface DshRuntimeStatusEvent extends BridgeInboundMessageBase {
     type: 'dsh_runtime_status';
     state: 'not_installed' | 'installing' | 'starting' | 'ready' | 'exited' | 'failed';
+    /** Origin-only (`http://127.0.0.1:<port>`). The one-time `?token=` query
+     * never crosses this field — C# opens it in the overlay WebView. */
     readyUrl?: string | null;
     errorClass?: string | null;
     currentVersion?: string | null;

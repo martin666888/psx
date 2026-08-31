@@ -39,7 +39,7 @@ if (-not $SkipInstall) {
   "private": true,
   "version": "0.0.0",
   "dependencies": {
-    "@deepseek-ai/dsh": "0.1.1-rc.2"
+    "@deepseek-ai/dsh": "0.1.2-alpha.2"
   }
 }
 '@ | Set-Content -Encoding UTF8 (Join-Path $installDir 'package.json')
@@ -117,7 +117,7 @@ $report.prebuiltEvidence = [bool]($logText -match 'prebuilds/|prebuild-install|@
 
 $files = Get-ChildItem $installDir -Recurse -File -ErrorAction SilentlyContinue
 $report.installSizeMiB = [math]::Round((($files | Measure-Object Length -Sum).Sum / 1MB), 1)
-$report.pass = ($report.exitCode -eq 0) -and $report.entryExists -and ($report.dshVersion -eq '0.1.1-rc.2') `
+$report.pass = ($report.exitCode -eq 0) -and $report.entryExists -and ($report.dshVersion -eq '0.1.2-alpha.2') `
     -and $report.nodePtyNative -and $report.koffiNative -and (-not $report.compiledLocally)
 
 $report | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 $reportFile

@@ -70,6 +70,24 @@ public sealed class TerminalMessage
     [JsonPropertyName("filename")]
     public string? Filename { get; set; }
 
+    [JsonPropertyName("visible")]
+    public bool? Visible { get; set; }
+
+    [JsonPropertyName("left")]
+    public double? Left { get; set; }
+
+    [JsonPropertyName("top")]
+    public double? Top { get; set; }
+
+    [JsonPropertyName("width")]
+    public double? Width { get; set; }
+
+    [JsonPropertyName("height")]
+    public double? Height { get; set; }
+
+    [JsonPropertyName("columnId")]
+    public string? ColumnId { get; set; }
+
     [JsonPropertyName("themeKey")]
     public string? ThemeKey { get; set; }
 

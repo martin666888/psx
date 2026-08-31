@@ -1,5 +1,5 @@
 // colorScheme.js — map a PSX theme background to the CSS color-scheme
-// the shell (and cross-origin DSH iframe) should advertise. Agent UI also
+// the shell (and the Kimi Web iframe) should advertise. Agent UI also
 // uses this so native controls and prefers-color-scheme stay in lockstep
 // before the lazy Agent chunk loads.
 

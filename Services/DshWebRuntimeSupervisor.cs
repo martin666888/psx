@@ -34,6 +34,12 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
     private static readonly Regex ReadyPattern =
         new(@"dsh\s+web:\s+(https?://[^\s]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    private static readonly Regex ReadyTokenPattern = new(
+        @"^[A-Za-z0-9._~-]{8,1024}$",
+        RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    private const int MaximumReadyUrlLength = 2048;
+
     /// <summary>Bounded wait for the lifecycle lock during application
     /// shutdown; after it elapses the teardown runs without the lock instead
     /// of blocking the window close.</summary>
@@ -131,10 +137,18 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         _ => "downloading"
     };
 
-    /// <summary>Accept only the loopback HTTP origin DSH is allowed to bind.</summary>
+    /// <summary>
+    /// Accept the loopback HTTP URL DSH prints at Ready. The path must be
+    /// <c>/</c>. A missing query is allowed (test doubles and origin-only
+    /// forms). A query, when present, must be exactly <c>?token=</c> plus a
+    /// bounded token; the overlay WebView is the only caller that may open
+    /// that URL. Fragments and userinfo are refused.
+    /// </summary>
     public static bool TryAcceptReadyUrl(string? candidate, out Uri url)
     {
         url = null!;
+        if (string.IsNullOrWhiteSpace(candidate) || candidate.Length > MaximumReadyUrlLength)
+            return false;
         if (!Uri.TryCreate(candidate, UriKind.Absolute, out var parsed))
             return false;
         if (!string.Equals(parsed.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase))
@@ -143,15 +157,43 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
             return false;
         if (!string.IsNullOrEmpty(parsed.UserInfo))
             return false;
+        if (parsed.IsDefaultPort || parsed.Port is <= 0 or > 65535)
+            return false;
+        if (!string.Equals(parsed.AbsolutePath, "/", StringComparison.Ordinal))
+            return false;
+        if (!string.IsNullOrEmpty(parsed.Fragment))
+            return false;
+
+        var query = parsed.Query;
+        if (string.IsNullOrEmpty(query))
+        {
+            url = parsed;
+            return true;
+        }
+
+        if (!query.StartsWith("?token=", StringComparison.Ordinal) || query.Contains('&', StringComparison.Ordinal))
+            return false;
+        var token = query["?token=".Length..];
+        if (!ReadyTokenPattern.IsMatch(token))
+            return false;
         url = parsed;
         return true;
     }
 
-    /// <summary>Authority form used by FrameNavigationStarting (no trailing slash).</summary>
-    public static string? ToFrameOrigin(Uri? url) =>
-        url != null && TryAcceptReadyUrl(url.GetLeftPart(UriPartial.Authority), out var accepted)
-            ? accepted.GetLeftPart(UriPartial.Authority)
-            : null;
+    /// <summary>Authority form used by the DSH surface policy and loopback
+    /// health checks (no path, query, or trailing slash). Never log the
+    /// token-bearing URL — pass this origin to diagnostics instead.</summary>
+    public static string? ToFrameOrigin(Uri? url)
+    {
+        if (url == null
+            || !string.Equals(url.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(url.Host, "127.0.0.1", StringComparison.OrdinalIgnoreCase)
+            || !string.IsNullOrEmpty(url.UserInfo)
+            || url.IsDefaultPort
+            || url.Port is <= 0 or > 65535)
+            return null;
+        return url.GetLeftPart(UriPartial.Authority);
+    }
 
     public void PrepareForStartup() => _runtime.PrepareForStartup();
 
@@ -825,8 +867,9 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
         // the supervisor log; the wire only carries the fixed safe key.
         var launch = SuspendedJobProcessLauncher.TryStartInJob(
             spec.NodePath,
-            // --no-open: the server is embedded in PSX's own iframe; letting
-            // dsh also open a system-browser tab would duplicate the surface.
+            // --no-open: the overlay WebView is the only document that opens
+            // the Ready URL; a system-browser tab would consume the one-time
+            // launch token and duplicate the surface.
             new[] { spec.EntryPath, "web", "--host", "127.0.0.1", "--port", "0", "--no-open" },
             _workspaceDirectory,
             Log);
@@ -1023,12 +1066,18 @@ public sealed class DshWebRuntimeSupervisor : IDisposable
 
     private static async Task<bool> HealthCheckAsync(Uri url)
     {
-        if (!TryAcceptReadyUrl(url.GetLeftPart(UriPartial.Authority), out _))
+        var origin = ToFrameOrigin(url);
+        if (origin == null)
             return false;
         try
         {
             using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-            using var response = await client.GetAsync(url).ConfigureAwait(false);
+            // Probe the clean root only. Opening the token URL here would
+            // consume DSH's one-time launch token before the overlay WebView
+            // can exchange it for the SameSite=Strict session cookie.
+            using var response = await client.GetAsync(origin + "/").ConfigureAwait(false);
+            if ((int)response.StatusCode == 401)
+                return true;
             if (!response.IsSuccessStatusCode)
                 return false;
             var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);

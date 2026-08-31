@@ -22,9 +22,16 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
     private readonly RuntimeLocator _runtimeLocator;
     private readonly ConcurrentDictionary<Guid, byte> _terminalSessionIds = new();
     private WebView2? _webView;
+    private WebView2? _dshSurface;
     private CoreWebView2? _coreWebView;
+    private CoreWebView2? _dshCore;
+    private CoreWebView2Environment? _environment;
     private WebViewJsonDispatcher? _messageDispatcher;
     private WebViewHostPolicy? _hostPolicy;
+    private DshSurfaceHostPolicy? _dshPolicy;
+    private Uri? _dshReadyUrl;
+    private Uri? _dshNavigatedUrl;
+    private DshSurfaceBoundsEventArgs? _dshBounds;
     private string _viewMode = "terminal";
     private bool _disposed;
 #if DEBUG
@@ -78,9 +85,9 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
         // broken or partially installed system WebView2 runtimes on older PCs.
         var runtimePaths = _runtimeLocator.Locate();
         EnsureFixedRuntimePermissions(runtimePaths.WebView2FixedRuntimePath);
-        var env = await CoreWebView2Environment.CreateAsync(
+        _environment = await CoreWebView2Environment.CreateAsync(
             browserExecutableFolder: runtimePaths.WebView2FixedRuntimePath);
-        await webView.EnsureCoreWebView2Async(env);
+        await webView.EnsureCoreWebView2Async(_environment);
         _coreWebView = webView.CoreWebView2;
         _messageDispatcher?.Dispose();
         _messageDispatcher = new WebViewJsonDispatcher(
@@ -137,6 +144,157 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
         webView.ZoomFactor = 1.0;
         _coreWebView.WebMessageReceived += OnWebMessageReceived;
         _coreWebView.Navigate(navigationUrl);
+    }
+
+    /// <summary>
+    /// Second WebView2 for the DSH column: top-level navigation to the
+    /// token-bearing Ready URL so the Strict session cookie is first-party.
+    /// Shares the shell's WebView2 environment. Must run after
+    /// <see cref="InitializeAsync"/>.
+    /// </summary>
+    public async Task InitializeDshSurfaceAsync(WebView2 webView)
+    {
+        if (_environment == null)
+            throw new InvalidOperationException("The shell WebView must be initialized first.");
+
+        _dshSurface = webView;
+        await webView.EnsureCoreWebView2Async(_environment);
+        _dshCore = webView.CoreWebView2;
+        _dshPolicy?.Dispose();
+        _dshPolicy = new DshSurfaceHostPolicy(_dshCore);
+        webView.ZoomFactor = 1.0;
+        _dshCore.WebMessageReceived += OnDshSurfaceMessage;
+        _dshCore.Navigate("about:blank");
+    }
+
+    /// <summary>
+    /// Full Ready URL including the one-time <c>?token=</c> query. The overlay
+    /// WebView is the only document that opens it. Null clears the surface.
+    /// Must run on the UI thread (CoreWebView2 thread).
+    /// </summary>
+    public void SetDshReadyUrl(Uri? url)
+    {
+        if (_dshSurface == null)
+            return;
+        if (_dshSurface.Dispatcher.CheckAccess())
+        {
+            _ = ApplyDshReadyUrlAsync(url);
+            return;
+        }
+
+        _ = _dshSurface.Dispatcher.InvokeAsync(() => ApplyDshReadyUrlAsync(url));
+    }
+
+    public void ApplyDshSurfaceBounds(DshSurfaceBoundsEventArgs bounds)
+    {
+        if (_dshSurface == null)
+            return;
+        if (_dshSurface.Dispatcher.CheckAccess())
+        {
+            ApplyDshSurfaceBoundsCore(bounds);
+            return;
+        }
+
+        _ = _dshSurface.Dispatcher.InvokeAsync(() => ApplyDshSurfaceBoundsCore(bounds));
+    }
+
+    private async Task ApplyDshReadyUrlAsync(Uri? url)
+    {
+        _dshReadyUrl = url;
+        var origin = DshWebRuntimeSupervisor.ToFrameOrigin(url);
+        if (_dshPolicy != null)
+            await _dshPolicy.SetOriginAsync(origin);
+
+        if (url == null || origin == null)
+        {
+            _dshNavigatedUrl = null;
+            if (_dshCore != null)
+                _dshCore.Navigate("about:blank");
+            ApplyDshSurfaceBoundsCore(_dshBounds ?? new DshSurfaceBoundsEventArgs { Visible = false });
+            return;
+        }
+
+        if (_dshNavigatedUrl != null
+            && Uri.Compare(
+                _dshNavigatedUrl,
+                url,
+                UriComponents.HttpRequestUrl,
+                UriFormat.SafeUnescaped,
+                StringComparison.Ordinal) == 0)
+        {
+            ApplyDshSurfaceBoundsCore(_dshBounds ?? new DshSurfaceBoundsEventArgs { Visible = false });
+            return;
+        }
+
+        // First navigation of this generation consumes the launch token.
+        _dshNavigatedUrl = url;
+        _dshCore?.Navigate(url.AbsoluteUri);
+        ApplyDshSurfaceBoundsCore(_dshBounds ?? new DshSurfaceBoundsEventArgs { Visible = false });
+    }
+
+    private void ApplyDshSurfaceBoundsCore(DshSurfaceBoundsEventArgs bounds)
+    {
+        _dshBounds = bounds;
+        var surface = _dshSurface;
+        if (surface == null)
+            return;
+
+        var show = bounds.Visible
+            && _dshReadyUrl != null
+            && bounds.Width >= 1
+            && bounds.Height >= 1;
+        if (!show)
+        {
+            surface.Visibility = Visibility.Collapsed;
+            surface.IsHitTestVisible = false;
+            return;
+        }
+
+        surface.Margin = new Thickness(bounds.Left, bounds.Top, 0, 0);
+        surface.Width = bounds.Width;
+        surface.Height = bounds.Height;
+        surface.Visibility = Visibility.Visible;
+        surface.IsHitTestVisible = true;
+    }
+
+    private void OnDshSurfaceMessage(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        JsonElement root;
+        try
+        {
+            using var document = JsonDocument.Parse(e.WebMessageAsJson);
+            root = document.RootElement.Clone();
+        }
+        catch (JsonException)
+        {
+            return;
+        }
+
+        var source = root.TryGetProperty("source", out var sourceElement)
+            && sourceElement.ValueKind == JsonValueKind.String
+            ? sourceElement.GetString()
+            : null;
+        if (source == "psx-dsh-focus")
+        {
+            var columnId = _dshBounds?.ColumnId;
+            if (!string.IsNullOrWhiteSpace(columnId))
+                PaneFocusRequested?.Invoke(this, columnId);
+            return;
+        }
+
+        if (source != "psx-dsh-export")
+            return;
+        var url = root.TryGetProperty("url", out var urlElement)
+            && urlElement.ValueKind == JsonValueKind.String
+            ? urlElement.GetString()
+            : null;
+        var filename = root.TryGetProperty("filename", out var filenameElement)
+            && filenameElement.ValueKind == JsonValueKind.String
+            ? filenameElement.GetString()
+            : null;
+        if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(filename))
+            return;
+        DshExportRequested?.Invoke(this, new DshExportEventArgs { Url = url, Filename = filename });
     }
 
     private static void EnsureFixedRuntimePermissions(string? fixedRuntimePath)
@@ -314,6 +472,9 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
             case TerminalBridgeMessageKind.DshExport:
                 DshExportRequested?.Invoke(this, message.DshExport!);
                 break;
+            case TerminalBridgeMessageKind.DshSurfaceBounds:
+                ApplyDshSurfaceBounds(message.DshSurfaceBounds!);
+                break;
             case TerminalBridgeMessageKind.KimiWebExport:
                 KimiWebExportRequested?.Invoke(this, message.KimiWebExport!);
                 break;
@@ -436,10 +597,16 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
         _messageDispatcher = null;
         _hostPolicy?.Dispose();
         _hostPolicy = null;
+        _dshPolicy?.Dispose();
+        _dshPolicy = null;
 
         if (_coreWebView != null)
         {
             _coreWebView.WebMessageReceived -= OnWebMessageReceived;
+        }
+        if (_dshCore != null)
+        {
+            _dshCore.WebMessageReceived -= OnDshSurfaceMessage;
         }
 
         InputReceived = null;
@@ -454,6 +621,12 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
         _terminalSessionIds.Clear();
 
         _coreWebView = null;
+        _dshCore = null;
+        _dshSurface = null;
+        _environment = null;
+        _dshReadyUrl = null;
+        _dshNavigatedUrl = null;
+        _dshBounds = null;
         _webView = null;
     }
 }

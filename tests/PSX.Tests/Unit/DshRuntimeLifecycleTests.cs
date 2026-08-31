@@ -146,10 +146,10 @@ public sealed class DshRuntimeLifecycleTests
         using var workspace = TestWorkspace.Create(nameof(CreateLaunchSpec_ValidatedUserUpdate_IsAcceptedBeyondSeedVersion));
         var (runtime, paths) = CreateRuntime(workspace);
         SeedFakeNodeToolchain(paths);
-        SeedAuthorizedDshUpdateTree(paths.DshCurrentDirectory, "0.1.1-rc.3");
+        SeedAuthorizedDshUpdateTree(paths.DshCurrentDirectory, "0.1.2-alpha.3");
 
         Assert.IsTrue(runtime.IsInstalled());
-        Assert.AreEqual("0.1.1-rc.3", runtime.CurrentVersion);
+        Assert.AreEqual("0.1.2-alpha.3", runtime.CurrentVersion);
         Assert.IsNotNull(runtime.CreateLaunchSpec());
     }
 
@@ -158,9 +158,9 @@ public sealed class DshRuntimeLifecycleTests
     {
         using var workspace = TestWorkspace.Create(nameof(ValidateStagedUpdate_RejectsNonOfficialRegistryLockEntry));
         var (_, paths) = CreateRuntime(workspace);
-        SeedAuthorizedDshUpdateTree(paths.DshNextDirectory, "0.1.1-rc.3", "https://registry.example/dsh.tgz");
+        SeedAuthorizedDshUpdateTree(paths.DshNextDirectory, "0.1.2-alpha.3", "https://registry.example/dsh.tgz");
 
-        var error = DshWebRuntime.ValidateStagedUpdate(paths.DshNextDirectory, "0.1.1-rc.3");
+        var error = DshWebRuntime.ValidateStagedUpdate(paths.DshNextDirectory, "0.1.2-alpha.3");
 
         Assert.IsNotNull(error);
         StringAssert.Contains(error, "registry/integrity");
@@ -171,7 +171,7 @@ public sealed class DshRuntimeLifecycleTests
     {
         using var workspace = TestWorkspace.Create(nameof(ValidateStagedUpdate_RejectsDependencyWithoutIntegrityMetadata));
         var (_, paths) = CreateRuntime(workspace);
-        SeedAuthorizedDshUpdateTree(paths.DshNextDirectory, "0.1.1-rc.3");
+        SeedAuthorizedDshUpdateTree(paths.DshNextDirectory, "0.1.2-alpha.3");
         var lockPath = Path.Combine(paths.DshNextDirectory, "package-lock.json");
         var lockText = File.ReadAllText(lockPath).Replace(
             "\"node_modules/@deepseek-ai/dsh\": {",
@@ -180,7 +180,7 @@ public sealed class DshRuntimeLifecycleTests
             StringComparison.Ordinal);
         File.WriteAllText(lockPath, lockText);
 
-        var error = DshWebRuntime.ValidateStagedUpdate(paths.DshNextDirectory, "0.1.1-rc.3");
+        var error = DshWebRuntime.ValidateStagedUpdate(paths.DshNextDirectory, "0.1.2-alpha.3");
 
         Assert.IsNotNull(error);
         StringAssert.Contains(error, "registry/integrity pinned");
@@ -192,10 +192,10 @@ public sealed class DshRuntimeLifecycleTests
         using var workspace = TestWorkspace.Create(nameof(ApplyStagedUpdate_FailedCandidateCanRestoreLastKnownGoodCurrent));
         var (runtime, paths) = CreateRuntime(workspace);
         SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
-        SeedAuthorizedDshUpdateTree(paths.DshNextDirectory, "0.1.1-rc.3");
+        SeedAuthorizedDshUpdateTree(paths.DshNextDirectory, "0.1.2-alpha.3");
 
-        Assert.IsTrue(runtime.ApplyStagedUpdate("0.1.1-rc.3"));
-        Assert.AreEqual("0.1.1-rc.3", runtime.CurrentVersion);
+        Assert.IsTrue(runtime.ApplyStagedUpdate("0.1.2-alpha.3"));
+        Assert.AreEqual("0.1.2-alpha.3", runtime.CurrentVersion);
         Assert.IsTrue(runtime.HasUncommittedUpdate);
 
         Assert.IsTrue(runtime.RollbackAppliedUpdate());
@@ -209,12 +209,12 @@ public sealed class DshRuntimeLifecycleTests
         using var workspace = TestWorkspace.Create(nameof(ApplyStagedUpdate_ReadyCommitDropsRollbackAndKeepsCandidate));
         var (runtime, paths) = CreateRuntime(workspace);
         SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
-        SeedAuthorizedDshUpdateTree(paths.DshNextDirectory, "0.1.1-rc.3");
+        SeedAuthorizedDshUpdateTree(paths.DshNextDirectory, "0.1.2-alpha.3");
 
-        Assert.IsTrue(runtime.ApplyStagedUpdate("0.1.1-rc.3"));
+        Assert.IsTrue(runtime.ApplyStagedUpdate("0.1.2-alpha.3"));
         runtime.CommitAppliedUpdate();
 
-        Assert.AreEqual("0.1.1-rc.3", runtime.CurrentVersion);
+        Assert.AreEqual("0.1.2-alpha.3", runtime.CurrentVersion);
         Assert.IsFalse(runtime.HasUncommittedUpdate);
         Assert.AreEqual("current", File.ReadAllText(paths.DshActivePointerFile));
     }
@@ -224,19 +224,19 @@ public sealed class DshRuntimeLifecycleTests
     {
         using var workspace = TestWorkspace.Create(nameof(CheckForUpdateAsync_UsesRegistryResultWithoutChangingCurrent));
         var locks = new FakeDshLockSource();
-        locks.Bundle("0.1.1-rc.3");
+        locks.Bundle("0.1.2-alpha.3");
         var (runtime, paths) = CreateRuntime(workspace, locks);
         SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
-        SeedScriptedNpm(paths, "console.log(JSON.stringify('0.1.1-rc.3'));\n");
+        SeedScriptedNpm(paths, "console.log(JSON.stringify('0.1.2-alpha.3'));\n");
 
         var result = await runtime.CheckForUpdateAsync(CancellationToken.None);
 
         Assert.IsTrue(result.Success, result.ErrorCode ?? string.Empty);
         Assert.IsTrue(result.UpdateAvailable);
         Assert.AreEqual(DshWebRuntime.SeededPackageVersion, result.CurrentVersion);
-        Assert.AreEqual("0.1.1-rc.3", result.AvailableVersion);
+        Assert.AreEqual("0.1.2-alpha.3", result.AvailableVersion);
         Assert.HasCount(1, result.AvailableVersions);
-        Assert.AreEqual("0.1.1-rc.3", result.AvailableVersions[0].Version);
+        Assert.AreEqual("0.1.2-alpha.3", result.AvailableVersions[0].Version);
         Assert.AreEqual(DshWebRuntime.SeededPackageVersion, runtime.CurrentVersion,
             "a metadata check must never modify dsh-current");
         Assert.IsFalse(Directory.Exists(paths.DshNextDirectory));
@@ -247,15 +247,15 @@ public sealed class DshRuntimeLifecycleTests
     {
         using var workspace = TestWorkspace.Create(nameof(CheckForUpdateAsync_UsesVersionsAndDistTagsCatalog));
         var locks = new FakeDshLockSource();
-        locks.Bundle("0.1.1-rc.4");
+        locks.Bundle("0.1.2-alpha.4");
         var (runtime, paths) = CreateRuntime(workspace, locks);
-        SeedAuthorizedDshUpdateTree(paths.DshCurrentDirectory, "0.1.1-rc.3");
+        SeedAuthorizedDshUpdateTree(paths.DshCurrentDirectory, "0.1.2-alpha.3");
         SeedScriptedNpm(
             paths,
             """
             console.log(JSON.stringify({
-              versions: ['0.1.1-rc.2', '0.1.1-rc.3', '0.1.1-rc.4'],
-              'dist-tags': { latest: '0.1.1-rc.3', next: '0.1.1-rc.4' }
+              versions: ['0.1.2-alpha.2', '0.1.2-alpha.3', '0.1.2-alpha.4'],
+              'dist-tags': { latest: '0.1.2-alpha.3', next: '0.1.2-alpha.4' }
             }));
             """);
 
@@ -263,11 +263,11 @@ public sealed class DshRuntimeLifecycleTests
 
         Assert.IsTrue(result.Success, result.ErrorCode ?? string.Empty);
         Assert.IsTrue(result.UpdateAvailable);
-        Assert.AreEqual("0.1.1-rc.4", result.AvailableVersion);
+        Assert.AreEqual("0.1.2-alpha.4", result.AvailableVersion);
         Assert.HasCount(1, result.AvailableVersions);
-        Assert.AreEqual("0.1.1-rc.4", result.AvailableVersions[0].Version);
+        Assert.AreEqual("0.1.2-alpha.4", result.AvailableVersions[0].Version);
         CollectionAssert.AreEqual(new[] { "next" }, result.AvailableVersions[0].Tags.ToArray());
-        Assert.AreEqual("0.1.1-rc.3", runtime.CurrentVersion);
+        Assert.AreEqual("0.1.2-alpha.3", runtime.CurrentVersion);
         Assert.IsFalse(Directory.Exists(paths.DshNextDirectory));
     }
 
@@ -276,7 +276,7 @@ public sealed class DshRuntimeLifecycleTests
     {
         using var workspace = TestWorkspace.Create(nameof(StageUpdateAsync_WritesValidatedNextWithoutTouchingCurrent));
         var locks = new FakeDshLockSource();
-        locks.Bundle("0.1.1-rc.3");
+        locks.Bundle("0.1.2-alpha.3");
         var (runtime, paths) = CreateRuntime(workspace, locks);
         SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
         SeedScriptedNpm(
@@ -291,12 +291,12 @@ public sealed class DshRuntimeLifecycleTests
             fs.writeFileSync(path.join(packageDir, 'package.json'), JSON.stringify({ version }));
             """);
 
-        var result = await runtime.StageUpdateAsync("0.1.1-rc.3", CancellationToken.None);
+        var result = await runtime.StageUpdateAsync("0.1.2-alpha.3", CancellationToken.None);
 
         Assert.IsTrue(result.Success, result.ErrorCode ?? string.Empty);
         Assert.AreEqual(DshWebRuntime.SeededPackageVersion, runtime.CurrentVersion);
         Assert.AreEqual("next", File.ReadAllText(paths.DshActivePointerFile));
-        Assert.IsNull(DshWebRuntime.ValidateStagedUpdate(paths.DshNextDirectory, "0.1.1-rc.3"));
+        Assert.IsNull(DshWebRuntime.ValidateStagedUpdate(paths.DshNextDirectory, "0.1.2-alpha.3"));
     }
 
     [TestMethod]
@@ -523,6 +523,17 @@ public sealed class DshRuntimeLifecycleTests
     }
 
     [TestMethod]
+    public void BuildSurfaceScript_SelfGatesOnSerializedOrigin()
+    {
+        var script = DshSurfaceHostPolicy.BuildSurfaceScript("http://127.0.0.1:4321");
+        StringAssert.Contains(script, "http://127.0.0.1:4321");
+        StringAssert.Contains(script, "location.origin");
+        StringAssert.Contains(script, "psx-dsh-export");
+        StringAssert.Contains(script, "chrome.webview.postMessage");
+        Assert.IsFalse(script.Contains("parent.postMessage", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
     public async Task InstallAndStartAsync_ConcurrentCalls_JoinOneRun()
     {
         using var workspace = TestWorkspace.Create(nameof(InstallAndStartAsync_ConcurrentCalls_JoinOneRun));
@@ -720,13 +731,61 @@ public sealed class DshRuntimeLifecycleTests
     }
 
     [TestMethod]
+    public async Task Supervisor_BrowserAuthReadyUrl_HealthCheckDoesNotConsumeToken()
+    {
+        using var workspace = TestWorkspace.Create(
+            nameof(Supervisor_BrowserAuthReadyUrl_HealthCheckDoesNotConsumeToken));
+        var (runtime, paths) = CreateRuntime(workspace);
+        SeedRealProcessToolchain(paths);
+        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        var workspaceDirectory = Path.Combine(workspace.Path, "dsh-workspace");
+        Directory.CreateDirectory(workspaceDirectory);
+        var entryPath = Path.Combine(
+            paths.DshCurrentDirectory, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js");
+        File.WriteAllText(entryPath, FakeDshAuthServerSource);
+
+        var bridge = new RecordingAgentBridgeService();
+        using var supervisor = new DshWebRuntimeSupervisor(
+            runtime,
+            bridge,
+            Path.Combine(workspace.Path, "supervisor"),
+            workspaceDirectory,
+            CreateSettings(workspace, bridge));
+
+        await supervisor.EnsureRunningAsync();
+        await TestWorkspace.WaitUntilAsync(
+            () => supervisor.State is DshRuntimeState.Ready or DshRuntimeState.Failed,
+            TimeSpan.FromSeconds(20),
+            "the authenticated launcher did not reach a terminal startup state");
+
+        Assert.AreEqual(DshRuntimeState.Ready, supervisor.State,
+            bridge.Events.LastOrDefault().ToString());
+        Assert.IsNotNull(supervisor.ReadyUrl);
+        Assert.IsTrue(
+            supervisor.ReadyUrl.Query.StartsWith("?token=", StringComparison.Ordinal),
+            "the in-memory Ready URL keeps the one-time token");
+        var origin = DshWebRuntimeSupervisor.ToFrameOrigin(supervisor.ReadyUrl);
+        Assert.AreEqual(origin, LastRuntimeStatus(bridge).GetProperty("readyUrl").GetString());
+        Assert.IsFalse(
+            LastRuntimeStatus(bridge).ToString().Contains("token=", StringComparison.Ordinal),
+            "the wire readyUrl must not carry the launch token");
+
+        var hitsPath = Path.Combine(workspaceDirectory, "dsh-token-hits.txt");
+        Assert.IsTrue(File.Exists(hitsPath), "the fake server records token hits");
+        Assert.AreEqual("0", File.ReadAllText(hitsPath).Trim(),
+            "HealthCheck must GET the clean origin, never the token URL");
+
+        await supervisor.StopAsync();
+    }
+
+    [TestMethod]
     public async Task Supervisor_UserUpdate_StagesRestartsAndCommitsOnlyAfterReady()
     {
         using var workspace = TestWorkspace.Create(nameof(Supervisor_UserUpdate_StagesRestartsAndCommitsOnlyAfterReady));
         var locks = new FakeDshLockSource();
-        locks.Bundle("0.1.1-rc.3");
+        locks.Bundle("0.1.2-alpha.3");
         var (runtime, paths) = CreateRuntime(workspace, locks);
-        SeedViewAndCiServerNpm(paths, "console.log(JSON.stringify('0.1.1-rc.3'));");
+        SeedViewAndCiServerNpm(paths, "console.log(JSON.stringify('0.1.2-alpha.3'));");
         SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
         WriteFakeDshServer(Path.Combine(
             paths.DshCurrentDirectory, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js"));
@@ -742,16 +801,16 @@ public sealed class DshRuntimeLifecycleTests
 
         await supervisor.CheckForUpdateAsync();
         Assert.AreEqual("available", LastRuntimeStatus(bridge).GetProperty("updateState").GetString());
-        Assert.AreEqual("0.1.1-rc.3", LastRuntimeStatus(bridge).GetProperty("availableVersion").GetString());
+        Assert.AreEqual("0.1.2-alpha.3", LastRuntimeStatus(bridge).GetProperty("availableVersion").GetString());
         Assert.AreEqual(
             System.Text.Json.JsonValueKind.Array,
             LastRuntimeStatus(bridge).GetProperty("availableVersions").ValueKind);
         Assert.AreEqual(1, LastRuntimeStatus(bridge).GetProperty("availableVersions").GetArrayLength());
 
-        await supervisor.UpdateAndRestartAsync("0.1.1-rc.3");
+        await supervisor.UpdateAndRestartAsync("0.1.2-alpha.3");
 
         Assert.AreEqual(DshRuntimeState.Ready, supervisor.State);
-        Assert.AreEqual("0.1.1-rc.3", runtime.CurrentVersion);
+        Assert.AreEqual("0.1.2-alpha.3", runtime.CurrentVersion);
         Assert.IsFalse(runtime.HasUncommittedUpdate, "Ready is the commit point for deleting the rollback");
         CollectionAssert.IsSubsetOf(
             new[] { "downloading", "validating", "restarting" },
@@ -776,9 +835,9 @@ public sealed class DshRuntimeLifecycleTests
         using var workspace = TestWorkspace.Create(
             nameof(Supervisor_UpdateWithVersionOutsideAllowlist_FailsWithoutTouchingCurrent));
         var locks = new FakeDshLockSource();
-        locks.Bundle("0.1.1-rc.3");
+        locks.Bundle("0.1.2-alpha.3");
         var (runtime, paths) = CreateRuntime(workspace, locks);
-        SeedScriptedNpm(paths, "console.log(JSON.stringify('0.1.1-rc.3'));\n");
+        SeedScriptedNpm(paths, "console.log(JSON.stringify('0.1.2-alpha.3'));\n");
         SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
         WriteFakeDshServer(Path.Combine(
             paths.DshCurrentDirectory, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js"));
@@ -793,7 +852,7 @@ public sealed class DshRuntimeLifecycleTests
             "baseline ready");
         await supervisor.CheckForUpdateAsync();
 
-        await supervisor.UpdateAndRestartAsync("0.1.1-rc.5");
+        await supervisor.UpdateAndRestartAsync("0.1.2-alpha.5");
 
         Assert.AreEqual(DshRuntimeState.Ready, supervisor.State);
         Assert.AreEqual(DshWebRuntime.SeededPackageVersion, runtime.CurrentVersion);
@@ -811,17 +870,17 @@ public sealed class DshRuntimeLifecycleTests
         using var workspace = TestWorkspace.Create(
             nameof(Supervisor_CachedAllowlistVersion_StillAcceptedAfterCatalogWouldHaveGrown));
         var locks = new FakeDshLockSource();
-        locks.Bundle("0.1.1-rc.4");
+        locks.Bundle("0.1.2-alpha.4");
         var (runtime, paths) = CreateRuntime(workspace, locks);
         SeedViewAndCiServerNpm(
             paths,
             """
             console.log(JSON.stringify({
-              versions: ['0.1.1-rc.2', '0.1.1-rc.3', '0.1.1-rc.4'],
-              'dist-tags': { latest: '0.1.1-rc.3', next: '0.1.1-rc.4' }
+              versions: ['0.1.2-alpha.2', '0.1.2-alpha.3', '0.1.2-alpha.4'],
+              'dist-tags': { latest: '0.1.2-alpha.3', next: '0.1.2-alpha.4' }
             }));
             """);
-        SeedAuthorizedDshUpdateTree(paths.DshCurrentDirectory, "0.1.1-rc.3");
+        SeedAuthorizedDshUpdateTree(paths.DshCurrentDirectory, "0.1.2-alpha.3");
         WriteFakeDshServer(Path.Combine(
             paths.DshCurrentDirectory, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js"));
 
@@ -834,12 +893,12 @@ public sealed class DshRuntimeLifecycleTests
             TimeSpan.FromSeconds(20),
             "baseline ready");
         await supervisor.CheckForUpdateAsync();
-        Assert.AreEqual("0.1.1-rc.4", LastRuntimeStatus(bridge).GetProperty("availableVersion").GetString());
+        Assert.AreEqual("0.1.2-alpha.4", LastRuntimeStatus(bridge).GetProperty("availableVersion").GetString());
 
-        await supervisor.UpdateAndRestartAsync("0.1.1-rc.4");
+        await supervisor.UpdateAndRestartAsync("0.1.2-alpha.4");
 
         Assert.AreEqual(DshRuntimeState.Ready, supervisor.State);
-        Assert.AreEqual("0.1.1-rc.4", runtime.CurrentVersion);
+        Assert.AreEqual("0.1.2-alpha.4", runtime.CurrentVersion);
         await supervisor.StopAsync();
     }
 
@@ -849,12 +908,12 @@ public sealed class DshRuntimeLifecycleTests
         using var workspace = TestWorkspace.Create(
             nameof(Supervisor_CheckFailure_ClearsAllowlistAndEmitsEmptyArray));
         var locks = new FakeDshLockSource();
-        locks.Bundle("0.1.1-rc.3");
+        locks.Bundle("0.1.2-alpha.3");
         var (runtime, paths) = CreateRuntime(workspace, locks);
         SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
         WriteFakeDshServer(Path.Combine(
             paths.DshCurrentDirectory, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js"));
-        SeedScriptedNpm(paths, "console.log(JSON.stringify('0.1.1-rc.3'));\n");
+        SeedScriptedNpm(paths, "console.log(JSON.stringify('0.1.2-alpha.3'));\n");
 
         var bridge = new RecordingAgentBridgeService();
         using var supervisor = new DshWebRuntimeSupervisor(
@@ -875,7 +934,7 @@ public sealed class DshRuntimeLifecycleTests
 
         Assert.AreEqual("failed", LastRuntimeStatus(bridge).GetProperty("updateState").GetString());
         Assert.AreEqual(0, LastRuntimeStatus(bridge).GetProperty("availableVersions").GetArrayLength());
-        await supervisor.UpdateAndRestartAsync("0.1.1-rc.3");
+        await supervisor.UpdateAndRestartAsync("0.1.2-alpha.3");
         Assert.AreEqual("failed", LastRuntimeStatus(bridge).GetProperty("updateState").GetString());
         Assert.AreEqual(DshWebRuntime.SeededPackageVersion, runtime.CurrentVersion);
         await supervisor.StopAsync();
@@ -887,7 +946,7 @@ public sealed class DshRuntimeLifecycleTests
         using var workspace = TestWorkspace.Create(
             nameof(Supervisor_CancelUpdateWhileDownloadingKeepsCurrentServerAndCandidateAvailable));
         var locks = new FakeDshLockSource();
-        locks.Bundle("0.1.1-rc.3");
+        locks.Bundle("0.1.2-alpha.3");
         var (runtime, paths) = CreateRuntime(workspace, locks);
         var updateStarted = Path.Combine(workspace.Path, "update-started");
         SeedScriptedNpm(
@@ -895,7 +954,7 @@ public sealed class DshRuntimeLifecycleTests
             $$"""
             const fs = require('fs');
             if (process.argv.includes('view')) {
-              console.log(JSON.stringify('0.1.1-rc.3'));
+              console.log(JSON.stringify('0.1.2-alpha.3'));
               process.exit(0);
             }
             fs.writeFileSync({{System.Text.Json.JsonSerializer.Serialize(updateStarted)}}, 'started');
@@ -945,16 +1004,16 @@ public sealed class DshRuntimeLifecycleTests
     {
         using var workspace = TestWorkspace.Create(nameof(Supervisor_PartialDeferred_AvailableCarriesBothLists));
         var locks = new FakeDshLockSource();
-        locks.Bundle("0.1.1-rc.4");
-        locks.Block("0.1.1-rc.5");
+        locks.Bundle("0.1.2-alpha.4");
+        locks.Block("0.1.2-alpha.5");
         var (runtime, paths) = CreateRuntime(workspace, locks);
         SeedAuthorizedDshUpdateTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
         SeedScriptedNpm(
             paths,
             """
             console.log(JSON.stringify({
-              versions: ['0.1.1-rc.2', '0.1.1-rc.3', '0.1.1-rc.4', '0.1.1-rc.5'],
-              'dist-tags': { latest: '0.1.1-rc.5' }
+              versions: ['0.1.2-alpha.2', '0.1.2-alpha.3', '0.1.2-alpha.4', '0.1.2-alpha.5'],
+              'dist-tags': { latest: '0.1.2-alpha.5' }
             }));
             """);
         var bridge = new RecordingAgentBridgeService();
@@ -967,11 +1026,11 @@ public sealed class DshRuntimeLifecycleTests
         var status = LastRuntimeStatus(bridge);
         Assert.AreEqual("available", status.GetProperty("updateState").GetString());
         Assert.AreEqual(1, status.GetProperty("availableVersions").GetArrayLength());
-        Assert.AreEqual("0.1.1-rc.4", status.GetProperty("availableVersions")[0].GetProperty("version").GetString());
+        Assert.AreEqual("0.1.2-alpha.4", status.GetProperty("availableVersions")[0].GetProperty("version").GetString());
         Assert.AreEqual(1, status.GetProperty("deferredVersions").GetArrayLength());
-        Assert.AreEqual("0.1.1-rc.3", status.GetProperty("deferredVersions")[0].GetProperty("version").GetString());
+        Assert.AreEqual("0.1.2-alpha.3", status.GetProperty("deferredVersions")[0].GetProperty("version").GetString());
         Assert.AreEqual(1, status.GetProperty("blockedVersions").GetArrayLength());
-        Assert.AreEqual("0.1.1-rc.5", status.GetProperty("blockedVersions")[0].GetProperty("version").GetString());
+        Assert.AreEqual("0.1.2-alpha.5", status.GetProperty("blockedVersions")[0].GetProperty("version").GetString());
     }
 
     [TestMethod]
@@ -980,15 +1039,15 @@ public sealed class DshRuntimeLifecycleTests
         using var workspace = TestWorkspace.Create(
             nameof(Supervisor_AllNewerDeferredOrBlocked_ReportsRequiresPsxUpdate));
         var locks = new FakeDshLockSource();
-        locks.Block("0.1.1-rc.4");
+        locks.Block("0.1.2-alpha.4");
         var (runtime, paths) = CreateRuntime(workspace, locks);
         SeedAuthorizedDshUpdateTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
         SeedScriptedNpm(
             paths,
             """
             console.log(JSON.stringify({
-              versions: ['0.1.1-rc.2', '0.1.1-rc.3', '0.1.1-rc.4'],
-              'dist-tags': { latest: '0.1.1-rc.4' }
+              versions: ['0.1.2-alpha.2', '0.1.2-alpha.3', '0.1.2-alpha.4'],
+              'dist-tags': { latest: '0.1.2-alpha.4' }
             }));
             """);
         var bridge = new RecordingAgentBridgeService();
@@ -1011,15 +1070,15 @@ public sealed class DshRuntimeLifecycleTests
         using var workspace = TestWorkspace.Create(
             nameof(Supervisor_UpdateCommandUnderRequiresPsxUpdate_RejectedKeepsState));
         var locks = new FakeDshLockSource();
-        locks.Block("0.1.1-rc.4");
+        locks.Block("0.1.2-alpha.4");
         var (runtime, paths) = CreateRuntime(workspace, locks);
-        SeedAuthorizedDshUpdateTree(paths.DshCurrentDirectory, "0.1.1-rc.3");
+        SeedAuthorizedDshUpdateTree(paths.DshCurrentDirectory, "0.1.2-alpha.3");
         SeedScriptedNpm(
             paths,
             """
             console.log(JSON.stringify({
-              versions: ['0.1.1-rc.3', '0.1.1-rc.4'],
-              'dist-tags': { latest: '0.1.1-rc.4' }
+              versions: ['0.1.2-alpha.3', '0.1.2-alpha.4'],
+              'dist-tags': { latest: '0.1.2-alpha.4' }
             }));
             """);
         var bridge = new RecordingAgentBridgeService();
@@ -1031,12 +1090,12 @@ public sealed class DshRuntimeLifecycleTests
 
         // Forged or racing explicit-version update commands must not degrade
         // the state to a plain failure.
-        await supervisor.UpdateAndRestartAsync("0.1.1-rc.4");
+        await supervisor.UpdateAndRestartAsync("0.1.2-alpha.4");
 
         var status = LastRuntimeStatus(bridge);
         Assert.AreEqual("requires_psx_update", status.GetProperty("updateState").GetString());
         Assert.AreEqual(DshErrorClass.UpdateRequiresPsx, status.GetProperty("updateErrorCode").GetString());
-        Assert.AreEqual("0.1.1-rc.3", runtime.CurrentVersion);
+        Assert.AreEqual("0.1.2-alpha.3", runtime.CurrentVersion);
         Assert.IsFalse(Directory.Exists(paths.DshNextDirectory));
     }
 
@@ -1381,6 +1440,31 @@ public sealed class DshRuntimeLifecycleTests
         server.listen(0, '127.0.0.1', () => {
           const address = server.address();
           console.log(`dsh web: http://127.0.0.1:${address.port}`);
+        });
+        """;
+
+    private const string FakeDshAuthServerSource = """
+        const fs = require('fs');
+        const http = require('http');
+        const path = require('path');
+        const hitsPath = path.join(process.cwd(), 'dsh-token-hits.txt');
+        fs.writeFileSync(hitsPath, '0');
+        const TOKEN = 'testtokn';
+        const server = http.createServer((request, response) => {
+          const url = new URL(request.url, 'http://127.0.0.1');
+          if (url.searchParams.has('token')) {
+            const next = Number(fs.readFileSync(hitsPath, 'utf8')) + 1;
+            fs.writeFileSync(hitsPath, String(next));
+            response.writeHead(303, { Location: '/' });
+            response.end();
+            return;
+          }
+          response.writeHead(401, { 'content-type': 'text/plain' });
+          response.end('dsh web authentication required');
+        });
+        server.listen(0, '127.0.0.1', () => {
+          const address = server.address();
+          console.log(`dsh web: http://127.0.0.1:${address.port}/?token=${TOKEN}`);
         });
         """;
 

@@ -311,6 +311,7 @@ internal sealed class NullTerminalBridgeService : ITerminalBridgeService
     public event EventHandler<AppSettingsCommandEventArgs>? AppSettingsCommandRequested { add { } remove { } }
 
     public Task InitializeAsync(WebView2 webView) => Task.CompletedTask;
+    public Task InitializeDshSurfaceAsync(WebView2 webView) => Task.CompletedTask;
     public Task CreateTerminalAsync(Guid sessionId) => Task.CompletedTask;
     public Task SendOutputAsync(Guid sessionId, string base64Data) => Task.CompletedTask;
     public Task SwitchTerminalAsync(Guid sessionId) => Task.CompletedTask;
@@ -321,4 +322,6 @@ internal sealed class NullTerminalBridgeService : ITerminalBridgeService
     public void SetFrameOrigin(string kind, string? origin) { }
     public Task PrepareFrameOriginAsync(string kind, string origin) => Task.CompletedTask;
     public void SetDshOrigin(string? origin) { }
+    public void SetDshReadyUrl(Uri? url) { }
+    public void ApplyDshSurfaceBounds(DshSurfaceBoundsEventArgs bounds) { }
 }

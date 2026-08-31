@@ -426,6 +426,7 @@ export class WorkspaceChromeController {
         trigger.setAttribute('aria-expanded', 'true');
         if (kind === 'theme') Bridge.sendThemeAction('refresh');
         this.renderOpenMenu();
+        this.publishShellOverlay();
     }
 
     openPaneMenu(workspace, trigger) {
@@ -435,6 +436,7 @@ export class WorkspaceChromeController {
         this.paneMenuWorkspace = workspace;
         trigger.setAttribute('aria-expanded', 'true');
         this.renderOpenMenu();
+        this.publishShellOverlay();
     }
 
     closeMenu(cancelTheme = false, restoreFocus = true) {
@@ -448,6 +450,13 @@ export class WorkspaceChromeController {
         this.dshUpdateConfirmation = false;
         this.portalRoot.replaceChildren();
         if (restoreFocus) focusTarget?.focus();
+        this.publishShellOverlay();
+    }
+
+    publishShellOverlay() {
+        const open = !!this.openMenu;
+        document.documentElement.toggleAttribute('data-psx-overlay', open);
+        document.dispatchEvent(new window.CustomEvent('psx-shell-overlay', { detail: { open } }));
     }
 
     renderOpenMenu() {

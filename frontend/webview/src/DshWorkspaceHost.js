@@ -2,25 +2,17 @@
 // Harness web workspace. It never touches the Agent chunk and never
 // triggers loadAgentApp(). The runtime status is a process-wide singleton, so
 // it is independent of workspace_activated ordering.
+//
+// Ready no longer mounts a cross-origin iframe. DSH 0.1.2+ exchanges a
+// one-time ?token= for a SameSite=Strict cookie that a psx.local iframe
+// cannot send. The shell keeps an empty column hole and reports its CSS
+// pixel rect over dsh_surface_bounds; C# top-level-navigates a second
+// WebView2 to the token URL. The token never appears in this file.
 
 import { Bridge } from './Bridge.js';
 import { createProviderIconSvg } from './ProviderIcons.js';
 import { dshSwitchCta } from './DshRegistryUi.js';
 import { t, onLocaleChanged } from './i18n.js';
-
-function isSameFrameUrl(iframe, readyUrl) {
-    try {
-        return new URL(iframe.src).href === new URL(readyUrl).href;
-    } catch {
-        return iframe.getAttribute('src') === readyUrl;
-    }
-}
-
-function expectedOriginFromReadyUrl(readyUrl) {
-    if (!readyUrl) return null;
-    try { return new URL(readyUrl).origin; }
-    catch { return null; }
-}
 
 // Card copy resolves through the shared i18n instance (shell namespace);
 // every state's strings live in locales/<lang>/shell.json under dsh.card.*.
@@ -58,51 +50,45 @@ function cardCopy(state) {
     return copy;
 }
 
+function boundsEqual(a, b) {
+    if (!a || !b) return false;
+    if (a.visible !== b.visible) return false;
+    if (!a.visible) return true;
+    return a.left === b.left
+        && a.top === b.top
+        && a.width === b.width
+        && a.height === b.height
+        && a.columnId === b.columnId;
+}
+
 export class DshWorkspaceHost {
     constructor(container) {
         this.container = container;
         this.panels = new Map();   // workspaceId -> panel element
         this.status = { state: 'not_installed' };
         this.colorScheme = document.documentElement.style.colorScheme || '';
+        this.chromeOverlay = false;
+        this.settingsOverlay = false;
+        this.lastBounds = null;
+        this.boundsRaf = 0;
         this.disposeLocaleChanged = onLocaleChanged(() => {
             for (const panel of this.panels.values()) this.renderCard(panel, this.status);
         });
-        // The injected DSH frame script posts export handoffs and a
-        // pointerdown focus ping here. Validate the message origin against
-        // the current DSH ready URL before forwarding so a spoofed
-        // cross-origin message cannot reach the host save or focus path.
-        window.addEventListener('message', (event) => this.onFrameMessage(event));
-    }
-
-    onFrameMessage(event) {
-        const data = event?.data;
-        if (!data || typeof data !== 'object') return;
-        if (data.source === 'psx-dsh-focus') {
-            this.onFrameFocus(event);
-            return;
-        }
-        if (data.source !== 'psx-dsh-export') return;
-        const expectedOrigin = expectedOriginFromReadyUrl(this.status?.readyUrl);
-        if (!expectedOrigin || event.origin !== expectedOrigin) return;
-        const url = typeof data.url === 'string' ? data.url : '';
-        const filename = typeof data.filename === 'string' && data.filename
-            ? data.filename : 'session.zip';
-        if (!url) return;
-        Bridge.sendDshExport(url, filename);
-    }
-
-    onFrameFocus(event) {
-        const expectedOrigin = expectedOriginFromReadyUrl(this.status?.readyUrl);
-        if (!expectedOrigin || event.origin !== expectedOrigin) return;
-        document.dispatchEvent(new window.CustomEvent('psx-embedded-frame-pointerdown'));
-        for (const panel of this.panels.values()) {
-            if (panel.hidden) continue;
-            const columnId = panel.dataset.columnId;
-            if (columnId) {
-                Bridge.sendPaneFocus(columnId);
-                return;
-            }
-        }
+        this.onShellOverlay = (event) => {
+            this.chromeOverlay = !!event.detail?.open;
+            this.scheduleBounds();
+        };
+        this.onSettingsState = (event) => {
+            this.settingsOverlay = !!event.detail?.open;
+            this.scheduleBounds();
+        };
+        this.onWindowResize = () => this.scheduleBounds();
+        document.addEventListener('psx-shell-overlay', this.onShellOverlay);
+        document.addEventListener('psx-settings-state', this.onSettingsState);
+        window.addEventListener('resize', this.onWindowResize);
+        this.resizeObserver = typeof ResizeObserver === 'function'
+            ? new ResizeObserver(() => this.scheduleBounds())
+            : null;
     }
 
     applyLayout(snapshot, rects) {
@@ -122,6 +108,7 @@ export class DshWorkspaceHost {
         }
         for (const [id, panel] of [...this.panels]) {
             if (!liveIds.has(id)) {
+                this.unobservePanel(panel);
                 panel.remove();
                 this.panels.delete(id);
                 continue;
@@ -148,9 +135,11 @@ export class DshWorkspaceHost {
                 this.applyRect(panel, assignment.rect);
                 this.renderCard(panel, this.status);
                 this.container.appendChild(panel);
+                this.observePanel(panel);
                 this.panels.set(id, panel);
             }
         }
+        this.scheduleBounds();
     }
 
     activate() {
@@ -169,15 +158,13 @@ export class DshWorkspaceHost {
             updateErrorCode: message?.updateErrorCode || null
         };
         for (const panel of this.panels.values()) this.renderCard(panel, this.status);
+        this.scheduleBounds();
     }
 
     applyColorScheme(scheme) {
         this.colorScheme = scheme === 'dark' || scheme === 'light' ? scheme : '';
-        for (const panel of this.panels.values()) {
-            const iframe = panel.querySelector('iframe.dsh-frame');
-            if (iframe) iframe.style.colorScheme = this.colorScheme;
-        }
     }
+
     applyRect(panel, rect) {
         const gutter = 12;
         panel.style.left = `${rect.left + gutter}px`;
@@ -186,22 +173,63 @@ export class DshWorkspaceHost {
         panel.style.height = `${Math.max(0, rect.height - 2 * gutter)}px`;
     }
 
+    observePanel(panel) {
+        try { this.resizeObserver?.observe(panel); }
+        catch { /* jsdom ResizeObserver may reject detached nodes */ }
+    }
+
+    unobservePanel(panel) {
+        try { this.resizeObserver?.unobserve(panel); }
+        catch { /* ignore */ }
+    }
+
+    shellOverlayOpen() {
+        return this.chromeOverlay || this.settingsOverlay
+            || document.documentElement.hasAttribute('data-psx-overlay');
+    }
+
+    scheduleBounds() {
+        if (this.boundsRaf) return;
+        this.boundsRaf = window.requestAnimationFrame(() => {
+            this.boundsRaf = 0;
+            this.publishBounds();
+        });
+    }
+
+    publishBounds() {
+        const visiblePanel = [...this.panels.values()].find((panel) =>
+            !panel.hidden && this.status.state === 'ready' && this.status.readyUrl);
+        let payload;
+        if (!visiblePanel || this.shellOverlayOpen()) {
+            payload = { visible: false };
+        } else {
+            const rect = visiblePanel.getBoundingClientRect();
+            payload = {
+                visible: true,
+                left: rect.left,
+                top: rect.top,
+                width: rect.width,
+                height: rect.height,
+                columnId: visiblePanel.dataset.columnId || null
+            };
+        }
+        if (boundsEqual(this.lastBounds, payload)) return;
+        this.lastBounds = payload;
+        Bridge.sendDshSurfaceBounds(payload);
+    }
+
     renderCard(panel, status) {
         if (status.state === 'ready' && status.readyUrl) {
             panel.classList.remove('dsh-panel--status');
-            const existing = panel.querySelector('iframe.dsh-frame');
-            if (existing && isSameFrameUrl(existing, status.readyUrl)) return;
-            const iframe = document.createElement('iframe');
-            iframe.className = 'dsh-frame';
-            iframe.src = status.readyUrl;
-            iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-downloads allow-popups allow-modals');
-            iframe.setAttribute('aria-label', 'DeepSeek Harness');
-            if (this.colorScheme) iframe.style.colorScheme = this.colorScheme;
-            panel.replaceChildren(iframe);
+            panel.classList.add('dsh-panel--surface');
+            panel.replaceChildren();
+            panel.setAttribute('aria-label', 'DeepSeek Harness');
             return;
         }
 
         panel.classList.add('dsh-panel--status');
+        panel.classList.remove('dsh-panel--surface');
+        panel.removeAttribute('aria-label');
         panel.replaceChildren();
         const copy = cardCopy(status.state);
         const card = document.createElement('section');

@@ -190,10 +190,13 @@ public partial class MainWindow : Window
             }
 
             await _bridgeService.InitializeAsync(TerminalHostControl.WebView);
+            if (TerminalHostControl.DshSurface != null)
+                await _bridgeService.InitializeDshSurfaceAsync(TerminalHostControl.DshSurface);
             if (_dshSupervisor != null && _bridgeService != null)
             {
                 _dshSupervisor.ReadyUrlChanged = url =>
-                    _bridgeService.SetDshOrigin(DshWebRuntimeSupervisor.ToFrameOrigin(url));
+                    _bridgeService.SetDshReadyUrl(url);
+                _bridgeService.SetDshReadyUrl(_dshSupervisor.ReadyUrl);
             }
             if (_kimiWebSupervisor != null && _bridgeService != null)
             {

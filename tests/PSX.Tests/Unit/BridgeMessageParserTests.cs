@@ -378,6 +378,29 @@ public sealed class TerminalBridgeMessageParserTests
             out _));
 
         Assert.IsTrue(TerminalBridgeMessageParser.TryParse(
+            """{"type":"dsh_surface_bounds","visible":false}""",
+            out var hiddenBounds));
+        Assert.AreEqual(TerminalBridgeMessageKind.DshSurfaceBounds, hiddenBounds!.Kind);
+        Assert.IsFalse(hiddenBounds.DshSurfaceBounds!.Visible);
+
+        Assert.IsTrue(TerminalBridgeMessageParser.TryParse(
+            """{"type":"dsh_surface_bounds","visible":true,"left":40,"top":12,"width":640,"height":480,"columnId":"column-1"}""",
+            out var shownBounds));
+        Assert.IsTrue(shownBounds!.DshSurfaceBounds!.Visible);
+        Assert.AreEqual(40, shownBounds.DshSurfaceBounds.Left);
+        Assert.AreEqual(12, shownBounds.DshSurfaceBounds.Top);
+        Assert.AreEqual(640, shownBounds.DshSurfaceBounds.Width);
+        Assert.AreEqual(480, shownBounds.DshSurfaceBounds.Height);
+        Assert.AreEqual("column-1", shownBounds.DshSurfaceBounds.ColumnId);
+
+        Assert.IsFalse(TerminalBridgeMessageParser.TryParse(
+            """{"type":"dsh_surface_bounds","visible":true,"left":0,"top":0,"width":-1,"height":100}""",
+            out _));
+        Assert.IsFalse(TerminalBridgeMessageParser.TryParse(
+            """{"type":"dsh_surface_bounds","visible":true}""",
+            out _));
+
+        Assert.IsTrue(TerminalBridgeMessageParser.TryParse(
             """{"type":"theme_action","action":"preview","themeKey":"builtin:dark"}""",
             out var theme));
         Assert.AreEqual("preview", theme!.ThemeAction!.Action);

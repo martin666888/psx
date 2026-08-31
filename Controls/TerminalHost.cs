@@ -11,8 +11,10 @@ namespace PSX.Controls;
 public sealed class TerminalHost : UserControl
 {
     private WebView2? _webView;
+    private WebView2? _dshSurface;
 
     public WebView2? WebView => _webView;
+    public WebView2? DshSurface => _dshSurface;
 
     public TerminalHost()
     {
@@ -22,9 +24,18 @@ public sealed class TerminalHost : UserControl
         {
             DefaultBackgroundColor = bgColor
         };
+        _dshSurface = new WebView2
+        {
+            DefaultBackgroundColor = bgColor,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            Visibility = Visibility.Collapsed,
+            IsHitTestVisible = false
+        };
 
         var grid = new Grid();
         grid.Children.Add(_webView);
+        grid.Children.Add(_dshSurface);
         Content = grid;
     }
 

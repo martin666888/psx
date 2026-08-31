@@ -61,18 +61,18 @@ public sealed class DshLockSourceTests
     {
         using var workspace = TestWorkspace.Create(nameof(Find_ReturnsVerifiedArtifactForBundledVersion));
         var root = Root(workspace);
-        WriteCatalog(root, BuildCatalogJson("0.1.1-rc.3"));
-        WriteEntryFiles(root, "0.1.1-rc.3");
+        WriteCatalog(root, BuildCatalogJson("0.1.2-alpha.3"));
+        WriteEntryFiles(root, "0.1.2-alpha.3");
 
         var source = new BundledDshLockSource(root);
-        var result = source.Find("0.1.1-rc.3");
+        var result = source.Find("0.1.2-alpha.3");
 
         Assert.AreEqual(DshLockLookup.Found, result.Kind);
-        Assert.AreEqual("0.1.1-rc.3", result.Artifact!.Version);
+        Assert.AreEqual("0.1.2-alpha.3", result.Artifact!.Version);
         Assert.AreEqual(DshLockSourceKind.Bundled, result.Artifact.Kind);
         Assert.AreEqual(DshSri.TestIntegrity, result.Artifact.DshSri);
         Assert.AreEqual(
-            FakeDshLockSource.BuildPackageJson("0.1.1-rc.3"),
+            FakeDshLockSource.BuildPackageJson("0.1.2-alpha.3"),
             result.Artifact.PackageJson);
     }
 
@@ -82,16 +82,16 @@ public sealed class DshLockSourceTests
         using var workspace = TestWorkspace.Create(
             nameof(Find_MissingVersion_IsNotBundled_AndCatalogSnapshotListsVersions));
         var root = Root(workspace);
-        WriteCatalog(root, BuildCatalogJson("0.1.1-rc.3", blocked: "[{ \"version\": \"0.1.1-rc.5\", \"reason\": \"smoke_failed\" }]"));
-        WriteEntryFiles(root, "0.1.1-rc.3");
+        WriteCatalog(root, BuildCatalogJson("0.1.2-alpha.3", blocked: "[{ \"version\": \"0.1.2-alpha.5\", \"reason\": \"smoke_failed\" }]"));
+        WriteEntryFiles(root, "0.1.2-alpha.3");
 
         var source = new BundledDshLockSource(root);
-        Assert.AreEqual(DshLockLookup.VersionNotBundled, source.Find("0.1.1-rc.4").Kind);
+        Assert.AreEqual(DshLockLookup.VersionNotBundled, source.Find("0.1.2-alpha.4").Kind);
 
         var snapshot = source.LoadCatalog();
         Assert.IsTrue(snapshot.Valid);
-        CollectionAssert.AreEqual(new[] { "0.1.1-rc.3" }, snapshot.Versions.ToArray());
-        CollectionAssert.AreEqual(new[] { "0.1.1-rc.5" }, snapshot.BlockedVersions.ToArray());
+        CollectionAssert.AreEqual(new[] { "0.1.2-alpha.3" }, snapshot.Versions.ToArray());
+        CollectionAssert.AreEqual(new[] { "0.1.2-alpha.5" }, snapshot.BlockedVersions.ToArray());
     }
 
     [TestMethod]
@@ -99,10 +99,10 @@ public sealed class DshLockSourceTests
     {
         using var workspace = TestWorkspace.Create(nameof(Find_ShaMismatch_IsArtifactCorrupt));
         var root = Root(workspace);
-        WriteCatalog(root, BuildCatalogJson("0.1.1-rc.3", lockSha: new string('A', 64)));
-        WriteEntryFiles(root, "0.1.1-rc.3");
+        WriteCatalog(root, BuildCatalogJson("0.1.2-alpha.3", lockSha: new string('A', 64)));
+        WriteEntryFiles(root, "0.1.2-alpha.3");
 
-        var result = new BundledDshLockSource(root).Find("0.1.1-rc.3");
+        var result = new BundledDshLockSource(root).Find("0.1.2-alpha.3");
         Assert.AreEqual(DshLockLookup.ArtifactCorrupt, result.Kind);
     }
 
@@ -111,12 +111,12 @@ public sealed class DshLockSourceTests
     {
         using var workspace = TestWorkspace.Create(nameof(Find_MissingArtifactFiles_IsArtifactCorrupt));
         var root = Root(workspace);
-        WriteCatalog(root, BuildCatalogJson("0.1.1-rc.3"));
-        // No locks/0.1.1-rc.3 directory at all.
+        WriteCatalog(root, BuildCatalogJson("0.1.2-alpha.3"));
+        // No locks/0.1.2-alpha.3 directory at all.
 
         Assert.AreEqual(
             DshLockLookup.ArtifactCorrupt,
-            new BundledDshLockSource(root).Find("0.1.1-rc.3").Kind);
+            new BundledDshLockSource(root).Find("0.1.2-alpha.3").Kind);
     }
 
     [TestMethod]
@@ -124,7 +124,7 @@ public sealed class DshLockSourceTests
     {
         using var workspace = TestWorkspace.Create(nameof(Find_OversizedArtifact_IsArtifactCorrupt));
         var root = Root(workspace);
-        var version = "0.1.1-rc.3";
+        var version = "0.1.2-alpha.3";
         var hugeLock = FakeDshLockSource.BuildLockJson(version, DshSri.TestIntegrity)
             + "\n" + new string('x', 5 * 1024 * 1024);
         WriteCatalog(root, BuildCatalogJson(version));
@@ -143,7 +143,7 @@ public sealed class DshLockSourceTests
         var root = Root(workspace);
         var source = new BundledDshLockSource(root);
         Assert.IsFalse(source.LoadCatalog().Valid);
-        Assert.AreEqual(DshLockLookup.CatalogInvalid, source.Find("0.1.1-rc.3").Kind);
+        Assert.AreEqual(DshLockLookup.CatalogInvalid, source.Find("0.1.2-alpha.3").Kind);
 
         WriteCatalog(root, "{ not json");
         Assert.IsFalse(new BundledDshLockSource(root).LoadCatalog().Valid);
@@ -203,24 +203,24 @@ public sealed class DshLockSourceTests
         using var workspace = TestWorkspace.Create(
             nameof(Catalog_IncompleteEntryPolicy_IsCatalogInvalid));
         var root = Root(workspace);
-        WriteCatalog(root, BuildCatalogJson("0.1.1-rc.3"));
-        WriteEntryFiles(root, "0.1.1-rc.3");
+        WriteCatalog(root, BuildCatalogJson("0.1.2-alpha.3"));
+        WriteEntryFiles(root, "0.1.2-alpha.3");
 
         WriteCatalog(
             root,
-            BuildCatalogJson("0.1.1-rc.3").Replace(
+            BuildCatalogJson("0.1.2-alpha.3").Replace(
                 "\"lockfileVersion\": 3", "\"lockfileVersion\": 2", StringComparison.Ordinal));
         Assert.IsFalse(new BundledDshLockSource(root).LoadCatalog().Valid, "lockfileVersion must be 3");
 
         WriteCatalog(
             root,
-            BuildCatalogJson("0.1.1-rc.3").Replace(
+            BuildCatalogJson("0.1.2-alpha.3").Replace(
                 "\"generatedByNpm\": \"10.9.8\",", string.Empty, StringComparison.Ordinal));
         Assert.IsFalse(new BundledDshLockSource(root).LoadCatalog().Valid, "generatedByNpm is required");
 
         WriteCatalog(
             root,
-            BuildCatalogJson("0.1.1-rc.3").Replace(
+            BuildCatalogJson("0.1.2-alpha.3").Replace(
                 "\"smokePassed\": true", "\"smokePassed\": false", StringComparison.Ordinal));
         Assert.IsFalse(new BundledDshLockSource(root).LoadCatalog().Valid, "smokePassed must be true");
     }
@@ -231,12 +231,12 @@ public sealed class DshLockSourceTests
         using var workspace = TestWorkspace.Create(nameof(Catalog_NonDescendingEntries_AreCatalogInvalid));
         var root = Root(workspace);
         var newerEntry =
-            "{ \"version\": \"0.1.1-rc.5\", \"lockSha256\": \"" + new string('A', 64)
+            "{ \"version\": \"0.1.2-alpha.5\", \"lockSha256\": \"" + new string('A', 64)
             + "\", \"packageSha256\": \"" + new string('B', 64)
             + "\", \"lockfileVersion\": 3, \"generatedByNpm\": \"10.9.8\", \"dshSri\": \""
             + DshSri.TestIntegrity + "\", \"smokePassed\": true }";
-        WriteCatalog(root, BuildCatalogJson("0.1.1-rc.3", extraEntries: $", {newerEntry}"));
-        WriteEntryFiles(root, "0.1.1-rc.3");
+        WriteCatalog(root, BuildCatalogJson("0.1.2-alpha.3", extraEntries: $", {newerEntry}"));
+        WriteEntryFiles(root, "0.1.2-alpha.3");
 
         // rc.7 followed by the newer rc.9 is ascending; entries must be
         // published newest first.
@@ -248,8 +248,8 @@ public sealed class DshLockSourceTests
     {
         using var workspace = TestWorkspace.Create(nameof(Find_NonSemVerInput_IsNotBundled));
         var root = Root(workspace);
-        WriteCatalog(root, BuildCatalogJson("0.1.1-rc.3"));
-        WriteEntryFiles(root, "0.1.1-rc.3");
+        WriteCatalog(root, BuildCatalogJson("0.1.2-alpha.3"));
+        WriteEntryFiles(root, "0.1.2-alpha.3");
 
         Assert.AreEqual(
             DshLockLookup.VersionNotBundled,
@@ -265,14 +265,14 @@ public sealed class DshLockSourceTests
 
         WriteCatalog(
             root,
-            BuildCatalogJson("0.1.1-rc.3").Replace(
+            BuildCatalogJson("0.1.2-alpha.3").Replace(
                 "  \"blockedVersions\": []", string.Empty, StringComparison.Ordinal));
-        WriteEntryFiles(root, "0.1.1-rc.3");
+        WriteEntryFiles(root, "0.1.2-alpha.3");
         Assert.IsFalse(new BundledDshLockSource(root).LoadCatalog().Valid, "missing blockedVersions");
 
         // A JSON object is not an array: the field must not silently degrade
         // to an empty review list.
-        WriteCatalog(root, BuildCatalogJson("0.1.1-rc.3").Replace(
+        WriteCatalog(root, BuildCatalogJson("0.1.2-alpha.3").Replace(
             "\"blockedVersions\": []", "\"blockedVersions\": {}", StringComparison.Ordinal));
         Assert.IsFalse(new BundledDshLockSource(root).LoadCatalog().Valid, "object blockedVersions");
     }
@@ -283,9 +283,9 @@ public sealed class DshLockSourceTests
         using var workspace = TestWorkspace.Create(nameof(Catalog_UnknownBlockedReason_IsCatalogInvalid));
         var root = Root(workspace);
         WriteCatalog(root, BuildCatalogJson(
-            "0.1.1-rc.3",
-            blocked: "[{ \"version\": \"0.1.1-rc.5\", \"reason\": \"someone_felt_like_it\" }]"));
-        WriteEntryFiles(root, "0.1.1-rc.3");
+            "0.1.2-alpha.3",
+            blocked: "[{ \"version\": \"0.1.2-alpha.5\", \"reason\": \"someone_felt_like_it\" }]"));
+        WriteEntryFiles(root, "0.1.2-alpha.3");
 
         Assert.IsFalse(new BundledDshLockSource(root).LoadCatalog().Valid);
     }
@@ -296,9 +296,9 @@ public sealed class DshLockSourceTests
         using var workspace = TestWorkspace.Create(nameof(Catalog_EntryAndBlockedOverlap_IsCatalogInvalid));
         var root = Root(workspace);
         WriteCatalog(root, BuildCatalogJson(
-            "0.1.1-rc.3",
-            blocked: "[{ \"version\": \"0.1.1-rc.3\", \"reason\": \"smoke_failed\" }]"));
-        WriteEntryFiles(root, "0.1.1-rc.3");
+            "0.1.2-alpha.3",
+            blocked: "[{ \"version\": \"0.1.2-alpha.3\", \"reason\": \"smoke_failed\" }]"));
+        WriteEntryFiles(root, "0.1.2-alpha.3");
 
         Assert.IsFalse(new BundledDshLockSource(root).LoadCatalog().Valid);
     }
@@ -308,21 +308,21 @@ public sealed class DshLockSourceTests
     {
         using var workspace = TestWorkspace.Create(nameof(Catalog_DuplicateEntryVersions_AreCatalogInvalid));
         var root = Root(workspace);
-        var sha = FakeDshLockSource.HashText(FakeDshLockSource.BuildLockJson("0.1.1-rc.3", DshSri.TestIntegrity));
-        var packageSha = FakeDshLockSource.HashText(FakeDshLockSource.BuildPackageJson("0.1.1-rc.3"));
+        var sha = FakeDshLockSource.HashText(FakeDshLockSource.BuildLockJson("0.1.2-alpha.3", DshSri.TestIntegrity));
+        var packageSha = FakeDshLockSource.HashText(FakeDshLockSource.BuildPackageJson("0.1.2-alpha.3"));
         WriteCatalog(
             root,
             $$"""
             {
               "schemaVersion": 1,
               "entries": [
-                { "version": "0.1.1-rc.3", "lockSha256": "{{sha}}", "packageSha256": "{{packageSha}}", "lockfileVersion": 3, "generatedByNpm": "10.9.8", "dshSri": "{{DshSri.TestIntegrity}}", "smokePassed": true },
-                { "version": "0.1.1-rc.3", "lockSha256": "{{sha}}", "packageSha256": "{{packageSha}}", "lockfileVersion": 3, "generatedByNpm": "10.9.8", "dshSri": "{{DshSri.TestIntegrity}}", "smokePassed": true }
+                { "version": "0.1.2-alpha.3", "lockSha256": "{{sha}}", "packageSha256": "{{packageSha}}", "lockfileVersion": 3, "generatedByNpm": "10.9.8", "dshSri": "{{DshSri.TestIntegrity}}", "smokePassed": true },
+                { "version": "0.1.2-alpha.3", "lockSha256": "{{sha}}", "packageSha256": "{{packageSha}}", "lockfileVersion": 3, "generatedByNpm": "10.9.8", "dshSri": "{{DshSri.TestIntegrity}}", "smokePassed": true }
               ],
               "blockedVersions": []
             }
             """);
-        WriteEntryFiles(root, "0.1.1-rc.3");
+        WriteEntryFiles(root, "0.1.2-alpha.3");
 
         Assert.IsFalse(new BundledDshLockSource(root).LoadCatalog().Valid);
     }
@@ -333,16 +333,16 @@ public sealed class DshLockSourceTests
         using var workspace = TestWorkspace.Create(
             nameof(Catalog_MalformedShaOrVersionFields_AreCatalogInvalid));
         var root = Root(workspace);
-        WriteCatalog(root, BuildCatalogJson("0.1.1-rc.3", lockSha: new string('G', 64)));
-        WriteEntryFiles(root, "0.1.1-rc.3");
+        WriteCatalog(root, BuildCatalogJson("0.1.2-alpha.3", lockSha: new string('G', 64)));
+        WriteEntryFiles(root, "0.1.2-alpha.3");
         Assert.IsFalse(new BundledDshLockSource(root).LoadCatalog().Valid, "non-hex lockSha256");
 
         WriteCatalog(root, BuildCatalogJson("0.1.0-not-semver"));
-        WriteEntryFiles(root, "0.1.1-rc.3");
+        WriteEntryFiles(root, "0.1.2-alpha.3");
         Assert.IsFalse(new BundledDshLockSource(root).LoadCatalog().Valid, "non-semver version");
 
         WriteCatalog(root, BuildCatalogJson("0.1.0-01"));
-        WriteEntryFiles(root, "0.1.1-rc.3");
+        WriteEntryFiles(root, "0.1.2-alpha.3");
         Assert.IsFalse(new BundledDshLockSource(root).LoadCatalog().Valid, "leading-zero numeric prerelease");
     }
 }
