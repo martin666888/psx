@@ -14,7 +14,7 @@ tools/dsh-locks/
   locks/<version>/package-lock.json
 ```
 
-- `entries`：经批准可安装的版本，**最新在前**，至多 5 条（`-Keep`），全部 ≥ seed（`0.1.2-alpha.2`）。
+- `entries`：经批准可安装的版本，**最新在前**，至多 5 条（`-Keep`），全部 ≥ seed（`0.1.2-alpha.3`）。
   每条携带 `lockSha256`/`packageSha256`/`lockfileVersion`/`generatedByNpm`/`dshSri`/`smokePassed`。
 - `blockedVersions`：人工审核决策，`reason` 为固定键
   （`smoke_failed | official_integrity_mismatch | sri_conflict`），至多 10 条，与 entries 不相交。
@@ -24,10 +24,10 @@ tools/dsh-locks/
 
 ```powershell
 # 干跑（求解 + 官方核对 + 初检；不写 catalog，任何机器可跑）
-powershell -ExecutionPolicy Bypass -File tools/generate-dsh-lock.ps1 -Version 0.1.2-alpha.2 -NoSmoke
+powershell -ExecutionPolicy Bypass -File tools/generate-dsh-lock.ps1 -Version 0.1.2-alpha.3 -NoSmoke
 
 # 正式生成（只能在隔离环境，见下方契约）
-powershell -ExecutionPolicy Bypass -File tools/generate-dsh-lock.ps1 -Version 0.1.2-alpha.2 -Isolated
+powershell -ExecutionPolicy Bypass -File tools/generate-dsh-lock.ps1 -Version 0.1.2-alpha.3 -Isolated
 
 # 对已收录条目整体重放启动 smoke
 powershell -ExecutionPolicy Bypass -File tools/generate-dsh-lock.ps1 -Version ignore -Isolated -FullResmoke

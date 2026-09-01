@@ -9,15 +9,6 @@
                         "generatedByNpm":  "10.9.8",
                         "dshSri":  "sha512-VvATzYmQ4LMJREJ9e2POKksSHRfqP3y9pghplLBaQBuw2BqfbC0mQUVsaPwxe4wlcpj+riEgn8OJB01YnpF+3A==",
                         "smokePassed":  true
-                    },
-                    {
-                        "version":  "0.1.2-alpha.2",
-                        "lockSha256":  "F3C8459FBD4006CEAF43C300FEA9CEB8BD1D6B2096E945AEFA220AF9C71DBF36",
-                        "packageSha256":  "DCFA5AD15257069ADAD40DEA74D841DC07C6E553C6AD2F8276A926F8370D1E89",
-                        "lockfileVersion":  3,
-                        "generatedByNpm":  "10.9.8",
-                        "dshSri":  "sha512-4TvTC5kRKlgtSU2UTBv+cID9a2Z+6+m6mpvjXWJfVzuTkflCff6s4MsQpFJTCmwFh/k7zNWe7qFXcLYMV/5VvA==",
-                        "smokePassed":  true
                     }
                 ],
     "blockedVersions":  [

@@ -53,7 +53,7 @@ $PortableNodeUrl = "https://nodejs.org/dist/$PortableNodeVersion/$PortableNodeAr
 $PortableNodeExpectedSha = "7df0bc9375723f4a86b3aa1b7cc73342423d9677a8df4538aca31a049e309c29"
 
 $DshPackageName = "@deepseek-ai/dsh"
-$DshSeedVersion = "0.1.2-alpha.2"
+$DshSeedVersion = "0.1.2-alpha.3"
 $OfficialRegistry = "https://registry.npmjs.org/"
 $SmokeReadyTimeoutSeconds = 120
 $SmokeKillGraceSeconds = 30
