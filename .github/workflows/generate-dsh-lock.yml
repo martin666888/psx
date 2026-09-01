@@ -1,0 +1,97 @@
+name: Generate DSH lock candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact published DSH version (for example 0.1.2-alpha.3)
+        required: true
+        type: string
+
+# The checkout action needs read access, but the candidate generator must never
+# receive credentials that could mutate the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: dsh-lock-candidate
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    name: Generate and smoke DSH lock
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      DSH_VERSION: ${{ inputs.version }}
+
+    steps:
+      - name: Check out dev without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+          persist-credentials: false
+          clean: true
+
+      - name: Verify isolated input and credential boundary
+        shell: powershell
+        run: |
+          if ($env:DSH_VERSION -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$') {
+            throw "Version must be an exact SemVer value."
+          }
+          if ($env:GITHUB_TOKEN -or $env:GH_TOKEN -or $env:NPM_TOKEN -or $env:NODE_AUTH_TOKEN) {
+            throw "The DSH generator must not receive GitHub or npm credentials."
+          }
+          $persistedAuth = git config --local --get-regexp '^(http\..*extraheader|credential\.)' 2>$null
+          if ($LASTEXITCODE -eq 0 -and $persistedAuth) {
+            throw "Checkout left persisted Git credentials in the worktree."
+          }
+
+      - name: Generate candidate and run launch smoke
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tools/generate-dsh-lock.ps1 `
+            -Version $env:DSH_VERSION `
+            -Isolated `
+            -TimeoutMinutes 60
+
+      - name: Stage review-only artifact
+        shell: powershell
+        run: |
+          $candidateRoot = Join-Path $env:RUNNER_TEMP 'dsh-lock-candidate'
+          $lockRoot = Join-Path $candidateRoot 'tools\dsh-locks'
+          New-Item -ItemType Directory -Path $lockRoot -Force | Out-Null
+
+          $reparsePoints = Get-ChildItem -LiteralPath 'tools\dsh-locks' -Recurse -Force |
+            Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }
+          if ($reparsePoints) {
+            throw "Refusing to package DSH lock output containing reparse points."
+          }
+
+          Copy-Item -LiteralPath 'tools\dsh-locks\catalog.json' -Destination $lockRoot
+          Copy-Item -LiteralPath 'tools\dsh-locks\locks' -Destination $lockRoot -Recurse
+
+          $reviewRoot = Join-Path $candidateRoot 'review'
+          New-Item -ItemType Directory -Path $reviewRoot -Force | Out-Null
+          $patchPath = Join-Path $reviewRoot 'dsh-lock.patch'
+          git diff --binary --output=$patchPath -- tools/dsh-locks
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to capture the DSH lock review patch."
+          }
+
+          Get-ChildItem -LiteralPath $lockRoot -File -Recurse |
+            Sort-Object FullName |
+            ForEach-Object {
+              $relativePath = $_.FullName.Substring($candidateRoot.Length + 1).Replace('\', '/')
+              $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              "$hash  $relativePath"
+            } | Set-Content -LiteralPath (Join-Path $reviewRoot 'sha256.txt') -Encoding ascii
+
+      - name: Upload DSH lock candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsh-lock-candidate-${{ inputs.version }}
+          path: ${{ runner.temp }}\dsh-lock-candidate\
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 9
