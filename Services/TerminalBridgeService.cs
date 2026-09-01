@@ -271,8 +271,12 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
         // materializes the host window, otherwise DSH paints underneath.
         RaiseAndClipDshOverlay(surface);
         HookDshOverlayZOrder(surface);
-        _ = surface.Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => RaiseAndClipDshOverlay(surface));
-        _ = surface.Dispatcher.BeginInvoke(DispatcherPriority.Render, () => RaiseAndClipDshOverlay(surface));
+        _ = surface.Dispatcher.InvokeAsync(
+            () => RaiseAndClipDshOverlay(surface),
+            DispatcherPriority.Loaded);
+        _ = surface.Dispatcher.InvokeAsync(
+            () => RaiseAndClipDshOverlay(surface),
+            DispatcherPriority.Render);
     }
 
     private void RaiseAndClipDshOverlay(WebView2? surface)

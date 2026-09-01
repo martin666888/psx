@@ -257,6 +257,56 @@ describe('DshWorkspaceHost', () => {
     }
   });
 
+  it('republishes the exclusion rect when an open popover changes size', async () => {
+    const popoverRoot = document.createElement('div');
+    popoverRoot.id = 'workspace-popover-root';
+    const popover = document.createElement('section');
+    popover.className = 'workspace-popover workspace-popover-pane';
+    popoverRoot.appendChild(popover);
+    document.body.appendChild(popoverRoot);
+    let popoverHeight = 200;
+    popover.getBoundingClientRect = () => ({
+      x: 40,
+      y: 44,
+      left: 40,
+      top: 44,
+      width: 260,
+      height: popoverHeight,
+      right: 300,
+      bottom: 44 + popoverHeight,
+      toJSON() { return {}; }
+    });
+
+    const { DshWorkspaceHost } = await import(hostUrl);
+    const bridge = globalThis.Bridge;
+    const spy = vi.spyOn(bridge, 'sendDshSurfaceBounds');
+    try {
+      const host = new DshWorkspaceHost(document.getElementById('dsh-workspace-container'));
+      host.applyLayout(
+        {
+          focusedColumnId: 'c',
+          columns: [{ columnId: 'c', tabs: [{ workspaceId: 'd1', kind: 'dsh_web' }], activeTabId: 'd1', ratio: 1 }]
+        },
+        new Map([['c', { left: 0, top: 40, width: 800, height: 600 }]])
+      );
+      const panel = document.querySelector('.dsh-panel[data-workspace-id="d1"]');
+      stubPanelRect(panel, { left: 12, top: 52, width: 776, height: 576 });
+      host.applyRuntimeStatus({ state: 'ready', readyUrl: 'http://127.0.0.1:1234' });
+      document.dispatchEvent(new window.CustomEvent('psx-shell-overlay', { detail: { open: true } }));
+      flushAgentAnimationFrames();
+      assert.equal(spy.mock.calls.at(-1)[0].exclude.height, 240);
+
+      popoverHeight = 420;
+      popover.appendChild(document.createElement('div'));
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+      flushAgentAnimationFrames();
+      assert.equal(spy.mock.calls.at(-1)[0].exclude.height, 460);
+    } finally {
+      spy.mockRestore();
+      popoverRoot.remove();
+    }
+  });
+
   it('keeps the overlay unclipped when a chrome popover does not overlap the hole', async () => {
     const popoverRoot = document.createElement('div');
     popoverRoot.id = 'workspace-popover-root';

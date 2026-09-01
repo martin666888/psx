@@ -122,6 +122,7 @@ export class DshWorkspaceHost {
         });
         this.onShellOverlay = (event) => {
             this.chromeOverlay = !!event.detail?.open;
+            this.syncChromePopoverObservation();
             this.scheduleBounds();
         };
         this.onSettingsState = (event) => {
@@ -135,8 +136,16 @@ export class DshWorkspaceHost {
         this.resizeObserver = typeof ResizeObserver === 'function'
             ? new ResizeObserver(() => this.scheduleBounds())
             : null;
-        const popoverRoot = document.getElementById('workspace-popover-root');
-        if (popoverRoot) this.observePanel(popoverRoot);
+        this.popoverRoot = document.getElementById('workspace-popover-root');
+        this.observedChromePopover = null;
+        this.popoverMutationObserver = this.popoverRoot && typeof window.MutationObserver === 'function'
+            ? new window.MutationObserver(() => {
+                this.syncChromePopoverObservation();
+                this.scheduleBounds();
+            })
+            : null;
+        this.popoverMutationObserver?.observe(this.popoverRoot, { childList: true, subtree: true });
+        this.syncChromePopoverObservation();
     }
 
     applyLayout(snapshot, rects) {
@@ -229,6 +238,14 @@ export class DshWorkspaceHost {
     unobservePanel(panel) {
         try { this.resizeObserver?.unobserve(panel); }
         catch { /* ignore */ }
+    }
+
+    syncChromePopoverObservation() {
+        const next = this.popoverRoot?.querySelector('.workspace-popover') || null;
+        if (next === this.observedChromePopover) return;
+        if (this.observedChromePopover) this.unobservePanel(this.observedChromePopover);
+        this.observedChromePopover = next;
+        if (next) this.observePanel(next);
     }
 
     settingsOverlayOpen() {

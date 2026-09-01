@@ -175,6 +175,18 @@ describe('Bridge message type contract (C# <-> JS drift gate)', () => {
       }
     }
   });
+  it('pins every DSH surface field, including the nested exclusion rect', () => {
+    const shape = bridgeFields.messages.dsh_surface_bounds;
+    assert.deepEqual(shape.required, { visible: 'boolean' });
+    assert.deepEqual(shape.optional, {
+      left: 'number',
+      top: 'number',
+      width: 'number',
+      height: 'number',
+      columnId: 'string',
+      exclude: 'dsh-surface-exclude'
+    });
+  });
   it('extracts a non-trivial set from each real source', () => {
     // Guards against a regex/path regression silently comparing empty sets.
     assert.ok(declaredSend.size >= 10, `BridgeSendType set unexpectedly small (${declaredSend.size})`);
