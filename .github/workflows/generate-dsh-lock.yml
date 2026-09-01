@@ -27,7 +27,7 @@ jobs:
 
     steps:
       - name: Check out dev without persisted credentials
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: dev
           persist-credentials: false
@@ -43,9 +43,14 @@ jobs:
             throw "The DSH generator must not receive GitHub or npm credentials."
           }
           $persistedAuth = git config --local --get-regexp '^(http\..*extraheader|credential\.)' 2>$null
-          if ($LASTEXITCODE -eq 0 -and $persistedAuth) {
+          $configExitCode = $LASTEXITCODE
+          if ($configExitCode -notin 0, 1) {
+            throw "Failed to inspect the checkout credential configuration."
+          }
+          if ($configExitCode -eq 0 -and $persistedAuth) {
             throw "Checkout left persisted Git credentials in the worktree."
           }
+          $global:LASTEXITCODE = 0
 
       - name: Generate candidate and run launch smoke
         shell: powershell
@@ -88,7 +93,7 @@ jobs:
             } | Set-Content -LiteralPath (Join-Path $reviewRoot 'sha256.txt') -Encoding ascii
 
       - name: Upload DSH lock candidate
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: dsh-lock-candidate-${{ inputs.version }}
           path: ${{ runner.temp }}\dsh-lock-candidate\
