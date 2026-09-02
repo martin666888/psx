@@ -91,14 +91,14 @@ public sealed class DshRuntimeWireTests
     {
         var stdout = """
             {
-              "versions": ["0.1.2-alpha.2", "0.1.2-alpha.3", "0.1.2-alpha.4"],
-              "dist-tags": { "latest": "0.1.2-alpha.3", "next": "0.1.2-alpha.4" }
+              "versions": ["0.1.2-alpha.2", "0.1.2-alpha.6", "0.1.2-alpha.7"],
+              "dist-tags": { "latest": "0.1.2-alpha.6", "next": "0.1.2-alpha.7" }
             }
             """;
         Assert.IsTrue(DshWebRuntime.TryBuildUpdateCatalog(
-            stdout, "0.1.2-alpha.3", out var catalog, out var error), error);
+            stdout, "0.1.2-alpha.6", out var catalog, out var error), error);
         Assert.HasCount(1, catalog);
-        Assert.AreEqual("0.1.2-alpha.4", catalog[0].Version);
+        Assert.AreEqual("0.1.2-alpha.7", catalog[0].Version);
         CollectionAssert.AreEqual(new[] { "next" }, catalog[0].Tags.ToArray());
     }
 
@@ -107,15 +107,15 @@ public sealed class DshRuntimeWireTests
     {
         var stdout = """
             {
-              "versions": ["0.1.2-alpha.2", "0.1.2-alpha.3", "0.1.2-alpha.4"],
-              "dist-tags": { "latest": "0.1.2-alpha.3", "next": "0.1.2-alpha.4" }
+              "versions": ["0.1.2-alpha.2", "0.1.2-alpha.6", "0.1.2-alpha.7"],
+              "dist-tags": { "latest": "0.1.2-alpha.6", "next": "0.1.2-alpha.7" }
             }
             """;
         Assert.IsTrue(DshWebRuntime.TryBuildUpdateCatalog(
             stdout, "0.1.2-alpha.2", out var catalog, out var error), error);
         Assert.HasCount(2, catalog);
-        Assert.AreEqual("0.1.2-alpha.4", catalog[0].Version);
-        Assert.AreEqual("0.1.2-alpha.3", catalog[1].Version);
+        Assert.AreEqual("0.1.2-alpha.7", catalog[0].Version);
+        Assert.AreEqual("0.1.2-alpha.6", catalog[1].Version);
         CollectionAssert.AreEqual(new[] { "next" }, catalog[0].Tags.ToArray());
         CollectionAssert.AreEqual(new[] { "latest" }, catalog[1].Tags.ToArray());
     }
@@ -124,9 +124,9 @@ public sealed class DshRuntimeWireTests
     public void TryBuildUpdateCatalog_AcceptsLegacyStringFixture()
     {
         Assert.IsTrue(DshWebRuntime.TryBuildUpdateCatalog(
-            "\"0.1.2-alpha.3\"", "0.1.2-alpha.2", out var catalog, out var error), error);
+            "\"0.1.2-alpha.6\"", "0.1.2-alpha.2", out var catalog, out var error), error);
         Assert.HasCount(1, catalog);
-        Assert.AreEqual("0.1.2-alpha.3", catalog[0].Version);
+        Assert.AreEqual("0.1.2-alpha.6", catalog[0].Version);
         Assert.IsEmpty(catalog[0].Tags);
     }
 
@@ -135,12 +135,12 @@ public sealed class DshRuntimeWireTests
     {
         var stdout = """
             {
-              "versions": ["0.1.2-alpha.1", "0.1.2-alpha.2", "0.1.2-alpha.3"],
-              "dist-tags": { "latest": "0.1.2-alpha.3" }
+              "versions": ["0.1.2-alpha.1", "0.1.2-alpha.2", "0.1.2-alpha.6"],
+              "dist-tags": { "latest": "0.1.2-alpha.6" }
             }
             """;
         Assert.IsTrue(DshWebRuntime.TryBuildUpdateCatalog(
-            stdout, "0.1.2-alpha.3", out var catalog, out var error), error);
+            stdout, "0.1.2-alpha.6", out var catalog, out var error), error);
         Assert.IsEmpty(catalog);
     }
 
