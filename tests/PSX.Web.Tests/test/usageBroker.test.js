@@ -3,7 +3,9 @@
 // every profile/usage command carries a requestId and only the matching reply
 // resolves it: usage replies for a superseded (or never-issued) requestId are
 // dropped, profile broadcasts with no requestId still apply through the
-// monotonic revision guard, and one 30s timeout triggers one root-bridge retry.
+// monotonic revision guard, and one timeout per attempt triggers one
+// root-bridge retry (usage gets its own 120s timer; config and the rest keep
+// 30s).
 
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
@@ -17,7 +19,9 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // A generous default timeout so a slow (coverage-instrumented) run never trips
 // the in-flight retry mid-test; the timeout tests pass their own tight value.
-function makeRig({ timeoutMs = 5000 } = {}) {
+// usageTimeoutMs stays undefined unless a test opts in, so usage exercises the
+// real 120s default.
+function makeRig({ timeoutMs = 5000, usageTimeoutMs } = {}) {
   const store = new UsageStore();
   const commands = [];
   const host = {
@@ -28,7 +32,10 @@ function makeRig({ timeoutMs = 5000 } = {}) {
       commands.push({ action, requestId, registry, localeMode });
     }
   };
-  const broker = new UsageRequestBroker(host, store, { timeoutMs });
+  const broker = new UsageRequestBroker(host, store, {
+    timeoutMs,
+    ...(usageTimeoutMs === undefined ? {} : { usageTimeoutMs })
+  });
   return { store, broker, host, commands };
 }
 
@@ -148,6 +155,35 @@ test('broker: drops a usage reply that arrives without any in-flight request', (
   const state = rig.store.getState();
   assert.equal(state.status, 'idle');
   assert.equal(state.report, null);
+});
+
+test('broker: provider scope defaults to psx_sessions and local_all passes through', () => {
+  const rig = makeRig();
+
+  rig.broker.requestUsage(false);
+  const legacy = usageCommands(rig.commands).at(-1);
+  // Older backends omit scope entirely.
+  rig.broker.handleUsageReport({
+    requestId: legacy.requestId,
+    generatedAt: 'now',
+    timezone: 'UTC',
+    report: minimalReport(),
+    completeness: completeness()
+  });
+  assert.equal(rig.store.getState().report.providers[0].scope, 'psx_sessions');
+
+  rig.broker.requestUsage(false);
+  const second = usageCommands(rig.commands).at(-1);
+  const withLocalAll = minimalReport();
+  withLocalAll.providers[0].scope = 'local_all';
+  rig.broker.handleUsageReport({
+    requestId: second.requestId,
+    generatedAt: 'now',
+    timezone: 'UTC',
+    report: withLocalAll,
+    completeness: completeness()
+  });
+  assert.equal(rig.store.getState().report.providers[0].scope, 'local_all');
 });
 
 // --- consecutive force never crosses ids --------------------------------------
@@ -332,7 +368,7 @@ test('broker: unmatched successful profile replies are dropped', () => {
 // --- timeout + retry -----------------------------------------------------------
 
 test('broker: times out, retries once on the global bridge, then errors', async () => {
-  const rig = makeRig({ timeoutMs: 30 });
+  const rig = makeRig({ usageTimeoutMs: 30 });
 
   rig.broker.requestUsage(true);
   const first = usageCommands(rig.commands).at(-1);
@@ -346,6 +382,29 @@ test('broker: times out, retries once on the global bridge, then errors', async 
   const state = rig.store.getState();
   assert.equal(state.status, 'error');
   assert.equal(state.errorKey, 'usage.timeout');
+});
+
+test('broker: usage keeps the 120s default while config uses the shared timeout', async () => {
+  const usageRig = makeRig({ timeoutMs: 30 });
+  usageRig.broker.requestUsage(false);
+  await sleep(60);
+  assert.equal(
+    usageRig.store.getState().status,
+    'loading',
+    'the usage timer is the independent 120s default, not the shared timeoutMs'
+  );
+  assert.equal(usageCommands(usageRig.commands).length, 1, 'no usage retry fires yet');
+  usageRig.broker.dispose();
+
+  const configRig = makeRig({ timeoutMs: 30 });
+  configRig.broker.requestConfig(false);
+  await sleep(50);
+  assert.equal(
+    configCommands(configRig.commands).length,
+    2,
+    'config retried on the 30ms shared timeout'
+  );
+  configRig.broker.dispose();
 });
 
 // --- config_report (Usage panel「配置」tab) -----------------------------------

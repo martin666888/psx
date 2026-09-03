@@ -18,7 +18,7 @@ export default tseslint.config(
   js.configs.recommended,
   tseslint.configs.recommended,
   {
-    files: ['frontend/**/*.{js,ts,tsx}', 'tools/*.mjs'],
+    files: ['frontend/**/*.{js,ts,tsx}', 'tools/*.mjs', 'tools/usage-extractor/*.mjs'],
     languageOptions: {
       globals: {
         window: 'readonly',

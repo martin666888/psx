@@ -11,7 +11,7 @@
     "build:web": "node tools/build-web.mjs",
     "verify:web": "node tools/verify-web.mjs",
     "typecheck:web": "tsc -p frontend/webview/tsconfig.json",
-    "lint:web": "eslint frontend/agent/src frontend/webview/src tools/*.mjs",
+    "lint:web": "eslint frontend/agent/src frontend/webview/src tools/*.mjs tools/usage-extractor/*.mjs",
     "test:web": "npm run --workspace psx-web-tests test",
     "typecheck": "npm run typecheck:web",
     "test:coverage:web": "npm run --workspace psx-web-tests test:coverage",

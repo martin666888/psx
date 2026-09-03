@@ -58,10 +58,13 @@ public static class AgentUsageGapReason
     public const string MissingSessionLogs = "missing_session_logs";
     public const string AmbiguousSessionLogs = "ambiguous_session_logs";
     public const string UnreadableLogs = "unreadable_logs";
+    public const string DiscoveryTruncated = "discovery_truncated";
     public const string UnmatchedSessions = "unmatched_sessions";
     public const string MissingSessionId = "missing_session_id";
     public const string DamagedThreadFiles = "damaged_thread_files";
     public const string UnregisteredProvider = "unregistered_provider";
+    public const string LineageUnresolved = "lineage_unresolved";
+    public const string ExtractorUnavailable = "extractor_unavailable";
 
     public static readonly IReadOnlyList<string> Ordered =
     [
@@ -70,11 +73,23 @@ public static class AgentUsageGapReason
         MissingSessionLogs,
         AmbiguousSessionLogs,
         UnreadableLogs,
+        DiscoveryTruncated,
         UnmatchedSessions,
         MissingSessionId,
         DamagedThreadFiles,
-        UnregisteredProvider
+        UnregisteredProvider,
+        LineageUnresolved,
+        ExtractorUnavailable
     ];
+}
+
+/// <summary>Collection scope of one usage report row. PSX-session sources only
+/// count sessions PSX created; local-all sources count every session found on
+/// this machine, including ones started outside PSX.</summary>
+public static class AgentUsageScope
+{
+    public const string PsxSessions = "psx_sessions";
+    public const string LocalAll = "local_all";
 }
 
 /// <summary>One independently computed report window. Token totals include
@@ -97,7 +112,8 @@ public sealed record AgentProviderUsageReport(
     AgentUsageWindow Today,
     AgentUsageWindow Last7Days,
     AgentUsageWindow Last30Days,
-    AgentUsageCompleteness Completeness);
+    AgentUsageCompleteness Completeness,
+    string Scope);
 
 /// <summary>User-facing completeness folded across local thread enumeration
 /// and applicable exact-usage sources. Only stable reason keys cross the

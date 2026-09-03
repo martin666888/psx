@@ -98,7 +98,7 @@ $DshPinnedVersion = "0.1.2-alpha.5"
 # SHA-256 of tools/dsh-locks/catalog.json. Update it (and review the diff)
 # whenever the DSH lock catalog changes; the release machine never executes
 # new package code, this pin is its only catalog trust evidence.
-$DshLockCatalogExpectedSha = "FB42F985889815F692C7DBB12F30E00FBD1A35E3562363063336840F964F4BF9"
+$DshLockCatalogExpectedSha = "6B7D83998D17A2BCF4F779AA7E0678EDB9F5656813B07D05FEDC107A7B7671C7"
 $DshLockBlockedReasons = @("smoke_failed", "official_integrity_mismatch", "sri_conflict")
 
 # ---- locate repo root ----
@@ -219,6 +219,38 @@ if ($extractedRoot) {
 
 Set-Content -Path (Join-Path $nodeDir "node-version.txt") -Value $PortableNodeVersion -NoNewline
 Write-Host "    Installed Node into staging/tools/node/; wrote node-version.txt"
+Write-Host ""
+
+# ---- mandatory zstd smoke for the DSH usage extractor on the pinned Node ----
+# The extractor relies on per-frame zstdDecompressSync (node:zlib streaming
+# drops concatenated frames); this gate proves the pinned Node decodes a
+# synthetic multi-frame session log and flags a truncated tail frame. Failure
+# must block the release (acceptance: never validated on a dev-machine Node).
+$dshExtractor = Join-Path $StagingDir "tools\usage-extractor\dsh-session-extract.mjs"
+if (-not (Test-Path -LiteralPath $dshExtractor -PathType Leaf)) {
+    throw "DSH usage extractor missing from staging: tools/usage-extractor/dsh-session-extract.mjs"
+}
+$zstdSmokeDir = Join-Path $StagingDir "tmp-zstd-smoke"
+New-Item -ItemType Directory -Path $zstdSmokeDir -Force | Out-Null
+$zstdFixture = Join-Path $zstdSmokeDir "session.jsonl.zstd"
+$zstdTruncatedFixture = Join-Path $zstdSmokeDir "session-truncated.jsonl.zstd"
+$nodeExe = Join-Path $nodeDir "node.exe"
+$zstdFixtureScript = Join-Path $StagingDir "tools\usage-extractor\zstd-smoke-fixture.mjs"
+if (-not (Test-Path -LiteralPath $zstdFixtureScript -PathType Leaf)) {
+    throw "DSH zstd smoke fixture generator missing from staging: tools/usage-extractor/zstd-smoke-fixture.mjs"
+}
+& $nodeExe $zstdFixtureScript $zstdFixture $zstdTruncatedFixture
+if ($LASTEXITCODE -ne 0) { throw "zstd smoke fixture generation failed (exit $LASTEXITCODE)" }
+$zstdSmokeOut = ("$zstdFixture" | & $nodeExe $dshExtractor 2>&1 | Out-String)
+if ($LASTEXITCODE -ne 0) { throw "DSH extractor zstd smoke failed on pinned Node (exit $LASTEXITCODE): $zstdSmokeOut" }
+foreach ($expected in @('"k":"usage"', '"in":3', '"out":4', '"cr":5', '"cw":6', '"frames":2', '"truncated":false')) {
+    if (-not $zstdSmokeOut.Contains($expected)) { throw "DSH extractor zstd smoke missing $expected. Output: $zstdSmokeOut" }
+}
+$zstdTruncOut = ("$zstdTruncatedFixture" | & $nodeExe $dshExtractor 2>&1 | Out-String)
+if ($LASTEXITCODE -ne 0) { throw "DSH extractor truncated-tail smoke failed (exit $LASTEXITCODE): $zstdTruncOut" }
+if (-not $zstdTruncOut.Contains('"truncated":true')) { throw "DSH extractor did not flag the truncated tail frame. Output: $zstdTruncOut" }
+Remove-Item -Recurse -Force $zstdSmokeDir
+Write-Host "    DSH usage extractor zstd smoke passed on pinned Node $PortableNodeVersion"
 Write-Host ""
 
 # ---- step 4: bundle Kimi Code ACP runtime (lockfile-driven, reproducible) ----

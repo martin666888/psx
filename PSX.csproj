@@ -61,6 +61,13 @@
       isolation contract and gated by DshLockCatalogTests + build-release.
     -->
     <Content Include="tools\dsh-locks\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!--
+      Minimal-event extractor for DeepSeek Harness usage accounting, run with
+      the bundled portable Node. Emits only session-head/usage/retry events —
+      never conversation content. Gated by lint:web and the build-release zstd
+      smoke against the pinned Node.
+    -->
+    <Content Include="tools\usage-extractor\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Resource Include="Assets\Icons\psx.ico" />
   </ItemGroup>
 

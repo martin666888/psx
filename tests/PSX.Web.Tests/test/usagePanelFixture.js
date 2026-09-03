@@ -29,6 +29,7 @@ export const providerReport = (overrides = {}) => ({
   providerKey: 'acp-claude',
   displayName: 'Claude Code',
   iconKey: 'claude',
+  scope: 'psx_sessions',
   dailyTokens: dailyTokens({ 0: 1, 1: 2, 364: 3 }),
   today: { totalTokens: 200 },
   last7Days: { totalTokens: 1500 },

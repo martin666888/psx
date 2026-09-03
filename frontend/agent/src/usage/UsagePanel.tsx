@@ -331,6 +331,9 @@ function ProviderUsageList({
                 <ProviderIcon iconKey={provider.iconKey} />
               </span>
               <span className="agent-usage-provider-name">{provider.displayName}</span>
+              <span className="agent-usage-provider-scope">
+                {t(provider.scope === 'local_all' ? 'usage.scopeLocalAll' : 'usage.scopePsxSessions')}
+              </span>
               <span
                 className="agent-usage-provider-value"
                 data-status={completeness.status}

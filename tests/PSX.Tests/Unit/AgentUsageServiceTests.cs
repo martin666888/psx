@@ -48,26 +48,70 @@ public sealed class AgentUsageServiceTests
         Task release) : IAgentUsageSource
     {
         private int _calls;
+        private int _running;
+
+        public int MaxConcurrentCalls { get; private set; }
 
         public AgentUsageSourceStatus Collect(
             IReadOnlyCollection<string> sessionIds,
             IAgentUsageRecordSink sink,
             CancellationToken cancellationToken)
         {
-            var call = Interlocked.Increment(ref _calls);
-            var records = call == 1 ? staleRecords : freshRecords;
-            if (call == 1)
+            var running = Interlocked.Increment(ref _running);
+            try
             {
-                entered.TrySetResult();
-                release.GetAwaiter().GetResult();
-            }
+                MaxConcurrentCalls = Math.Max(MaxConcurrentCalls, running);
+                var call = Interlocked.Increment(ref _calls);
+                var records = call == 1 ? staleRecords : freshRecords;
+                if (call == 1)
+                {
+                    entered.TrySetResult();
+                    release.GetAwaiter().GetResult();
+                }
 
+                foreach (var record in records)
+                    sink.Add(record);
+                return Status(
+                    AgentUsageSourceStatus.Available,
+                    expectedSessions: sessionIds.Count,
+                    matchedSessions: sessionIds.Count);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _running);
+            }
+        }
+    }
+
+    private sealed class FakeLocalContributor(
+        IReadOnlyList<AgentUsageRecord> records,
+        string key,
+        string? trackedProviderKey,
+        Func<AgentUsageSourceStatus>? statusFactory = null) : IAgentLocalUsageContributor
+    {
+        public AgentLocalUsageDescriptor Descriptor { get; } =
+            new(key, key, "agent", trackedProviderKey);
+
+        public int CollectCount { get; private set; }
+
+        public AgentUsageSourceStatus Collect(
+            IAgentUsageRecordSink sink,
+            CancellationToken cancellationToken)
+        {
+            CollectCount++;
             foreach (var record in records)
                 sink.Add(record);
-            return Status(
+            return statusFactory?.Invoke() ?? new AgentUsageSourceStatus(
+                key,
                 AgentUsageSourceStatus.Available,
-                expectedSessions: sessionIds.Count,
-                matchedSessions: sessionIds.Count);
+                1,
+                0,
+                0,
+                ExpectedSessions: 1,
+                MatchedSessions: 1,
+                "test",
+                DateTimeOffset.UnixEpoch,
+                null);
         }
     }
 
@@ -269,13 +313,15 @@ public sealed class AgentUsageServiceTests
             "Fixtures",
             "KimiUsage",
             "0.29.1");
-        var source = new KimiCodeSessionUsageSource(() => fixtureRoot);
+        var contributor = new KimiLocalUsageContributor(
+            () => fixtureRoot, zone: TimeZoneInfo.Utc);
         var now = DateTimeOffset.FromUnixTimeMilliseconds(1784522400400)
             .AddHours(1);
         var service = new AgentUsageService(
             store,
-            RegistryWith(workspace, source, "acp-kimi"),
-            new FixedTimeProvider(now, TimeZoneInfo.Utc));
+            RegistryWith(workspace, null, "acp-kimi"),
+            new FixedTimeProvider(now, TimeZoneInfo.Utc),
+            [contributor]);
 
         var result = await service.CollectAsync(force: false, CancellationToken.None);
 
@@ -283,6 +329,7 @@ public sealed class AgentUsageServiceTests
         Assert.AreEqual(110, result.Report.Today.TotalTokens);
         Assert.HasCount(1, result.Report.Providers);
         Assert.AreEqual("acp-kimi", result.Report.Providers[0].ProviderKey);
+        Assert.AreEqual(AgentUsageScope.LocalAll, result.Report.Providers[0].Scope);
         Assert.AreEqual(
             AgentUsageCompleteness.Available,
             result.Report.Providers[0].Completeness.Status);
@@ -437,9 +484,9 @@ public sealed class AgentUsageServiceTests
     }
 
     [TestMethod]
-    public async Task Collect_ForceRefresh_DoesNotLetOlderScanOverwriteCache()
+    public async Task Collect_ForceDuringScan_WaitsThenPublishesFreshResult()
     {
-        using var workspace = TestWorkspace.Create(nameof(Collect_ForceRefresh_DoesNotLetOlderScanOverwriteCache));
+        using var workspace = TestWorkspace.Create(nameof(Collect_ForceDuringScan_WaitsThenPublishesFreshResult));
         var store = NewStore(workspace);
         AddThread(store, "acp-claude", "psx-session");
         var now = new DateTimeOffset(2026, 7, 20, 12, 0, 0, TimeSpan.Zero);
@@ -459,18 +506,175 @@ public sealed class AgentUsageServiceTests
         var staleTask = service.CollectAsync(force: false, CancellationToken.None);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-        var fresh = await service.CollectAsync(force: true, CancellationToken.None);
-        Assert.AreEqual(100, fresh.Report.Today.TotalTokens);
+        var forceTask = service.CollectAsync(force: true, CancellationToken.None);
+        await Task.Delay(200);
+        Assert.IsFalse(forceTask.IsCompleted, "forced refresh must wait for the in-flight scan (serialized)");
+        Assert.AreEqual(1, source.MaxConcurrentCalls, "no two scans may run concurrently");
 
         release.TrySetResult();
-        var stale = await staleTask;
-        Assert.AreEqual(1, stale.Report.Today.TotalTokens, "stale scan still returns its own result");
+        var fresh = await forceTask.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.AreEqual(100, fresh.Report.Today.TotalTokens);
+
+        var stale = await staleTask.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.AreEqual(1, stale.Report.Today.TotalTokens, "the earlier caller keeps its own scan result");
 
         var cached = await service.CollectAsync(force: false, CancellationToken.None);
+        Assert.AreEqual(100, cached.Report.Today.TotalTokens);
+        Assert.AreEqual(1, source.MaxConcurrentCalls);
+    }
+
+    [TestMethod]
+    public async Task Collect_LocalContributor_AppearsWithLocalAllScope()
+    {
+        using var workspace = TestWorkspace.Create(nameof(Collect_LocalContributor_AppearsWithLocalAllScope));
+        var store = NewStore(workspace);
+        AddThread(store, "acp-claude", "claude-session");
+        var now = new DateTimeOffset(2026, 7, 20, 12, 0, 0, TimeSpan.Zero);
+        var contributor = new FakeLocalContributor(
+            [new AgentUsageRecord(now, "m", 10, 0, 0, 0)],
+            key: "local-dsh",
+            trackedProviderKey: null);
+        var service = new AgentUsageService(
+            store,
+            RegistryWith(workspace, new FakeUsageSource([new AgentUsageRecord(now, "m", 1, 0, 0, 0)])),
+            new FixedTimeProvider(now, TimeZoneInfo.Utc),
+            [contributor]);
+
+        var result = await service.CollectAsync(force: false, CancellationToken.None);
+
+        Assert.HasCount(2, result.Report.Providers);
+        var local = result.Report.Providers.Single(p => p.ProviderKey == "local-dsh");
+        Assert.AreEqual(AgentUsageScope.LocalAll, local.Scope);
+        Assert.AreEqual(10, local.Today.TotalTokens);
+        Assert.AreEqual(11, result.Report.Today.TotalTokens);
         Assert.AreEqual(
-            100,
-            cached.Report.Today.TotalTokens,
-            "cache must keep the newer forced scan, not the late stale publish");
+            AgentUsageScope.PsxSessions,
+            result.Report.Providers.Single(p => p.ProviderKey == "acp-claude").Scope);
+        Assert.AreEqual(AgentUsageCompleteness.Available, result.Completeness.Status);
+    }
+
+    [TestMethod]
+    public async Task Collect_ClaimedProviderThreads_AreNotUntracked()
+    {
+        using var workspace = TestWorkspace.Create(nameof(Collect_ClaimedProviderThreads_AreNotUntracked));
+        var store = NewStore(workspace);
+        AddThread(store, "acp-kimi", "kimi-session");
+        var now = new DateTimeOffset(2026, 7, 20, 12, 0, 0, TimeSpan.Zero);
+        var contributor = new FakeLocalContributor(
+            [new AgentUsageRecord(now, "m", 5, 0, 0, 0)],
+            key: "acp-kimi",
+            trackedProviderKey: "acp-kimi");
+        var service = new AgentUsageService(
+            store,
+            RegistryWith(workspace, null, "acp-kimi"),
+            new FixedTimeProvider(now, TimeZoneInfo.Utc),
+            [contributor]);
+
+        var result = await service.CollectAsync(force: false, CancellationToken.None);
+
+        Assert.AreEqual(0, result.Completeness.UntrackedThreads);
+        Assert.HasCount(1, result.Report.Providers);
+        Assert.AreEqual("acp-kimi", result.Report.Providers[0].ProviderKey);
+        Assert.AreEqual(AgentUsageScope.LocalAll, result.Report.Providers[0].Scope);
+        Assert.AreEqual(5, result.Report.Today.TotalTokens);
+        Assert.AreEqual(AgentUsageCompleteness.Available, result.Completeness.Status);
+    }
+
+    [TestMethod]
+    public async Task Collect_EmptyLocalContributor_KeepsReportAvailableZero()
+    {
+        using var workspace = TestWorkspace.Create(nameof(Collect_EmptyLocalContributor_KeepsReportAvailableZero));
+        var store = NewStore(workspace);
+        AddThread(store, "acp-kimi", "kimi-session");
+        var contributor = new FakeLocalContributor(
+            [],
+            key: "acp-kimi",
+            trackedProviderKey: "acp-kimi",
+            statusFactory: () => new AgentUsageSourceStatus(
+                "acp-kimi",
+                AgentUsageSourceStatus.Available,
+                0,
+                0,
+                0,
+                ExpectedSessions: 0,
+                MatchedSessions: 0,
+                "test",
+                DateTimeOffset.UnixEpoch,
+                null));
+        var service = new AgentUsageService(
+            store,
+            RegistryWith(workspace, null, "acp-kimi"),
+            localContributors: [contributor]);
+
+        var result = await service.CollectAsync(force: false, CancellationToken.None);
+
+        Assert.AreEqual(AgentUsageCompleteness.Available, result.Completeness.Status);
+        Assert.AreEqual(0, result.Report.Today.TotalTokens);
+        var local = result.Report.Providers.Single();
+        Assert.AreEqual(AgentUsageCompleteness.Available, local.Completeness.Status);
+        Assert.AreEqual(0, local.Completeness.ExpectedSessions);
+        Assert.AreEqual(0, local.Completeness.MatchedSessions);
+    }
+
+    [TestMethod]
+    public async Task Collect_UnavailableLocalContributor_PropagatesStatus()
+    {
+        using var workspace = TestWorkspace.Create(nameof(Collect_UnavailableLocalContributor_PropagatesStatus));
+        var store = NewStore(workspace);
+        var contributor = new FakeLocalContributor(
+            [],
+            key: "local-dsh",
+            trackedProviderKey: null,
+            statusFactory: () => new AgentUsageSourceStatus(
+                "local-dsh",
+                AgentUsageSourceStatus.Unavailable,
+                0,
+                0,
+                0,
+                ExpectedSessions: 3,
+                MatchedSessions: 0,
+                "test",
+                DateTimeOffset.UnixEpoch,
+                null)
+            {
+                Reasons = [AgentUsageGapReason.ExtractorUnavailable]
+            });
+        var service = new AgentUsageService(
+            store,
+            RegistryWith(workspace, new FakeUsageSource([])),
+            localContributors: [contributor]);
+
+        var result = await service.CollectAsync(force: false, CancellationToken.None);
+
+        var local = result.Report.Providers.Single(p => p.ProviderKey == "local-dsh");
+        Assert.AreEqual(AgentUsageCompleteness.Unavailable, local.Completeness.Status);
+        CollectionAssert.Contains(
+            local.Completeness.Reasons.ToArray(),
+            AgentUsageGapReason.ExtractorUnavailable);
+        CollectionAssert.Contains(
+            result.Completeness.Reasons.ToArray(),
+            AgentUsageGapReason.ExtractorUnavailable);
+    }
+
+    [TestMethod]
+    public async Task Collect_PublicJsonIncludesScopeForEveryRow()
+    {
+        using var workspace = TestWorkspace.Create(nameof(Collect_PublicJsonIncludesScopeForEveryRow));
+        var store = NewStore(workspace);
+        AddThread(store, "acp-claude", "psx-session");
+        var contributor = new FakeLocalContributor([], key: "local-dsh", trackedProviderKey: null);
+        var service = new AgentUsageService(
+            store,
+            RegistryWith(workspace, new FakeUsageSource([])),
+            localContributors: [contributor]);
+
+        var result = await service.CollectAsync(force: false, CancellationToken.None);
+        var json = JsonSerializer.Serialize(
+            result,
+            new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+
+        StringAssert.Contains(json, "\"scope\":\"psx_sessions\"");
+        StringAssert.Contains(json, "\"scope\":\"local_all\"");
     }
 
     [TestMethod]
@@ -509,5 +713,127 @@ public sealed class AgentUsageServiceTests
         }
         StringAssert.Contains(json, "\"providerKey\":\"acp-claude\"");
         StringAssert.Contains(json, "\"iconKey\":\"agent\"");
+    }
+
+    [TestMethod]
+    public async Task Collect_NoThreadsAndAllLocalSourcesUnavailable_IsUnavailable()
+    {
+        using var workspace = TestWorkspace.Create(nameof(Collect_NoThreadsAndAllLocalSourcesUnavailable_IsUnavailable));
+        var store = NewStore(workspace);
+        var contributor = new FakeLocalContributor(
+            [],
+            key: "local-dsh",
+            trackedProviderKey: null,
+            statusFactory: () => new AgentUsageSourceStatus(
+                "local-dsh",
+                AgentUsageSourceStatus.Unavailable,
+                0,
+                0,
+                0,
+                ExpectedSessions: 3,
+                MatchedSessions: 0,
+                "test",
+                DateTimeOffset.UnixEpoch,
+                null)
+            {
+                Reasons = [AgentUsageGapReason.ExtractorUnavailable]
+            });
+        var service = new AgentUsageService(
+            store,
+            RegistryWith(workspace, new FakeUsageSource([])),
+            localContributors: [contributor]);
+
+        var result = await service.CollectAsync(force: false, CancellationToken.None);
+
+        // Terminal-only startup with every local source broken must not
+        // masquerade as "available with zero data".
+        Assert.AreEqual(AgentUsageCompleteness.Unavailable, result.Completeness.Status);
+        CollectionAssert.Contains(
+            result.Completeness.Reasons.ToArray(),
+            AgentUsageGapReason.ExtractorUnavailable);
+    }
+
+    [TestMethod]
+    public async Task Collect_NoThreadsAndLocalSourceAvailableZero_StaysAvailable()
+    {
+        using var workspace = TestWorkspace.Create(nameof(Collect_NoThreadsAndLocalSourceAvailableZero_StaysAvailable));
+        var store = NewStore(workspace);
+        var contributor = new FakeLocalContributor(
+            [],
+            key: "local-dsh",
+            trackedProviderKey: null,
+            statusFactory: () => new AgentUsageSourceStatus(
+                "local-dsh",
+                AgentUsageSourceStatus.Available,
+                0,
+                0,
+                0,
+                ExpectedSessions: 0,
+                MatchedSessions: 0,
+                "test",
+                DateTimeOffset.UnixEpoch,
+                null));
+        var service = new AgentUsageService(
+            store,
+            RegistryWith(workspace, new FakeUsageSource([])),
+            localContributors: [contributor]);
+
+        var result = await service.CollectAsync(force: false, CancellationToken.None);
+
+        Assert.AreEqual(AgentUsageCompleteness.Available, result.Completeness.Status);
+        Assert.AreEqual(0, result.Report.Today.TotalTokens);
+    }
+
+    [TestMethod]
+    public async Task Collect_NoThreadsWithUnavailableAndAvailableZeroLocals_IsPartial()
+    {
+        using var workspace = TestWorkspace.Create(nameof(Collect_NoThreadsWithUnavailableAndAvailableZeroLocals_IsPartial));
+        var store = NewStore(workspace);
+        var broken = new FakeLocalContributor(
+            [],
+            key: "local-dsh",
+            trackedProviderKey: null,
+            statusFactory: () => new AgentUsageSourceStatus(
+                "local-dsh",
+                AgentUsageSourceStatus.Unavailable,
+                0,
+                0,
+                0,
+                ExpectedSessions: 3,
+                MatchedSessions: 0,
+                "test",
+                DateTimeOffset.UnixEpoch,
+                null)
+            {
+                Reasons = [AgentUsageGapReason.ExtractorUnavailable]
+            });
+        var healthy = new FakeLocalContributor(
+            [],
+            key: "acp-kimi",
+            trackedProviderKey: "acp-kimi",
+            statusFactory: () => new AgentUsageSourceStatus(
+                "acp-kimi",
+                AgentUsageSourceStatus.Available,
+                0,
+                0,
+                0,
+                ExpectedSessions: 0,
+                MatchedSessions: 0,
+                "test",
+                DateTimeOffset.UnixEpoch,
+                null));
+        var service = new AgentUsageService(
+            store,
+            RegistryWith(workspace, new FakeUsageSource([])),
+            localContributors: [broken, healthy]);
+
+        var result = await service.CollectAsync(force: false, CancellationToken.None);
+
+        // One healthy local source keeps the report out of unavailable; the
+        // broken source's reasons still surface through partial.
+        Assert.AreEqual(AgentUsageCompleteness.Partial, result.Completeness.Status);
+        CollectionAssert.Contains(
+            result.Completeness.Reasons.ToArray(),
+            AgentUsageGapReason.ExtractorUnavailable);
     }
 }

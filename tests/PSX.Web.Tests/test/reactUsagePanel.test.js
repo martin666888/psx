@@ -267,6 +267,51 @@ test('panel: partial overall report keeps readable provider usage selectable', a
   assert.ok(!html.includes('C:\\'));
 });
 
+test('panel: provider rows carry a scope label and an empty local source renders 0 Token', async () => {
+  const rig = await fixture();
+  const claude = providerReport();
+  const dsh = providerReport({
+    providerKey: 'local-dsh',
+    displayName: 'DeepSeek Harness',
+    iconKey: 'dsh',
+    scope: 'local_all',
+    dailyTokens: dailyTokens(),
+    today: { totalTokens: 0 },
+    last7Days: { totalTokens: 0 },
+    last30Days: { totalTokens: 0 },
+    completeness: completeness({ expectedSessions: 0, matchedSessions: 0 })
+  });
+  await openPanelWith(rig, {
+    report: report({ providers: [claude, dsh] }),
+    completeness: completeness()
+  });
+
+  const panel = document.querySelector('[data-role="usage-panel"]');
+  assert.equal(
+    panel.querySelector('.agent-usage-providers-heading h2').textContent,
+    '按来源'
+  );
+  const rows = [...panel.querySelectorAll('[data-role="usage-provider-row"]')];
+  assert.equal(rows.length, 2);
+  const claudeRow = rows.find((row) => row.textContent.includes('Claude Code'));
+  const dshRow = rows.find((row) => row.textContent.includes('DeepSeek Harness'));
+  assert.match(claudeRow.textContent, /仅 PSX 会话/);
+  assert.match(dshRow.textContent, /本机全部会话/);
+  assert.match(dshRow.textContent, /0 Token/, 'an empty local source still renders a 0 Token row');
+  assert.equal(dshRow.disabled, false, 'an available zero-data source stays selectable');
+
+  // Filtering by source still works: selecting the local-all row retargets the heatmap.
+  await act(async () => {
+    dshRow.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  assert.equal(dshRow.getAttribute('aria-pressed'), 'true');
+  assert.match(
+    panel.querySelector('[data-role="usage-heatmap"]').getAttribute('aria-label'),
+    /DeepSeek Harness/
+  );
+});
+
 test('panel: unavailable differs from a real available zero', async () => {
   const rig = await fixture();
   const unavailableProvider = providerReport({

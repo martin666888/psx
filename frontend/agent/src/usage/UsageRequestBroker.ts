@@ -11,8 +11,9 @@
 //     unmatched or broadcast errors are dropped and never apply the payload.
 //   - usage_report / config_report replies must match the in-flight requestId
 //     or are dropped (late scans, superseded refreshes).
-// One 30s timeout per attempt plus one retry on the root bridge, then an inline
-// error. Config is distinct from live ACP agent_config_options.
+// One timeout per attempt plus one retry on the root bridge, then an inline
+// error: usage_report gets 120s (local-all scans can be slow), config and the
+// other requests keep 30s. Config is distinct from live ACP agent_config_options.
 
 import type { RawHostMessage } from '../contracts/host-events.js';
 import type {
@@ -27,6 +28,7 @@ import type {
   UsageCompleteness,
   UsageGapReason,
   UsageReport,
+  UsageScope,
   UsageWindow
 } from '../contracts/agent-usage.js';
 import { UsageStore } from './UsageStore.js';
@@ -44,9 +46,11 @@ export interface UsageRequestHost {
 
 export interface UsageRequestBrokerOptions {
   timeoutMs?: number;
+  usageTimeoutMs?: number;
 }
 
 const DEFAULT_TIMEOUT_MS = 30000;
+const USAGE_TIMEOUT_MS = 120000;
 const USAGE_HEATMAP_DAYS = 365;
 const USAGE_GAP_REASONS = new Set<UsageGapReason>([
   'unsupported_source',
@@ -54,10 +58,13 @@ const USAGE_GAP_REASONS = new Set<UsageGapReason>([
   'missing_session_logs',
   'ambiguous_session_logs',
   'unreadable_logs',
+  'discovery_truncated',
   'unmatched_sessions',
   'missing_session_id',
   'damaged_thread_files',
-  'unregistered_provider'
+  'unregistered_provider',
+  'lineage_unresolved',
+  'extractor_unavailable'
 ]);
 /** Fixed settings-locale keys — the sentence is resolved at render so a
  *  language switch re-localizes any visible error. Backend error strings are
@@ -119,10 +126,13 @@ function normalizeDailyTokens(value: unknown): number[] {
 
 function normalizeProvider(value: unknown): ProviderUsageReport {
   const provider = asRecord(value);
+  // Older backends omit scope; PSX-owned session reports are the legacy default.
+  const scope: UsageScope = str(provider.scope) === 'local_all' ? 'local_all' : 'psx_sessions';
   return {
     providerKey: str(provider.providerKey),
     displayName: str(provider.displayName),
     iconKey: str(provider.iconKey) || 'agent',
+    scope,
     dailyTokens: normalizeDailyTokens(provider.dailyTokens),
     today: normalizeWindow(provider.today),
     last7Days: normalizeWindow(provider.last7Days),
@@ -253,6 +263,7 @@ export function normalizeConfigReport(value: unknown): ConfigReport {
 export class UsageRequestBroker {
   private readonly store: UsageStore;
   private readonly timeoutMs: number;
+  private readonly usageTimeoutMs: number;
   private readonly host: UsageRequestHost;
 
   private counter = 0;
@@ -278,6 +289,7 @@ export class UsageRequestBroker {
     this.host = host;
     this.store = store;
     this.timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.usageTimeoutMs = options?.usageTimeoutMs ?? USAGE_TIMEOUT_MS;
     // The Usage panel exists during terminal-only startup, so its profile
     // bootstrap cannot wait for an Agent workspace lifecycle event.
     this.requestProfile();
@@ -500,7 +512,7 @@ export class UsageRequestBroker {
     const requestId = this.nextId('u');
     this.usageRequestId = requestId;
     this.host.sendGlobalCommand('usage_report', this.usageValue, requestId);
-    this.usageTimer = setTimeout(() => this.onUsageTimeout(requestId), this.timeoutMs);
+    this.usageTimer = setTimeout(() => this.onUsageTimeout(requestId), this.usageTimeoutMs);
   }
 
   private sendConfig(): void {

@@ -485,10 +485,13 @@ type AgentUsageGapReason =
     | 'missing_session_logs'
     | 'ambiguous_session_logs'
     | 'unreadable_logs'
+    | 'discovery_truncated'
     | 'unmatched_sessions'
     | 'missing_session_id'
     | 'damaged_thread_files'
-    | 'unregistered_provider';
+    | 'unregistered_provider'
+    | 'lineage_unresolved'
+    | 'extractor_unavailable';
 
 interface AgentUsageCompletenessEvent {
     status: 'available' | 'partial' | 'unavailable';
@@ -504,6 +507,7 @@ interface AgentProviderUsageReportEvent {
     providerKey: string;
     displayName: string;
     iconKey: string;
+    scope: 'psx_sessions' | 'local_all';
     dailyTokens: number[];
     today: AgentUsageWindowEvent;
     last7Days: AgentUsageWindowEvent;

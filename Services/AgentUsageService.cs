@@ -3,13 +3,16 @@ using PSX.Models;
 namespace PSX.Services;
 
 /// <summary>
-/// Builds the global Usage report from provider exact-usage sources. Aggregation
-/// is provider-agnostic (no provider-name branches); records stream directly
-/// into bounded per-provider day arrays.
+/// Builds the global Usage report from provider exact-usage sources and
+/// local-machine usage contributors. Aggregation is provider-agnostic (no
+/// provider-name branches); records stream directly into bounded per-source
+/// day arrays.
 ///
-/// Collection is single-flight with a short TTL: concurrent callers await the
-/// same in-flight scan; a forced refresh bypasses the cache and coalesces
-/// concurrent forced callers onto one scan.
+/// Collection is strictly serialized: at most one scan runs at any time, so
+/// disk-cache writes never race. Callers that arrive while a scan is in
+/// flight await it; a forced request is satisfied only by a scan that started
+/// after the request was made, so a force always re-reads from disk. A short
+/// TTL lets non-forced callers reuse the latest published result.
 /// </summary>
 public sealed class AgentUsageService
 {
@@ -18,68 +21,118 @@ public sealed class AgentUsageService
 
     private readonly IAgentThreadStore _threadStore;
     private readonly IAgentProviderRegistry _providerRegistry;
+    private readonly IReadOnlyList<IAgentLocalUsageContributor> _localContributors;
+    private readonly HashSet<string> _claimedProviderKeys;
     private readonly TimeProvider _timeProvider;
 
     private readonly object _gate = new();
-    private Task<AgentUsageResult>? _inFlight;
-    private bool _inFlightIsForced;
-    private long _scanGeneration;
-    private long _publishedGeneration;
+    private Task<AgentUsageResult>? _scanTail;
+    private long _clock;
+    private long _scanStartMark;
     private AgentUsageResult? _cached;
     private DateTimeOffset _cachedAt;
 
     public AgentUsageService(
         IAgentThreadStore threadStore,
         IAgentProviderRegistry providerRegistry,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IEnumerable<IAgentLocalUsageContributor>? localContributors = null)
     {
         _threadStore = threadStore;
         _providerRegistry = providerRegistry;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _localContributors = localContributors?.ToArray() ?? [];
+        _claimedProviderKeys = new HashSet<string>(
+            _localContributors
+                .Select(contributor => contributor.Descriptor.TrackedProviderKey)
+                .Where(key => !string.IsNullOrWhiteSpace(key))!,
+            StringComparer.Ordinal);
     }
 
     public Task<AgentUsageResult> CollectAsync(bool force, CancellationToken cancellationToken)
     {
         lock (_gate)
         {
-            if (!force
-                && _cached != null
-                && _timeProvider.GetUtcNow() - _cachedAt < CacheTtl)
-            {
-                return Task.FromResult(_cached);
-            }
+            if (!force && IsFreshLocked())
+                return Task.FromResult(_cached!);
 
-            // Reuse an in-flight scan. A forced request only reuses another
-            // forced scan; a forced request while a cached (non-forced) scan is
-            // running starts its own so it truly re-reads from disk.
-            if (_inFlight != null && (!force || _inFlightIsForced))
-                return _inFlight;
+            var requestMark = ++_clock;
+            if (_scanTail == null || _scanTail.IsCompleted)
+                return StartScanLocked(cancellationToken);
 
-            _inFlightIsForced = force;
-            var generation = ++_scanGeneration;
-            _inFlight = Task.Run(() => Collect(cancellationToken), cancellationToken);
-            var task = _inFlight;
-            _ = task.ContinueWith(completed =>
-            {
-                lock (_gate)
-                {
-                    if (ReferenceEqualityComparer.Instance.Equals(_inFlight, completed))
-                        _inFlight = null;
-                    // Only the newest completed scan may publish. An older
-                    // non-forced scan that finishes after a forced refresh must
-                    // not overwrite fresher cache contents.
-                    if (completed.Status == TaskStatus.RanToCompletion
-                        && generation >= _publishedGeneration)
-                    {
-                        _publishedGeneration = generation;
-                        _cached = completed.Result;
-                        _cachedAt = _timeProvider.GetUtcNow();
-                    }
-                }
-            }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
-            return task;
+            return WaitForScanAsync(force, requestMark, cancellationToken);
         }
     }
+
+    private async Task<AgentUsageResult> WaitForScanAsync(
+        bool force,
+        long requestMark,
+        CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            Task<AgentUsageResult> tail;
+            lock (_gate)
+            {
+                tail = _scanTail!;
+            }
+
+            try
+            {
+                await tail.ConfigureAwait(false);
+            }
+            catch
+            {
+                // Scan failures propagate below; waiting is over either way.
+            }
+
+            Task<AgentUsageResult>? next = null;
+            var propagateFault = false;
+            lock (_gate)
+            {
+                if (IsFreshLocked() && (!force || _scanStartMark >= requestMark))
+                    return _cached!;
+
+                if (tail.IsFaulted && ReferenceEquals(_scanTail, tail))
+                {
+                    propagateFault = true;
+                }
+                else if (_scanTail == null || _scanTail.IsCompleted)
+                {
+                    next = StartScanLocked(cancellationToken);
+                }
+
+                // A newer scan is in flight; loop and await it.
+            }
+
+            if (propagateFault)
+                return await tail.ConfigureAwait(false);
+            if (next != null)
+                return await next.ConfigureAwait(false);
+        }
+    }
+
+    private Task<AgentUsageResult> StartScanLocked(CancellationToken cancellationToken)
+    {
+        var scan = Task.Run(() => Collect(cancellationToken), cancellationToken);
+        _scanStartMark = _clock;
+        _scanTail = scan;
+        _ = scan.ContinueWith(completed =>
+        {
+            lock (_gate)
+            {
+                if (completed.Status == TaskStatus.RanToCompletion)
+                {
+                    _cached = completed.Result;
+                    _cachedAt = _timeProvider.GetUtcNow();
+                }
+            }
+        }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+        return scan;
+    }
+
+    private bool IsFreshLocked() =>
+        _cached != null && _timeProvider.GetUtcNow() - _cachedAt < CacheTtl;
 
     private AgentUsageResult Collect(CancellationToken cancellationToken)
     {
@@ -98,6 +151,15 @@ public sealed class AgentUsageService
             var threads = snapshot.Threads
                 .Where(thread => ReferenceEquals(_providerRegistry.Find(thread.Provider), provider))
                 .ToArray();
+
+            // A local contributor claiming this provider owns its usage view;
+            // the threads count as tracked without a second attribution.
+            if (_claimedProviderKeys.Contains(provider.Descriptor.Key))
+            {
+                trackedThreadCount += threads.Length;
+                continue;
+            }
+
             trackedThreadCount += threads.Length;
 
             if (provider.UsageSource == null)
@@ -126,7 +188,8 @@ public sealed class AgentUsageService
                     providerResults.Add(new ProviderCollectionResult(
                         BuildProviderReport(
                             provider, new long[HeatmapDays], completeness),
-                        threads.Length));
+                        threads.Length,
+                        AlwaysInclude: false));
                 }
                 continue;
             }
@@ -154,7 +217,21 @@ public sealed class AgentUsageService
             providerResults.Add(new ProviderCollectionResult(
                 BuildProviderReport(
                     provider, accumulator.DailyTokens, providerCompleteness),
-                threads.Length));
+                threads.Length,
+                AlwaysInclude: false));
+        }
+
+        // Local-machine contributors always appear in the report, even with
+        // zero data, so users can see the source is active.
+        foreach (var contributor in _localContributors)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var accumulator = new DailyUsageAccumulator(heatmapStart, today, localZone);
+            var status = contributor.Collect(accumulator, cancellationToken);
+            providerResults.Add(new ProviderCollectionResult(
+                BuildLocalContributorReport(contributor, accumulator.DailyTokens, status),
+                ThreadCount: 0,
+                AlwaysInclude: true));
         }
 
         var unknownThreads = snapshot.Threads.Count - trackedThreadCount;
@@ -189,7 +266,51 @@ public sealed class AgentUsageService
             new AgentUsageWindow(SumTail(dailyTokens, 1)),
             new AgentUsageWindow(SumTail(dailyTokens, 7)),
             new AgentUsageWindow(SumTail(dailyTokens, 30)),
-            completeness);
+            completeness,
+            AgentUsageScope.PsxSessions);
+    }
+
+    private static AgentProviderUsageReport BuildLocalContributorReport(
+        IAgentLocalUsageContributor contributor,
+        IReadOnlyList<long> dailyTokens,
+        AgentUsageSourceStatus status)
+    {
+        var reasons = new HashSet<string>(status.Reasons, StringComparer.Ordinal);
+        if (status.ExpectedSessions.HasValue
+            && status.MatchedSessions.HasValue
+            && status.MatchedSessions.Value < status.ExpectedSessions.Value)
+        {
+            reasons.Add(AgentUsageGapReason.UnmatchedSessions);
+        }
+
+        var hasGap = reasons.Count > 0
+            || status.Status != AgentUsageSourceStatus.Available
+            || status.SkippedFiles > 0
+            || status.BadLines > 0;
+        var completenessStatus = status.Status == AgentUsageSourceStatus.Unavailable
+            ? AgentUsageCompleteness.Unavailable
+            : hasGap
+                ? AgentUsageCompleteness.Partial
+                : AgentUsageCompleteness.Available;
+
+        var completeness = new AgentUsageCompleteness(
+            completenessStatus,
+            OrderReasons(reasons),
+            status.ExpectedSessions,
+            status.MatchedSessions,
+            status.SkippedFiles,
+            status.BadLines,
+            UntrackedThreads: 0);
+        return new AgentProviderUsageReport(
+            contributor.Descriptor.Key,
+            contributor.Descriptor.DisplayName,
+            contributor.Descriptor.IconKey,
+            dailyTokens,
+            new AgentUsageWindow(SumTail(dailyTokens, 1)),
+            new AgentUsageWindow(SumTail(dailyTokens, 7)),
+            new AgentUsageWindow(SumTail(dailyTokens, 30)),
+            completeness,
+            AgentUsageScope.LocalAll);
     }
 
     private static long SumTail(IReadOnlyList<long> values, int count)
@@ -251,7 +372,7 @@ public sealed class AgentUsageService
         int? expectedSessions = null;
         int? matchedSessions = null;
         var applicable = providerResults
-            .Where(result => result.ThreadCount > 0)
+            .Where(result => result.ThreadCount > 0 || result.AlwaysInclude)
             .Select(result => result.Report.Completeness)
             .ToArray();
         if (applicable.All(completeness =>
@@ -291,7 +412,23 @@ public sealed class AgentUsageService
             || reasons.Count > 0;
         var matchedForAvailability = providerResults.Sum(result =>
             result.Report.Completeness.MatchedSessions ?? 0);
-        var status = snapshot.Threads.Count > 0 && matchedForAvailability == 0
+        // Nothing matched only degrades the whole report when some source
+        // actually failed or expected data; a healthy local contributor that
+        // simply found no session logs keeps the report available at zero.
+        var anyUnfulfilledExpectation = applicable.Any(completeness =>
+            completeness.Status == AgentUsageCompleteness.Unavailable
+            || (completeness.ExpectedSessions ?? 0) > 0
+            || completeness.UntrackedThreads > 0);
+        // Terminal-only startup has no threads at all: the report is still
+        // unavailable when every applicable source failed, so a fully broken
+        // local scan does not masquerade as "available with zero data".
+        var allApplicableUnavailable = applicable.Length > 0
+            && applicable.All(completeness =>
+                completeness.Status == AgentUsageCompleteness.Unavailable);
+        var status = (snapshot.Threads.Count > 0
+                && matchedForAvailability == 0
+                && anyUnfulfilledExpectation)
+            || (matchedForAvailability == 0 && allApplicableUnavailable)
             ? AgentUsageCompleteness.Unavailable
             : hasGap
                 ? AgentUsageCompleteness.Partial
@@ -321,7 +458,8 @@ public sealed class AgentUsageService
 
     private sealed record ProviderCollectionResult(
         AgentProviderUsageReport Report,
-        int ThreadCount);
+        int ThreadCount,
+        bool AlwaysInclude);
 
     private sealed class DailyUsageAccumulator(
         DateOnly start,

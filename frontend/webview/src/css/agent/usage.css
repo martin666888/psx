@@ -425,6 +425,14 @@
     font-weight: 600;
 }
 
+.agent-usage-provider-scope {
+    flex: none;
+    align-self: center;
+    color: var(--agent-text-dim);
+    font-size: 11px;
+    white-space: nowrap;
+}
+
 .agent-usage-provider-value {
     min-width: 0;
     margin-left: auto;

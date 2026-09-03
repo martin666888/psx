@@ -97,11 +97,38 @@ public partial class App : Application
                 ? LocaleDescriptor.UpgradeDefaultMode
                 : LocaleDescriptor.FreshInstallDefaultMode));
         services.AddSingleton<PsxEnvironmentSettingsCoordinator>();
+        // Local-all usage contributors (every on-machine session, not just
+        // PSX-owned ones). The disk cache is disposable, keyed by path hashes,
+        // and rooted beside the thread store.
+        services.AddSingleton<IAgentLocalUsageContributor>(sp => new KimiLocalUsageContributor(
+            cacheStore: new FileAgentUsageCacheStore(
+                Path.Combine(
+                    sp.GetRequiredService<IAgentThreadStore>().RootDirectory,
+                    "usage-cache",
+                    "v1"))));
+        // DSH sessions are compressed, so extraction goes through the bundled
+        // Node script; the locator resolves it lazily (dev builds have no
+        // portable Node, and the contributor degrades accordingly).
+        services.AddSingleton<IAgentLocalUsageContributor>(sp => new DshLocalUsageContributor(
+            extractor: new NodeDshSessionExtractor(
+                () => sp.GetRequiredService<RuntimeLocator>().Locate().PortableNodePath,
+                () => Path.Combine(
+                    sp.GetRequiredService<RuntimeLocator>().Locate().InstallDirectory,
+                    "tools",
+                    "usage-extractor",
+                    "dsh-session-extract.mjs")),
+            cacheStore: new FileAgentUsageCacheStore(
+                Path.Combine(
+                    sp.GetRequiredService<IAgentThreadStore>().RootDirectory,
+                    "usage-cache",
+                    "v1"))));
         // Global Usage aggregation (thread activity + provider exact-usage
-        // sources). Singleton so its short-TTL cache is shared across requests.
+        // sources + local-machine usage contributors). Singleton so its
+        // short-TTL cache is shared across requests.
         services.AddSingleton(sp => new AgentUsageService(
             sp.GetRequiredService<IAgentThreadStore>(),
-            sp.GetRequiredService<IAgentProviderRegistry>()));
+            sp.GetRequiredService<IAgentProviderRegistry>(),
+            localContributors: sp.GetServices<IAgentLocalUsageContributor>()));
         // Global Config aggregation for the Usage panel「配置」tab. Singleton
         // so its short-TTL cache is shared across requests. Distinct from live
         // ACP agent_config_options (session Composer).

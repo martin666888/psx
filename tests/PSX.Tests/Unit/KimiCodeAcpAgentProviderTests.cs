@@ -20,7 +20,9 @@ public sealed class KimiCodeAcpAgentProviderTests
             Assert.AreEqual("Kimi", provider.Descriptor.AssistantName);
             Assert.AreEqual("kimi", provider.Descriptor.IconKey);
             Assert.HasCount(0, provider.Descriptor.LegacyKeys);
-            Assert.IsInstanceOfType<KimiCodeSessionUsageSource>(provider.UsageSource);
+            // Kimi usage is owned by the local-all contributor; the provider
+            // itself no longer carries a PSX-session usage source.
+            Assert.IsNull(provider.UsageSource);
         }
     }
 

@@ -26,10 +26,10 @@ public sealed class KimiCodeAcpAgentProvider : IAcpAgentProvider
 
     public IAcpAgentRuntime Runtime { get; }
 
-    // Kimi persists exact per-request usage in each PSX-owned session wire.
-    // The source is deliberately independent from the active runtime root so
-    // bundled/self-updated versions share one historical usage view.
-    public IAgentUsageSource? UsageSource { get; } = new KimiCodeSessionUsageSource();
+    // Kimi usage is owned by the local-all contributor
+    // (KimiLocalUsageContributor), which counts every on-machine session and
+    // claims this provider's ThreadStore threads as tracked.
+    public IAgentUsageSource? UsageSource => null;
 
     public IAgentConfigSource? ConfigSource { get; } = new KimiConfigSource();
 

@@ -20,10 +20,15 @@ export type UsageGapReason =
   | 'missing_session_logs'
   | 'ambiguous_session_logs'
   | 'unreadable_logs'
+  | 'discovery_truncated'
   | 'unmatched_sessions'
   | 'missing_session_id'
   | 'damaged_thread_files'
-  | 'unregistered_provider';
+  | 'unregistered_provider'
+  | 'lineage_unresolved'
+  | 'extractor_unavailable';
+
+export type UsageScope = 'psx_sessions' | 'local_all';
 
 export interface UsageCompleteness {
   status: 'available' | 'partial' | 'unavailable';
@@ -39,6 +44,7 @@ export interface ProviderUsageReport {
   providerKey: string;
   displayName: string;
   iconKey: string;
+  scope: UsageScope;
   dailyTokens: number[];
   today: UsageWindow;
   last7Days: UsageWindow;
