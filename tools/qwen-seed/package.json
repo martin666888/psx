@@ -4,6 +4,6 @@
   "version": "0.1.0",
   "description": "PSX Qwen Code ACP runtime — build-time staging installs this pinned lockfile into tools/qwen so the bundled Qwen Code CLI ships inside the PSX release.",
   "dependencies": {
-    "@qwen-code/qwen-code": "0.22.0"
+    "@qwen-code/qwen-code": "0.23.0"
   }
 }
