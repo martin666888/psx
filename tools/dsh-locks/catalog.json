@@ -2,6 +2,15 @@
     "schemaVersion":  1,
     "entries":  [
                     {
+                        "version":  "0.1.3-alpha.2",
+                        "lockSha256":  "D4B7FB93C52F3879291CBE17BA79E61DD017380AD66634B00F572AB124FB62F8",
+                        "packageSha256":  "AEE7AD53A8C988A8A43309F56BED7F3E1476055EC5C57E3474EFF55B024FF31E",
+                        "lockfileVersion":  3,
+                        "generatedByNpm":  "10.9.8",
+                        "dshSri":  "sha512-rmf4xgzU9+abvaQ//slyBBhADtPu8fv+SZjxmh4GJwJMZipVa7hNU5m23HgVcB3LNmuGltuQ7jyypuhJ5yU69A==",
+                        "smokePassed":  true
+                    },
+                    {
                         "version":  "0.1.2-rc.1",
                         "lockSha256":  "D4DF9E14487F31E013928ACB0C39E7F499082283D24061B25030F73E298ACBC2",
                         "packageSha256":  "99237ADF7B3C0D1B0C07F14F6DC34B704914A2217A365975B529D8892A51C627",
