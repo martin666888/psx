@@ -4,6 +4,6 @@
   "private": true,
   "description": "PSX-managed DeepSeek Harness runtime update.",
   "dependencies": {
-    "@deepseek-ai/dsh": "0.1.2-alpha.5"
+    "@deepseek-ai/dsh": "0.1.2-rc.1"
   }
 }
