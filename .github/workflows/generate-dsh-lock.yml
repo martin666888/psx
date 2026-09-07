@@ -20,7 +20,13 @@ concurrency:
 jobs:
   generate:
     name: Generate and smoke DSH lock
-    runs-on: windows-latest
+    # Pinned off windows-latest on purpose. The DSH dependency graph can pull
+    # native addons (for example fs-ext) that node-gyp must compile during the
+    # launch smoke. The node-gyp bundled with the pinned portable Node only
+    # recognizes Visual Studio up to 2022, while newer -latest images ship VS
+    # 2026 and abort with "could not find a version of Visual Studio to use".
+    # windows-2022 keeps a supported MSVC + Windows SDK toolchain.
+    runs-on: windows-2022
     timeout-minutes: 90
     env:
       DSH_VERSION: ${{ inputs.version }}
