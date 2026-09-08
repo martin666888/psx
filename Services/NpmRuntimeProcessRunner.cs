@@ -60,6 +60,14 @@ internal sealed class NpmRuntimeProcessRunner
         foreach (var argument in arguments)
             startInfo.ArgumentList.Add(argument);
 
+        // npm lifecycle scripts invoke bare node through the shell. They must
+        // compile native addons for the same Node that runs the managed runtime.
+        var nodeDirectory = System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(nodePath))!;
+        startInfo.Environment.TryGetValue("PATH", out var inheritedPath);
+        startInfo.Environment["PATH"] = string.IsNullOrEmpty(inheritedPath)
+            ? nodeDirectory
+            : nodeDirectory + System.IO.Path.PathSeparator + inheritedPath;
+
         _log($"Starting: {label} in {workingDirectory}");
         Process? process;
         try
