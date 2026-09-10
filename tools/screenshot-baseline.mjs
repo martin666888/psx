@@ -544,11 +544,11 @@ function elicitationEvents(theme) {
 const SCENES = [
   ...[720, 719, 520, 519, 400, 399].map((paneWidth) => ({
     name: 'responsive-' + paneWidth,
-    // The logical column starts after the 40px activity rail; the rounded
-    // Agent surface is inset 12px on both sides. Container-query breakpoints
-    // belong to .agent-panel, so size that element (not the outer viewport)
-    // to the exact contract boundary.
-    viewportWidth: paneWidth + 66,
+    // Flat redesign: the logical column starts after the 40px activity rail
+    // and the Agent panel fills it edge to edge (no inset). Container-query
+    // breakpoints belong to .agent-panel, so size that element (not the outer
+    // viewport) to the exact contract boundary.
+    viewportWidth: paneWidth + 40,
     events: singleAgentEvents,
     ready: '.agent-panel:not([hidden]) [data-role="input"]',
     async verify(page) {
@@ -709,7 +709,7 @@ const SCENES = [
       await page.waitForFunction(() => {
         const dock = document.querySelector('[data-role="history-dock"]')?.getBoundingClientRect();
         const paneRoot = document.querySelector('#workspace-panes')?.getBoundingClientRect();
-        return !!dock && !!paneRoot && Math.abs(paneRoot.left - dock.right - 12) <= 1;
+        return !!dock && !!paneRoot && Math.abs(paneRoot.left - dock.right) <= 1;
       });
       const historyFontRequests = await page.evaluate(() =>
         performance.getEntriesByType('resource')
@@ -764,7 +764,7 @@ const SCENES = [
       await page.waitForFunction(() => {
         const dock = document.querySelector('[data-role="history-dock"]')?.getBoundingClientRect();
         const paneRoot = document.querySelector('#workspace-panes')?.getBoundingClientRect();
-        return !!dock && !!paneRoot && Math.abs(paneRoot.left - dock.right - 12) <= 1;
+        return !!dock && !!paneRoot && Math.abs(paneRoot.left - dock.right) <= 1;
       });
     },
     async verify(page) {
@@ -773,7 +773,7 @@ const SCENES = [
         const paneRoot = document.querySelector('#workspace-panes')?.getBoundingClientRect();
         return dock && paneRoot ? paneRoot.left - dock.right : Number.NaN;
       });
-      if (Math.abs(gap - 12) > 1) throw new Error(`History/pane gap is ${gap}px, expected 12px`);
+      if (Math.abs(gap) > 1) throw new Error(`History/pane gap is ${gap}px, expected the flat 0px edge`);
       await verifyHistoryHeaderWidths(page);
     }
   },
@@ -937,7 +937,9 @@ async function assertHistoryHeaderGeometry(page, width) {
   if (probe.bar.height > 160) {
     throw new Error(`History header is ${probe.bar.height}px at ${width}px, expected a three-row stack`);
   }
-  if (probe.search.width + 28 < probe.bar.width) {
+  // Flat redesign: the bar keeps the Ardot 16px side padding (32px total)
+  // plus the dock's 1px right border.
+  if (probe.search.width + 33 < probe.bar.width) {
     throw new Error(`search is not full width at ${width}px`);
   }
 }

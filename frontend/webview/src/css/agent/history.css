@@ -99,6 +99,14 @@
     border-radius: 5px;
 }
 
+/* WCAG: the Ardot #6E737A metadata gray on the #F7F7FA dock measures 4.46:1
+ * (just under the 4.5:1 text gate). Nudge the dock's small metadata 8% toward
+ * the primary text color — visually identical, compliant on every theme. */
+.agent-history-dock small,
+.agent-history-dock .agent-history-group-count {
+    color: color-mix(in srgb, var(--agent-text-muted) 92%, var(--agent-text));
+}
+
 /* Search / provider-filter plates follow [shellTheme] sidebarInput. The
  * variable defaults to `initial` (unset) so the two rules below reproduce
  * the shadcn Input defaults per color scheme: transparent in light themes,
