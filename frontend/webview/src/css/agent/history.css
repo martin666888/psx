@@ -9,18 +9,21 @@
 
 .agent-history-dock {
     position: absolute;
-    /* A free-standing rounded panel: workbench gutter on top/bottom/left,
-     * with the main panel a --agent-panel-gap away on the right. */
-    top: calc(40px + var(--agent-workbench-gutter));
-    bottom: var(--agent-workbench-gutter);
-    left: calc(40px + var(--agent-workbench-gutter));
+    /* Flat full-height sidebar (Ardot redesign): flush against the 40px rail,
+     * spanning the whole window height; columns start immediately at its 1px
+     * right border (the 280px width includes that border). Sits above the
+     * workspace chrome strip (z 30) so the tab bar never paints over it. */
+    top: 0;
+    bottom: 0;
+    left: 40px;
     z-index: var(--agent-layer-dock);
     display: flex;
     flex-direction: column;
+    box-sizing: border-box;
     width: var(--agent-history-width, 280px);
     min-width: 0;
-    border: 1px solid var(--agent-border);
-    border-radius: var(--agent-workspace-radius);
+    border: 0;
+    border-right: 1px solid var(--agent-border);
     background: var(--agent-shell-sidebar);
     /* Shares the rail's viewport-anchored gradient plate so a themed
      * sidebar gradient flows continuously across both sidebar surfaces. */
@@ -35,11 +38,12 @@
 
 .agent-history-dock-bar {
     /* Always three stacked rows: title+refresh, search, provider filter.
-     * No wrap reflow at the 220px floor. */
+     * No wrap reflow at the 220px floor. Padding per the Ardot flat design:
+     * 8px top, 16px sides, 16px bottom. */
     display: flex;
     flex-direction: column;
     gap: var(--agent-space-2);
-    padding: var(--agent-space-3);
+    padding: var(--agent-space-2) var(--agent-space-4) var(--agent-space-4);
     min-width: 0;
     border-bottom: 1px solid var(--agent-border);
 }
@@ -85,12 +89,14 @@
 .agent-history-search {
     width: 100%;
     padding-left: 28px;
-    border-radius: var(--agent-radius-input);
+    /* Ardot flat design: 32px-high, 5px-radius search field. */
+    border-radius: 5px;
 }
 
 .agent-history-provider-filter {
     width: 100%;
     min-width: 0;
+    border-radius: 5px;
 }
 
 /* Search / provider-filter plates follow [shellTheme] sidebarInput. The
@@ -114,6 +120,8 @@
  * attribute selector outranks the row's bg-muted utility). */
 .agent-history-item[aria-current="true"] {
     background-color: var(--agent-shell-sidebar-selected);
+    /* Ardot flat design: selected rows use a 5px radius over the 4px base. */
+    border-radius: 5px;
 }
 
 .agent-history-dock-content {
@@ -181,10 +189,6 @@
     padding: 0 var(--agent-space-2);
     border: 0;
     border-top: 1px solid var(--agent-border);
-    /* The footer reaches the panel's bottom corners: it inherits the radius
-     * the scroll content used to carry. */
-    border-bottom-left-radius: calc(var(--agent-workspace-radius) - 1px);
-    border-bottom-right-radius: calc(var(--agent-workspace-radius) - 1px);
     background: transparent;
     color: var(--agent-text);
     font-size: 12px;
@@ -232,10 +236,10 @@
     color: var(--agent-text-muted);
 }
 
-/* The resizer straddles the dock's right border into the panel gap; it must
- * never be clipped by the rounded corners (the dock keeps overflow visible).
- * It draws no affordance line of its own — the dock's border already marks
- * the edge and the col-resize cursor signals draggability. */
+/* Flat dock: no rounded frame to clear, the resizer simply straddles the
+ * dock's right border. It draws no affordance line of its own — the
+ * dock's border already marks the edge and the col-resize cursor signals
+ * draggability. */
 .agent-history-dock-resizer {
     position: absolute;
     top: 0;

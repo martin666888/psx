@@ -59,7 +59,7 @@ export interface AgentApp {
         ratio?: number;
       }>;
     },
-    rects: Map<string, { left: number; top: number; width: number; height: number; dockAdjacent?: boolean }>
+    rects: Map<string, { left: number; top: number; width: number; height: number }>
   ): void;
   /** Opens the process-wide History dock. Used by the always-loaded rail when
    * it is the action that lazily starts the Agent app. */
@@ -99,7 +99,7 @@ export function createAgentApp(options: AgentAppOptions): AgentApp {
   shellLayout.mount();
 
   // The global History dock indents every pane: report its width (plus the
-  // workbench gutter and panel gap) to the neutral geometry engine.
+  // 40px rail) to the neutral geometry engine.
   if (options.paneLayout) {
     // Ordering lock: markLayoutDriven must run before main.js drains the
     // staged events (createAgentApp returns only after this), so the
@@ -109,14 +109,16 @@ export function createAgentApp(options: AgentAppOptions): AgentApp {
     host.markLayoutDriven();
     const paneLayout = options.paneLayout;
     const reportDockInset = (): void => {
-      paneLayout.setDockInset(shellLayoutHost.isHistoryOpen() ? 40 + shellLayoutHost.historyWidth() + 24 : 40, {
+      // Flat redesign: the dock is flush against the 40px rail and the first
+      // column starts immediately at the dock's right border (no gutter).
+      paneLayout.setDockInset(shellLayoutHost.isHistoryOpen() ? 40 + shellLayoutHost.historyWidth() : 40, {
         interactiveResize: false
       });
     };
     // Live dock drag frames move the columns on every preview; the final
     // settle still arrives through onHistoryWidthChanged (reportDockInset).
     shellLayoutHost.onHistoryWidthPreview((width) => {
-      paneLayout.setDockInset(shellLayoutHost.isHistoryOpen() ? 40 + width + 24 : 40, { interactiveResize: true });
+      paneLayout.setDockInset(shellLayoutHost.isHistoryOpen() ? 40 + width : 40, { interactiveResize: true });
     });
     shellLayoutHost.onHistoryOpenChanged(reportDockInset);
     shellLayoutHost.onHistoryOpenChanged((open) => {

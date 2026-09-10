@@ -104,28 +104,28 @@ test('layout-driven app keeps agent panels hidden until the first projection', a
   assert.equal(panel.dataset.columnId, 'column-1');
 });
 
-test('dock-adjacent first column drops the panel left gutter', async () => {
+test('agent panel fills its column rect edge to edge', async () => {
   const { app, panelFor } = await mountAgentApp({ paneLayout: { setDockInset() {} } });
   createAgentWorkspace(app, FIRST, { ready: false });
   const panel = panelFor(FIRST);
 
-  // Dock open: the inset already carries the left gutter + panel gap, so the
-  // flagged first column sits at the rect edge — exactly one panel gap (12px)
-  // from the dock edge, the same spacing a terminal column gets.
+  // Flat redesign: the panel tiles its column rect exactly, dock open or
+  // closed — no workbench gutter or dock-adjacent carve-out remains.
   app.setPaneLayout(
     { focusedColumnId: 'column-1', columns: [{ columnId: 'column-1', tabs: [{ workspaceId: FIRST, kind: 'agent' }], activeTabId: FIRST, ratio: 1 }] },
-    new Map([['column-1', { left: 344, top: 40, width: 800, height: 860, dockAdjacent: true }]])
+    new Map([['column-1', { left: 344, top: 40, width: 800, height: 860 }]])
   );
-  assert.equal(panel.style.left, '344px', 'dock-adjacent panel adds no second left gutter');
-  assert.equal(panel.style.width, '788px', 'width loses only the right gutter');
+  assert.equal(panel.style.left, '344px', 'panel sits at the rect edge');
+  assert.equal(panel.style.top, '40px');
+  assert.equal(panel.style.width, '800px', 'panel keeps the full rect width');
+  assert.equal(panel.style.height, '860px');
 
-  // Dock closed (no flag): the panel floats with the full gutter on every side.
   app.setPaneLayout(
     { focusedColumnId: 'column-1', columns: [{ columnId: 'column-1', tabs: [{ workspaceId: FIRST, kind: 'agent' }], activeTabId: FIRST, ratio: 1 }] },
     new Map([['column-1', { left: 40, top: 40, width: 800, height: 860 }]])
   );
-  assert.equal(panel.style.left, '52px', 'undocked panel keeps the workbench gutter');
-  assert.equal(panel.style.width, '776px', 'width loses both gutters');
+  assert.equal(panel.style.left, '40px', 'undocked panel also fills its rect');
+  assert.equal(panel.style.width, '800px');
 });
 
 test('mixed terminal/agent layout keeps the Agent layer click-through for terminal columns', async () => {

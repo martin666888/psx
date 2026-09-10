@@ -256,7 +256,7 @@ export function HistoryDockView(props: HistoryDockViewProps): JSX.Element {
         type="hover"
         viewportProps={{
           ref: contentRef,
-          className: 'agent-history-dock-content p-2',
+          className: 'agent-history-dock-content px-3 py-4',
           'data-role': 'history-content'
         }}
       >

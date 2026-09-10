@@ -3,16 +3,12 @@
     --agent-history-width: 280px;
     --agent-plan-width: 320px;
     --agent-reading-min-width: 320px;
-    --agent-reading-max-width: 920px;
-    /* Soft workbench frame: the tinted backdrop (--agent-bg) shows through a
-     * 12px gutter around the two rounded panels and a matching gap between
-     * them. Derived layout constants only — never new INI settings. */
-    --agent-workbench-gutter: 12px;
-    --agent-panel-gap: 12px;
-    /* Structural corner radius shared by the Workspace panel, the History
-     * dock and the Composer card. */
-    --agent-radius-structure: 24px;
-    --agent-workspace-radius: var(--agent-radius-structure);
+    --agent-reading-max-width: 760px;
+    /* Flat workbench (Ardot redesign): the History dock and column panels
+     * tile their rects edge to edge — both tokens are 0 and kept only so
+     * the layout math reads uniformly. Derived, never new INI settings. */
+    --agent-workbench-gutter: 0px;
+    --agent-panel-gap: 0px;
     --agent-toolbar-height: 44px;
     /* Canvas surface: one step above the workbench backdrop (--agent-bg), one
      * below the context cards (--agent-surface-raised) — the luminance ladder
@@ -20,14 +16,12 @@
      * hardcoded. */
     --agent-canvas-surface: color-mix(in srgb, var(--agent-surface) 50%, var(--agent-surface-raised));
     --agent-radius-context-card: var(--agent-radius-card);
-    /* Composer card: shares the structural radius (borderless soft fill). */
-    --agent-radius-composer: var(--agent-radius-structure);
+    /* Composer card radius from the Ardot flat redesign (16px). */
+    --agent-radius-composer: 16px;
     /* Every pane anchors Composer to the same bottom baseline. Intrinsic
      * content growth (wrapped placeholder, draft, attachments or decisions)
      * expands the card upward; responsive bands must not rewrite this inset. */
     --agent-composer-bottom-space: 24px;
-    /* Restrained, symmetric panel lift — no wide blurs or gradients. */
-    --agent-shadow-canvas: 0 8px 24px color-mix(in srgb, var(--agent-shadow) 16%, transparent);
     /* The Plan/context card floats inside the main panel; it matches the
      * composer's lift exactly so neither card looks heavier than the other. */
     --agent-shadow-context-card: 0 6px 18px color-mix(in srgb, var(--agent-shadow) 12%, transparent);
@@ -53,7 +47,7 @@
 
 #agent-workspace-container.agent-workspace-active {
     pointer-events: auto;
-    /* The workbench backdrop both panels float on. Applied only while an
+    /* The workbench backdrop beneath the tiled panels. Applied only while an
      * Agent workspace is active so the terminal view underneath stays
      * visible for Terminal tabs. Themes may add a soft left-to-right tint
      * wash (workbenchTint) over the flat base color; a transparent tint
@@ -102,11 +96,9 @@
 
 .agent-panel {
     position: absolute;
-    /* The main panel is a free-standing rounded workbench block: a 12px
-     * gutter of backdrop shows on every side (History replaces the left
-     * gutter while the dock is open). In split mode the geometry engine sets
-     * an explicit inline rect per pane. */
-    inset: var(--agent-workbench-gutter);
+    /* Flat workbench (Ardot redesign): the panel fills its column rect edge
+     * to edge; the geometry engine sets an explicit inline rect per column. */
+    inset: 0;
     /* Container-query context: pane-relative presentation rules (composer,
        runtime card, cwd) resolve against THIS panel, whose inline width is
        the pane width in split mode. */
@@ -127,20 +119,16 @@
      * can scroll or wrap without moving the shared reading-column geometry. */
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto auto minmax(0, 1fr) auto;
-    /* With History closed, the symmetric panel gutters make the reading
-     * column panel-centred (which is also viewport-centred in a single
-     * pane). Percentages resolve against the panel's own inline size, so
-     * split panes centre their reading column per pane. */
+    /* The reading column is centred inside the panel. Percentages resolve
+     * against the panel's own inline size, so split columns centre their
+     * reading column per column. */
     --agent-viewport-padding: var(--agent-space-6);
     --agent-reading-column-max: min(
         var(--agent-reading-max-width),
         calc(100% - 2 * var(--agent-viewport-padding))
     );
     --agent-reading-column-start: calc((100% - var(--agent-reading-column-max)) / 2);
-    border: 1px solid var(--agent-border);
-    border-radius: var(--agent-workspace-radius);
     background: var(--agent-shell-workspace);
-    box-shadow: var(--agent-shadow-canvas);
     color: var(--agent-text);
 }
 
@@ -148,49 +136,31 @@
     display: none;
 }
 
-/* Dock open: the panel yields its left edge to History plus one panel gap.
- * The reading column is always centred inside that remaining panel, so a
- * wider History dock moves it monotonically at half the dock delta instead
- * of moving the panel right while applying an equal left compensation. If
- * the normal width no longer fits, Shell temporarily collapses History; a
- * manually reopened dock uses the available width rather than overflowing.
- * Once the pane geometry engine drives rects (agent-layout-driven), the JS
- * dock inset replaces this block entirely. */
+/* Dock open fallback (pre-geometry-engine frames only): the panel starts
+ * flush right of the full-height History dock (40px rail + dock width) and
+ * the reading column centres inside the remaining panel. Once the pane
+ * geometry engine drives rects (agent-layout-driven), the JS dock inset
+ * replaces this block entirely. */
 #agent-workspace-container.agent-history-dock-open:not(.agent-layout-driven) .agent-panel {
-    left: calc(
-        var(--agent-workbench-gutter) + var(--agent-history-width) + var(--agent-panel-gap)
-    );
+    left: calc(40px + var(--agent-history-width));
     --agent-main-panel-inline-size: calc(
-        100vw - 2 * var(--agent-workbench-gutter) - var(--agent-history-width) - var(--agent-panel-gap)
+        100vw - 40px - var(--agent-history-width)
     );
     --agent-reading-column-max: min(
         var(--agent-reading-max-width),
-        calc(var(--agent-main-panel-inline-size) - 2 * var(--agent-panel-gap))
+        calc(var(--agent-main-panel-inline-size) - 2 * var(--agent-viewport-padding))
     );
     --agent-reading-column-start: max(
-        var(--agent-panel-gap),
+        0px,
         calc((var(--agent-main-panel-inline-size) - var(--agent-reading-column-max)) / 2)
     );
 }
 
 /* Split mode: the full-width workbench backdrop would paint over terminal
- * panes, so the container stays flat and every visible panel carries its own
- * backdrop wash out to the gutter edge. */
+ * columns, so the container stays flat; every panel now fills its column
+ * rect exactly and carries the opaque workspace surface itself. */
 #agent-workspace-container.agent-split-active {
     background: none;
-}
-
-#agent-workspace-container.agent-split-active .agent-panel::before {
-    content: "";
-    position: absolute;
-    inset: calc(-1 * var(--agent-workbench-gutter));
-    z-index: -1;
-    border-radius: calc(var(--agent-workspace-radius) + var(--agent-workbench-gutter));
-    background:
-        linear-gradient(90deg,
-            var(--agent-workbench-tint),
-            transparent 62%),
-        var(--agent-bg);
 }
 
 .agent-toolbar {

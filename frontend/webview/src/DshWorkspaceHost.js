@@ -223,11 +223,11 @@ export class DshWorkspaceHost {
     }
 
     applyRect(panel, rect) {
-        const gutter = 12;
-        panel.style.left = `${rect.left + gutter}px`;
-        panel.style.top = `${rect.top + gutter}px`;
-        panel.style.width = `${Math.max(0, rect.width - 2 * gutter)}px`;
-        panel.style.height = `${Math.max(0, rect.height - 2 * gutter)}px`;
+        // Flat redesign: the DSH hole fills its column rect edge to edge.
+        panel.style.left = `${rect.left}px`;
+        panel.style.top = `${rect.top}px`;
+        panel.style.width = `${Math.max(0, rect.width)}px`;
+        panel.style.height = `${Math.max(0, rect.height)}px`;
     }
 
     observePanel(panel) {

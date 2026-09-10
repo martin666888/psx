@@ -89,8 +89,8 @@ test('PaneLayoutController projects column rects and ring slots from a snapshot'
   });
 
   const { rects } = applied.at(-1);
-  assert.deepEqual(rects.get('column-1'), { left: 40, top: 40, width: 936, height: 860, dockAdjacent: false });
-  assert.deepEqual(rects.get('column-2'), { left: 976, top: 40, width: 624, height: 860, dockAdjacent: false });
+  assert.deepEqual(rects.get('column-1'), { left: 40, top: 40, width: 936, height: 860 });
+  assert.deepEqual(rects.get('column-2'), { left: 976, top: 40, width: 624, height: 860 });
 
   const slot1 = layout.columnById('column-1');
   const slot2 = layout.columnById('column-2');
@@ -147,10 +147,10 @@ test('History dock preview moves columns interactively and settles once at the s
   assert.equal(previewed.rects.get('column-1').left, 350);
   assert.equal(previewed.rects.get('column-1').width, Math.round((1600 - 350) * 0.6));
   assert.equal(previewed.options.interactiveResize, true, 'preview defers terminal fit');
-  assert.equal(previewed.rects.get('column-1').dockAdjacent, true,
-    'the open dock flags the first column so the Agent host drops its second left gutter');
-  assert.equal(previewed.rects.get('column-2').dockAdjacent, false,
-    'only the dock-adjacent first column carries the flag');
+  // Flat redesign: columns fill their rects edge to edge; no dock-adjacent
+  // gutter flag exists anymore.
+  assert.equal(previewed.rects.get('column-1').dockAdjacent, undefined);
+  assert.equal(previewed.rects.get('column-2').dockAdjacent, undefined);
 
   // An identical preview frame is a no-op: same width AND same interactive mode.
   const count = applied.length;
@@ -164,10 +164,12 @@ test('History dock preview moves columns interactively and settles once at the s
   assert.equal(settled.rects.get('column-1').left, 350);
   assert.equal(settled.options.interactiveResize, false, 'same-width settle still recomputes non-interactively');
 
-  // Dock closed (inset == rail width): no column is dock-adjacent.
+  // Dock closed (inset == rail width): columns start at the rail edge.
   layout.setDockInset(40, { interactiveResize: false });
-  assert.equal(applied.at(-1).rects.get('column-1').dockAdjacent, false,
-    'a closed dock leaves every column with the full gutter');
+  const closed = applied.at(-1);
+  assert.equal(closed.rects.get('column-1').left, 40,
+    'a closed dock leaves the first column at the rail edge');
+  assert.equal(closed.rects.get('column-1').dockAdjacent, undefined);
   layout.dispose();
 });
 

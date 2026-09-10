@@ -92,7 +92,9 @@
     --agent-radius-control: 8px;
     --agent-radius-input: 10px;
     --agent-radius-card: 14px;
-    --agent-layer-dock: 5;
+    /* The flat full-height History dock must paint above the workspace chrome
+     * strip (z-index 30) and below the rail (40) and popover root (80). */
+    --agent-layer-dock: 35;
     --agent-layer-cards: 6;
     --agent-layer-menu: 20;
     --agent-layer-dialog: 100;
