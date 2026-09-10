@@ -125,6 +125,7 @@ public sealed partial class DshLockCatalogTests
     {
         var paths = new List<string>
         {
+            Path.Combine(TestWorkspace.RepositoryRoot, "tools", "dsh-seed", "package.json"),
             Path.Combine(TestWorkspace.RepositoryRoot, "tools", "dsh-seed", "package-lock.json"),
             Path.Combine(LocksRoot, "catalog.json")
         };

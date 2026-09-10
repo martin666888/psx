@@ -14,6 +14,7 @@ frontend/agent/src/**/*.ts text eol=lf
 frontend/agent/src/**/*.tsx text eol=lf
 Services/BridgeProtocolLimits.g.cs text eol=lf
 tools/*-seed/package-lock.json text eol=lf
+tools/dsh-seed/package.json text eol=lf
 tools/dsh-locks/**/*.json text eol=lf
 licenses/maple-mono/LICENSE.txt text eol=lf
 
