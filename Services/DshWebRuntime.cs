@@ -15,7 +15,10 @@ namespace PSX.Services;
 public sealed class DshWebRuntime
 {
     public const string DshPackageName = "@deepseek-ai/dsh";
-    public const string SeededPackageVersion = "0.1.3-alpha.2";
+    public const string SeededPackageVersion = "0.1.5-rc.1";
+    // Advancing the first-install seed must not invalidate an existing install
+    // or its last-known-good rollback tree from an earlier PSX release.
+    internal const string MinimumSupportedPackageVersion = "0.1.3-alpha.2";
 
     private const string OfficialRegistry = DshRegistryDescriptor.OfficialOrigin;
 
@@ -67,7 +70,7 @@ public sealed class DshWebRuntime
 
     /// <summary>
     /// A runtime is launchable only when both files exist and the installed
-    /// package carries a valid semantic version at or above the release seed.
+    /// package carries an authorized version at or above the compatibility floor.
     /// First install remains pinned to <see cref="SeededPackageVersion"/>;
     /// user-confirmed updates may advance beyond it without weakening the
     /// launch gate into a mere file-exists check.
@@ -88,7 +91,8 @@ public sealed class DshWebRuntime
         var version = ReadPackageVersion(Path.Combine(directory, DshPackageJson));
         if (!IsCompatibleVersion(version))
             return false;
-        if (string.Equals(version, SeededPackageVersion, StringComparison.Ordinal))
+        if (string.Equals(version, SeededPackageVersion, StringComparison.Ordinal)
+            || string.Equals(version, MinimumSupportedPackageVersion, StringComparison.Ordinal))
             return true;
         return string.Equals(ReadUpdateReceiptVersion(directory), version, StringComparison.Ordinal)
             && ValidateStagedUpdate(directory, version!) == null;
@@ -96,7 +100,7 @@ public sealed class DshWebRuntime
 
     private static bool IsCompatibleVersion(string? version) =>
         DshSemanticVersion.TryParse(version, out var parsed)
-        && DshSemanticVersion.TryParse(SeededPackageVersion, out var seeded)
+        && DshSemanticVersion.TryParse(MinimumSupportedPackageVersion, out var seeded)
         && parsed.CompareTo(seeded) >= 0;
 
     public string? CurrentVersion
@@ -136,7 +140,7 @@ public sealed class DshWebRuntime
     /// Query the selected npm registry for published versions and dist-tags.
     /// This is a metadata-only operation: it never changes the active or staged tree.
     /// Dist-tags are annotations only; the candidate set is every published
-    /// version that is &gt;= the seed and strictly newer than the installed tree.
+    /// version that is &gt;= the compatibility floor and strictly newer than the installed tree.
     /// </summary>
     public Task<DshUpdateCheckResult> CheckForUpdateAsync(CancellationToken cancellationToken) =>
         CheckForUpdateAsync(DshRegistryDescriptor.Official, cancellationToken);
@@ -905,7 +909,7 @@ public sealed class DshWebRuntime
             return false;
         }
 
-        if (!DshSemanticVersion.TryParse(SeededPackageVersion, out var seeded))
+        if (!DshSemanticVersion.TryParse(MinimumSupportedPackageVersion, out var seeded))
         {
             error = "seed version is invalid";
             return false;

@@ -53,7 +53,7 @@ $PortableNodeUrl = "https://nodejs.org/dist/$PortableNodeVersion/$PortableNodeAr
 $PortableNodeExpectedSha = "7df0bc9375723f4a86b3aa1b7cc73342423d9677a8df4538aca31a049e309c29"
 
 $DshPackageName = "@deepseek-ai/dsh"
-$DshSeedVersion = "0.1.3-alpha.2"
+$DshMinimumSupportedVersion = "0.1.3-alpha.2"
 $OfficialRegistry = "https://registry.npmjs.org/"
 $SmokeReadyTimeoutSeconds = 120
 $SmokeKillGraceSeconds = 30
@@ -616,8 +616,8 @@ foreach ($requestedVersion in (@($Version -split "[,;]") | ForEach-Object { $_.T
     if (-not (Test-ValidSemVer -Value $requestedVersion)) {
         throw "$requestedVersion is not a valid SemVer 2 string."
     }
-    if ((Compare-SemVer2 -Left $requestedVersion -Right $DshSeedVersion) -lt 0) {
-        throw "$requestedVersion is older than the seed ($DshSeedVersion); the catalog never carries pre-seed versions."
+    if ((Compare-SemVer2 -Left $requestedVersion -Right $DshMinimumSupportedVersion) -lt 0) {
+        throw "$requestedVersion is older than the compatibility floor ($DshMinimumSupportedVersion)."
     }
     if ($catalogEntryVersions -contains $requestedVersion) {
         $existingEntry = @($catalog.Entries | Where-Object { [string]$_.version -eq $requestedVersion })[0]

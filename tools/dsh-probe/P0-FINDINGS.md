@@ -34,6 +34,20 @@ WebSocket 检查同时记录 upgrade 和消息帧计数，便于区分页面脚�
 
 ## 真实 DSH 与安装探针
 
+### 2026-09-10：0.1.5-rc.1 复核
+
+- [隔离生成 workflow 34442139499](https://github.com/martin666888/psx/actions/runs/34442139499)
+  在 Windows Server 2022、Portable Node 22.23.1 / npm 10.9.8 上通过官方 SRI 核对、
+  `npm ci`（13 秒）和真实 `dsh web` Ready URL HTTP 200 检查。
+- 检查 npm 已发布的 `@deepseek-ai/dsh-client-connection@0.1.5-rc.1/lib/index.js`：
+  `sessionCookie` 仍设置 `HttpOnly; SameSite=Strict`；`isTrustedApiRequest`
+  仍拒绝 `Sec-Fetch-Site: cross-site` 并核对 Origin。因此不能恢复到 `psx.local`
+  页面内的跨站 iframe，继续使用第一方顶层 WebView2。
+- tab 菜单的圆角排除区域用于解决原生 WebView2 HWND 遮挡 shell 菜单的问题，
+  不是 DSH 页面样式补丁。上游版本更新没有消除这一宿主层约束，保留现有挖槽。
+- 上述真实启动检查不等于已验证真实 WebView2 中的完整交互；Full 的宿主探针使用 mock，
+  长对话、IME、附件和导出仍按下方人工检查范围执行。
+
 - `tools/dsh-probe/install-probe.ps1` 和 `launch-probe.mjs` 用于隔离环境中的安装、
   启动与 Ready URL 验证。
 - `PSX.DshProbe --dsh-origin <ready-url>` 可用第二个顶层 WebView2 对真实 DSH

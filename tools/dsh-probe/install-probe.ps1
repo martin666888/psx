@@ -1,6 +1,6 @@
 # DSH P0 probe - Cluster 2: pinned npm install WITH lifecycle scripts for the
 # locked seed version, then validate entry / native artifacts / build evidence.
-# NOTE: seed 0.1.3-alpha.2 pulls fs-ext@2.1.1 (no prebuilt binaries), so a clean
+# NOTE: seed 0.1.5-rc.1 pulls fs-ext@2.1.1 (no prebuilt binaries), so a clean
 # Windows box now REQUIRES VS Build Tools + Python to compile it; koffi and
 # node-pty still ship prebuilt. This probe therefore asserts the compiled install
 # succeeds (compiledLocally = true) with working native artifacts.
@@ -41,7 +41,7 @@ if (-not $SkipInstall) {
   "private": true,
   "version": "0.0.0",
   "dependencies": {
-    "@deepseek-ai/dsh": "0.1.3-alpha.2"
+    "@deepseek-ai/dsh": "0.1.5-rc.1"
   }
 }
 '@ | Set-Content -Encoding UTF8 (Join-Path $installDir 'package.json')
@@ -119,7 +119,7 @@ $report.prebuiltEvidence = [bool]($logText -match 'prebuilds/|prebuild-install|@
 
 $files = Get-ChildItem $installDir -Recurse -File -ErrorAction SilentlyContinue
 $report.installSizeMiB = [math]::Round((($files | Measure-Object Length -Sum).Sum / 1MB), 1)
-$report.pass = ($report.exitCode -eq 0) -and $report.entryExists -and ($report.dshVersion -eq '0.1.3-alpha.2') `
+$report.pass = ($report.exitCode -eq 0) -and $report.entryExists -and ($report.dshVersion -eq '0.1.5-rc.1') `
     -and $report.nodePtyNative -and $report.koffiNative -and $report.compiledLocally
 
 $report | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 $reportFile

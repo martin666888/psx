@@ -84,6 +84,18 @@ public sealed partial class DshLockCatalogTests
     }
 
     [TestMethod]
+    public void FirstInstallSeed_MatchesReviewedCatalogArtifact()
+    {
+        var seedDirectory = Path.Combine(TestWorkspace.RepositoryRoot, "tools", "dsh-seed");
+        var artifactDirectory = Path.Combine(LocksRoot, "locks", DshWebRuntime.SeededPackageVersion);
+        foreach (var file in new[] { "package.json", "package-lock.json" })
+        {
+            Assert.AreEqual(HashFile(Path.Combine(artifactDirectory, file)),
+                HashFile(Path.Combine(seedDirectory, file)), $"First-install {file} must match its reviewed artifact");
+        }
+    }
+
+    [TestMethod]
     public void Catalog_LocksDirectory_HasNoOrphanDirectories()
     {
         using var catalog = ReadCatalog(out var root);
@@ -156,7 +168,7 @@ public sealed partial class DshLockCatalogTests
                 DshSemanticVersion.TryParse(version, out var parsed),
                 $"{version}: entry version is not valid SemVer 2");
             Assert.IsTrue(
-                DshSemanticVersion.TryParse(DshWebRuntime.SeededPackageVersion, out var seed)
+                DshSemanticVersion.TryParse(DshWebRuntime.MinimumSupportedPackageVersion, out var seed)
                     && parsed.CompareTo(seed) >= 0,
                 $"{version}: entry is older than the release seed");
 

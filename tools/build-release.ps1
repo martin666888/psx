@@ -44,6 +44,11 @@
     must exist under bin/build-cache. The cached archive is still verified and
     extracted into the package.
 
+.PARAMETER StagingDirectory
+    Optional fresh staging directory beneath bin/ or TestResults/. Use this
+    when a running development build still owns the default release-staging
+    directory. An explicit staging directory must not already exist.
+
 .PARAMETER WebView2FixedRuntimePath
     Optional path to an extracted WebView2 Fixed Version Runtime directory.
     The directory must contain msedgewebview2.exe, either directly or in a
@@ -85,6 +90,7 @@
 param(
     [string]$Configuration = "Release",
     [string]$OutputDirectory = "",
+    [string]$StagingDirectory = "",
     [switch]$SkipNodeDownload,
     [string]$WebView2FixedRuntimePath = "",
     [switch]$SkipOpenCodeSmoke,
@@ -103,12 +109,12 @@ $PortableNodeUrl = "https://nodejs.org/dist/$PortableNodeVersion/$PortableNodeAr
 $PortableNodeExpectedSha = "7df0bc9375723f4a86b3aa1b7cc73342423d9677a8df4538aca31a049e309c29"
 $MapleMonoRegularExpectedSha = "E42D081EAECBDA6A043079EAAAF43EA20BD8805666BC06E1FE4DC663C462AD7F"
 $MapleMonoSemiBoldExpectedSha = "F72D4475C7AC435C7C363E0CB35100A18E4A5BB14787F17F7BBC64823B904066"
-$DshSeedLockExpectedSha = "D4B7FB93C52F3879291CBE17BA79E61DD017380AD66634B00F572AB124FB62F8"
-$DshPinnedVersion = "0.1.3-alpha.2"
+$DshSeedLockExpectedSha = "87A14A548E528CEA705E12A24AED14E04239CBC20305C4E0BC19DCEE5D7C36E0"
+$DshPinnedVersion = "0.1.5-rc.1"
 # SHA-256 of tools/dsh-locks/catalog.json. Update it (and review the diff)
 # whenever the DSH lock catalog changes; the release machine never executes
 # new package code, this pin is its only catalog trust evidence.
-$DshLockCatalogExpectedSha = "1CF8210ADD04BAC839CFB52E1BED8DDD15412901561B5BF33333069C3AE421E3"
+$DshLockCatalogExpectedSha = "2D8186C47A9EEC40416028AB99025BF247D80AB2979630BFBE2D4240AADF1714"
 $DshLockBlockedReasons = @("smoke_failed", "official_integrity_mismatch", "sri_conflict")
 
 # ---- locate repo root ----
@@ -117,6 +123,22 @@ $RepoRoot = (Resolve-Path (Join-Path $ScriptDir "..")).Path
 $ProjectPath = Join-Path $RepoRoot "PSX.csproj"
 $PublishOutput = [IO.Path]::GetFullPath((Join-Path $RepoRoot "bin\publish\win-x64-self-contained"))
 $StagingDir = [IO.Path]::GetFullPath((Join-Path $RepoRoot "bin\release-staging"))
+if (-not [string]::IsNullOrWhiteSpace($StagingDirectory)) {
+    $StagingDir = if ([IO.Path]::IsPathRooted($StagingDirectory)) {
+        [IO.Path]::GetFullPath($StagingDirectory)
+    } else {
+        [IO.Path]::GetFullPath((Join-Path $RepoRoot $StagingDirectory))
+    }
+    $allowedStagingRoots = @("bin", "TestResults") | ForEach-Object {
+        [IO.Path]::GetFullPath((Join-Path $RepoRoot $_)) + [IO.Path]::DirectorySeparatorChar
+    }
+    if (-not ($allowedStagingRoots | Where-Object { $StagingDir.StartsWith($_, [StringComparison]::OrdinalIgnoreCase) })) {
+        throw "Explicit staging directory must be beneath repository bin/ or TestResults/."
+    }
+    if (Test-Path -LiteralPath $StagingDir) {
+        throw "Explicit staging directory must be fresh; choose a new directory instead of removing an in-use build."
+    }
+}
 $BuildCacheDir = [IO.Path]::GetFullPath((Join-Path $RepoRoot "bin\build-cache"))
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
     $OutputDirectory = [IO.Path]::GetFullPath((Join-Path $RepoRoot "bin\releases"))

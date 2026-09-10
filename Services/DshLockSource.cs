@@ -177,7 +177,7 @@ internal sealed class BundledDshLockSource(string directory) : IDshLockSource
                 if (element.ValueKind != JsonValueKind.Object
                     || !TryGetStringProperty(element, "version", out var version)
                     || !DshSemanticVersion.TryParse(version, out var parsedVersion)
-                    || !IsAtLeastSeed(parsedVersion)
+                    || !IsAtLeastMinimumSupported(parsedVersion)
                     || !seenVersions.Add(version)
                     || !TryGetStringProperty(element, "lockSha256", out var lockSha256)
                     || !IsSha256Hex(lockSha256)
@@ -247,8 +247,8 @@ internal sealed class BundledDshLockSource(string directory) : IDshLockSource
         return value.Length > 0;
     }
 
-    private static bool IsAtLeastSeed(DshSemanticVersion version) =>
-        DshSemanticVersion.TryParse(DshWebRuntime.SeededPackageVersion, out var seed)
+    private static bool IsAtLeastMinimumSupported(DshSemanticVersion version) =>
+        DshSemanticVersion.TryParse(DshWebRuntime.MinimumSupportedPackageVersion, out var seed)
         && version.CompareTo(seed) >= 0;
 
     private static bool IsSha256Hex(string value) =>
