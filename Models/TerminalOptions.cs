@@ -37,6 +37,9 @@ public sealed class TerminalOptions
     [JsonPropertyName("terminalColors")]
     public TerminalPalette? TerminalColors { get; set; }
 
+    [JsonPropertyName("shellTheme")]
+    public ShellThemeColors? ShellTheme { get; set; }
+
     public static TerminalOptions FromSettings(AppSettings settings)
     {
         return new TerminalOptions
@@ -53,7 +56,8 @@ public sealed class TerminalOptions
                 : settings.AgentMonoFontFamily,
             ThemeColors = settings.ThemeColors,
             AgentThemeColors = settings.AgentTheme,
-            TerminalColors = settings.TerminalColors
+            TerminalColors = settings.TerminalColors,
+            ShellTheme = settings.ShellTheme
         };
     }
 }

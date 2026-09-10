@@ -119,6 +119,7 @@ public sealed partial class ThemeService : IThemeService
             PopulateColors(document, "theme", appearance.ThemeColors);
             PopulateColors(document, "agentTheme", appearance.AgentTheme);
             PopulateColors(document, "terminalColors", appearance.TerminalColors);
+            var shellWarnings = PopulateOptionalColors(document, "shellTheme", appearance.ShellTheme);
 
             var keyPrefix = source == ThemeSource.BuiltIn ? "builtin" : "user";
             var descriptor = new ThemeDescriptor
@@ -135,6 +136,8 @@ public sealed partial class ThemeService : IThemeService
             };
 
             AddUnknownWarnings(document, descriptor);
+            foreach (var warning in shellWarnings)
+                descriptor.Diagnostics.Add(new ThemeDiagnostic { Message = warning });
             AddContrastWarnings(descriptor);
             return new ThemeValidationResult { Descriptor = descriptor };
         }
@@ -163,6 +166,7 @@ public sealed partial class ThemeService : IThemeService
         AppendProperties(builder, appearance.ThemeColors);
         AppendProperties(builder, appearance.AgentTheme);
         AppendProperties(builder, appearance.TerminalColors);
+        AppendProperties(builder, appearance.ShellTheme);
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString())));
     }
 
@@ -250,6 +254,35 @@ public sealed partial class ThemeService : IThemeService
         }
     }
 
+    /// <summary>
+    /// Parses the optional [shellTheme] section. A missing section is legal;
+    /// per-key color failures produce non-fatal warnings and leave the field
+    /// unset instead of rejecting the whole theme.
+    /// </summary>
+    private static List<string> PopulateOptionalColors<T>(IniDocument document, string section, T target)
+    {
+        var warnings = new List<string>();
+        if (!document.TryGetSection(section, out var values))
+            return warnings;
+
+        foreach (var property in typeof(T).GetProperties(BindingFlags.Instance | BindingFlags.Public)
+                     .Where(p => p.PropertyType == typeof(string) && p.CanWrite)
+                     .OrderBy(p => p.Name, StringComparer.Ordinal))
+        {
+            var key = char.ToLowerInvariant(property.Name[0]) + property.Name[1..];
+            if (!values.TryGetValue(key, out var value) || string.IsNullOrWhiteSpace(value))
+                continue;
+            if (!CssColorRegex().IsMatch(value.Trim()))
+            {
+                warnings.Add($"[{section}].{key} must be #RRGGBB or #RRGGBBAA; the field is ignored.");
+                continue;
+            }
+            property.SetValue(target, value.Trim().ToLowerInvariant());
+        }
+
+        return warnings;
+    }
+
     private static void AppendProperties<T>(StringBuilder builder, T source)
     {
         foreach (var property in typeof(T).GetProperties(BindingFlags.Instance | BindingFlags.Public)
@@ -267,7 +300,8 @@ public sealed partial class ThemeService : IThemeService
             ["agent"] = new(["fontSize", "fontFamily", "monoFontFamily"], StringComparer.OrdinalIgnoreCase),
             ["theme"] = PropertyKeys<ThemeColors>(),
             ["agentTheme"] = PropertyKeys<AgentThemeColors>(),
-            ["terminalColors"] = PropertyKeys<TerminalPalette>()
+            ["terminalColors"] = PropertyKeys<TerminalPalette>(),
+            ["shellTheme"] = PropertyKeys<ShellThemeColors>()
         };
 
         foreach (var section in document.Sections)

@@ -93,8 +93,8 @@ function appearanceFromPreset(file) {
 }
 
 const THEMES = {
-  dark: appearanceFromPreset(path.join(root, 'theme-presets', 'vercel-neutral-dark.ini')),
-  light: appearanceFromPreset(path.join(root, 'theme-presets', 'vercel-neutral-light.ini'))
+  dark: appearanceFromPreset(path.join(root, 'theme-presets', 'vercel-black.ini')),
+  light: appearanceFromPreset(path.join(root, 'theme-presets', 'base-light.ini'))
 };
 
 const PROVIDERS = [

@@ -487,7 +487,8 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
                 agentMonoFontFamily = appearance.AgentMonoFontFamily,
                 themeColors = appearance.ThemeColors,
                 agentThemeColors = appearance.AgentTheme,
-                terminalColors = appearance.TerminalColors
+                terminalColors = appearance.TerminalColors,
+                shellTheme = appearance.ShellTheme
             }
         });
     }
