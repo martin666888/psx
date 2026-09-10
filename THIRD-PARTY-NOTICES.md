@@ -48,7 +48,7 @@ The portable release redistributes:
 - ACP seed manifests — the adapter is Apache-2.0; see `licenses/acp/LICENSE`.
 - DeepSeek Harness (DSH) seed manifests — MIT; see `licenses/dsh/LICENSE` and
   `licenses/dsh/THIRD-PARTY-NOTICES.md`. PSX pins `@deepseek-ai/dsh` at
-  0.1.5-rc.1 for first install. Only `tools/dsh-seed/` ships; the installed
+  0.1.5-rc.2 for first install. Only `tools/dsh-seed/` ships; the installed
   runtime under `runtime/dsh-current/` is downloaded from the official npm
   registry after explicit user confirmation and is never redistributed in the
   ZIP. Later versions are downloaded only after a separate user-triggered

@@ -109,8 +109,8 @@ $PortableNodeUrl = "https://nodejs.org/dist/$PortableNodeVersion/$PortableNodeAr
 $PortableNodeExpectedSha = "7df0bc9375723f4a86b3aa1b7cc73342423d9677a8df4538aca31a049e309c29"
 $MapleMonoRegularExpectedSha = "E42D081EAECBDA6A043079EAAAF43EA20BD8805666BC06E1FE4DC663C462AD7F"
 $MapleMonoSemiBoldExpectedSha = "F72D4475C7AC435C7C363E0CB35100A18E4A5BB14787F17F7BBC64823B904066"
-$DshSeedLockExpectedSha = "87A14A548E528CEA705E12A24AED14E04239CBC20305C4E0BC19DCEE5D7C36E0"
-$DshPinnedVersion = "0.1.5-rc.1"
+$DshSeedLockExpectedSha = "A2E6AC98CDFF90945C7558E2A1A8FFA03346EB9B8AF431B36188BE385CCC525E"
+$DshPinnedVersion = "0.1.5-rc.2"
 # SHA-256 of tools/dsh-locks/catalog.json. Update it (and review the diff)
 # whenever the DSH lock catalog changes; the release machine never executes
 # new package code, this pin is its only catalog trust evidence.

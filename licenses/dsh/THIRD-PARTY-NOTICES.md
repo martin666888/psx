@@ -3,7 +3,7 @@ DeepSeek Harness (DSH) — @deepseek-ai/dsh
 
 PSX ships only the installation seed for DeepSeek Harness under
 `tools/dsh-seed/` (package manifest, pinned lockfile and registry-pinning
-.npmrc for the 0.1.5-rc.1 release). The DSH runtime itself is NOT
+.npmrc for the 0.1.5-rc.2 release). The DSH runtime itself is NOT
 redistributed in the portable package: it is downloaded from the official
 npm registry (registry.npmjs.org) into `runtime/dsh-current/` only after
 the user explicitly confirms the installation. Later versions are downloaded

@@ -15,7 +15,7 @@ namespace PSX.Services;
 public sealed class DshWebRuntime
 {
     public const string DshPackageName = "@deepseek-ai/dsh";
-    public const string SeededPackageVersion = "0.1.5-rc.1";
+    public const string SeededPackageVersion = "0.1.5-rc.2";
     // Advancing the first-install seed must not invalidate an existing install
     // or its last-known-good rollback tree from an earlier PSX release.
     internal const string MinimumSupportedPackageVersion = "0.1.3-alpha.2";
