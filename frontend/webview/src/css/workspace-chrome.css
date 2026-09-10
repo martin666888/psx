@@ -164,14 +164,14 @@
 /* Terminal-column active tab: [shellTheme] may give it its own plate
  * (tabActiveTerminal — e.g. the user-specified light plate on dark themes).
  * The ink variable is written by JS only alongside that plate, so legacy
- * themes (no shellTheme) keep the ordinary active-tab text and accent icon. */
+ * themes (no shellTheme) keep the ordinary active-tab text and muted icon. */
 .workspace-tab[data-active="true"][data-kind="terminal"] {
     background: var(--agent-shell-tab-active-terminal);
     color: var(--agent-shell-tab-active-terminal-ink, var(--agent-text));
 }
 
 .workspace-tab[data-active="true"][data-kind="terminal"] .workspace-tab-icon {
-    color: var(--agent-shell-tab-active-terminal-ink, var(--agent-accent));
+    color: var(--agent-shell-tab-active-terminal-ink, var(--agent-text-muted));
 }
 
 /* The accent underline marks the focused column's active tab; active tabs of
@@ -183,14 +183,14 @@
 .workspace-tab-icon {
     flex: 0 0 18px;
     width: 18px;
-    color: var(--agent-accent);
+    /* Ardot flat redesign: tab icons are neutral muted gray, not accent. */
+    color: var(--agent-text-muted);
     font: 600 10px/1 var(--workspace-font-ui);
     text-align: center;
 }
 
 /* The provider brand SVG fills the fixed icon slot; 14px keeps it on the
-   same visual scale as the old letter glyph. The mark follows currentColor
-   (accent) like the text it replaces. */
+   same visual scale as the old letter glyph. The mark follows currentColor. */
 .workspace-tab-icon svg {
     flex: 0 0 auto;
     width: 14px;
@@ -350,7 +350,10 @@
     width: 24px;
     height: 24px;
     border-radius: var(--agent-radius-control);
-    font-size: 16px;
+    /* Ardot flat redesign: the × glyph is 12px and stays muted even on the
+     * active tab (its row hover keeps the --agent-hover affordance). */
+    color: var(--agent-text-muted);
+    font-size: 12px;
     line-height: 1;
 }
 
