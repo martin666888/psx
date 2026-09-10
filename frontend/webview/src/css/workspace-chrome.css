@@ -22,8 +22,9 @@
 }
 
 /* One tab strip per column, positioned exactly on the column rect (the
-   geometry engine owns left/width as inline styles). A single-tab column
-   keeps the legacy nameplate look: the lone tab fills the strip. */
+   geometry engine owns left/width as inline styles). The strip is a fixed
+   frame: tabs live in the inner scroller and the "all tabs" entry is pinned
+   to the right edge, separated by a 1x20 divider (Ardot flat redesign). */
 .workspace-tab-strip {
     position: absolute;
     top: 0;
@@ -31,39 +32,91 @@
     box-sizing: border-box;
     display: flex;
     align-items: center;
-    gap: 1px;
     min-width: 0;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding: 0 4px;
+    overflow: hidden;
     border-right: 1px solid var(--agent-border);
     background: var(--agent-shell-chrome);
     pointer-events: auto;
     cursor: default;
 }
 
-.workspace-tab {
-    position: relative;
-    flex: 0 1 auto;
-    max-width: 200px;
+.workspace-tab-strip-scroll {
+    flex: 1 1 auto;
     min-width: 0;
     height: 100%;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 4px;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.workspace-tab-strip-divider {
+    flex: 0 0 auto;
+    width: 1px;
+    height: 20px;
+    margin: 0 1px;
+    background: var(--agent-border);
+}
+
+/* The pinned "all tabs" entry: 28x32 per the Ardot flat redesign (it widens
+   only while the overflow badge has content). */
+.workspace-tab-strip-all {
+    flex: 0 0 auto;
+    min-width: 28px;
+    height: 32px;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    margin: 0 4px 0 1px;
+    padding: 0 3px;
+    border: 0;
+    border-radius: 5px;
+    color: var(--agent-text-muted);
+    background: transparent;
+    font: inherit;
+    cursor: pointer;
+}
+
+.workspace-tab-strip-all:hover,
+.workspace-tab-strip-all[aria-expanded="true"] {
+    color: var(--agent-text);
+    background: var(--agent-hover);
+}
+
+.workspace-tab-strip-overflow {
+    font-size: 10px;
+    line-height: 16px;
+    white-space: nowrap;
+}
+
+.workspace-tab-strip-overflow:empty {
+    display: none;
+}
+
+/* Fixed 175x32 tabs (Ardot flat redesign): tabs never compress or wrap, even
+   a single tab stays a compact pill; overflow scrolls horizontally. */
+.workspace-tab {
+    position: relative;
+    flex: 0 0 175px;
+    width: 175px;
+    min-width: 0;
+    height: 32px;
     box-sizing: border-box;
     display: flex;
     align-items: center;
     gap: 0;
     padding: 0 4px 0 0;
+    border-radius: 5px;
     color: var(--agent-text-muted);
-    border-right: 1px solid var(--agent-border);
     background: transparent;
     font: inherit;
     pointer-events: auto;
     cursor: default;
     user-select: none;
-}
-
-.workspace-tab:last-child {
-    border-right: 0;
 }
 
 .workspace-tab:hover {
@@ -77,8 +130,8 @@
     box-sizing: border-box;
     display: flex;
     align-items: center;
-    gap: 7px;
-    padding: 0 4px 0 12px;
+    gap: 6px;
+    padding: 0 4px 0 10px;
     border: 0;
     color: inherit;
     background: transparent;
@@ -92,12 +145,7 @@
     outline-offset: 2px;
 }
 
-/* Single-tab columns render the legacy nameplate: the tab fills the strip
-   and carries the full-width title treatment. */
-.workspace-tab-strip:has(.workspace-tab:only-child) .workspace-tab {
-    flex: 1 1 0;
-    max-width: none;
-}
+/* The active tab's underline doubles as the focused column indicator. */
 
 .workspace-tab::after {
     content: "";
@@ -157,6 +205,12 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: 11px;
+}
+
+/* Ardot flat redesign: the active tab title is Medium, inactive Regular. */
+.workspace-tab[data-active="true"] .workspace-tab-title {
+    font-weight: 500;
 }
 
 .workspace-tab-attention {

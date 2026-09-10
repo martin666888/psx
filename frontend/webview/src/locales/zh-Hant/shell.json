@@ -16,7 +16,8 @@
     "create": "新增工作區",
     "theme": "佈景主題",
     "pane": "工作區動作",
-    "fallback": "選單"
+    "fallback": "選單",
+    "tabs": "全部標籤"
   },
   "create": {
     "placementFocused": "目前欄位",
