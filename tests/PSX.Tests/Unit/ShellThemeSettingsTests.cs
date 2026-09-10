@@ -175,6 +175,39 @@ public sealed class ShellThemePresetTests
 public sealed class ShellThemeSettingsTests
 {
     [TestMethod]
+    public void GetSettings_PublishedTemplate_ColorGroupsMatchBaseLightPreset()
+    {
+        using var workspace = TestWorkspace.Create(nameof(GetSettings_PublishedTemplate_ColorGroupsMatchBaseLightPreset));
+        var configPath = Path.Combine(workspace.Path, "psx.ini");
+        File.Copy(Path.Combine(TestWorkspace.RepositoryRoot, "psx.ini"), configPath);
+        var service = new SettingsService(configPath);
+        var settings = service.GetSettings();
+        var preset = new ThemeService().LoadTheme(
+            Path.Combine(TestWorkspace.RepositoryRoot, "theme-presets", "base-light.ini"),
+            ThemeSource.BuiltIn);
+
+        Assert.IsTrue(preset.IsValid, preset.Descriptor.DiagnosticSummary);
+        Assert.IsNotNull(preset.Descriptor.Appearance);
+        Assert.AreEqual(preset.Descriptor.Key, settings.ActiveThemeKey);
+        Assert.IsNull(service.StartupWarningCode);
+
+        // Compare every color field, including optional shell values. Fonts
+        // and non-theme settings remain independent of the preset.
+        AssertColorGroupMatches(preset.Descriptor.Appearance.ThemeColors, settings.ThemeColors);
+        AssertColorGroupMatches(preset.Descriptor.Appearance.AgentTheme, settings.AgentTheme);
+        AssertColorGroupMatches(preset.Descriptor.Appearance.TerminalColors, settings.TerminalColors);
+        AssertColorGroupMatches(preset.Descriptor.Appearance.ShellTheme, settings.ShellTheme);
+    }
+
+    private static void AssertColorGroupMatches<T>(T expected, T actual)
+    {
+        Assert.AreEqual(
+            System.Text.Json.JsonSerializer.Serialize(expected),
+            System.Text.Json.JsonSerializer.Serialize(actual),
+            $"Published template {typeof(T).Name} differs from base-light.");
+    }
+
+    [TestMethod]
     [DataRow("builtin:dark", "builtin:vercel-black")]
     [DataRow("builtin:vercel-neutral-dark", "builtin:vercel-black")]
     [DataRow("builtin:terminal-green", "builtin:meadow-green")]
