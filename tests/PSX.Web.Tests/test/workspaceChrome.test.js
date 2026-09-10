@@ -1381,3 +1381,61 @@ test('the overflow badge counts clipped tabs and activating a hidden tab scrolls
   }
   chrome.dispose();
 });
+
+test('tab re-renders restore keyboard focus onto the rebuilt tab node', async () => {
+  installAgentRuntime();
+  mountChrome();
+  const { WorkspaceChromeController } = await import(controllerUrl);
+  const chrome = new WorkspaceChromeController(
+    document.getElementById('workspace-chrome'),
+    document.getElementById('workspace-popover-root')
+  );
+  const tabs = [
+    { workspaceId: 'w1', kind: 'agent' },
+    { workspaceId: 'w2', kind: 'agent' }
+  ];
+  const layout = columnSnapshot([
+    { columnId: 'column-1', tabs, activeTabId: 'w1', ratio: 1 }
+  ]);
+  const rects = new Map([['column-1', { left: 40, top: 40, width: 420, height: 700 }]]);
+  chrome.applyLayout(layout, rects);
+  chrome.applyCatalog({
+    revision: 1,
+    providers: [],
+    maxColumns: 3,
+    workspaces: [
+      { workspaceId: 'w1', kind: 'agent', title: 'One', iconKey: 'claude', columnId: 'column-1', isActiveTab: true },
+      { workspaceId: 'w2', kind: 'agent', title: 'Two', iconKey: 'kimi', columnId: 'column-1', isActiveTab: false }
+    ]
+  });
+
+  const tabTarget = () => document.querySelector('[data-workspace-id="w2"] .workspace-tab-target');
+  tabTarget().focus();
+  assert.equal(document.activeElement, tabTarget(), 'focus starts on the tab target');
+
+  // A catalog/title re-render rebuilds the strip; focus must land on the
+  // rebuilt node for the same workspace instead of falling back to <body>.
+  chrome.applyLayout(layout, rects);
+  const rebuilt = tabTarget();
+  assert.equal(document.activeElement, rebuilt, 'focus is restored onto the rebuilt tab');
+  assert.notEqual(document.activeElement, document.body, 'focus never drops to <body>');
+
+  // The close button keeps focus too.
+  const closeButton = () => document.querySelector('[data-workspace-id="w2"] .workspace-tab-close');
+  closeButton().focus();
+  chrome.applyLayout(layout, rects);
+  assert.equal(document.activeElement, closeButton(), 'the close button keeps focus');
+
+  // A removed tab has no node to restore; focus is left alone rather than
+  // landing on an unrelated tab.
+  closeButton().focus();
+  chrome.applyLayout(columnSnapshot([
+    { columnId: 'column-1', tabs: [tabs[0]], activeTabId: 'w1', ratio: 1 }
+  ]), rects);
+  assert.equal(
+    document.querySelector('[data-workspace-id="w2"]'),
+    null,
+    'the removed tab is gone'
+  );
+  chrome.dispose();
+});

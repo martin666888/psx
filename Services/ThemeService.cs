@@ -259,6 +259,11 @@ public sealed partial class ThemeService : IThemeService
     /// per-key color failures produce non-fatal warnings and leave the field
     /// unset instead of rejecting the whole theme.
     /// </summary>
+    private static readonly HashSet<string> ShellThemePercentKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "sidebarGradientFromStop"
+    };
+
     private static List<string> PopulateOptionalColors<T>(IniDocument document, string section, T target)
     {
         var warnings = new List<string>();
@@ -272,6 +277,17 @@ public sealed partial class ThemeService : IThemeService
             var key = char.ToLowerInvariant(property.Name[0]) + property.Name[1..];
             if (!values.TryGetValue(key, out var value) || string.IsNullOrWhiteSpace(value))
                 continue;
+            if (ShellThemePercentKeys.Contains(key))
+            {
+                if (!double.TryParse(value.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var percent)
+                    || percent < 0 || percent > 100)
+                {
+                    warnings.Add($"[{section}].{key} must be a percentage between 0 and 100; the field is ignored.");
+                    continue;
+                }
+                property.SetValue(target, percent.ToString("0.##", CultureInfo.InvariantCulture));
+                continue;
+            }
             if (!CssColorRegex().IsMatch(value.Trim()))
             {
                 warnings.Add($"[{section}].{key} must be #RRGGBB or #RRGGBBAA; the field is ignored.");

@@ -384,6 +384,7 @@ export class WorkspaceChromeController {
         // scroll the newly activated tab into view.
         const previousActive = scroller.dataset.activeTabId || '';
         const previousScroll = scroller.scrollLeft;
+        const focused = this.captureTabFocus(scroller);
         scroller.replaceChildren();
         for (const tab of column.tabs || []) {
             const workspace = this.catalog.workspaces.find((item) => item.workspaceId === tab.workspaceId);
@@ -391,12 +392,38 @@ export class WorkspaceChromeController {
         }
         scroller.scrollLeft = previousScroll;
         scroller.dataset.activeTabId = column.activeTabId || '';
+        this.restoreTabFocus(scroller, focused);
         if (column.activeTabId && column.activeTabId !== previousActive) {
             const active = [...scroller.children]
                 .find((item) => item.dataset.workspaceId === column.activeTabId);
             if (active) this.scrollTabIntoView(scroller, active);
         }
         this.scheduleTabOverflowUpdate(strip);
+    }
+
+    // Rebuilding the strip replaces every node, which would bounce keyboard
+    // focus back to <body>. Remember which tab part (target / close) held
+    // focus so it can be restored onto the rebuilt node.
+    captureTabFocus(scroller) {
+        const active = document.activeElement;
+        if (!active || !scroller.contains(active)) return null;
+        const tabEl = active.closest('.workspace-tab');
+        if (!tabEl) return null;
+        return {
+            workspaceId: tabEl.dataset.workspaceId || '',
+            part: active.classList.contains('workspace-tab-close') ? 'close' : 'target'
+        };
+    }
+
+    restoreTabFocus(scroller, focused) {
+        if (!focused || !focused.workspaceId) return;
+        const tabEl = [...scroller.children]
+            .find((item) => item.dataset.workspaceId === focused.workspaceId);
+        if (!tabEl) return;
+        const target = focused.part === 'close'
+            ? tabEl.querySelector('.workspace-tab-close')
+            : tabEl.querySelector('.workspace-tab-target');
+        target?.focus();
     }
 
     // Activating a tab that sits outside the visible scroll range scrolls it

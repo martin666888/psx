@@ -176,6 +176,15 @@ public sealed class ShellThemeColors
     [JsonPropertyName("sidebarGradientTo")]
     public string? SidebarGradientTo { get; set; }
 
+    /// <summary>
+    /// Optional gradient start position in percent (0-100). The design boards
+    /// anchor the first color stop away from 0% (History 9.39% / rail 16.89%);
+    /// the shell paints one shared viewport-anchored gradient, so a single
+    /// unified stop is stored here.
+    /// </summary>
+    [JsonPropertyName("sidebarGradientFromStop")]
+    public string? SidebarGradientFromStop { get; set; }
+
     [JsonPropertyName("sidebarSelected")]
     public string? SidebarSelected { get; set; }
 

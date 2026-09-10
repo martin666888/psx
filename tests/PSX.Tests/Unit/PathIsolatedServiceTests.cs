@@ -20,8 +20,18 @@ public sealed class SettingsServiceTests
 
         Assert.AreEqual(Path.GetFullPath(configPath), service.ConfigPath);
         Assert.AreEqual("powershell", settings.DefaultShellProfileId);
-        Assert.AreEqual(AppSettings.AgentUiFontFamily, settings.AgentFontFamily);
-        Assert.AreEqual(AppSettings.BundledAgentMonoFontFamily, settings.AgentMonoFontFamily);
+        // A fresh install is seeded from the bundled base-light preset so the
+        // first launch matches applying Base Light manually.
+        var preset = new ThemeService().LoadTheme(
+            Path.Combine(TestWorkspace.RepositoryRoot, "theme-presets", "base-light.ini"),
+            ThemeSource.BuiltIn);
+        Assert.IsTrue(preset.IsValid, preset.Descriptor.DiagnosticSummary);
+        Assert.IsNotNull(preset.Descriptor.Appearance);
+        Assert.AreEqual(preset.Descriptor.Key, settings.ActiveThemeKey);
+        Assert.AreEqual(preset.Descriptor.Fingerprint, settings.ThemeFingerprint);
+        Assert.AreEqual(preset.Descriptor.Appearance.AgentFontFamily, settings.AgentFontFamily);
+        Assert.AreEqual(preset.Descriptor.Appearance.AgentFontSize, settings.AgentFontSize);
+        Assert.AreEqual(preset.Descriptor.Appearance.ShellTheme.Sidebar, settings.ShellTheme.Sidebar);
         Assert.IsFalse(File.Exists(configPath));
     }
 

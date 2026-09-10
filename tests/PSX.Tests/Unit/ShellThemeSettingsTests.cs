@@ -84,6 +84,37 @@ public sealed class ShellThemePresetTests
     }
 
     [TestMethod]
+    public void LoadTheme_GradientStopPercent_ParsedAndValidated()
+    {
+        using var workspace = TestWorkspace.Create(nameof(LoadTheme_GradientStopPercent_ParsedAndValidated));
+        var themePath = Path.Combine(workspace.Path, "meadow-green.ini");
+        File.Copy(
+            Path.Combine(TestWorkspace.RepositoryRoot, "theme-presets", "meadow-green.ini"),
+            themePath);
+        var service = new ThemeService(workspace.Path, Path.Combine(workspace.Path, "user"));
+
+        var result = service.LoadTheme(themePath, ThemeSource.User);
+
+        Assert.IsTrue(result.IsValid);
+        var shell = result.Descriptor.Appearance!.ShellTheme;
+        Assert.AreEqual("#f3f8ec", shell.SidebarGradientFrom);
+        Assert.AreEqual("#e5f8d1", shell.SidebarGradientTo);
+        Assert.AreEqual("9.39", shell.SidebarGradientFromStop);
+
+        // Out-of-range stops are ignored with a warning, never a load failure.
+        File.WriteAllText(
+            themePath,
+            File.ReadAllText(themePath).Replace(
+                "sidebarGradientFromStop=9.39", "sidebarGradientFromStop=250", StringComparison.Ordinal));
+        var invalid = service.LoadTheme(themePath, ThemeSource.User);
+        Assert.IsTrue(invalid.IsValid);
+        Assert.IsNull(invalid.Descriptor.Appearance!.ShellTheme.SidebarGradientFromStop);
+        StringAssert.Contains(
+            invalid.Descriptor.DiagnosticSummary,
+            "[shellTheme].sidebarGradientFromStop must be a percentage");
+    }
+
+    [TestMethod]
     public void ComputeFingerprint_ShellThemeChangesProduceDifferentFingerprints()
     {
         using var workspace = TestWorkspace.Create(nameof(ComputeFingerprint_ShellThemeChangesProduceDifferentFingerprints));
@@ -124,6 +155,7 @@ public sealed class ShellThemePresetTests
         Assert.IsNull(shell.Sidebar);
         Assert.IsNull(shell.SidebarGradientFrom);
         Assert.IsNull(shell.SidebarGradientTo);
+        Assert.IsNull(shell.SidebarGradientFromStop);
         Assert.IsNull(shell.SidebarSelected);
         Assert.IsNull(shell.SidebarInput);
         Assert.IsNull(shell.SidebarInputBorder);
@@ -152,12 +184,24 @@ public sealed class ShellThemeSettingsTests
     {
         using var workspace = TestWorkspace.Create($"migration-{legacyKey}-{expectedKey}");
         var configPath = Path.Combine(workspace.Path, "psx.ini");
-        WriteConfigWithThemeKey(configPath, legacyKey);
+        WriteConfigWithThemeKey(configPath, legacyKey, fontFamily: "Custom Mono, monospace");
 
         var loaded = new SettingsService(configPath).GetSettings();
 
+        var presetPath = Path.Combine(
+            TestWorkspace.RepositoryRoot, "theme-presets", expectedKey["builtin:".Length..] + ".ini");
+        var preset = new ThemeService().LoadTheme(presetPath, ThemeSource.BuiltIn);
+        Assert.IsTrue(preset.IsValid, preset.Descriptor.DiagnosticSummary);
+        Assert.IsNotNull(preset.Descriptor.Appearance);
         Assert.AreEqual(expectedKey, loaded.ActiveThemeKey);
-        Assert.AreEqual("", loaded.ThemeFingerprint);
+        Assert.AreEqual(preset.Descriptor.Fingerprint, loaded.ThemeFingerprint);
+        // The successor preset's colors are applied immediately…
+        Assert.AreEqual(preset.Descriptor.Appearance.ThemeColors.Background, loaded.ThemeColors.Background);
+        Assert.AreEqual(preset.Descriptor.Appearance.AgentTheme.CodeBlockBg, loaded.AgentTheme.CodeBlockBg);
+        Assert.AreEqual(preset.Descriptor.Appearance.TerminalColors.Foreground, loaded.TerminalColors.Foreground);
+        Assert.AreEqual(preset.Descriptor.Appearance.ShellTheme.Sidebar, loaded.ShellTheme.Sidebar);
+        // …while user font choices survive the migration.
+        Assert.AreEqual("Custom Mono, monospace", loaded.FontFamily);
         var persisted = File.ReadAllText(configPath);
         StringAssert.Contains(persisted, $"activeThemeKey={expectedKey}");
         Assert.IsFalse(persisted.Contains(legacyKey, StringComparison.OrdinalIgnoreCase));
@@ -194,6 +238,7 @@ public sealed class ShellThemeSettingsTests
         settings.ShellTheme.Sidebar = "#f7f7fa";
         settings.ShellTheme.SidebarGradientFrom = "#f3f8ec";
         settings.ShellTheme.SidebarGradientTo = "#e5f8d1";
+        settings.ShellTheme.SidebarGradientFromStop = "9.39";
         settings.ShellTheme.SidebarSelected = "#e8ebf0";
         settings.ShellTheme.SidebarInput = "#ffffff";
         settings.ShellTheme.SidebarInputBorder = "#dee0e5";
@@ -212,6 +257,7 @@ public sealed class ShellThemeSettingsTests
         Assert.AreEqual("#f7f7fa", loaded.ShellTheme.Sidebar);
         Assert.AreEqual("#f3f8ec", loaded.ShellTheme.SidebarGradientFrom);
         Assert.AreEqual("#e5f8d1", loaded.ShellTheme.SidebarGradientTo);
+        Assert.AreEqual("9.39", loaded.ShellTheme.SidebarGradientFromStop);
         Assert.AreEqual("#e8ebf0", loaded.ShellTheme.SidebarSelected);
         Assert.AreEqual("#ffffff", loaded.ShellTheme.SidebarInput);
         Assert.AreEqual("#dee0e5", loaded.ShellTheme.SidebarInputBorder);
@@ -250,10 +296,13 @@ public sealed class ShellThemeSettingsTests
         Assert.IsFalse(File.ReadAllText(configPath).Contains("[shellTheme]", StringComparison.OrdinalIgnoreCase));
     }
 
-    private static void WriteConfigWithThemeKey(string configPath, string activeThemeKey)
+    private static void WriteConfigWithThemeKey(string configPath, string activeThemeKey, string? fontFamily = null)
     {
         var service = new SettingsService(configPath);
-        service.SaveSettings(new AppSettings());
+        var settings = new AppSettings();
+        if (fontFamily != null)
+            settings.FontFamily = fontFamily;
+        service.SaveSettings(settings);
         File.WriteAllText(configPath, ReplaceActiveThemeKey(File.ReadAllText(configPath), activeThemeKey));
     }
 

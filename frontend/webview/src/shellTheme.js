@@ -18,6 +18,13 @@ function text(value) {
     return typeof value === 'string' && value.trim() ? value.trim() : '';
 }
 
+/** @param {unknown} value @returns {number | null} clamped 0-100 or null */
+function percent(value) {
+    const n = Number.parseFloat(text(value));
+    if (!Number.isFinite(n)) return null;
+    return Math.min(100, Math.max(0, n));
+}
+
 /** @param {HTMLElement} root @param {string} name @param {unknown} value */
 function applyVar(root, name, value) {
     const v = text(value);
@@ -42,12 +49,17 @@ export function applyShellTheme(root, shellTheme) {
     // The sidebar plate: a from+to gradient overrides a plain color; a lone
     // gradient endpoint is ignored in favor of the plain color. The gradient
     // is painted viewport-anchored (background-attachment: fixed in CSS) so
-    // the rail and the History dock share one continuous wash.
+    // the rail and the History dock share one continuous wash. An optional
+    // start stop (percent) anchors the first color away from 0% as on the
+    // design boards.
     const gradientFrom = text(theme.sidebarGradientFrom);
     const gradientTo = text(theme.sidebarGradientTo);
     let sidebar = text(theme.sidebar);
     if (gradientFrom && gradientTo) {
-        sidebar = `linear-gradient(180deg, ${gradientFrom}, ${gradientTo})`;
+        const fromStop = percent(theme.sidebarGradientFromStop);
+        sidebar = fromStop != null
+            ? `linear-gradient(180deg, ${gradientFrom} ${fromStop}%, ${gradientTo})`
+            : `linear-gradient(180deg, ${gradientFrom}, ${gradientTo})`;
     }
     applyVar(root, '--agent-shell-sidebar', sidebar);
     applyVar(root, '--agent-shell-sidebar-selected', theme.sidebarSelected);

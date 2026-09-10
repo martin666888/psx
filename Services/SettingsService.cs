@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -49,6 +50,7 @@ public sealed class SettingsService : ISettingsService
         if (!File.Exists(_configPath))
         {
             _settings = new AppSettings();
+            SeedFromDefaultPreset(_settings);
             NormalizeAgentSettings(_settings);
             return _settings;
         }
@@ -347,6 +349,11 @@ public sealed class SettingsService : ISettingsService
     private static void ApplyShellThemeSetting(AppSettings settings, string key, string value)
     {
         var s = settings.ShellTheme;
+        if (string.Equals(key, "sidebargradientfromstop", StringComparison.Ordinal))
+        {
+            s.SidebarGradientFromStop = ValidateOptionalPercent(value);
+            return;
+        }
         var color = ValidateOptionalColor(value);
         if (color == null)
             return;
@@ -367,6 +374,16 @@ public sealed class SettingsService : ISettingsService
             case "composershadow": s.ComposerShadow = color; break;
             case "terminalbackground": s.TerminalBackground = color; break;
         }
+    }
+
+    private static string? ValidateOptionalPercent(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+        if (!double.TryParse(value.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var percent)
+            || percent < 0 || percent > 100)
+            return null;
+        return percent.ToString("0.##", CultureInfo.InvariantCulture);
     }
 
     private static string? ValidateOptionalColor(string value)
@@ -402,8 +419,9 @@ public sealed class SettingsService : ISettingsService
     /// <summary>
     /// Legacy built-in preset id → successor id. The old preset INI files no
     /// longer ship, so an active key pointing at one is rewritten once to the
-    /// mapped successor and the config is persisted immediately (idempotent:
-    /// the rewritten key never matches again).
+    /// mapped successor, the successor preset's colors are applied (user fonts
+    /// and non-theme settings are preserved) and the config is persisted
+    /// immediately (idempotent: the rewritten key never matches again).
     /// </summary>
     private static readonly Dictionary<string, string> LegacyThemeKeyMap =
         new(StringComparer.OrdinalIgnoreCase)
@@ -422,12 +440,59 @@ public sealed class SettingsService : ISettingsService
         if (!LegacyThemeKeyMap.TryGetValue(settings.ActiveThemeKey.Trim(), out var mappedKey))
             return;
 
-        // The fingerprint of the retired preset cannot be recomputed from the
-        // stored palette (its INI is gone and the successor preset differs), so
-        // it is cleared instead: the Theme picker then marks the mapped preset
-        // as having pending changes until the user re-confirms it, at which
-        // point the fingerprint is recomputed from the loaded preset.
+        // Apply the successor preset's color groups so the migrated install
+        // renders the new palette immediately; user font choices and non-theme
+        // settings are preserved. When the preset file cannot be loaded the
+        // migration degrades to a key-only rewrite with an empty fingerprint —
+        // the Theme picker then marks the mapped preset as having pending
+        // changes until the user re-confirms it.
+        var descriptor = TryLoadBuiltInPreset(mappedKey);
+        if (descriptor?.Appearance != null)
+        {
+            var fontSize = settings.FontSize;
+            var fontFamily = settings.FontFamily;
+            var agentFontSize = settings.AgentFontSize;
+            var agentFontFamily = settings.AgentFontFamily;
+            var agentMonoFontFamily = settings.AgentMonoFontFamily;
+            descriptor.Appearance.ApplyTo(settings);
+            settings.FontSize = fontSize;
+            settings.FontFamily = fontFamily;
+            settings.AgentFontSize = agentFontSize;
+            settings.AgentFontFamily = agentFontFamily;
+            settings.AgentMonoFontFamily = agentMonoFontFamily;
+            SaveThemeSettings(settings, descriptor.Key, descriptor.Fingerprint);
+            return;
+        }
+
         SaveThemeSettings(settings, mappedKey, "");
+    }
+
+    private static ThemeDescriptor? TryLoadBuiltInPreset(string mappedKey)
+    {
+        const string prefix = "builtin:";
+        if (!mappedKey.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            return null;
+        var presetPath = Path.Combine(
+            AppContext.BaseDirectory, "theme-presets", mappedKey[prefix.Length..] + ".ini");
+        if (!File.Exists(presetPath))
+            return null;
+        var loaded = new ThemeService().LoadTheme(presetPath, ThemeSource.BuiltIn);
+        return loaded.IsValid ? loaded.Descriptor : null;
+    }
+
+    /// <summary>
+    /// Seeds a fresh install (no psx.ini) from the bundled base-light preset so
+    /// the first launch renders exactly what manually applying Base Light
+    /// produces, including the shell chrome colors.
+    /// </summary>
+    private static void SeedFromDefaultPreset(AppSettings settings)
+    {
+        var descriptor = TryLoadBuiltInPreset("builtin:base-light");
+        if (descriptor?.Appearance == null)
+            return;
+        descriptor.Appearance.ApplyTo(settings);
+        settings.ActiveThemeKey = descriptor.Key;
+        settings.ThemeFingerprint = descriptor.Fingerprint;
     }
 
     private static string BuildIni(AppSettings settings)
@@ -542,6 +607,7 @@ public sealed class SettingsService : ISettingsService
             AppendIfSet(builder, "sidebar", s.Sidebar);
             AppendIfSet(builder, "sidebarGradientFrom", s.SidebarGradientFrom);
             AppendIfSet(builder, "sidebarGradientTo", s.SidebarGradientTo);
+            AppendIfSet(builder, "sidebarGradientFromStop", s.SidebarGradientFromStop);
             AppendIfSet(builder, "sidebarSelected", s.SidebarSelected);
             AppendIfSet(builder, "sidebarInput", s.SidebarInput);
             AppendIfSet(builder, "sidebarInputBorder", s.SidebarInputBorder);
@@ -559,6 +625,7 @@ public sealed class SettingsService : ISettingsService
 
     private static bool HasAnyShellThemeValue(ShellThemeColors s) =>
         s.Sidebar != null || s.SidebarGradientFrom != null || s.SidebarGradientTo != null ||
+        s.SidebarGradientFromStop != null ||
         s.SidebarSelected != null || s.SidebarInput != null || s.SidebarInputBorder != null ||
         s.Chrome != null || s.Workspace != null || s.TabActive != null || s.TabActiveTerminal != null ||
         s.ComposerBg != null || s.ComposerBorder != null || s.ComposerShadow != null ||

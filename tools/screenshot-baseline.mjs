@@ -88,13 +88,42 @@ function appearanceFromPreset(file) {
     agentMonoFontFamily: ini.agent?.monoFontFamily || '',
     themeColors: ini.theme || {},
     agentThemeColors: ini.agentTheme || {},
-    terminalColors: ini.terminalColors || {}
+    terminalColors: ini.terminalColors || {},
+    shellTheme: ini.shellTheme || {}
   };
 }
 
+// Every built-in preset is exercised so the [shellTheme] payload (composer
+// plate, tab strip, sidebar gradient stops) is verified per theme, not just
+// the semantic color groups. Geometry does not depend on colors, so the two
+// baseline themes (dark/light) run the full scene matrix while the remaining
+// presets run a representative subset: one single-column scene, one
+// two-column scene, plus the History scene for the gradient theme.
+const EXTRA_SCENES = ['responsive-720', 'split-agents'];
 const THEMES = {
-  dark: appearanceFromPreset(path.join(root, 'theme-presets', 'vercel-black.ini')),
-  light: appearanceFromPreset(path.join(root, 'theme-presets', 'base-light.ini'))
+  dark: {
+    appearance: appearanceFromPreset(path.join(root, 'theme-presets', 'vercel-black.ini')),
+    colorScheme: 'dark'
+  },
+  light: {
+    appearance: appearanceFromPreset(path.join(root, 'theme-presets', 'base-light.ini')),
+    colorScheme: 'light'
+  },
+  meadow: {
+    appearance: appearanceFromPreset(path.join(root, 'theme-presets', 'meadow-green.ini')),
+    colorScheme: 'light',
+    scenes: [...EXTRA_SCENES, 'mixed-history-push']
+  },
+  parchment: {
+    appearance: appearanceFromPreset(path.join(root, 'theme-presets', 'parchment.ini')),
+    colorScheme: 'light',
+    scenes: EXTRA_SCENES
+  },
+  charcoal: {
+    appearance: appearanceFromPreset(path.join(root, 'theme-presets', 'charcoal.ini')),
+    colorScheme: 'dark',
+    scenes: EXTRA_SCENES
+  }
 };
 
 const PROVIDERS = [
@@ -1111,6 +1140,7 @@ try {
   browser = await chromium.launch({ headless: true, executablePath });
   for (const [themeName, theme] of Object.entries(THEMES)) {
     for (const scene of SCENES) {
+      if (theme.scenes && !theme.scenes.includes(scene.name)) continue;
       const name = `${scene.name}--${themeName}`;
       let context;
       try {
@@ -1118,7 +1148,7 @@ try {
           viewport: { width: scene.viewportWidth, height: HEIGHT },
           deviceScaleFactor: 1,
           locale: 'zh-CN',
-          colorScheme: themeName,
+          colorScheme: theme.colorScheme,
           reducedMotion: 'reduce'
         });
         if (scene.clipboard) {
@@ -1147,7 +1177,7 @@ try {
         await page.goto(`${origin}/app/index.html`, { waitUntil: 'load' });
         await page.evaluate((events) => {
           for (const event of events) window.__psxEmit(event);
-        }, scene.events(theme));
+        }, scene.events(theme.appearance));
         await page.waitForSelector(scene.ready, { timeout: 10000 });
         if (scene.stage) await scene.stage(page);
         if (scene.name === 'responsive-720') await verifyGlobalDismissals(page);
@@ -1206,9 +1236,14 @@ if (failures.length) {
   for (const failure of failures) console.error(' - ' + failure);
   process.exitCode = 1;
 } else {
-  const themeCount = Object.keys(THEMES).length;
-  const screenshotCount = SCENES.filter((scene) => !scene.geometryOnly).length * themeCount;
-  const geometryCount = SCENES.filter((scene) => scene.geometryOnly).length * themeCount;
+  const countScenes = (predicate) => Object.values(THEMES).reduce(
+    (total, theme) => total + SCENES.filter(
+      (scene) => predicate(scene) && (!theme.scenes || theme.scenes.includes(scene.name))
+    ).length,
+    0
+  );
+  const screenshotCount = countScenes((scene) => !scene.geometryOnly);
+  const geometryCount = countScenes((scene) => scene.geometryOnly);
   console.log(
     `\nVisual gate passed: ${screenshotCount} screenshots, ${geometryCount} geometry checks, ` +
     `threshold ${(MAX_PIXEL_DIFFERENCE_RATIO * 100).toFixed(2)}%.`
