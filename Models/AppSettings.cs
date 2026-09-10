@@ -129,7 +129,7 @@ public sealed class AgentThemeColors
     public string ElicitationBorder { get; set; } = "#cfe5e1";
     public string Overlay { get; set; } = "#000000";
     public string Shadow { get; set; } = "#000000";
-    public string FocusRing { get; set; } = "#1f7a72";
+    public string FocusRing { get; set; } = "#6e737a";
     // Optional workbench backdrop tint painted as a top-down gradient behind
     // the two Agent panels. RRGGBBAA; fully transparent means "no tint".
     public string WorkbenchTint { get; set; } = "#00000000";

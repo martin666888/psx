@@ -45,7 +45,7 @@
     /* 遮罩/阴影/focus */
     --agent-overlay: #000000;
     --agent-shadow: #000000;
-    --agent-focus-ring: #5aa6a0;
+    --agent-focus-ring: #6e737a;
 
     /* === 外壳 chrome (来自可选 [shellTheme]) ===
      * 字段为 null/缺省时前端移除对应变量，回退到这里 —— 即无 shellTheme
@@ -133,7 +133,7 @@ html[lang="zh-Hant"] {
     font-weight: 600;
 }
 
-/* Product-level focus policy: keyboard focus is visualized by one uniform
- * outline ring (2px solid var(--agent-focus-ring), offset 2px) declared
- * per component on :focus-visible. No global suppression and no global
- * default ring; pointer clicks never show it. */
+/* Product-level focus policy: keyboard-only controls use the standard 2px
+ * separated ring declared per component. Editable fields use a quieter 1px
+ * attached ring so mouse focus remains clear without looking double-bordered.
+ * No global suppression and no global default ring. */

@@ -63,8 +63,8 @@
 }
 
 .agent-composer-card:has([data-role="input"]:focus-visible) {
-    outline: 2px solid var(--agent-focus-ring);
-    outline-offset: 2px;
+    outline: 1px solid var(--agent-focus-ring);
+    outline-offset: 0;
 }
 
 /* Context usage retains its custom ring visualization; its surrounding
