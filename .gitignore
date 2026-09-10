@@ -379,6 +379,7 @@ FodyWeavers.xsd
 # Codex / agent local state. Keep the repository-level AGENTS.md tracked.
 /.codex/
 /.agents/
+/.playwright-mcp/
 
 # Operating system metadata
 .DS_Store
