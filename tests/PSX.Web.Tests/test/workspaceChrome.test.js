@@ -1001,7 +1001,7 @@ test('rail buttons render inline SVG icons and expose no workspace-list entry', 
   assert.match(css, /#activity-rail \.workspace-chrome-button::before\s*\{[^}]*inset:\s*4px;/s);
   assert.match(
     css,
-    /#activity-rail \.workspace-chrome-button\[aria-expanded="true"\]::before\s*\{[^}]*--agent-surface-muted/s
+    /#activity-rail \.workspace-chrome-button\[aria-expanded="true"\]::before\s*\{[^}]*--agent-shell-sidebar-selected/s
   );
   assert.doesNotMatch(
     css,

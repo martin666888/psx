@@ -357,6 +357,11 @@ export class WorkspaceChromeController {
         tabEl.setAttribute('role', 'presentation');
         tabEl.dataset.workspaceId = tab.workspaceId || '';
         tabEl.dataset.active = tab.workspaceId === column.activeTabId ? 'true' : 'false';
+        // Terminal vs Agent/DSH/Kimi Web columns style their active tab
+        // differently ([shellTheme] tabActiveTerminal); missing catalog data
+        // leaves the attribute off and the generic active-tab look applies.
+        const kind = workspace?.kind ?? tab.kind;
+        if (kind) tabEl.dataset.kind = String(kind);
         tabEl.title = workspace?.title || t('workspace.fallbackTitle');
 
         const target = document.createElement('button');

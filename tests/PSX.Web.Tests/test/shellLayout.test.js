@@ -412,8 +412,8 @@ test('shell: composer and conversation share the same reading-column rules', () 
   );
   assert.match(
     composer,
-    /\.agent-composer-card\s*\{[\s\S]*?border:\s*1px solid var\(--agent-border-strong\)/,
-    'Composer uses the strong theme border instead of relying on a dark-theme shadow'
+    /\.agent-composer-card\s*\{[\s\S]*?border:\s*1px solid var\(--agent-shell-composer-border\)/,
+    'Composer uses the themed composer border (default: the strong theme border)'
   );
 
   const usage = readCss('usage.css');
@@ -562,7 +562,7 @@ test('shell: the History dock is a free-standing rounded workbench panel', () =>
     history,
     /\.agent-history-dock\s*\{[\s\S]*?border: 1px solid var\(--agent-border\);\s*border-radius: var\(--agent-workspace-radius\)/
   );
-  assert.match(history, /\.agent-history-dock\s*\{[\s\S]*?background: var\(--agent-canvas-surface\)/);
+  assert.match(history, /\.agent-history-dock\s*\{[\s\S]*?background: var\(--agent-shell-sidebar\)/);
   // The resize hit zone still straddles the right edge and the dock never
   // clips it away with overflow.
   assert.match(history, /\.agent-history-dock-resizer\s*\{[\s\S]*?right: -4px/);

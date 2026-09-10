@@ -47,6 +47,26 @@
     --agent-shadow: #000000;
     --agent-focus-ring: #5aa6a0;
 
+    /* === 外壳 chrome (来自可选 [shellTheme]) ===
+     * 字段为 null/缺省时前端移除对应变量，回退到这里 —— 即无 shellTheme
+     * 主题的既有视觉。渐变没有默认变量：JS 直接把 linear-gradient(180deg,
+     * from, to) 写进 --agent-shell-sidebar 覆盖纯色。 */
+    --agent-shell-sidebar: var(--agent-surface);
+    --agent-shell-sidebar-selected: var(--agent-surface-muted);
+    /* initial = 未设置：history.css 的消费点按明暗模式各自回退（浅色透明、
+     * 深色保留 shadcn 的 input 半透明洗色），显式 sidebarInput 仍然生效。 */
+    --agent-shell-sidebar-input: initial;
+    --agent-shell-sidebar-input-border: var(--agent-border-strong);
+    --agent-shell-chrome: var(--agent-bg);
+    --agent-shell-workspace: var(--agent-canvas-surface);
+    --agent-shell-tab-active: var(--agent-surface);
+    --agent-shell-tab-active-terminal: var(--agent-shell-tab-active);
+    --agent-shell-composer-bg: var(--agent-surface-raised);
+    --agent-shell-composer-border: var(--agent-border-strong);
+    /* 阴影变量只承载颜色；偏移/模糊由 .agent-composer-card 的 box-shadow 组合。 */
+    --agent-shell-composer-shadow: color-mix(in srgb, var(--agent-shadow) 12%, transparent);
+    --agent-shell-terminal-bg: var(--agent-bg);
+
     /* === 字体 === */
     --agent-font-size: 15px;
     /* UI stacks carry every shipped script's fallback: Simplified Chinese,

@@ -9,7 +9,7 @@
     height: var(--workspace-chrome-height);
     z-index: 30;
     color: var(--agent-text);
-    background: var(--agent-bg);
+    background: var(--agent-shell-chrome);
     border-bottom: 1px solid var(--agent-border);
     font-family: var(--workspace-font-ui);
     font-size: 12px;
@@ -37,6 +37,7 @@
     overflow-y: hidden;
     padding: 0 4px;
     border-right: 1px solid var(--agent-border);
+    background: var(--agent-shell-chrome);
     pointer-events: auto;
     cursor: default;
 }
@@ -109,7 +110,20 @@
 
 .workspace-tab[data-active="true"] {
     color: var(--agent-text);
-    background: var(--agent-surface);
+    background: var(--agent-shell-tab-active);
+}
+
+/* Terminal-column active tab: [shellTheme] may give it its own plate
+ * (tabActiveTerminal — e.g. the user-specified light plate on dark themes).
+ * The ink variable is written by JS only alongside that plate, so legacy
+ * themes (no shellTheme) keep the ordinary active-tab text and accent icon. */
+.workspace-tab[data-active="true"][data-kind="terminal"] {
+    background: var(--agent-shell-tab-active-terminal);
+    color: var(--agent-shell-tab-active-terminal-ink, var(--agent-text));
+}
+
+.workspace-tab[data-active="true"][data-kind="terminal"] .workspace-tab-icon {
+    color: var(--agent-shell-tab-active-terminal-ink, var(--agent-accent));
 }
 
 /* The accent underline marks the focused column's active tab; active tabs of
@@ -201,7 +215,11 @@
     flex-direction: column;
     align-items: center;
     gap: 2px;
-    background: var(--agent-surface);
+    background: var(--agent-shell-sidebar);
+    /* Viewport-anchored so the rail and the History dock share one
+     * continuous themed gradient (e.g. meadow green) and content never
+     * drags it; solid colors are unaffected. */
+    background-attachment: fixed;
     border-right: 1px solid var(--agent-border);
     color: var(--agent-text-muted);
     font-family: var(--workspace-font-ui);
@@ -251,7 +269,7 @@
 }
 
 #activity-rail .workspace-chrome-button[aria-expanded="true"]::before {
-    background: var(--agent-surface-muted);
+    background: var(--agent-shell-sidebar-selected);
     box-shadow: inset 0 0 0 1px var(--agent-border);
 }
 

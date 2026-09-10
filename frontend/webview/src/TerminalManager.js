@@ -99,7 +99,7 @@ export class TerminalManager {
         if (settings.terminalColors && typeof settings.terminalColors === 'object') {
             const tc = settings.terminalColors;
             this._xtermTheme = {
-                background: this._resolveXtermBg(settings.themeColors),
+                background: this._resolveXtermBg(settings),
                 foreground: tc.foreground || defaultXtermTheme.foreground,
                 cursor: tc.cursor || defaultXtermTheme.cursor,
                 cursorAccent: tc.cursorAccent || defaultXtermTheme.cursorAccent,
@@ -128,7 +128,7 @@ export class TerminalManager {
         if (settings.themeColors && typeof settings.themeColors === 'object') {
             const root = document.documentElement;
             const tc = settings.themeColors;
-            this._setCssVar(root, '--term-bg', tc.background);
+            this._setCssVar(root, '--term-bg', this._resolveXtermBg(settings));
             this._setCssVar(root, '--term-scrollbar', tc.scrollbar);
             this._setCssVar(root, '--term-scrollbar-hover', tc.scrollbarHover);
         }
@@ -593,7 +593,14 @@ export class TerminalManager {
         return this._xtermTheme;
     }
 
-    _resolveXtermBg(themeColors) {
+    _resolveXtermBg(settings) {
+        // shellTheme.terminalBackground gives the terminal its own plate,
+        // overriding the theme background (xterm needs the concrete color,
+        // not a var() reference).
+        const shell = settings && typeof settings.shellTheme === 'object' ? settings.shellTheme : null;
+        const shellBg = shell ? shell.terminalBackground : null;
+        if (typeof shellBg === 'string' && shellBg.trim()) return shellBg.trim();
+        const themeColors = settings && settings.themeColors;
         if (themeColors && typeof themeColors.background === 'string' && themeColors.background.startsWith('#')) {
             return themeColors.background;
         }

@@ -33,10 +33,10 @@
 .agent-composer-card {
     min-width: 0;
     overflow: visible;
-    border: 1px solid var(--agent-border-strong);
+    border: 1px solid var(--agent-shell-composer-border);
     border-radius: var(--agent-radius-composer);
-    background: var(--card);
-    box-shadow: var(--agent-shadow-composer);
+    background: var(--agent-shell-composer-bg);
+    box-shadow: 0 5px 8px 1px var(--agent-shell-composer-shadow); /* shadow color only; geometry composed here */
     transition: box-shadow var(--agent-duration-fast) var(--agent-ease-standard);
 }
 

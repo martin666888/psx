@@ -14,6 +14,7 @@ import type { SessionRuntimeHost } from './SessionRuntimeController.js';
 import type { PlanHost } from '../plan/PlanController.js';
 import { applyShadcnTheme } from '../ui/themeAdapter.js';
 import { colorSchemeForBackground } from '../../../webview/src/colorScheme.js';
+import { applyShellTheme } from '../../../webview/src/shellTheme.js';
 import { setPortalContainer } from '../ui/portalContainer.js';
 
 /** The one terminal-view method the host toggles when switching workspaces. */
@@ -28,6 +29,7 @@ interface AgentAppearanceSettings {
   agentMonoFontFamily?: string;
   themeColors?: Record<string, string | undefined>;
   agentThemeColors?: Record<string, string | undefined>;
+  shellTheme?: Record<string, string | undefined>;
 }
 
 interface WorkspaceEntry {
@@ -467,6 +469,10 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
       this.setVar(root, '--agent-focus-ring', a.focusRing);
       this.setVar(root, '--agent-workbench-tint', a.workbenchTint);
     }
+
+    // Optional [shellTheme] chrome colors — same set/remove projection as the
+    // always-loaded shell (main.js routes the same payload here).
+    applyShellTheme(root, settings.shellTheme);
   }
 
   private setVar(el: HTMLElement, name: string, value: unknown): void {

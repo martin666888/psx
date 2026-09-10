@@ -21,7 +21,10 @@
     min-width: 0;
     border: 1px solid var(--agent-border);
     border-radius: var(--agent-workspace-radius);
-    background: var(--agent-canvas-surface);
+    background: var(--agent-shell-sidebar);
+    /* Shares the rail's viewport-anchored gradient plate so a themed
+     * sidebar gradient flows continuously across both sidebar surfaces. */
+    background-attachment: fixed;
     color: var(--agent-text);
     pointer-events: auto;
 }
@@ -88,6 +91,29 @@
 .agent-history-provider-filter {
     width: 100%;
     min-width: 0;
+}
+
+/* Search / provider-filter plates follow [shellTheme] sidebarInput. The
+ * variable defaults to `initial` (unset) so the two rules below reproduce
+ * the shadcn Input defaults per color scheme: transparent in light themes,
+ * the translucent input wash in dark themes. An explicitly themed sidebar
+ * input (set inline on <html> by JS) wins in both schemes. */
+.agent-history-search,
+.agent-history-provider-filter {
+    background-color: var(--agent-shell-sidebar-input);
+    border-color: var(--agent-shell-sidebar-input-border);
+}
+
+.agent-ui-dark .agent-history-search,
+.agent-ui-dark .agent-history-provider-filter {
+    background-color: var(--agent-shell-sidebar-input,
+        color-mix(in srgb, var(--input) 30%, transparent));
+}
+
+/* Selected thread row follows the themed sidebar selection color (the
+ * attribute selector outranks the row's bg-muted utility). */
+.agent-history-item[aria-current="true"] {
+    background-color: var(--agent-shell-sidebar-selected);
 }
 
 .agent-history-dock-content {

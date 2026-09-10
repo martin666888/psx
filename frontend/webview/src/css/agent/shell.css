@@ -139,7 +139,7 @@
     --agent-reading-column-start: calc((100% - var(--agent-reading-column-max)) / 2);
     border: 1px solid var(--agent-border);
     border-radius: var(--agent-workspace-radius);
-    background: var(--agent-canvas-surface);
+    background: var(--agent-shell-workspace);
     box-shadow: var(--agent-shadow-canvas);
     color: var(--agent-text);
 }
