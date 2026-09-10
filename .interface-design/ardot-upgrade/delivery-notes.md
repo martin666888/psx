@@ -13,6 +13,7 @@
 | 4158962 | Tab 固定 175×32px（圆角 5、间距 4、标题 11px、激活 Medium）、滚动区+右侧固定「全部标签」入口（1×20 分隔、+N 徽章、列内菜单）、激活隐藏标签自动滚动可见、重渲染保持滚动位置 |
 | 6f2ff7e | Tab 图标改中性灰、关闭 × 12px、AGENTS.md 视觉合同与测试最低数更新 |
 | 2d35a58 | 视觉 harness 几何契约适配扁平布局、历史面板元数据对比度修复、基线重录 |
+| 1c08b48 | 复审修复：迁移实际应用预设颜色、新装播种 base-light、psx.ini 模板对齐、Tab 焦点保留、composerBg 换算纠正、`sidebarGradientFromStop` 色标位置、视觉 harness 覆盖五主题 |
 
 ## 五套内置主题
 
@@ -32,7 +33,7 @@
 - 画板未定义的交互态（hover/pressed、焦点环）沿用现有行为。
 - ANSI 色、错误/警告等功能色沿用现有语义字段，不来自画板。
 - DSH / Kimi Web 内部界面不在本次范围（PSX 只改宿主边界，gutter 已归零）。
-- 视觉基线截图由 Full 套件的 locked-Chromium 检查覆盖；本次为有意重设计，基线已通过 `npm run update:visual` 重录（30 张，axe 0 违规），差异逐项对应：扁平几何（gutter/圆角/阴影移除）、175px 固定 Tab + 溢出入口、阅读列 760px、历史面板头部 padding 16px。
+- 视觉基线截图由 Full 套件的 locked-Chromium 检查覆盖；本次为有意重设计，基线已通过 `npm run update:visual` 重录，差异逐项对应：扁平几何（gutter/圆角/阴影移除）、175px 固定 Tab + 溢出入口、阅读列 760px、历史面板头部 padding 16px。复审后 harness 补传 `shellTheme` 并覆盖全部五套预设：base-light / vercel-black 跑全场景，meadow-green 加跑单列+双列+History 推移（验证渐变与 9.39% 色标位置），parchment / charcoal 跑单列+双列；dark 基线因 shellTheme 真实生效而更新，light 基线逐像素未变，新增 7 张 meadow/parchment/charcoal 基线（共 37 截图 + 2 几何检查，axe 0 违规）。
 - 视觉 harness 几何契约同步更新：responsive 场景视口宽度 `paneWidth + 66` → `+ 40`（面板不再内缩 12px×2+边框）；History/列区间距 12px → 0px；220px 搜索框全宽断言容差按设计 16px 侧 padding 调整。
 - axe 修复：设计稿 `#6E737A` 元数据灰在 `#F7F7FA` 历史面板底上对比度 4.46:1（低于 4.5:1），历史面板内 small 元数据统一向主文字色混合 8%（color-mix 92%），视觉无感知、全主题合规（设计偏差已在此记录）。
 
@@ -51,7 +52,9 @@
 
 ## 最终验证记录
 
-- `npm run test:web`（完整 Web 门禁，含 typecheck / lint / 单测 / 视觉）：50 文件 420 测试全过。
-- `powershell -File tools/test.ps1 -Suite Fast`：通过。
+第 1 轮复审修复后全部重跑（串行）：
+
+- `npm run test:visual`：37 截图 + 2 几何检查通过，axe 0 违规（重录前已人工核对 dark 差异=shellTheme 真实生效、meadow 渐变与 9.39% 色标正确）。
+- `powershell -File tools/test.ps1 -Suite Fast`：通过（Web 421/421，含新增 Tab 焦点回归测试；C# 929 全过，含迁移加载预设与色标校验新用例）。
 - `powershell -File tools/test.ps1 -Suite Full`（桌面探测、便携包冒烟、锁定 Chromium 视觉/axe、依赖审计）：通过（exit 0）。npm audit 报的 3 条 moderate（vitest 2.x 路径穿越，GHSA-82fw-gwwq-j7x9）为既有 dev 依赖问题，非本次改动引入，升级需 `npm audit fix --force` 跨大版本，留给后续独立决策。
-- 最终提交 SHA：`2d35a58`（基点 `587d5f3`，共 7 个提交，工作区干净）。
+- 修复提交：`1c08b48`（基点 `587d5f3`，共 8 个提交，工作区干净）。
