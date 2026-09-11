@@ -161,19 +161,6 @@
     background: var(--agent-shell-tab-active);
 }
 
-/* Terminal-column active tab: [shellTheme] may give it its own plate
- * (tabActiveTerminal — e.g. the user-specified light plate on dark themes).
- * The ink variable is written by JS only alongside that plate, so legacy
- * themes (no shellTheme) keep the ordinary active-tab text and muted icon. */
-.workspace-tab[data-active="true"][data-kind="terminal"] {
-    background: var(--agent-shell-tab-active-terminal);
-    color: var(--agent-shell-tab-active-terminal-ink, var(--agent-text));
-}
-
-.workspace-tab[data-active="true"][data-kind="terminal"] .workspace-tab-icon {
-    color: var(--agent-shell-tab-active-terminal-ink, var(--agent-text-muted));
-}
-
 /* The accent underline marks the focused column's active tab; active tabs of
    unfocused columns stay muted. */
 .workspace-tab-strip[data-focused="true"] .workspace-tab[data-active="true"]::after {

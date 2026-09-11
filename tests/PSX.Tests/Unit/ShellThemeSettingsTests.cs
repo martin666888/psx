@@ -78,7 +78,8 @@ public sealed class ShellThemePresetTests
         Assert.IsTrue(result.IsValid);
         var shell = result.Descriptor.Appearance!.ShellTheme;
         Assert.AreEqual("#141414", shell.Sidebar);
-        Assert.AreEqual("#e8e8e8", shell.TabActiveTerminal);
+        Assert.AreEqual("#3d3d3d", shell.TabActive);
+        Assert.IsNull(shell.TabActiveTerminal);
         Assert.AreEqual("#0000000f", shell.ComposerShadow);
         Assert.IsNull(shell.SidebarGradientFrom);
     }

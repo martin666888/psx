@@ -60,7 +60,6 @@
     --agent-shell-chrome: var(--agent-bg);
     --agent-shell-workspace: var(--agent-canvas-surface);
     --agent-shell-tab-active: var(--agent-surface);
-    --agent-shell-tab-active-terminal: var(--agent-shell-tab-active);
     --agent-shell-composer-bg: var(--agent-surface-raised);
     --agent-shell-composer-border: var(--agent-border-strong);
     /* 阴影变量只承载颜色；偏移/模糊由 .agent-composer-card 的 box-shadow 组合。 */

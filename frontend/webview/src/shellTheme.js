@@ -6,13 +6,6 @@
 // function to stay identical and idempotent. Every field is nullable: a set
 // field writes its variable, a null/absent field removes it so the
 // tokens.css default (the pre-shellTheme visual) applies again.
-import { colorSchemeForBackground } from './colorScheme.js';
-
-// Design-system ink pair (design-tokens.md §4): light plates take the light
-// theme's text ink, dark plates the dark theme's foreground.
-const LIGHT_PLATE_INK = '#26292e';
-const DARK_PLATE_INK = '#fafafa';
-
 /** @param {unknown} value @returns {string} */
 function text(value) {
     return typeof value === 'string' && value.trim() ? value.trim() : '';
@@ -69,20 +62,10 @@ export function applyShellTheme(root, shellTheme) {
     applyVar(root, '--agent-shell-workspace', theme.workspace);
     applyVar(root, '--agent-shell-tab-active', theme.tabActive);
 
-    // A terminal-column active tab may flip to its own plate (e.g. a light
-    // plate on a dark theme); derive a readable ink for it so title and icon
-    // stay legible. Cleared together with the plate.
-    const tabActiveTerminal = text(theme.tabActiveTerminal);
-    if (tabActiveTerminal) {
-        root.style.setProperty('--agent-shell-tab-active-terminal', tabActiveTerminal);
-        root.style.setProperty(
-            '--agent-shell-tab-active-terminal-ink',
-            colorSchemeForBackground(tabActiveTerminal) === 'light' ? LIGHT_PLATE_INK : DARK_PLATE_INK
-        );
-    } else {
-        root.style.removeProperty('--agent-shell-tab-active-terminal');
-        root.style.removeProperty('--agent-shell-tab-active-terminal-ink');
-    }
+    // Ignore legacy terminal-only colors, including values in saved user themes.
+    // All workspace kinds use the same active-tab background and foreground.
+    root.style.removeProperty('--agent-shell-tab-active-terminal');
+    root.style.removeProperty('--agent-shell-tab-active-terminal-ink');
 
     applyVar(root, '--agent-shell-composer-bg', theme.composerBg);
     applyVar(root, '--agent-shell-composer-border', theme.composerBorder);

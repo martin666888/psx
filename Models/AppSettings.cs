@@ -203,6 +203,7 @@ public sealed class ShellThemeColors
     [JsonPropertyName("tabActive")]
     public string? TabActive { get; set; }
 
+    // Legacy INI/JSON round-trip only; the shell uses TabActive for every kind.
     [JsonPropertyName("tabActiveTerminal")]
     public string? TabActiveTerminal { get; set; }
 
