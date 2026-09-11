@@ -9,6 +9,7 @@ namespace PSX.Tests.Unit;
 [TestCategory("Unit")]
 public sealed class DshRegistryPresetTests
 {
+    private const string FixtureSeedVersion = "0.1.5-rc.2";
     [TestMethod]
     public void Store_SameRegistry_IsNoOp()
     {
@@ -108,7 +109,7 @@ public sealed class DshRegistryPresetTests
             lockJson: FakeDshLockSource.BuildLockJson("0.1.5-rc.3", DshSri.TestIntegrity));
         var runtime = CreateRuntime(locator, workspace, locks);
         var paths = locator.Locate();
-        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedFakeDshTree(paths.DshCurrentDirectory, FixtureSeedVersion);
         SeedCiNpm(paths, marker: marker, runs: runs);
 
         var result = await runtime.StageUpdateAsync(registry, "0.1.5-rc.3", CancellationToken.None);
@@ -132,7 +133,7 @@ public sealed class DshRegistryPresetTests
         locks.Bundle("0.1.5-rc.3");
         var runtime = CreateRuntime(locator, workspace, locks);
         var paths = locator.Locate();
-        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedFakeDshTree(paths.DshCurrentDirectory, FixtureSeedVersion);
         SeedCiNpm(paths, marker: marker);
 
         using var cts = new CancellationTokenSource();
@@ -146,7 +147,7 @@ public sealed class DshRegistryPresetTests
         Assert.IsTrue(File.Exists(marker), "validationStarted now fires after npm ci completed");
         Assert.IsFalse(File.Exists(paths.DshActivePointerFile));
         Assert.IsFalse(runtime.ApplyStagedUpdate("0.1.5-rc.3"));
-        Assert.AreEqual(DshWebRuntime.SeededPackageVersion, runtime.CurrentVersion);
+        Assert.AreEqual(FixtureSeedVersion, runtime.CurrentVersion);
     }
 
     [TestMethod]
@@ -160,7 +161,7 @@ public sealed class DshRegistryPresetTests
         locks.Bundle("0.1.5-rc.3");
         var runtime = CreateRuntime(locator, workspace, locks);
         var paths = locator.Locate();
-        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedFakeDshTree(paths.DshCurrentDirectory, FixtureSeedVersion);
         SeedCiNpm(paths, marker: marker, mutateLockOnCi: true);
 
         var result = await runtime.StageUpdateAsync(
@@ -183,10 +184,10 @@ public sealed class DshRegistryPresetTests
         var runs = Path.Combine(workspace.Path, "npm-runs.txt");
         var locator = new RuntimeLocator(workspace.Path);
         var locks = new FakeDshLockSource();
-        locks.Bundle(DshWebRuntime.SeededPackageVersion);
+        locks.Bundle(FixtureSeedVersion);
         var runtime = CreateRuntime(locator, workspace, locks);
         var paths = locator.Locate();
-        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedFakeDshTree(paths.DshCurrentDirectory, FixtureSeedVersion);
         SeedCiNpm(paths, runs: runs);
 
         var result = await runtime.StageUpdateAsync(
@@ -212,7 +213,7 @@ public sealed class DshRegistryPresetTests
         locks.Bundle("0.1.5-rc.3");
         var runtime = CreateRuntime(locator, workspace, locks);
         var paths = locator.Locate();
-        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedFakeDshTree(paths.DshCurrentDirectory, FixtureSeedVersion);
         SeedCiNpm(paths);
 
         var result = await runtime.StageUpdateAsync(
@@ -237,7 +238,7 @@ public sealed class DshRegistryPresetTests
         locks.Corrupt("0.1.5-rc.3");
         var runtime = CreateRuntime(locator, workspace, locks);
         var paths = locator.Locate();
-        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedFakeDshTree(paths.DshCurrentDirectory, FixtureSeedVersion);
         SeedCiNpm(paths);
 
         var result = await runtime.StageUpdateAsync(
@@ -277,7 +278,7 @@ public sealed class DshRegistryPresetTests
         locks.Bundle("0.1.5-rc.3");
         var runtime = CreateRuntime(locator, workspace, locks);
         var paths = locator.Locate();
-        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedFakeDshTree(paths.DshCurrentDirectory, FixtureSeedVersion);
         SeedScriptedNpm(paths, "console.log(JSON.stringify('0.1.5-rc.3'));\n");
 
         var result = await runtime.CheckForUpdateAsync(CancellationToken.None);
@@ -297,7 +298,7 @@ public sealed class DshRegistryPresetTests
         locks.Corrupt("0.1.5-rc.3");
         var runtime = CreateRuntime(locator, workspace, locks);
         var paths = locator.Locate();
-        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedFakeDshTree(paths.DshCurrentDirectory, FixtureSeedVersion);
         SeedScriptedNpm(paths, "console.log(JSON.stringify('0.1.5-rc.3'));\n");
 
         var result = await runtime.CheckForUpdateAsync(CancellationToken.None);
@@ -316,7 +317,7 @@ public sealed class DshRegistryPresetTests
         locks.Block("0.1.5-rc.4");
         var runtime = CreateRuntime(locator, workspace, locks);
         var paths = locator.Locate();
-        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedFakeDshTree(paths.DshCurrentDirectory, FixtureSeedVersion);
         SeedScriptedNpm(
             paths,
             """
@@ -349,7 +350,7 @@ public sealed class DshRegistryPresetTests
         locks.Block("0.1.5-rc.4");
         var runtime = CreateRuntime(locator, workspace, locks);
         var paths = locator.Locate();
-        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedFakeDshTree(paths.DshCurrentDirectory, FixtureSeedVersion);
         SeedScriptedNpm(
             paths,
             """
@@ -383,7 +384,7 @@ public sealed class DshRegistryPresetTests
         locks.Bundle("0.1.5-rc.3");
         var runtime = CreateRuntime(locator, workspace, locks);
         var paths = locator.Locate();
-        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedFakeDshTree(paths.DshCurrentDirectory, FixtureSeedVersion);
         SeedCiNpm(paths);
 
         var result = await runtime.StageUpdateAsync(

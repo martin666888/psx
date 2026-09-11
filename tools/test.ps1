@@ -3,11 +3,15 @@ param(
     [ValidateSet("Unit", "Frontend", "Integration", "Desktop", "Fast", "Full")]
     [string]$Suite = "Fast",
     [switch]$ForceFrontendRestore,
-    [switch]$SkipDependencyAudit
+    [switch]$SkipDependencyAudit,
+    [string]$ReleasePackage = ""
 )
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
+if (-not [string]::IsNullOrWhiteSpace($ReleasePackage) -and $Suite -ne 'Full') {
+    throw 'ReleasePackage is only supported by the Full suite.'
+}
 
 $repoRoot = [IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
 $solution = Join-Path $repoRoot "PSX.slnx"
@@ -380,6 +384,16 @@ try {
     }
 
     if ($runFrontend) {
+        $dshToolchain = Get-FrontendToolchain
+        Invoke-Checked "DSH candidate isolation and release policy" {
+            & $dshToolchain.NodePath --test --test-concurrency=1 (Join-Path $repoRoot 'tools\dsh-candidate.test.mjs')
+        }
+        Invoke-Checked "DSH opt-in registry audit behavior" {
+            powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'tools\test-dsh-release-policy.ps1') -NodePath $dshToolchain.NodePath
+        }
+        Invoke-Checked "DSH package and acceptance evidence binding" {
+            powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'tools\test-dsh-package-evidence.ps1')
+        }
         Invoke-FrontendTests
     }
 
@@ -390,11 +404,19 @@ try {
     }
 
     if ($runRelease) {
-        Invoke-Checked "Build and validate the portable release package" {
-            powershell -ExecutionPolicy Bypass -File (Join-Path $repoRoot "tools\build-release.ps1")
+        if ([string]::IsNullOrWhiteSpace($ReleasePackage)) {
+            Invoke-Checked "Build and validate the portable release package" {
+                powershell -ExecutionPolicy Bypass -File (Join-Path $repoRoot "tools\build-release.ps1")
+            }
+        } elseif (-not (Test-Path -LiteralPath $ReleasePackage -PathType Leaf)) {
+            throw "Specified release ZIP is missing: $ReleasePackage"
         }
         Invoke-Checked "Run the packaged React browser smoke" {
-            powershell -ExecutionPolicy Bypass -File (Join-Path $repoRoot "tools\smoke-release.ps1")
+            if ([string]::IsNullOrWhiteSpace($ReleasePackage)) {
+                powershell -ExecutionPolicy Bypass -File (Join-Path $repoRoot "tools\smoke-release.ps1")
+            } else {
+                powershell -ExecutionPolicy Bypass -File (Join-Path $repoRoot "tools\smoke-release.ps1") -ArchivePath $ReleasePackage
+            }
         }
         $toolchain = Get-FrontendToolchain
         Invoke-Checked "Prepare locked Chromium for Full visual checks" {

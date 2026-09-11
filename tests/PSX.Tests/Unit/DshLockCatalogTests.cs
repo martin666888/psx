@@ -86,7 +86,12 @@ public sealed partial class DshLockCatalogTests
     [TestMethod]
     public void FirstInstallSeed_MatchesReviewedCatalogArtifact()
     {
+        var release = File.ReadAllText(Path.Combine(TestWorkspace.RepositoryRoot, "tools", "build-release.ps1"));
+        var pin = Regex.Match(release, "\\$DshPinnedVersion = \"([^\"]+)\"").Groups[1].Value;
+        Assert.AreEqual(DshWebRuntime.SeededPackageVersion, pin);
         var seedDirectory = Path.Combine(TestWorkspace.RepositoryRoot, "tools", "dsh-seed");
+        using var seed = JsonDocument.Parse(File.ReadAllText(Path.Combine(seedDirectory, "package.json")));
+        Assert.AreEqual(pin, seed.RootElement.GetProperty("dependencies").GetProperty(DshWebRuntime.DshPackageName).GetString());
         var artifactDirectory = Path.Combine(LocksRoot, "locks", DshWebRuntime.SeededPackageVersion);
         foreach (var file in new[] { "package.json", "package-lock.json" })
         {

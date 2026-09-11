@@ -65,12 +65,13 @@
     where opencode.exe is allowed to run.
 
 .PARAMETER SkipDshFreshnessCheck
-    If set, the DSH lock catalog freshness gate is skipped. By default the
-    release verifies (metadata-only; the release machine never executes new
-    package code) that the newest @deepseek-ai/dsh version published above
-    the seed is covered by tools/dsh-locks/catalog.json entries or
-    blockedVersions, and fails otherwise. Registry unreachability is a
-    failure, not a warning. Use only for offline builds.
+    Compatibility switch. DSH freshness is no longer checked by default.
+    Cannot be combined with RequireLatestDsh.
+
+.PARAMETER RequireLatestDsh
+    Opt-in metadata audit: the highest published DSH version above the seed
+    must be catalogued or explicitly blocked. This does NOT require the seed
+    itself to be the latest version. Registry query failures are fatal.
 
 .PARAMETER PinRuntimes
     If set, Kimi/Qwen/OpenCode are installed reproducibly from their committed
@@ -95,12 +96,19 @@ param(
     [string]$WebView2FixedRuntimePath = "",
     [switch]$SkipOpenCodeSmoke,
     [switch]$SkipDshFreshnessCheck,
+    [switch]$RequireLatestDsh,
     [switch]$PinRuntimes
 )
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 Set-StrictMode -Version Latest
+if ($RequireLatestDsh -and $SkipDshFreshnessCheck) {
+    throw "RequireLatestDsh and SkipDshFreshnessCheck cannot be combined."
+}
+if ($SkipDshFreshnessCheck) {
+    Write-Warning "SkipDshFreshnessCheck is obsolete: DSH freshness is not checked by default."
+}
 
 # ---- pin everything for reproducible builds ----
 $PortableNodeVersion = "v22.23.1"
@@ -683,15 +691,14 @@ Write-Host "    DSH lock catalog verified: $($dshCatalogEntries.Count) entr(ies)
 
 # ---- DSH catalog freshness gate (metadata-only query; never executes
 # package code). The newest published version above the seed must be covered
-# by entries ∪ blockedVersions, otherwise the release must not ship stale
-# update capability. Registry unreachability is a failure, not a warning. ----
-if ($SkipDshFreshnessCheck) {
-    Write-Warning "Skipping the DSH lock catalog freshness gate (-SkipDshFreshnessCheck)."
-} else {
+# by entries ∪ blockedVersions only when explicitly requested. Registry
+# unreachability is fatal in that opt-in audit, never in default packaging. ----
+if ($RequireLatestDsh) {
+    Write-Host "    DSH opt-in catalog coverage audit (does not require latest seed)."
     $dshSemverTool = Join-Path $RepoRoot "tools\dsh-semver.mjs"
     $dshViewJson = & $nodeExe $npmCli view "@deepseek-ai/dsh" versions --json --registry=https://registry.npmjs.org/
     if ($LASTEXITCODE -ne 0) {
-        throw "DSH freshness gate failed: could not query the official npm registry (npm view exit $LASTEXITCODE). Use -SkipDshFreshnessCheck only for offline builds."
+        throw "DSH freshness gate failed: could not query the official npm registry (npm view exit $LASTEXITCODE)."
     }
     $dshPublishedVersions = @((ConvertFrom-Json ($dshViewJson -join "`n")) | ForEach-Object { [string]$_ })
     $dshNewest = "$(& $nodeExe $dshSemverTool "latest" $DshPinnedVersion @dshPublishedVersions)".Trim()

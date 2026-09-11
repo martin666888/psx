@@ -10,6 +10,7 @@ namespace PSX.Tests.Unit;
 [TestCategory("Unit")]
 public sealed class DshRuntimeLifecycleTests
 {
+    private const string FixtureSeedVersion = "0.1.5-rc.2";
     [TestMethod]
     public void TrySwapToCurrent_MovesScratchAndWritesPointer()
     {
@@ -67,7 +68,7 @@ public sealed class DshRuntimeLifecycleTests
     {
         using var workspace = TestWorkspace.Create(nameof(PrepareForStartup_PointerNext_PromotesToCurrentWithoutNetwork));
         var (runtime, paths) = CreateRuntime(workspace);
-        SeedFakeDshTree(paths.DshNextDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedFakeDshTree(paths.DshNextDirectory, FixtureSeedVersion);
         File.WriteAllText(Path.Combine(paths.DshNextDirectory, "ready"), "staged");
         Directory.CreateDirectory(paths.RuntimeRoot);
         File.WriteAllText(paths.DshActivePointerFile, "next");
@@ -85,7 +86,7 @@ public sealed class DshRuntimeLifecycleTests
     {
         using var workspace = TestWorkspace.Create(nameof(PrepareForStartup_NextVersionMismatch_DiscardsCandidateAndKeepsCurrent));
         var (runtime, paths) = CreateRuntime(workspace);
-        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedFakeDshTree(paths.DshCurrentDirectory, FixtureSeedVersion);
         File.WriteAllText(Path.Combine(paths.DshCurrentDirectory, "ready"), "old");
         SeedFakeDshTree(paths.DshNextDirectory, "9.9.9-fake");
         File.WriteAllText(Path.Combine(paths.DshNextDirectory, "ready"), "staged");
@@ -107,9 +108,9 @@ public sealed class DshRuntimeLifecycleTests
     {
         using var workspace = TestWorkspace.Create(nameof(PrepareForStartup_NextEntryMissing_DiscardsCandidateAndKeepsCurrent));
         var (runtime, paths) = CreateRuntime(workspace);
-        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedFakeDshTree(paths.DshCurrentDirectory, FixtureSeedVersion);
         File.WriteAllText(Path.Combine(paths.DshCurrentDirectory, "ready"), "old");
-        SeedFakeDshTree(paths.DshNextDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedFakeDshTree(paths.DshNextDirectory, FixtureSeedVersion);
         File.Delete(Path.Combine(
             paths.DshNextDirectory, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js"));
         Directory.CreateDirectory(paths.RuntimeRoot);
@@ -135,26 +136,49 @@ public sealed class DshRuntimeLifecycleTests
         Assert.IsFalse(runtime.IsInstalled());
         Assert.IsNull(runtime.CreateLaunchSpec(), "a stale or hand-replaced dsh-current must not start");
 
-        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedFakeDshTree(paths.DshCurrentDirectory, FixtureSeedVersion);
         Assert.IsTrue(runtime.IsInstalled());
         Assert.IsNotNull(runtime.CreateLaunchSpec());
     }
 
     [TestMethod]
-    public void PrepareForStartup_PreviousReleaseSeed_RemainsLaunchableAndCanUpdate()
+    [DataRow("0.1.3-alpha.2")]
+    [DataRow("0.1.5-rc.1")]
+    [DataRow("0.1.5-rc.2")]
+    public void PrepareForStartup_PreviousReleaseSeed_RemainsLaunchableAndCanUpdate(string historicalSeed)
     {
         using var workspace = TestWorkspace.Create(nameof(PrepareForStartup_PreviousReleaseSeed_RemainsLaunchableAndCanUpdate));
         var (runtime, paths) = CreateRuntime(workspace);
         SeedFakeNodeToolchain(paths);
-        SeedFakeDshTree(paths.DshCurrentDirectory, "0.1.3-alpha.2");
+        SeedFakeDshTree(paths.DshCurrentDirectory, historicalSeed);
 
         runtime.PrepareForStartup();
 
-        Assert.AreEqual("0.1.3-alpha.2", runtime.CurrentVersion);
+        Assert.AreEqual(historicalSeed, runtime.CurrentVersion);
         Assert.IsNotNull(runtime.CreateLaunchSpec());
         Assert.IsTrue(DshWebRuntime.TryBuildUpdateCatalog(
-            "\"0.1.5-rc.1\"", runtime.CurrentVersion, out var catalog, out var error), error);
-        Assert.AreEqual("0.1.5-rc.1", catalog.Single().Version);
+            "\"0.1.5-rc.3\"", runtime.CurrentVersion, out var catalog, out var error), error);
+        Assert.AreEqual("0.1.5-rc.3", catalog.Single().Version);
+    }
+
+    [TestMethod]
+    [DataRow("0.1.3-alpha.2", true)]
+    [DataRow("0.1.5-rc.1", true)]
+    [DataRow("0.1.5-rc.2", true)]
+    [DataRow("0.1.3-rc.2", false)]
+    [DataRow("99.99.99-unshipped-test", false)]
+    public void HistoricalSeed_NoReceipt_OnlyShippedSeedsCanRollback(string version, bool authorized)
+    {
+        using var workspace = TestWorkspace.Create(nameof(HistoricalSeed_NoReceipt_OnlyShippedSeedsCanRollback));
+        var (runtime, paths) = CreateRuntime(workspace);
+        SeedFakeDshTree(paths.DshCurrentDirectory, version);
+        Assert.AreEqual(authorized, runtime.IsInstalled());
+        if (!authorized)
+            return;
+        SeedAuthorizedDshUpdateTree(paths.DshNextDirectory, "0.1.5-rc.4");
+        Assert.IsTrue(runtime.ApplyStagedUpdate("0.1.5-rc.4"));
+        Assert.IsTrue(runtime.RollbackAppliedUpdate());
+        Assert.AreEqual(version, runtime.CurrentVersion);
     }
 
     [TestMethod]
@@ -222,7 +246,7 @@ public sealed class DshRuntimeLifecycleTests
     {
         using var workspace = TestWorkspace.Create(nameof(ApplyStagedUpdate_FailedCandidateCanRestoreLastKnownGoodCurrent));
         var (runtime, paths) = CreateRuntime(workspace);
-        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedFakeDshTree(paths.DshCurrentDirectory, FixtureSeedVersion);
         SeedAuthorizedDshUpdateTree(paths.DshNextDirectory, "0.1.5-rc.2");
 
         Assert.IsTrue(runtime.ApplyStagedUpdate("0.1.5-rc.2"));
@@ -230,7 +254,7 @@ public sealed class DshRuntimeLifecycleTests
         Assert.IsTrue(runtime.HasUncommittedUpdate);
 
         Assert.IsTrue(runtime.RollbackAppliedUpdate());
-        Assert.AreEqual(DshWebRuntime.SeededPackageVersion, runtime.CurrentVersion);
+        Assert.AreEqual(FixtureSeedVersion, runtime.CurrentVersion);
         Assert.IsFalse(runtime.HasUncommittedUpdate);
     }
 
@@ -239,7 +263,7 @@ public sealed class DshRuntimeLifecycleTests
     {
         using var workspace = TestWorkspace.Create(nameof(ApplyStagedUpdate_ReadyCommitDropsRollbackAndKeepsCandidate));
         var (runtime, paths) = CreateRuntime(workspace);
-        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedFakeDshTree(paths.DshCurrentDirectory, FixtureSeedVersion);
         SeedAuthorizedDshUpdateTree(paths.DshNextDirectory, "0.1.5-rc.2");
 
         Assert.IsTrue(runtime.ApplyStagedUpdate("0.1.5-rc.2"));
@@ -257,18 +281,18 @@ public sealed class DshRuntimeLifecycleTests
         var locks = new FakeDshLockSource();
         locks.Bundle("0.1.5-rc.3");
         var (runtime, paths) = CreateRuntime(workspace, locks);
-        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedFakeDshTree(paths.DshCurrentDirectory, FixtureSeedVersion);
         SeedScriptedNpm(paths, "console.log(JSON.stringify('0.1.5-rc.3'));\n");
 
         var result = await runtime.CheckForUpdateAsync(CancellationToken.None);
 
         Assert.IsTrue(result.Success, result.ErrorCode ?? string.Empty);
         Assert.IsTrue(result.UpdateAvailable);
-        Assert.AreEqual(DshWebRuntime.SeededPackageVersion, result.CurrentVersion);
+        Assert.AreEqual(FixtureSeedVersion, result.CurrentVersion);
         Assert.AreEqual("0.1.5-rc.3", result.AvailableVersion);
         Assert.HasCount(1, result.AvailableVersions);
         Assert.AreEqual("0.1.5-rc.3", result.AvailableVersions[0].Version);
-        Assert.AreEqual(DshWebRuntime.SeededPackageVersion, runtime.CurrentVersion,
+        Assert.AreEqual(FixtureSeedVersion, runtime.CurrentVersion,
             "a metadata check must never modify dsh-current");
         Assert.IsFalse(Directory.Exists(paths.DshNextDirectory));
     }
@@ -309,7 +333,7 @@ public sealed class DshRuntimeLifecycleTests
         var locks = new FakeDshLockSource();
         locks.Bundle("0.1.5-rc.3");
         var (runtime, paths) = CreateRuntime(workspace, locks);
-        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedFakeDshTree(paths.DshCurrentDirectory, FixtureSeedVersion);
         SeedScriptedNpm(
             paths,
             """
@@ -325,7 +349,7 @@ public sealed class DshRuntimeLifecycleTests
         var result = await runtime.StageUpdateAsync("0.1.5-rc.3", CancellationToken.None);
 
         Assert.IsTrue(result.Success, result.ErrorCode ?? string.Empty);
-        Assert.AreEqual(DshWebRuntime.SeededPackageVersion, runtime.CurrentVersion);
+        Assert.AreEqual(FixtureSeedVersion, runtime.CurrentVersion);
         Assert.AreEqual("next", File.ReadAllText(paths.DshActivePointerFile));
         Assert.IsNull(DshWebRuntime.ValidateStagedUpdate(paths.DshNextDirectory, "0.1.5-rc.3"));
     }
@@ -720,7 +744,7 @@ public sealed class DshRuntimeLifecycleTests
         using var workspace = TestWorkspace.Create(nameof(Supervisor_ProductionLauncher_ReachesReadyAndStopsProcessTree));
         var (runtime, paths) = CreateRuntime(workspace);
         SeedRealProcessToolchain(paths);
-        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedFakeDshTree(paths.DshCurrentDirectory, FixtureSeedVersion);
         var entryPath = Path.Combine(
             paths.DshCurrentDirectory, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js");
         File.WriteAllText(
@@ -768,7 +792,7 @@ public sealed class DshRuntimeLifecycleTests
             nameof(Supervisor_BrowserAuthReadyUrl_HealthCheckDoesNotConsumeToken));
         var (runtime, paths) = CreateRuntime(workspace);
         SeedRealProcessToolchain(paths);
-        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedFakeDshTree(paths.DshCurrentDirectory, FixtureSeedVersion);
         var workspaceDirectory = Path.Combine(workspace.Path, "dsh-workspace");
         Directory.CreateDirectory(workspaceDirectory);
         var entryPath = Path.Combine(
@@ -817,7 +841,7 @@ public sealed class DshRuntimeLifecycleTests
         locks.Bundle("0.1.5-rc.3");
         var (runtime, paths) = CreateRuntime(workspace, locks);
         SeedViewAndCiServerNpm(paths, "console.log(JSON.stringify('0.1.5-rc.3'));");
-        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedFakeDshTree(paths.DshCurrentDirectory, FixtureSeedVersion);
         WriteFakeDshServer(Path.Combine(
             paths.DshCurrentDirectory, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js"));
 
@@ -869,7 +893,7 @@ public sealed class DshRuntimeLifecycleTests
         locks.Bundle("0.1.5-rc.3");
         var (runtime, paths) = CreateRuntime(workspace, locks);
         SeedScriptedNpm(paths, "console.log(JSON.stringify('0.1.5-rc.3'));\n");
-        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedFakeDshTree(paths.DshCurrentDirectory, FixtureSeedVersion);
         WriteFakeDshServer(Path.Combine(
             paths.DshCurrentDirectory, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js"));
 
@@ -886,7 +910,7 @@ public sealed class DshRuntimeLifecycleTests
         await supervisor.UpdateAndRestartAsync("0.1.5-rc.4");
 
         Assert.AreEqual(DshRuntimeState.Ready, supervisor.State);
-        Assert.AreEqual(DshWebRuntime.SeededPackageVersion, runtime.CurrentVersion);
+        Assert.AreEqual(FixtureSeedVersion, runtime.CurrentVersion);
         Assert.AreEqual("failed", LastRuntimeStatus(bridge).GetProperty("updateState").GetString());
         Assert.AreEqual(0, LastRuntimeStatus(bridge).GetProperty("availableVersions").GetArrayLength());
         Assert.IsFalse(Directory.Exists(paths.DshNextDirectory));
@@ -941,7 +965,7 @@ public sealed class DshRuntimeLifecycleTests
         var locks = new FakeDshLockSource();
         locks.Bundle("0.1.5-rc.3");
         var (runtime, paths) = CreateRuntime(workspace, locks);
-        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedFakeDshTree(paths.DshCurrentDirectory, FixtureSeedVersion);
         WriteFakeDshServer(Path.Combine(
             paths.DshCurrentDirectory, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js"));
         SeedScriptedNpm(paths, "console.log(JSON.stringify('0.1.5-rc.3'));\n");
@@ -967,7 +991,7 @@ public sealed class DshRuntimeLifecycleTests
         Assert.AreEqual(0, LastRuntimeStatus(bridge).GetProperty("availableVersions").GetArrayLength());
         await supervisor.UpdateAndRestartAsync("0.1.5-rc.3");
         Assert.AreEqual("failed", LastRuntimeStatus(bridge).GetProperty("updateState").GetString());
-        Assert.AreEqual(DshWebRuntime.SeededPackageVersion, runtime.CurrentVersion);
+        Assert.AreEqual(FixtureSeedVersion, runtime.CurrentVersion);
         await supervisor.StopAsync();
     }
 
@@ -991,7 +1015,7 @@ public sealed class DshRuntimeLifecycleTests
             fs.writeFileSync({{System.Text.Json.JsonSerializer.Serialize(updateStarted)}}, 'started');
             setInterval(() => {}, 1000);
             """);
-        SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedFakeDshTree(paths.DshCurrentDirectory, FixtureSeedVersion);
         WriteFakeDshServer(Path.Combine(
             paths.DshCurrentDirectory, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js"));
 
@@ -1021,7 +1045,7 @@ public sealed class DshRuntimeLifecycleTests
 
         Assert.AreEqual(DshRuntimeState.Ready, supervisor.State,
             "cancelling a staged download must not interrupt the current server");
-        Assert.AreEqual(DshWebRuntime.SeededPackageVersion, runtime.CurrentVersion);
+        Assert.AreEqual(FixtureSeedVersion, runtime.CurrentVersion);
         Assert.IsFalse(Directory.Exists(paths.DshNextDirectory));
         var status = LastRuntimeStatus(bridge);
         Assert.AreEqual("available", status.GetProperty("updateState").GetString(),
@@ -1038,7 +1062,7 @@ public sealed class DshRuntimeLifecycleTests
         locks.Bundle("0.1.5-rc.3");
         locks.Block("0.1.5-rc.4");
         var (runtime, paths) = CreateRuntime(workspace, locks);
-        SeedAuthorizedDshUpdateTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedAuthorizedDshUpdateTree(paths.DshCurrentDirectory, FixtureSeedVersion);
         SeedScriptedNpm(
             paths,
             """
@@ -1072,7 +1096,7 @@ public sealed class DshRuntimeLifecycleTests
         var locks = new FakeDshLockSource();
         locks.Block("0.1.5-rc.4");
         var (runtime, paths) = CreateRuntime(workspace, locks);
-        SeedAuthorizedDshUpdateTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
+        SeedAuthorizedDshUpdateTree(paths.DshCurrentDirectory, FixtureSeedVersion);
         SeedScriptedNpm(
             paths,
             """

@@ -46,7 +46,7 @@ powershell -ExecutionPolicy Bypass -File tools/generate-dsh-lock.ps1 -Version ig
   无签名密钥、无 npm/GitHub token 等秘密、普通权限账户、运行后销毁工作区；
   产物仅经 Git PR 审查进入仓库。
 - 正式发布机只做静态校验（`tools/build-release.ps1`：catalog SHA 常量、逐条目 SHA/origin/SRI、
-  新鲜度元数据查询），**永不执行新包脚本**。
+  默认不查询 DSH 上游；只有显式 `-RequireLatestDsh` 才查询新鲜度），**不执行 DSH 新包脚本**。
 
 ## 不变式
 
@@ -54,11 +54,40 @@ powershell -ExecutionPolicy Bypass -File tools/generate-dsh-lock.ps1 -Version ig
    （拒装、保留旧版本、人工调查），**任何路径都不得刷新 catalog 接受同版本新字节**。
 2. `DshLockCatalogTests`（C#，复用 `DshLockValidator`）是仓库门禁；build-release 是发布门禁；
    两侧校验同一产物，客户端安装用的也是同一校验器。
-3. 新鲜度门禁：> seed 的最新已发布版本必须命中 entries ∪ blockedVersions，
-   否则发布失败（`-SkipDshFreshnessCheck` 是唯一逃生口）。
+3. 默认发布只校验冻结输入。`-RequireLatestDsh` 显式要求 > seed 的最高已发布版本命中 entries ∪ blockedVersions；它不保证 seed 等于最新版。`-SkipDshFreshnessCheck` 为兼容空操作，与严格参数冲突。
 4. smoke 失败的版本不自动进 blocked：生成器只打印建议条目，人工确认后经 PR 提交。
 
-## Spike 结论（go/no-go 记录）
+## 手动候选与首装验收
+
+运行 `Generate DSH lock candidate`，版本留空选择最高已发布 SemVer（含预发布），或填写精确版本。
+工作流固定实际检出的 dev 提交；降级、已阻止版本和完整性冲突明确失败，不静默回退。
+隔离任务生成并验证数据；另一个干净任务从可信基准重建补丁，只改目标 lock、catalog 的新增/裁剪、seed、
+运行时 seed/历史 seed 集合、发布脚本固定 seed 版本及摘要，以及两处指定文档当前版本字段。
+不接受脚本运行后工作区的其他差异，不自动改测试断言，不创建远端分支或自动提交合并。
+
+候选任务顺序运行 Fast，然后使用 `-PinRuntimes` 构建 ZIP。下载 `dsh-candidate-<version>` artifact，
+其中包含完整补丁、`candidate.json`（基准、工具版本、安装参数、npmrc、文件及 ZIP 摘要）和原始 ZIP。
+报告明确标记普通 Windows 首装待验证；30 天保留期内下载归档。
+
+1. 在基准提交的干净临时工作树运行 `git apply --check dsh-candidate.patch`，成功后应用；有冲突重新生成。
+2. 在无 Python/VS/Build Tools/开发缓存的一次性 Windows x64 VM，从候选 ZIP 解压并通过 PSX 首次安装 DSH，确认进入 Ready。
+3. 官方源、镜像源分别恢复干净快照执行；只隐藏 PATH 不能代替无工具链 VM。
+4. 将候选代码中的记录脚本和报告带入验收环境，使用下面命令分别记录人工验收；脚本校验实际 ZIP、seed 和安装目录，人工确认项不等于自动证明。
+5. 两个源都通过后审核接纳到 dev，核对构建输入一致，再运行正式 Full，直接发布原 ZIP。新 seed 待验收时仍可发布旧的已验证 seed。
+
+```powershell
+# 在干净 VM 看到 Ready 后；另一张干净快照改为 -Registry npmmirror
+powershell -File tools/record-dsh-package.ps1 -Mode Accept -Package C:\accept\PSX.zip -Report C:\accept\candidate.json -Registry official -RuntimeDirectory C:\accept\PSX\runtime\dsh-current -AcceptanceDirectory C:\accept\results -CleanWindowsConfirmed -ReadyConfirmed
+
+# 接纳后，在匹配构建输入的仓库中验证相同 ZIP 和两个源的报告
+powershell -File tools/record-dsh-package.ps1 -Mode Verify -Package C:\accept\PSX.zip -Report C:\accept\candidate.json -AcceptanceDirectory C:\accept\results
+powershell -File tools/test.ps1 -Suite Full -ReleasePackage C:\accept\PSX.zip
+```
+
+`-ReleasePackage` 让 Full 的包 smoke 使用指定 ZIP，不重新打包；其余 C#、视觉及依赖检查仍针对当前源码。
+输入或 ZIP 摘要改变必须重新构建、验收，不能继承旧报告。验收不会免除 npm 下载、安装脚本或上游编译要求。
+
+## 历史 Spike 结论（go/no-go 记录）
 
 环境：Windows x64 开发机（发布机等效），钉死 Portable Node v22.23.1 + 自带 npm 10.9.8，
 `--package-lock-only --ignore-scripts`，官方源。**结论：go。**

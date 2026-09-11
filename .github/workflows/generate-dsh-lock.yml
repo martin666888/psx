@@ -4,12 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Exact published DSH version (for example 0.1.2-rc.1)
-        required: true
+        description: Exact DSH version; empty selects highest published SemVer including prereleases
+        required: false
+        default: ''
         type: string
 
-# The checkout action needs read access, but the candidate generator must never
-# receive credentials that could mutate the repository.
 permissions:
   contents: read
 
@@ -18,99 +17,137 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  generate:
-    name: Generate and smoke DSH lock
-    # Pinned off windows-latest on purpose. The DSH dependency graph can pull
-    # native addons (for example fs-ext) that node-gyp must compile during the
-    # launch smoke. The node-gyp bundled with the pinned portable Node only
-    # recognizes Visual Studio up to 2022, while newer -latest images ship VS
-    # 2026 and abort with "could not find a version of Visual Studio to use".
-    # windows-2022 keeps a supported MSVC + Windows SDK toolchain.
+  resolve:
     runs-on: windows-2022
-    timeout-minutes: 90
-    env:
-      DSH_VERSION: ${{ inputs.version }}
-
+    outputs:
+      base: ${{ steps.freeze.outputs.base }}
+      version: ${{ steps.freeze.outputs.version }}
     steps:
-      - name: Check out dev without persisted credentials
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
         with:
           ref: dev
           persist-credentials: false
-          clean: true
-
-      - name: Verify isolated input and credential boundary
-        shell: powershell
+      - name: Freeze actual dev commit and official version
+        id: freeze
+        shell: pwsh
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
         run: |
-          if ($env:DSH_VERSION -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$') {
-            throw "Version must be an exact SemVer value."
-          }
-          if ($env:GITHUB_TOKEN -or $env:GH_TOKEN -or $env:NPM_TOKEN -or $env:NODE_AUTH_TOKEN) {
-            throw "The DSH generator must not receive GitHub or npm credentials."
-          }
-          $persistedAuth = git config --local --get-regexp '^(http\..*extraheader|credential\.)' 2>$null
-          $configExitCode = $LASTEXITCODE
-          if ($configExitCode -notin 0, 1) {
-            throw "Failed to inspect the checkout credential configuration."
-          }
-          if ($configExitCode -eq 0 -and $persistedAuth) {
-            throw "Checkout left persisted Git credentials in the worktree."
-          }
-          $global:LASTEXITCODE = 0
-
-      - name: Generate candidate and run launch smoke
-        shell: powershell
-        run: |
-          powershell -NoProfile -ExecutionPolicy Bypass -File tools/generate-dsh-lock.ps1 `
-            -Version $env:DSH_VERSION `
-            -Isolated `
-            -TimeoutMinutes 60
-
-      - name: Stage review-only artifact
-        shell: powershell
-        run: |
-          $candidateRoot = Join-Path $env:RUNNER_TEMP 'dsh-lock-candidate'
-          $lockRoot = Join-Path $candidateRoot 'tools\dsh-locks'
-          New-Item -ItemType Directory -Path $lockRoot -Force | Out-Null
-
-          $reparsePoints = Get-ChildItem -LiteralPath 'tools\dsh-locks' -Recurse -Force |
-            Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }
-          if ($reparsePoints) {
-            throw "Refusing to package DSH lock output containing reparse points."
-          }
-
-          Copy-Item -LiteralPath 'tools\dsh-locks\catalog.json' -Destination $lockRoot
-          Copy-Item -LiteralPath 'tools\dsh-locks\locks' -Destination $lockRoot -Recurse
-
-          $reviewRoot = Join-Path $candidateRoot 'review'
-          New-Item -ItemType Directory -Path $reviewRoot -Force | Out-Null
-          $patchPath = Join-Path $reviewRoot 'dsh-lock.patch'
-          # `git diff` omits newly generated lock directories unless Git knows
-          # about them. Intent-to-add keeps the runner checkout uncommitted but
-          # makes every new package.json/package-lock.json visible in the
-          # review patch alongside catalog.json.
-          git add --intent-to-add -- tools/dsh-locks
-          if ($LASTEXITCODE -ne 0) {
-            throw "Failed to register generated DSH lock files for review."
-          }
-          git diff --binary --output=$patchPath -- tools/dsh-locks
-          if ($LASTEXITCODE -ne 0) {
-            throw "Failed to capture the DSH lock review patch."
-          }
-
-          Get-ChildItem -LiteralPath $lockRoot -File -Recurse |
-            Sort-Object FullName |
-            ForEach-Object {
-              $relativePath = $_.FullName.Substring($candidateRoot.Length + 1).Replace('\', '/')
-              $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-              "$hash  $relativePath"
-            } | Set-Content -LiteralPath (Join-Path $reviewRoot 'sha256.txt') -Encoding ascii
-
-      - name: Upload DSH lock candidate
-        uses: actions/upload-artifact@v6
+          $selection = Join-Path $env:RUNNER_TEMP 'selection.json'
+          node tools/dsh-candidate.mjs resolve . "$env:REQUESTED_VERSION" $selection
+          if ($LASTEXITCODE -ne 0) { throw 'Selection failed' }
+          $value = Get-Content -LiteralPath $selection -Raw | ConvertFrom-Json
+          "base=$($value.baseCommitSha)" >> $env:GITHUB_OUTPUT
+          "version=$($value.version)" >> $env:GITHUB_OUTPUT
+      - uses: actions/upload-artifact@v6
         with:
-          name: dsh-lock-candidate-${{ inputs.version }}
-          path: ${{ runner.temp }}\dsh-lock-candidate\
-          if-no-files-found: error
+          name: dsh-selection
+          path: ${{ runner.temp }}/selection.json
+          retention-days: 30
+
+  generate:
+    needs: resolve
+    # Disposable runner with a compiler; NOT clean-user acceptance.
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      DSH_VERSION: ${{ needs.resolve.outputs.version }}
+      BASE_COMMIT: ${{ needs.resolve.outputs.base }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve.outputs.base }}
+          persist-credentials: false
+      - name: Verify checkout and credential boundary
+        shell: pwsh
+        run: |
+          if ((git rev-parse HEAD) -ne $env:BASE_COMMIT) { throw 'Base drift' }
+          if ($env:GITHUB_TOKEN -or $env:GH_TOKEN -or $env:NPM_TOKEN -or $env:NODE_AUTH_TOKEN) {
+            throw 'Generator must not receive repository or npm credentials'
+          }
+          $auth = git config --local --get-regexp '^(http\..*extraheader|credential\.)' 2>$null
+          if ($LASTEXITCODE -notin 0, 1 -or $auth) { throw 'Checkout credential inspection failed' }
+          $global:LASTEXITCODE = 0
+      - name: Generate and smoke frozen version
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tools/generate-dsh-lock.ps1 -Version $env:DSH_VERSION -Isolated -TimeoutMinutes 60
+          if ($LASTEXITCODE -ne 0) { throw 'Generation failed' }
+      - name: Export data only (never workspace diffs or scripts)
+        shell: pwsh
+        run: |
+          $target = Join-Path $env:RUNNER_TEMP 'dsh-data'
+          New-Item -ItemType Directory -Path $target | Out-Null
+          $source = Join-Path 'tools/dsh-locks/locks' $env:DSH_VERSION
+          foreach ($file in @('package.json', 'package-lock.json')) {
+            Copy-Item -LiteralPath (Join-Path $source $file) -Destination $target
+          }
+          Copy-Item -LiteralPath tools/dsh-locks/catalog.json -Destination $target
+          Copy-Item -LiteralPath tools/dsh-seed/.npmrc -Destination (Join-Path $target 'npmrc')
+      - uses: actions/upload-artifact@v6
+        with:
+          name: dsh-untrusted-data
+          path: ${{ runner.temp }}/dsh-data/
           retention-days: 7
-          compression-level: 9
+          if-no-files-found: error
+
+  prepare:
+    needs: [resolve, generate]
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve.outputs.base }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v5
+        with:
+          name: dsh-selection
+          path: ${{ runner.temp }}/selection
+      - uses: actions/download-artifact@v5
+        with:
+          name: dsh-untrusted-data
+          path: ${{ runner.temp }}/dsh-data
+      - name: Reconstruct candidate from trusted base and validated data
+        shell: pwsh
+        run: |
+          node tools/dsh-candidate.mjs prepare . "$env:RUNNER_TEMP/dsh-data" "$env:RUNNER_TEMP/selection/selection.json" "$env:RUNNER_TEMP/dsh-candidate"
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate validation failed' }
+          git diff --check
+          if ($LASTEXITCODE -ne 0) { throw 'Patch whitespace validation failed' }
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.1
+      - name: Validate candidate (sequential Fast gate)
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tools/test.ps1 -Suite Fast
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate Fast gate failed' }
+      - name: Build frozen candidate ZIP and record its identity
+        shell: powershell
+        run: |
+          $packages = Join-Path $env:RUNNER_TEMP 'dsh-candidate/packages'
+          powershell -NoProfile -ExecutionPolicy Bypass -File tools/build-release.ps1 -PinRuntimes -OutputDirectory $packages
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate package build failed' }
+          $zip = @(Get-ChildItem -LiteralPath $packages -Filter '*.zip')
+          if ($zip.Count -ne 1) { throw 'Expected one candidate ZIP' }
+          powershell -NoProfile -ExecutionPolicy Bypass -File tools/record-dsh-package.ps1 -Mode Candidate -Package $zip[0].FullName -Report "$env:RUNNER_TEMP/dsh-candidate/candidate.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Package identity recording failed' }
+      - uses: actions/upload-artifact@v6
+        with:
+          name: dsh-candidate-${{ needs.resolve.outputs.version }}
+          path: ${{ runner.temp }}/dsh-candidate/
+          retention-days: 30
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: dsh-candidate-test-reports
+          path: |
+            TestResults/dotnet/**/*.trx
+            TestResults/web/test-summary.json
+          retention-days: 30
+          if-no-files-found: ignore

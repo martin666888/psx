@@ -566,13 +566,15 @@ function New-ResmokeWorkspace {
         Remove-Item -Recurse -Force $solveDirectory
     }
     New-Item -ItemType Directory -Path $solveDirectory -Force | Out-Null
-    foreach ($name in @("package.json", "package-lock.json", ".npmrc")) {
+    foreach ($name in @("package.json", "package-lock.json")) {
         $source = Join-Path $LocksVersionsDirectory "$DshVersion\$name"
         if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
             throw "Catalog entry $DshVersion is missing $name under tools/dsh-locks/locks/."
         }
         Copy-Item -LiteralPath $source -Destination (Join-Path $solveDirectory $name) -Force
     }
+    Copy-SeedNpmrc -Destination $solveDirectory
+    New-Item -ItemType File -Path (Join-Path $solveDirectory 'npmrc-user') -Force | Out-Null
     return $solveDirectory
 }
 
@@ -622,6 +624,10 @@ foreach ($requestedVersion in (@($Version -split "[,;]") | ForEach-Object { $_.T
     if ($catalogEntryVersions -contains $requestedVersion) {
         $existingEntry = @($catalog.Entries | Where-Object { [string]$_.version -eq $requestedVersion })[0]
         Assert-ExistingEntryIntegrityUnchanged -ExistingEntry $existingEntry
+        if (-not $NoSmoke) {
+            $smokeDirectory = New-ResmokeWorkspace -DshVersion $requestedVersion
+            Invoke-DshLaunchSmoke -SmokeDirectory $smokeDirectory
+        }
         continue
     }
     $blockedReason = Test-BlockedVersion -Blocked $catalogBlocked -Value $requestedVersion

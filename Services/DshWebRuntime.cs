@@ -16,6 +16,14 @@ public sealed class DshWebRuntime
 {
     public const string DshPackageName = "@deepseek-ai/dsh";
     public const string SeededPackageVersion = "0.1.5-rc.2";
+    // Actual first-install seeds shipped by PSX, independent of catalog retention.
+    // These retain the legacy entry/version launch gate, not file attestation.
+    private static readonly HashSet<string> HistoricalSeedVersions = new(StringComparer.Ordinal)
+    {
+        "0.1.3-alpha.2",
+        "0.1.5-rc.1",
+        "0.1.5-rc.2",
+    };
     // Advancing the first-install seed must not invalidate an existing install
     // or its last-known-good rollback tree from an earlier PSX release.
     internal const string MinimumSupportedPackageVersion = "0.1.3-alpha.2";
@@ -91,8 +99,7 @@ public sealed class DshWebRuntime
         var version = ReadPackageVersion(Path.Combine(directory, DshPackageJson));
         if (!IsCompatibleVersion(version))
             return false;
-        if (string.Equals(version, SeededPackageVersion, StringComparison.Ordinal)
-            || string.Equals(version, MinimumSupportedPackageVersion, StringComparison.Ordinal))
+        if (version is not null && HistoricalSeedVersions.Contains(version))
             return true;
         return string.Equals(ReadUpdateReceiptVersion(directory), version, StringComparison.Ordinal)
             && ValidateStagedUpdate(directory, version!) == null;
@@ -417,7 +424,8 @@ public sealed class DshWebRuntime
                 "ci",
                 $"--registry={registry.Origin}",
                 "--replace-registry-host=npmjs",
-                "--include=optional"
+                "--omit=dev", "--include=optional", "--engine-strict",
+                "--no-audit", "--no-fund"
             },
             cancellationToken).ConfigureAwait(false);
 
