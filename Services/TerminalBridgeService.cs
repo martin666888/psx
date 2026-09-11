@@ -92,6 +92,7 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
             browserExecutableFolder: runtimePaths.WebView2FixedRuntimePath);
         await webView.EnsureCoreWebView2Async(_environment);
         _coreWebView = webView.CoreWebView2;
+        ApplyPreferredColorSchemeCore(_settingsService.GetSettings().ThemeColors.Background);
         _messageDispatcher?.Dispose();
         _messageDispatcher = new WebViewJsonDispatcher(
             webView.Dispatcher,
@@ -163,6 +164,7 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
         _dshSurface = webView;
         await webView.EnsureCoreWebView2Async(_environment);
         _dshCore = webView.CoreWebView2;
+        ApplyPreferredColorSchemeCore(_settingsService.GetSettings().ThemeColors.Background);
         _dshPolicy?.Dispose();
         _dshPolicy = new DshSurfaceHostPolicy(_dshCore);
         webView.ZoomFactor = 1.0;
@@ -473,9 +475,16 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
         });
     }
 
-    public Task SendAppearanceAsync(AppearanceSettings appearance)
+    public async Task SendAppearanceAsync(AppearanceSettings appearance)
     {
-        return SendMessageToJs(new
+        ArgumentNullException.ThrowIfNull(appearance);
+
+        // Kimi Web uses prefers-color-scheme from the shell WebView and DSH
+        // runs in a separate top-level WebView2. CSS written inside the shell
+        // cannot reliably theme both surfaces, while the shared WebView2
+        // profile is the browser-level source used by both documents.
+        await ApplyPreferredColorSchemeAsync(appearance.ThemeColors.Background).ConfigureAwait(false);
+        await SendMessageToJs(new
         {
             type = "appearance_settings",
             settings = new
@@ -490,7 +499,31 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
                 terminalColors = appearance.TerminalColors,
                 shellTheme = appearance.ShellTheme
             }
-        });
+        }).ConfigureAwait(false);
+    }
+
+    private Task ApplyPreferredColorSchemeAsync(string? background)
+    {
+        var webView = _webView;
+        if (webView == null)
+            return Task.CompletedTask;
+
+        if (webView.Dispatcher.CheckAccess())
+        {
+            ApplyPreferredColorSchemeCore(background);
+            return Task.CompletedTask;
+        }
+
+        return webView.Dispatcher.InvokeAsync(() => ApplyPreferredColorSchemeCore(background)).Task;
+    }
+
+    private void ApplyPreferredColorSchemeCore(string? background)
+    {
+        var scheme = WebViewColorSchemeResolver.Resolve(background);
+        if (_coreWebView != null)
+            _coreWebView.Profile.PreferredColorScheme = scheme;
+        if (_dshCore != null)
+            _dshCore.Profile.PreferredColorScheme = scheme;
     }
 
     private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
