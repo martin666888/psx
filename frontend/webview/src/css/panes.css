@@ -46,7 +46,8 @@
     background: transparent;
 }
 
-/* Divider between panes: an 8px hit strip centred on the boundary. It is the
+/* Divider between columns: an 8px hit strip centred on the boundary carrying
+ * the always-visible 1px separation line (Ardot flat redesign). It is the
  * only element in the slot row that takes pointer events. Dragging previews
  * ratios locally (no bridge traffic); one intent goes out on pointerup. */
 .workspace-pane-divider {
@@ -65,27 +66,22 @@
     position: absolute;
     top: 0;
     bottom: 0;
-    left: 3px;
-    width: 2px;
-    background: transparent;
+    left: calc(50% - 0.5px);
+    width: 1px;
+    background: var(--agent-border);
 }
 
 .workspace-pane-divider:hover::after,
 .workspace-pane-divider[data-dragging="true"]::after {
-    background: var(--agent-border);
+    background: var(--agent-border-strong);
 }
 
 /* Sash state (columns at their pixel floors): the cursor is the only hint.
    Both sides pinned to their floors disable the divider entirely (default
-   cursor, no line); a single side at its floor stays draggable away from
-   the floor, so no visual change applies. */
+   cursor); the separation line itself always stays visible. */
 .workspace-pane-divider[data-sash-disabled="true"],
 .workspace-pane-divider[aria-disabled="true"] {
     cursor: default;
-}
-
-.workspace-pane-divider[aria-disabled="true"]::after {
-    background: transparent;
 }
 
 /* Tab drag-in target: the pane under the pointer shows a dashed inset ring

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -49,6 +50,7 @@ public sealed class SettingsService : ISettingsService
         if (!File.Exists(_configPath))
         {
             _settings = new AppSettings();
+            SeedFromDefaultPreset(_settings);
             NormalizeAgentSettings(_settings);
             return _settings;
         }
@@ -75,6 +77,7 @@ public sealed class SettingsService : ISettingsService
         }
 
         NormalizeAgentSettings(_settings);
+        MigrateLegacyThemeKey(_settings);
         return _settings;
     }
 
@@ -183,6 +186,9 @@ public sealed class SettingsService : ISettingsService
                     break;
                 case "agenttheme":
                     ApplyAgentThemeSetting(settings, key, value);
+                    break;
+                case "shelltheme":
+                    ApplyShellThemeSetting(settings, key, value);
                     break;
                 case "terminalcolors":
                     ApplyTerminalColorSetting(settings, key, value);
@@ -335,6 +341,62 @@ public sealed class SettingsService : ISettingsService
         }
     }
 
+    /// <summary>
+    /// Optional shell chrome colors: every key is settable and an invalid or
+    /// empty value simply leaves the field unset (null) — a missing
+    /// [shellTheme] section never fails the load.
+    /// </summary>
+    private static void ApplyShellThemeSetting(AppSettings settings, string key, string value)
+    {
+        var s = settings.ShellTheme;
+        if (string.Equals(key, "sidebargradientfromstop", StringComparison.Ordinal))
+        {
+            s.SidebarGradientFromStop = ValidateOptionalPercent(value);
+            return;
+        }
+        var color = ValidateOptionalColor(value);
+        if (color == null)
+            return;
+        switch (key)
+        {
+            case "sidebar": s.Sidebar = color; break;
+            case "sidebargradientfrom": s.SidebarGradientFrom = color; break;
+            case "sidebargradientto": s.SidebarGradientTo = color; break;
+            case "sidebarselected": s.SidebarSelected = color; break;
+            case "sidebarinput": s.SidebarInput = color; break;
+            case "sidebarinputborder": s.SidebarInputBorder = color; break;
+            case "chrome": s.Chrome = color; break;
+            case "workspace": s.Workspace = color; break;
+            case "tabactive": s.TabActive = color; break;
+            case "tabactiveterminal": s.TabActiveTerminal = color; break;
+            case "composerbg": s.ComposerBg = color; break;
+            case "composerborder": s.ComposerBorder = color; break;
+            case "composershadow": s.ComposerShadow = color; break;
+            case "terminalbackground": s.TerminalBackground = color; break;
+        }
+    }
+
+    private static string? ValidateOptionalPercent(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+        if (!double.TryParse(value.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var percent)
+            || percent < 0 || percent > 100)
+            return null;
+        return percent.ToString("0.##", CultureInfo.InvariantCulture);
+    }
+
+    private static string? ValidateOptionalColor(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var trimmed = value.Trim();
+        return Regex.IsMatch(trimmed, @"^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$")
+            ? trimmed.ToLowerInvariant()
+            : null;
+    }
+
     private static string ValidateColor(string value, string defaultValue)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -352,6 +414,85 @@ public sealed class SettingsService : ISettingsService
         {
             settings.AgentMonoFontFamily = AppSettings.BundledAgentMonoFontFamily;
         }
+    }
+
+    /// <summary>
+    /// Legacy built-in preset id → successor id. The old preset INI files no
+    /// longer ship, so an active key pointing at one is rewritten once to the
+    /// mapped successor, the successor preset's colors are applied (user fonts
+    /// and non-theme settings are preserved) and the config is persisted
+    /// immediately (idempotent: the rewritten key never matches again).
+    /// </summary>
+    private static readonly Dictionary<string, string> LegacyThemeKeyMap =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["builtin:dark"] = "builtin:vercel-black",
+            ["builtin:vercel-neutral-dark"] = "builtin:vercel-black",
+            ["builtin:terminal-green"] = "builtin:meadow-green",
+            ["builtin:warm-light"] = "builtin:base-light",
+            ["builtin:vercel-neutral-light"] = "builtin:base-light"
+        };
+
+    private void MigrateLegacyThemeKey(AppSettings settings)
+    {
+        if (string.IsNullOrWhiteSpace(settings.ActiveThemeKey))
+            return;
+        if (!LegacyThemeKeyMap.TryGetValue(settings.ActiveThemeKey.Trim(), out var mappedKey))
+            return;
+
+        // Apply the successor preset's color groups so the migrated install
+        // renders the new palette immediately; user font choices and non-theme
+        // settings are preserved. When the preset file cannot be loaded the
+        // migration degrades to a key-only rewrite with an empty fingerprint —
+        // the Theme picker then marks the mapped preset as having pending
+        // changes until the user re-confirms it.
+        var descriptor = TryLoadBuiltInPreset(mappedKey);
+        if (descriptor?.Appearance != null)
+        {
+            var fontSize = settings.FontSize;
+            var fontFamily = settings.FontFamily;
+            var agentFontSize = settings.AgentFontSize;
+            var agentFontFamily = settings.AgentFontFamily;
+            var agentMonoFontFamily = settings.AgentMonoFontFamily;
+            descriptor.Appearance.ApplyTo(settings);
+            settings.FontSize = fontSize;
+            settings.FontFamily = fontFamily;
+            settings.AgentFontSize = agentFontSize;
+            settings.AgentFontFamily = agentFontFamily;
+            settings.AgentMonoFontFamily = agentMonoFontFamily;
+            SaveThemeSettings(settings, descriptor.Key, descriptor.Fingerprint);
+            return;
+        }
+
+        SaveThemeSettings(settings, mappedKey, "");
+    }
+
+    private static ThemeDescriptor? TryLoadBuiltInPreset(string mappedKey)
+    {
+        const string prefix = "builtin:";
+        if (!mappedKey.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            return null;
+        var presetPath = Path.Combine(
+            AppContext.BaseDirectory, "theme-presets", mappedKey[prefix.Length..] + ".ini");
+        if (!File.Exists(presetPath))
+            return null;
+        var loaded = new ThemeService().LoadTheme(presetPath, ThemeSource.BuiltIn);
+        return loaded.IsValid ? loaded.Descriptor : null;
+    }
+
+    /// <summary>
+    /// Seeds a fresh install (no psx.ini) from the bundled base-light preset so
+    /// the first launch renders exactly what manually applying Base Light
+    /// produces, including the shell chrome colors.
+    /// </summary>
+    private static void SeedFromDefaultPreset(AppSettings settings)
+    {
+        var descriptor = TryLoadBuiltInPreset("builtin:base-light");
+        if (descriptor?.Appearance == null)
+            return;
+        descriptor.Appearance.ApplyTo(settings);
+        settings.ActiveThemeKey = descriptor.Key;
+        settings.ThemeFingerprint = descriptor.Fingerprint;
     }
 
     private static string BuildIni(AppSettings settings)
@@ -455,7 +596,45 @@ public sealed class SettingsService : ISettingsService
         builder.AppendLine($"brightMagenta={p.BrightMagenta}");
         builder.AppendLine($"brightCyan={p.BrightCyan}");
         builder.AppendLine($"brightWhite={p.BrightWhite}");
+
+        // Shell Theme — optional section, written only when at least one
+        // field is set so older configs stay byte-stable.
+        var s = settings.ShellTheme;
+        if (HasAnyShellThemeValue(s))
+        {
+            builder.AppendLine();
+            builder.AppendLine("[shellTheme]");
+            AppendIfSet(builder, "sidebar", s.Sidebar);
+            AppendIfSet(builder, "sidebarGradientFrom", s.SidebarGradientFrom);
+            AppendIfSet(builder, "sidebarGradientTo", s.SidebarGradientTo);
+            AppendIfSet(builder, "sidebarGradientFromStop", s.SidebarGradientFromStop);
+            AppendIfSet(builder, "sidebarSelected", s.SidebarSelected);
+            AppendIfSet(builder, "sidebarInput", s.SidebarInput);
+            AppendIfSet(builder, "sidebarInputBorder", s.SidebarInputBorder);
+            AppendIfSet(builder, "chrome", s.Chrome);
+            AppendIfSet(builder, "workspace", s.Workspace);
+            AppendIfSet(builder, "tabActive", s.TabActive);
+            AppendIfSet(builder, "tabActiveTerminal", s.TabActiveTerminal);
+            AppendIfSet(builder, "composerBg", s.ComposerBg);
+            AppendIfSet(builder, "composerBorder", s.ComposerBorder);
+            AppendIfSet(builder, "composerShadow", s.ComposerShadow);
+            AppendIfSet(builder, "terminalBackground", s.TerminalBackground);
+        }
         return builder.ToString();
+    }
+
+    private static bool HasAnyShellThemeValue(ShellThemeColors s) =>
+        s.Sidebar != null || s.SidebarGradientFrom != null || s.SidebarGradientTo != null ||
+        s.SidebarGradientFromStop != null ||
+        s.SidebarSelected != null || s.SidebarInput != null || s.SidebarInputBorder != null ||
+        s.Chrome != null || s.Workspace != null || s.TabActive != null || s.TabActiveTerminal != null ||
+        s.ComposerBg != null || s.ComposerBorder != null || s.ComposerShadow != null ||
+        s.TerminalBackground != null;
+
+    private static void AppendIfSet(StringBuilder builder, string key, string? value)
+    {
+        if (!string.IsNullOrEmpty(value))
+            builder.AppendLine($"{key}={value}");
     }
 
     private static AppSettings LoadSettingsFile(string path)

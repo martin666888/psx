@@ -85,6 +85,10 @@ export class WorkspaceChromeController {
         this.openMenu = null;
         this.openTrigger = null;
         this.paneMenuWorkspace = null;
+        this.tabsMenuColumnId = null;
+        // Per-strip ResizeObservers keep the overflow badge honest while the
+        // geometry engine drags column widths without re-rendering tabs.
+        this.tabStripObservers = new Map();
         this.dshRuntimeStatus = { state: 'not_installed', updateState: 'idle', availableVersions: [] };
         this.appSettings = { revision: -1, dshRegistry: 'official' };
         this.kimiWebRuntimeStatus = { state: 'stopped', errorClass: null, reason: null };
@@ -150,6 +154,8 @@ export class WorkspaceChromeController {
     dispose() {
         for (const dispose of this.disposeNoticeLocale.splice(0)) dispose();
         this.disposeLocaleChanged?.();
+        for (const observer of this.tabStripObservers.values()) observer.disconnect();
+        this.tabStripObservers.clear();
         document.removeEventListener('pointerdown', this.onDocumentPointerDown, true);
         document.removeEventListener('keydown', this.onDocumentKeyDown);
         document.removeEventListener('psx-history-state', this.onHistoryState);
@@ -251,7 +257,7 @@ export class WorkspaceChromeController {
         this.layout = snapshot;
         this.rects = rects;
         this.renderTabStrips();
-        if (this.openMenu === 'pane') this.renderOpenMenu();
+        if (this.openMenu === 'pane' || this.openMenu === 'tabs') this.renderOpenMenu();
     }
 
     /** Shows a workspace notice from its fixed code + args. The node keeps
@@ -315,15 +321,41 @@ export class WorkspaceChromeController {
                 strip.dataset.columnId = column.columnId;
                 strip.setAttribute('role', 'group');
                 strip.setAttribute('aria-label', t('workspace.columnAria'));
-                // Wheel over an overflowed strip scrolls horizontally; a strip
-                // that fits its column leaves the wheel untouched.
-                strip.addEventListener('wheel', (event) => {
+                // Tabs live in an inner scroller so the fixed "all tabs" entry
+                // on the right never scrolls away. Wheel over an overflowed
+                // scroller scrolls horizontally; a scroller that fits its
+                // column leaves the wheel untouched.
+                const scroller = document.createElement('div');
+                scroller.className = 'workspace-tab-strip-scroll';
+                scroller.addEventListener('wheel', (event) => {
                     if (event.deltaY === 0) return;
-                    const maxScroll = strip.scrollWidth - strip.clientWidth;
+                    const maxScroll = scroller.scrollWidth - scroller.clientWidth;
                     if (maxScroll <= 0) return;
-                    strip.scrollLeft = Math.min(maxScroll, Math.max(0, strip.scrollLeft + event.deltaY));
+                    scroller.scrollLeft = Math.min(maxScroll, Math.max(0, scroller.scrollLeft + event.deltaY));
                     event.preventDefault();
                 });
+                scroller.addEventListener('scroll', () => this.scheduleTabOverflowUpdate(strip), { passive: true });
+                const divider = document.createElement('span');
+                divider.className = 'workspace-tab-strip-divider';
+                divider.setAttribute('aria-hidden', 'true');
+                const all = document.createElement('button');
+                all.type = 'button';
+                all.className = 'workspace-tab-strip-all';
+                all.dataset.role = 'tab-strip-all';
+                all.setAttribute('aria-label', t('menu.tabs'));
+                all.setAttribute('aria-expanded', 'false');
+                all.title = t('menu.tabs');
+                const chevron = document.createElement('span');
+                chevron.setAttribute('aria-hidden', 'true');
+                chevron.textContent = '▾';
+                const badge = document.createElement('span');
+                badge.className = 'workspace-tab-strip-overflow';
+                all.append(chevron, badge);
+                all.addEventListener('click', () => this.openTabsMenu(strip.dataset.columnId, all));
+                strip.append(scroller, divider, all);
+                const observer = new ResizeObserver(() => this.scheduleTabOverflowUpdate(strip));
+                observer.observe(scroller);
+                this.tabStripObservers.set(column.columnId, observer);
                 this.nameplates.appendChild(strip);
             }
             const rect = this.rects.get(column.columnId);
@@ -336,16 +368,105 @@ export class WorkspaceChromeController {
             this.fillTabStrip(strip, column);
         });
         for (const strip of [...this.nameplates.children]) {
-            if (!desired.has(strip.dataset.columnId)) strip.remove();
+            if (!desired.has(strip.dataset.columnId)) {
+                this.tabStripObservers.get(strip.dataset.columnId)?.disconnect();
+                this.tabStripObservers.delete(strip.dataset.columnId);
+                strip.remove();
+            }
         }
     }
 
     fillTabStrip(strip, column) {
-        strip.replaceChildren();
+        const scroller = strip.querySelector('.workspace-tab-strip-scroll');
+        if (!scroller) return;
+        // Ordinary re-renders (title/attention updates, catalog enrichment)
+        // keep the scroll position and focus; only an active-tab CHANGE may
+        // scroll the newly activated tab into view.
+        const previousActive = scroller.dataset.activeTabId || '';
+        const previousScroll = scroller.scrollLeft;
+        const focused = this.captureTabFocus(scroller);
+        scroller.replaceChildren();
         for (const tab of column.tabs || []) {
             const workspace = this.catalog.workspaces.find((item) => item.workspaceId === tab.workspaceId);
-            strip.appendChild(this.buildTab(tab, workspace, column));
+            scroller.appendChild(this.buildTab(tab, workspace, column));
         }
+        scroller.scrollLeft = previousScroll;
+        scroller.dataset.activeTabId = column.activeTabId || '';
+        this.restoreTabFocus(scroller, focused);
+        if (column.activeTabId && column.activeTabId !== previousActive) {
+            const active = [...scroller.children]
+                .find((item) => item.dataset.workspaceId === column.activeTabId);
+            if (active) this.scrollTabIntoView(scroller, active);
+        }
+        this.scheduleTabOverflowUpdate(strip);
+    }
+
+    // Rebuilding the strip replaces every node, which would bounce keyboard
+    // focus back to <body>. Remember which tab part (target / close) held
+    // focus so it can be restored onto the rebuilt node.
+    captureTabFocus(scroller) {
+        const active = document.activeElement;
+        if (!active || !scroller.contains(active)) return null;
+        const tabEl = active.closest('.workspace-tab');
+        if (!tabEl) return null;
+        return {
+            workspaceId: tabEl.dataset.workspaceId || '',
+            part: active.classList.contains('workspace-tab-close') ? 'close' : 'target'
+        };
+    }
+
+    restoreTabFocus(scroller, focused) {
+        if (!focused || !focused.workspaceId) return;
+        const tabEl = [...scroller.children]
+            .find((item) => item.dataset.workspaceId === focused.workspaceId);
+        if (!tabEl) return;
+        const target = focused.part === 'close'
+            ? tabEl.querySelector('.workspace-tab-close')
+            : tabEl.querySelector('.workspace-tab-target');
+        target?.focus();
+    }
+
+    // Activating a tab that sits outside the visible scroll range scrolls it
+    // fully into view; a tab already visible leaves the scroll position alone.
+    scrollTabIntoView(scroller, tabEl) {
+        const left = tabEl.offsetLeft;
+        const right = left + tabEl.offsetWidth;
+        if (left < scroller.scrollLeft) scroller.scrollLeft = left;
+        else if (right > scroller.scrollLeft + scroller.clientWidth) {
+            scroller.scrollLeft = right - scroller.clientWidth;
+        }
+    }
+
+    // rAF-coalesced overflow measurement: scroll and resize storms collapse
+    // into one badge update per frame.
+    scheduleTabOverflowUpdate(strip) {
+        if (strip.overflowUpdatePending) return;
+        strip.overflowUpdatePending = true;
+        window.requestAnimationFrame(() => {
+            strip.overflowUpdatePending = false;
+            this.updateTabOverflow(strip);
+        });
+    }
+
+    // The "+N" badge counts the tabs clipped by the scroller on either side;
+    // the "all tabs" entry itself stays visible whether or not the strip
+    // overflows.
+    updateTabOverflow(strip) {
+        if (!strip.isConnected) return;
+        const scroller = strip.querySelector('.workspace-tab-strip-scroll');
+        const badge = strip.querySelector('.workspace-tab-strip-overflow');
+        if (!scroller || !badge) return;
+        const viewLeft = scroller.scrollLeft;
+        const viewRight = viewLeft + scroller.clientWidth;
+        let hidden = 0;
+        for (const tab of scroller.children) {
+            if (tab.offsetLeft < viewLeft - 0.5
+                || tab.offsetLeft + tab.offsetWidth > viewRight + 0.5) {
+                hidden += 1;
+            }
+        }
+        badge.textContent = hidden > 0 ? `+${hidden}` : '';
+        strip.dataset.overflow = hidden > 0 ? 'true' : 'false';
     }
 
     // tab = icon + title + attention badge + close. Clicking the tab activates
@@ -357,6 +478,11 @@ export class WorkspaceChromeController {
         tabEl.setAttribute('role', 'presentation');
         tabEl.dataset.workspaceId = tab.workspaceId || '';
         tabEl.dataset.active = tab.workspaceId === column.activeTabId ? 'true' : 'false';
+        // Terminal vs Agent/DSH/Kimi Web columns style their active tab
+        // differently ([shellTheme] tabActiveTerminal); missing catalog data
+        // leaves the attribute off and the generic active-tab look applies.
+        const kind = workspace?.kind ?? tab.kind;
+        if (kind) tabEl.dataset.kind = String(kind);
         tabEl.title = workspace?.title || t('workspace.fallbackTitle');
 
         const target = document.createElement('button');
@@ -439,6 +565,22 @@ export class WorkspaceChromeController {
         this.publishShellOverlay();
     }
 
+    // The fixed "all tabs" entry of a column: lists exactly that column's
+    // tabs so an overflowed strip stays fully reachable (pointer + keyboard).
+    openTabsMenu(columnId, trigger) {
+        if (this.openMenu === 'tabs' && this.tabsMenuColumnId === columnId) {
+            this.closeMenu(false);
+            return;
+        }
+        if (this.openMenu) this.closeMenu(this.openMenu === 'theme', false);
+        this.openMenu = 'tabs';
+        this.openTrigger = trigger;
+        this.tabsMenuColumnId = columnId;
+        trigger.setAttribute('aria-expanded', 'true');
+        this.renderOpenMenu();
+        this.publishShellOverlay();
+    }
+
     closeMenu(cancelTheme = false, restoreFocus = true) {
         if (!this.openMenu) return;
         if (cancelTheme) Bridge.sendThemeAction('cancel');
@@ -447,6 +589,7 @@ export class WorkspaceChromeController {
         this.openMenu = null;
         this.openTrigger = null;
         this.paneMenuWorkspace = null;
+        this.tabsMenuColumnId = null;
         this.dshUpdateConfirmation = false;
         this.portalRoot.replaceChildren();
         if (restoreFocus) focusTarget?.focus();
@@ -465,6 +608,10 @@ export class WorkspaceChromeController {
             this.closeMenu(false, false);
             return;
         }
+        if (this.openMenu === 'tabs' && !this.rebindTabsMenuTrigger()) {
+            this.closeMenu(false, false);
+            return;
+        }
         // In-place refresh (segment toggle, catalog/layout refresh while the
         // menu stays open) vs. a fresh open: the popover node is swapped
         // either way, so only a fresh open may replay the entry animation and
@@ -476,12 +623,12 @@ export class WorkspaceChromeController {
         menu.dataset.menu = this.openMenu;
         menu.setAttribute('role', 'dialog');
         menu.setAttribute('aria-label', this.menuLabel());
-        if (this.openMenu === 'pane' && this.openTrigger) {
-            // The column menu's trigger lives on a tab anywhere across the
-            // chrome row: anchor directly under it. The exact left is set after
-            // mount (measured width), left-aligned to the trigger and clamped
-            // only when needed to keep it inside the viewport. A transform
-            // would fight the popover-in animation's translateY.
+        if ((this.openMenu === 'pane' || this.openMenu === 'tabs') && this.openTrigger) {
+            // Column-anchored menus (a tab's context menu, a strip's "all
+            // tabs" entry) anchor directly under their trigger. The exact left
+            // is set after mount (measured width), left-aligned to the trigger
+            // and clamped only when needed to keep it inside the viewport. A
+            // transform would fight the popover-in animation's translateY.
             const rect = this.openTrigger.getBoundingClientRect();
             menu.dataset.anchorLeft = String(rect.left);
             menu.style.top = `${rect.bottom + 4}px`;
@@ -497,6 +644,7 @@ export class WorkspaceChromeController {
         if (this.openMenu === 'create') this.renderCreateMenu(menu);
         if (this.openMenu === 'theme') this.renderThemeMenu(menu);
         if (this.openMenu === 'pane') this.renderPaneMenu(menu, this.paneMenuWorkspace);
+        if (this.openMenu === 'tabs') this.renderTabsMenu(menu, this.tabsMenuColumnId);
         if (isRefresh) menu.style.animation = 'none';
         this.portalRoot.replaceChildren(menu);
         if (menu.dataset.anchorLeft) {
@@ -523,11 +671,25 @@ export class WorkspaceChromeController {
         return true;
     }
 
+    rebindTabsMenuTrigger() {
+        if (this.openTrigger?.isConnected) return true;
+        if (!this.tabsMenuColumnId) return false;
+        const strip = [...this.nameplates.children]
+            .find((item) => item.dataset.columnId === this.tabsMenuColumnId);
+        const replacement = strip?.querySelector('[data-role="tab-strip-all"]');
+        if (!replacement) return false;
+        this.openTrigger?.setAttribute('aria-expanded', 'false');
+        this.openTrigger = replacement;
+        this.openTrigger.setAttribute('aria-expanded', 'true');
+        return true;
+    }
+
     menuLabel() {
         return {
             create: t('menu.create'),
             theme: t('menu.theme'),
-            pane: t('menu.pane')
+            pane: t('menu.pane'),
+            tabs: t('menu.tabs')
         }[this.openMenu] || t('menu.fallback');
     }
 
@@ -764,6 +926,30 @@ export class WorkspaceChromeController {
             runtimeSection.dataset.role = 'kimi-web-runtime-menu';
             this.renderKimiWebRuntimeMenu(runtimeSection);
             menu.appendChild(runtimeSection);
+        }
+    }
+
+    // Column-local tab list for the "all tabs" entry: the active tab carries
+    // the current mark, attention states stay independent secondary text, and
+    // activating a row closes the menu.
+    renderTabsMenu(menu, columnId) {
+        const column = (this.layout?.columns || []).find((item) => item.columnId === columnId);
+        if (!column) return;
+        menu.appendChild(this.heading(t('menu.tabs')));
+        for (const tab of column.tabs || []) {
+            const workspace = this.catalog.workspaces.find((item) => item.workspaceId === tab.workspaceId);
+            const secondary = workspace?.attentionKind
+                ? t(`attention.${workspace.attentionKind}`)
+                : (tab.workspaceId === column.activeTabId ? t('theme.current') : '');
+            menu.appendChild(this.menuRow(
+                workspace?.title || t('workspace.fallbackTitle'),
+                secondary,
+                () => {
+                    if (workspace) Bridge.sendWorkspaceLayoutIntent('activate', workspace.workspaceId);
+                    this.closeMenu(false);
+                },
+                !workspace
+            ));
         }
     }
 

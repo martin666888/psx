@@ -91,7 +91,7 @@ function ThreadRow(
     <button
       type="button"
       className={
-        'agent-history-item flex min-h-10 w-full items-center gap-2 rounded-md p-2 text-left transition-colors hover:bg-accent' +
+        'agent-history-item flex min-h-8 w-full items-center gap-2 rounded p-2 text-left transition-colors hover:bg-accent' +
         (isActive ? ' bg-muted' : '')
       }
       data-thread-id={thread.threadId || ''}
@@ -142,7 +142,7 @@ function HistoryGroup(
   const hasActive = allThreads.some((thread) => thread.threadId === props.activeThreadId);
 
   return (
-    <div className="agent-history-group mt-4 first:mt-0" data-folded={String(folded)}>
+    <div className="agent-history-group mt-5 first:mt-0" data-folded={String(folded)}>
       <button
         type="button"
         className="agent-history-group-header flex w-full items-center gap-2 rounded-md px-2 pt-2 pb-1 text-left transition-colors hover:bg-accent"
@@ -274,7 +274,7 @@ export function HistoryList(props: HistoryListProps): JSX.Element {
   return (
     <>
       {notice}
-      <div className="agent-history-list grid gap-0.5">
+      <div className="agent-history-list grid gap-1.5">
         {groups.map((group) => (
           <HistoryGroup key={group.key} group={group} isSearching={isSearching} props={props} />
         ))}

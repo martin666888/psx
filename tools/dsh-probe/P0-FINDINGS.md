@@ -34,6 +34,14 @@ WebSocket 检查同时记录 upgrade 和消息帧计数，便于区分页面脚�
 
 ## 真实 DSH 与安装探针
 
+### 2026-09-10：0.1.5-rc.2 首装 seed 提升
+
+- [隔离生成 workflow 34494859152](https://github.com/martin666888/psx/actions/runs/34494859152)
+  在 Windows Server 2022、Portable Node 22.23.1 / npm 10.9.8 上通过官方 SRI 核对、
+  `npm ci` 和真实 `dsh web` Ready URL HTTP 200 检查。
+- `tools/dsh-seed/package.json` 与 `package-lock.json` 直接复用该次审核通过的
+  `tools/dsh-locks/locks/0.1.5-rc.2/` 字节，首次安装不会先落到旧版再更新。
+
 ### 2026-09-10：0.1.5-rc.1 复核
 
 - [隔离生成 workflow 34442139499](https://github.com/martin666888/psx/actions/runs/34442139499)

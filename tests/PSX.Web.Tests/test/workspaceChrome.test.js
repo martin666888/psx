@@ -1001,7 +1001,7 @@ test('rail buttons render inline SVG icons and expose no workspace-list entry', 
   assert.match(css, /#activity-rail \.workspace-chrome-button::before\s*\{[^}]*inset:\s*4px;/s);
   assert.match(
     css,
-    /#activity-rail \.workspace-chrome-button\[aria-expanded="true"\]::before\s*\{[^}]*--agent-surface-muted/s
+    /#activity-rail \.workspace-chrome-button\[aria-expanded="true"\]::before\s*\{[^}]*--agent-shell-sidebar-selected/s
   );
   assert.doesNotMatch(
     css,
@@ -1138,7 +1138,7 @@ test('column menu rebinds after tab replacement and closes on an embedded-frame 
   }
 });
 
-test('tab strips render attention badges and single-tab columns keep the nameplate look', async () => {
+test('tab strips render attention badges and keep the fixed 175px tab width', async () => {
   const runtime = installAgentRuntime();
   mountChrome();
   const { WorkspaceChromeController } = await import(controllerUrl);
@@ -1198,13 +1198,15 @@ test('tab strips render attention badges and single-tab columns keep the namepla
     workspaceId: 'w2'
   });
 
-  // A single-tab column keeps the legacy nameplate look: the lone tab fills
-  // the strip (CSS :only-child rule).
+  // Flat redesign: tabs are fixed 175x32 pills in every column — the legacy
+  // single-tab nameplate stretch rule is gone.
   const css = fs.readFileSync(
     path.join(repositoryRoot, 'frontend', 'webview', 'src', 'css', 'workspace-chrome.css'),
     'utf8'
   );
-  assert.match(css, /:has\(\.workspace-tab:only-child\)/, 'single-tab columns fill the strip');
+  assert.match(css, /\.workspace-tab\s*\{[\s\S]*?flex: 0 0 175px;/, 'tabs keep a fixed 175px width');
+  assert.match(css, /\.workspace-tab\s*\{[\s\S]*?height: 32px;/, 'tabs are 32px tall inside the 40px strip');
+  assert.ok(!css.includes(':only-child'), 'single-tab columns no longer stretch to fill the strip');
   chrome.dispose();
 });
 
@@ -1224,25 +1226,216 @@ test('tab strips overflow horizontally on wheel', async () => {
     { columnId: 'column-1', tabs, activeTabId: 'w1', ratio: 1 }
   ]), new Map([['column-1', { left: 40, top: 40, width: 200, height: 40 }]]));
   const strip = document.querySelector('.workspace-tab-strip');
+  const scroller = strip.querySelector('.workspace-tab-strip-scroll');
+  assert.ok(scroller, 'tabs render inside the inner scroller');
   // jsdom reports zero scroll geometry; stub the overflowed shape.
-  Object.defineProperty(strip, 'scrollWidth', { configurable: true, value: 600 });
-  Object.defineProperty(strip, 'clientWidth', { configurable: true, value: 200 });
+  Object.defineProperty(scroller, 'scrollWidth', { configurable: true, value: 600 });
+  Object.defineProperty(scroller, 'clientWidth', { configurable: true, value: 200 });
 
   const wheel = new window.WheelEvent('wheel', { deltaY: 120, bubbles: true, cancelable: true });
-  strip.dispatchEvent(wheel);
-  assert.equal(strip.scrollLeft, 120, 'wheel translates to horizontal scroll');
+  scroller.dispatchEvent(wheel);
+  assert.equal(scroller.scrollLeft, 120, 'wheel translates to horizontal scroll');
   assert.equal(wheel.defaultPrevented, true);
 
-  // The strip clamps at the end and consumes the wheel only while overflowed.
+  // The scroller clamps at the end and consumes the wheel only while overflowed.
   const clamp = new window.WheelEvent('wheel', { deltaY: 9999, bubbles: true, cancelable: true });
-  strip.dispatchEvent(clamp);
-  assert.equal(strip.scrollLeft, 400, 'scroll clamps at maxScroll');
+  scroller.dispatchEvent(clamp);
+  assert.equal(scroller.scrollLeft, 400, 'scroll clamps at maxScroll');
   assert.equal(clamp.defaultPrevented, true);
 
   const css = fs.readFileSync(
     path.join(repositoryRoot, 'frontend', 'webview', 'src', 'css', 'workspace-chrome.css'),
     'utf8'
   );
-  assert.match(css, /\.workspace-tab-strip\s*\{[\s\S]*?overflow-x:\s*auto/, 'the strip scrolls horizontally');
+  assert.match(css, /\.workspace-tab-strip-scroll\s*\{[\s\S]*?overflow-x:\s*auto/, 'the tab scroller scrolls horizontally');
+  assert.match(css, /\.workspace-tab-strip\s*\{[\s\S]*?overflow: hidden/, 'the strip frame itself never scrolls');
+  chrome.dispose();
+});
+
+test('the pinned all-tabs entry lists the column tabs and activates one', async () => {
+  const runtime = installAgentRuntime();
+  mountChrome();
+  const { WorkspaceChromeController } = await import(controllerUrl);
+  const chrome = new WorkspaceChromeController(
+    document.getElementById('workspace-chrome'),
+    document.getElementById('workspace-popover-root')
+  );
+  chrome.applyLayout(columnSnapshot([
+    {
+      columnId: 'column-1',
+      tabs: [
+        { workspaceId: 'w1', kind: 'agent' },
+        { workspaceId: 'w2', kind: 'agent' },
+        { workspaceId: 'w3', kind: 'terminal' }
+      ],
+      activeTabId: 'w1',
+      ratio: 1
+    }
+  ]), new Map([['column-1', { left: 40, top: 40, width: 400, height: 700 }]]));
+  chrome.applyCatalog({
+    revision: 1,
+    providers: [],
+    maxColumns: 3,
+    workspaces: [
+      { workspaceId: 'w1', kind: 'agent', title: 'One', iconKey: 'claude', columnId: 'column-1', isActiveTab: true },
+      { workspaceId: 'w2', kind: 'agent', title: 'Two', iconKey: 'kimi', columnId: 'column-1', isActiveTab: false, attentionKind: 'question' },
+      { workspaceId: 'w3', kind: 'terminal', title: 'Three', iconKey: 'terminal', columnId: 'column-1', isActiveTab: false }
+    ]
+  });
+
+  const strip = document.querySelector('.workspace-tab-strip');
+  const entry = strip.querySelector('[data-role="tab-strip-all"]');
+  assert.ok(entry, 'every strip keeps the pinned all-tabs entry');
+  assert.equal(strip.lastElementChild, entry, 'the entry never scrolls away with the tabs');
+  assert.ok(strip.querySelector('.workspace-tab-strip-divider'), 'a 1x20 divider separates the scroller from the entry');
+
+  entry.click();
+  const menu = document.querySelector('.workspace-popover-tabs');
+  assert.ok(menu, 'the tabs menu opens');
+  assert.equal(menu.getAttribute('aria-label'), '全部标签');
+  const rows = [...menu.querySelectorAll('.workspace-menu-row')];
+  assert.deepEqual(
+    rows.map((row) => row.querySelector('.workspace-menu-primary').textContent),
+    ['One', 'Two', 'Three'],
+    'the menu lists exactly this column’s tabs'
+  );
+  assert.equal(rows[0].querySelector('.workspace-menu-secondary').textContent, '当前', 'the active tab carries the current mark');
+  assert.equal(rows[1].querySelector('.workspace-menu-secondary').textContent, '待回复', 'attention survives as independent secondary text');
+
+  rows[2].click();
+  assert.deepEqual(runtime.postedMessages.at(-1), {
+    type: 'workspace_layout_intent',
+    action: 'activate',
+    workspaceId: 'w3'
+  });
+  assert.equal(document.querySelector('.workspace-popover-tabs'), null, 'activating a row closes the menu');
+  chrome.dispose();
+});
+
+test('the overflow badge counts clipped tabs and activating a hidden tab scrolls it into view', async () => {
+  installAgentRuntime();
+  mountChrome();
+  const { WorkspaceChromeController } = await import(controllerUrl);
+  const chrome = new WorkspaceChromeController(
+    document.getElementById('workspace-chrome'),
+    document.getElementById('workspace-popover-root')
+  );
+  const tabs = Array.from({ length: 6 }, (_, index) => ({ workspaceId: `w${index + 1}`, kind: 'agent' }));
+  chrome.applyLayout(columnSnapshot([
+    { columnId: 'column-1', tabs, activeTabId: 'w1', ratio: 1 }
+  ]), new Map([['column-1', { left: 40, top: 40, width: 420, height: 700 }]]));
+
+  const strip = document.querySelector('.workspace-tab-strip');
+  const scroller = strip.querySelector('.workspace-tab-strip-scroll');
+  const badge = strip.querySelector('.workspace-tab-strip-overflow');
+  // jsdom reports zero geometry; lay out six 175px tabs with a 4px gap inside
+  // a 380px scroller (exactly two tabs fully visible). Prototype-level stubs
+  // survive the replaceChildren re-render.
+  const offsetLeftStub = Object.getOwnPropertyDescriptor(window.HTMLElement.prototype, 'offsetLeft');
+  const offsetWidthStub = Object.getOwnPropertyDescriptor(window.HTMLElement.prototype, 'offsetWidth');
+  Object.defineProperty(window.HTMLElement.prototype, 'offsetLeft', {
+    configurable: true,
+    get() {
+      return this.classList?.contains('workspace-tab')
+        ? [...this.parentNode.children].indexOf(this) * 179
+        : 0;
+    }
+  });
+  Object.defineProperty(window.HTMLElement.prototype, 'offsetWidth', {
+    configurable: true,
+    get() {
+      return this.classList?.contains('workspace-tab') ? 175 : 0;
+    }
+  });
+  Object.defineProperty(scroller, 'clientWidth', { configurable: true, value: 380 });
+  Object.defineProperty(scroller, 'scrollWidth', { configurable: true, value: 1074 });
+  try {
+    chrome.updateTabOverflow(strip);
+    assert.equal(badge.textContent, '+4', 'clipped tabs land in the badge');
+    assert.equal(strip.dataset.overflow, 'true');
+
+    // Activating a clipped tab scrolls it fully into view.
+    chrome.applyLayout(columnSnapshot([
+      { columnId: 'column-1', tabs, activeTabId: 'w5', ratio: 1 }
+    ]), new Map([['column-1', { left: 40, top: 40, width: 420, height: 700 }]]));
+    assert.equal(scroller.scrollLeft, 511, 'the newly active tab scrolls into view');
+
+    // A status-only re-render keeps the scroll position untouched.
+    chrome.applyLayout(columnSnapshot([
+      { columnId: 'column-1', tabs, activeTabId: 'w5', ratio: 1 }
+    ]), new Map([['column-1', { left: 40, top: 40, width: 420, height: 700 }]]));
+    assert.equal(scroller.scrollLeft, 511, 'ordinary re-renders keep the scroll position');
+
+    // Once the remaining tabs fit the column, the badge clears — and switching
+    // back to the first tab scrolls all the way left to reveal it.
+    chrome.applyLayout(columnSnapshot([
+      { columnId: 'column-1', tabs: tabs.slice(0, 2), activeTabId: 'w1', ratio: 1 }
+    ]), new Map([['column-1', { left: 40, top: 40, width: 420, height: 700 }]]));
+    assert.equal(scroller.scrollLeft, 0, 'activating a tab clipped on the left scrolls back to it');
+    chrome.updateTabOverflow(strip);
+    assert.equal(badge.textContent, '', 'no clipped tabs, no badge');
+    assert.equal(strip.dataset.overflow, 'false');
+  } finally {
+    Object.defineProperty(window.HTMLElement.prototype, 'offsetLeft', offsetLeftStub);
+    Object.defineProperty(window.HTMLElement.prototype, 'offsetWidth', offsetWidthStub);
+  }
+  chrome.dispose();
+});
+
+test('tab re-renders restore keyboard focus onto the rebuilt tab node', async () => {
+  installAgentRuntime();
+  mountChrome();
+  const { WorkspaceChromeController } = await import(controllerUrl);
+  const chrome = new WorkspaceChromeController(
+    document.getElementById('workspace-chrome'),
+    document.getElementById('workspace-popover-root')
+  );
+  const tabs = [
+    { workspaceId: 'w1', kind: 'agent' },
+    { workspaceId: 'w2', kind: 'agent' }
+  ];
+  const layout = columnSnapshot([
+    { columnId: 'column-1', tabs, activeTabId: 'w1', ratio: 1 }
+  ]);
+  const rects = new Map([['column-1', { left: 40, top: 40, width: 420, height: 700 }]]);
+  chrome.applyLayout(layout, rects);
+  chrome.applyCatalog({
+    revision: 1,
+    providers: [],
+    maxColumns: 3,
+    workspaces: [
+      { workspaceId: 'w1', kind: 'agent', title: 'One', iconKey: 'claude', columnId: 'column-1', isActiveTab: true },
+      { workspaceId: 'w2', kind: 'agent', title: 'Two', iconKey: 'kimi', columnId: 'column-1', isActiveTab: false }
+    ]
+  });
+
+  const tabTarget = () => document.querySelector('[data-workspace-id="w2"] .workspace-tab-target');
+  tabTarget().focus();
+  assert.equal(document.activeElement, tabTarget(), 'focus starts on the tab target');
+
+  // A catalog/title re-render rebuilds the strip; focus must land on the
+  // rebuilt node for the same workspace instead of falling back to <body>.
+  chrome.applyLayout(layout, rects);
+  const rebuilt = tabTarget();
+  assert.equal(document.activeElement, rebuilt, 'focus is restored onto the rebuilt tab');
+  assert.notEqual(document.activeElement, document.body, 'focus never drops to <body>');
+
+  // The close button keeps focus too.
+  const closeButton = () => document.querySelector('[data-workspace-id="w2"] .workspace-tab-close');
+  closeButton().focus();
+  chrome.applyLayout(layout, rects);
+  assert.equal(document.activeElement, closeButton(), 'the close button keeps focus');
+
+  // A removed tab has no node to restore; focus is left alone rather than
+  // landing on an unrelated tab.
+  closeButton().focus();
+  chrome.applyLayout(columnSnapshot([
+    { columnId: 'column-1', tabs: [tabs[0]], activeTabId: 'w1', ratio: 1 }
+  ]), rects);
+  assert.equal(
+    document.querySelector('[data-workspace-id="w2"]'),
+    null,
+    'the removed tab is gone'
+  );
   chrome.dispose();
 });

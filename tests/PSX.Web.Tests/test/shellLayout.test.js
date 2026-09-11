@@ -275,48 +275,50 @@ test('shell: structural tokens and the centerline mechanism exist in shell.css',
   const shell = readCss('shell.css');
   for (const token of [
     '--agent-history-width: 280px',
-    '--agent-reading-max-width: 920px',
-    '--agent-workbench-gutter: 12px',
-    '--agent-panel-gap: 12px',
-    '--agent-radius-structure: 24px',
-    '--agent-workspace-radius: var(--agent-radius-structure)',
-    '--agent-radius-composer: var(--agent-radius-structure)',
+    '--agent-reading-max-width: 760px',
+    '--agent-workbench-gutter: 0px',
+    '--agent-panel-gap: 0px',
+    '--agent-radius-composer: 16px',
     '--agent-radius-context-card: var(--agent-radius-card)',
-    '--agent-shadow-canvas',
     '--agent-shadow-context-card',
     '--agent-reading-column-max',
     '--agent-reading-column-start'
   ]) {
     assert.ok(shell.includes(token), `shell.css missing ${token}`);
   }
-  // The retired 16px dock gap must not come back; the workbench uses one
-  // panel-gap token between the two panels.
+  // The retired 16px dock gap must not come back; the flat redesign retires
+  // the rounded-panel radius tokens and the canvas shadow too.
   assert.ok(!shell.includes('--agent-dock-gap'));
   assert.ok(!shell.includes('--agent-radius-workspace-canvas'));
+  assert.ok(!shell.includes('--agent-radius-structure'), 'workbench radius retired by the flat redesign');
+  assert.ok(!shell.includes('--agent-workspace-radius'), 'workbench radius retired by the flat redesign');
+  assert.ok(!shell.includes('--agent-shadow-canvas'), 'canvas shadow retired by the flat redesign');
   // Dock-open centres the reading column inside the remaining main panel
   // (pre-layout fallback path; the JS dock inset supersedes it once the pane
   // geometry engine drives rects).
   assert.match(shell, /#agent-workspace-container\.agent-history-dock-open:not\(\.agent-layout-driven\) \.agent-panel/);
   assert.match(shell, /--agent-main-panel-inline-size: calc\(/);
-  assert.match(shell, /--agent-reading-column-start: max\(\s*var\(--agent-panel-gap\),/);
+  assert.match(shell, /--agent-reading-column-start: max\(\s*0px,/);
   assert.match(
     shell,
     /calc\(\(var\(--agent-main-panel-inline-size\) - var\(--agent-reading-column-max\)\) \/ 2\)/
   );
   assert.ok(!shell.includes('--agent-canvas-offset'));
   assert.ok(!shell.includes('--agent-side-clearance'));
-  // Shadows derive from the theme-driven --agent-shadow, never hardcoded colors.
-  assert.match(shell, /--agent-shadow-canvas:.*color-mix\(in srgb, var\(--agent-shadow\)/);
   // Animations die under reduced motion.
   assert.match(shell, /@media \(prefers-reduced-motion: reduce\)/);
   // The luminance ladder: canvas surface derives from theme variables; the
-  // panel is a free-standing rounded workbench block with a full border and
-  // radius on every side (no hardcoded colors).
+  // flat redesign tiles the panel into its column rect edge to edge — no
+  // border, radius or gutter remains on the main panel.
   assert.match(shell, /--agent-canvas-surface: color-mix\(in srgb, var\(--agent-surface\)/);
   assert.match(
     shell,
-    /\.agent-panel\s*\{[\s\S]*?inset: var\(--agent-workbench-gutter\)[\s\S]*?border: 1px solid var\(--agent-border\);\s*border-radius: var\(--agent-workspace-radius\)/,
-    'main panel is a rounded workbench block with gutter, full border and radius'
+    /\.agent-panel\s*\{[\s\S]*?inset: 0;/,
+    'main panel fills its column rect edge to edge'
+  );
+  assert.ok(
+    !/\.agent-panel\s*\{[^}]*border/.test(shell),
+    'flat main panel carries no border or radius'
   );
   // The workbench backdrop only appears while an Agent workspace is active:
   // an optional theme tint wash (left-to-right fade) over the flat --agent-bg
@@ -412,8 +414,8 @@ test('shell: composer and conversation share the same reading-column rules', () 
   );
   assert.match(
     composer,
-    /\.agent-composer-card\s*\{[\s\S]*?border:\s*1px solid var\(--agent-border-strong\)/,
-    'Composer uses the strong theme border instead of relying on a dark-theme shadow'
+    /\.agent-composer-card\s*\{[\s\S]*?border:\s*1px solid var\(--agent-shell-composer-border\)/,
+    'Composer uses the themed composer border (default: the strong theme border)'
   );
 
   const usage = readCss('usage.css');
@@ -523,19 +525,20 @@ test('shell: dock width stays persisted at every pane width and narrow never ove
   assert.ok(!shell.includes('--agent-history-width-effective'), 'the effective-width indirection is retired');
   assert.ok(!shell.includes('--agent-history-narrow-width'), 'the narrow fixed width is retired');
   // Canvas and the collision-aware reading rules consume the persisted width
-  // directly — with the workbench gutter and panel gap folded into every
-  // offset (the pre-layout fallback block keeps the 100vw math).
+  // directly — the flat dock sits flush against the rail, so the panel starts
+  // at 40px + dock width with no gutter or panel gap (the pre-layout fallback
+  // block keeps the 100vw math).
   assert.match(
     shell,
-    /left: calc\(\s*var\(--agent-workbench-gutter\) \+ var\(--agent-history-width\) \+ var\(--agent-panel-gap\)\s*\)/
+    /left: calc\(40px \+ var\(--agent-history-width\)\)/
   );
   assert.match(
     shell,
-    /calc\(var\(--agent-main-panel-inline-size\) - 2 \* var\(--agent-panel-gap\)\)/
+    /calc\(var\(--agent-main-panel-inline-size\) - 2 \* var\(--agent-viewport-padding\)\)/
   );
   assert.match(
     shell,
-    /--agent-main-panel-inline-size: calc\(\s*100vw - 2 \* var\(--agent-workbench-gutter\) - var\(--agent-history-width\) - var\(--agent-panel-gap\)\s*\)/
+    /--agent-main-panel-inline-size: calc\(\s*100vw - 40px - var\(--agent-history-width\)\s*\)/
   );
   assert.match(
     shell,
@@ -551,18 +554,23 @@ test('shell: dock width stays persisted at every pane width and narrow never ove
   );
 });
 
-test('shell: the History dock is a free-standing rounded workbench panel', () => {
+test('shell: the History dock is a flat full-height sidebar panel', () => {
   const history = readCss('history.css');
-  // Gutter on top/bottom/left, full border and the shared workspace radius.
+  // Flat redesign: flush against the 40px rail, full window height, only a
+  // 1px right border separates it from the columns — no radius, no shadow.
   assert.match(
     history,
-    /\.agent-history-dock\s*\{[\s\S]*?top: calc\(40px \+ var\(--agent-workbench-gutter\)\);\s*bottom: var\(--agent-workbench-gutter\);\s*left: calc\(40px \+ var\(--agent-workbench-gutter\)\)/
+    /\.agent-history-dock\s*\{[\s\S]*?top: 0;\s*bottom: 0;\s*left: 40px;/
   );
   assert.match(
     history,
-    /\.agent-history-dock\s*\{[\s\S]*?border: 1px solid var\(--agent-border\);\s*border-radius: var\(--agent-workspace-radius\)/
+    /\.agent-history-dock\s*\{[\s\S]*?border: 0;\s*border-right: 1px solid var\(--agent-border\);/
   );
-  assert.match(history, /\.agent-history-dock\s*\{[\s\S]*?background: var\(--agent-canvas-surface\)/);
+  assert.ok(
+    !/\.agent-history-dock\s*\{[^}]*border-radius/.test(history),
+    'flat dock carries no border radius'
+  );
+  assert.match(history, /\.agent-history-dock\s*\{[\s\S]*?background: var\(--agent-shell-sidebar\)/);
   // The resize hit zone still straddles the right edge and the dock never
   // clips it away with overflow.
   assert.match(history, /\.agent-history-dock-resizer\s*\{[\s\S]*?right: -4px/);

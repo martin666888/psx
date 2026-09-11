@@ -20,8 +20,18 @@ public sealed class SettingsServiceTests
 
         Assert.AreEqual(Path.GetFullPath(configPath), service.ConfigPath);
         Assert.AreEqual("powershell", settings.DefaultShellProfileId);
-        Assert.AreEqual(AppSettings.AgentUiFontFamily, settings.AgentFontFamily);
-        Assert.AreEqual(AppSettings.BundledAgentMonoFontFamily, settings.AgentMonoFontFamily);
+        // A fresh install is seeded from the bundled base-light preset so the
+        // first launch matches applying Base Light manually.
+        var preset = new ThemeService().LoadTheme(
+            Path.Combine(TestWorkspace.RepositoryRoot, "theme-presets", "base-light.ini"),
+            ThemeSource.BuiltIn);
+        Assert.IsTrue(preset.IsValid, preset.Descriptor.DiagnosticSummary);
+        Assert.IsNotNull(preset.Descriptor.Appearance);
+        Assert.AreEqual(preset.Descriptor.Key, settings.ActiveThemeKey);
+        Assert.AreEqual(preset.Descriptor.Fingerprint, settings.ThemeFingerprint);
+        Assert.AreEqual(preset.Descriptor.Appearance.AgentFontFamily, settings.AgentFontFamily);
+        Assert.AreEqual(preset.Descriptor.Appearance.AgentFontSize, settings.AgentFontSize);
+        Assert.AreEqual(preset.Descriptor.Appearance.ShellTheme.Sidebar, settings.ShellTheme.Sidebar);
         Assert.IsFalse(File.Exists(configPath));
     }
 
@@ -109,16 +119,16 @@ public sealed class ThemeServiceTests
         var user = Path.Combine(workspace.Path, "user");
         Directory.CreateDirectory(builtIn);
         Directory.CreateDirectory(user);
-        CopyPreset("dark.ini", Path.Combine(builtIn, "dark.ini"));
-        CopyPreset("terminal-green.ini", Path.Combine(user, "terminal-green.ini"));
+        CopyPreset("base-light.ini", Path.Combine(builtIn, "base-light.ini"));
+        CopyPreset("meadow-green.ini", Path.Combine(user, "meadow-green.ini"));
         var service = new ThemeService(builtIn, user);
 
         var themes = service.ScanThemes();
 
         Assert.AreEqual(Path.GetFullPath(user), service.UserThemeDirectory);
         Assert.HasCount(2, themes);
-        Assert.IsTrue(themes.Any(theme => theme.Source == ThemeSource.BuiltIn && theme.Id == "dark"));
-        Assert.IsTrue(themes.Any(theme => theme.Source == ThemeSource.User));
+        Assert.IsTrue(themes.Any(theme => theme.Source == ThemeSource.BuiltIn && theme.Id == "base-light"));
+        Assert.IsTrue(themes.Any(theme => theme.Source == ThemeSource.User && theme.Id == "meadow-green"));
         Assert.IsTrue(themes.All(theme => theme.FilePath.StartsWith(workspace.Path, StringComparison.OrdinalIgnoreCase)));
     }
 
@@ -129,8 +139,8 @@ public sealed class ThemeServiceTests
         var builtIn = Path.Combine(workspace.Path, "built-in");
         var user = Path.Combine(workspace.Path, "user");
         Directory.CreateDirectory(builtIn);
-        CopyPreset("dark.ini", Path.Combine(builtIn, "one.ini"));
-        CopyPreset("dark.ini", Path.Combine(builtIn, "two.ini"));
+        CopyPreset("base-light.ini", Path.Combine(builtIn, "one.ini"));
+        CopyPreset("base-light.ini", Path.Combine(builtIn, "two.ini"));
 
         var themes = new ThemeService(builtIn, user).ScanThemes();
 
@@ -144,8 +154,8 @@ public sealed class ThemeServiceTests
     {
         using var workspace = TestWorkspace.Create(nameof(LoadTheme_InvalidColor_ReturnsDiagnosticInsteadOfThrowing));
         var themePath = Path.Combine(workspace.Path, "invalid.ini");
-        var source = File.ReadAllText(Path.Combine(TestWorkspace.RepositoryRoot, "theme-presets", "dark.ini"));
-        File.WriteAllText(themePath, source.Replace("background=#0c0c0d", "background=red", StringComparison.Ordinal));
+        var source = File.ReadAllText(Path.Combine(TestWorkspace.RepositoryRoot, "theme-presets", "base-light.ini"));
+        File.WriteAllText(themePath, source.Replace("background=#ffffff", "background=red", StringComparison.Ordinal));
         var service = new ThemeService(Path.Combine(workspace.Path, "built-in"), Path.Combine(workspace.Path, "user"));
 
         var result = service.LoadTheme(themePath, ThemeSource.User);

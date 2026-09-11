@@ -16,7 +16,8 @@
     "create": "新規ワークスペース",
     "theme": "テーマ",
     "pane": "ワークスペース操作",
-    "fallback": "メニュー"
+    "fallback": "メニュー",
+    "tabs": "すべてのタブ"
   },
   "create": {
     "placementFocused": "現在の列",

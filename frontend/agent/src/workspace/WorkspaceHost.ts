@@ -14,6 +14,7 @@ import type { SessionRuntimeHost } from './SessionRuntimeController.js';
 import type { PlanHost } from '../plan/PlanController.js';
 import { applyShadcnTheme } from '../ui/themeAdapter.js';
 import { colorSchemeForBackground } from '../../../webview/src/colorScheme.js';
+import { applyShellTheme } from '../../../webview/src/shellTheme.js';
 import { setPortalContainer } from '../ui/portalContainer.js';
 
 /** The one terminal-view method the host toggles when switching workspaces. */
@@ -28,6 +29,7 @@ interface AgentAppearanceSettings {
   agentMonoFontFamily?: string;
   themeColors?: Record<string, string | undefined>;
   agentThemeColors?: Record<string, string | undefined>;
+  shellTheme?: Record<string, string | undefined>;
 }
 
 interface WorkspaceEntry {
@@ -87,12 +89,12 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
       activeTabId?: string | null;
       ratio?: number;
     }>;
-  }, rects: Map<string, { left: number; top: number; width: number; height: number; dockAdjacent?: boolean }>): void {
+  }, rects: Map<string, { left: number; top: number; width: number; height: number }>): void {
     if (!snapshot || !Array.isArray(snapshot.columns)) return;
     this.layoutDriven = true;
     this.container.classList.add('agent-layout-driven');
 
-    const assignments = new Map<string, { columnId: string; rect: { left: number; top: number; width: number; height: number; dockAdjacent?: boolean } }>();
+    const assignments = new Map<string, { columnId: string; rect: { left: number; top: number; width: number; height: number } }>();
     for (const column of snapshot.columns) {
       if (!column.activeTabId) continue;
       const tab = column.tabs?.find((item) => item.workspaceId === column.activeTabId);
@@ -185,20 +187,15 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
 
   private applyPanelRect(
     panel: HTMLElement,
-    rect: { left: number; top: number; width: number; height: number; dockAdjacent?: boolean }
+    rect: { left: number; top: number; width: number; height: number }
   ): void {
-    // The panel floats on the workbench backdrop with a full gutter on every
-    // side (mirrors --agent-workbench-gutter in shell.css). When the dock is
-    // open, the dock inset already carries the left gutter plus the panel
-    // gap, so the dock-adjacent first column must not add the gutter a second
-    // time — the dock edge and the panel edge stay exactly one panel gap
-    // apart (12px), the same spacing a terminal column gets.
-    const gutter = 12;
-    const gutterLeft = rect.dockAdjacent ? 0 : gutter;
-    const left = rect.left + gutterLeft;
-    const top = rect.top + gutter;
-    const width = Math.max(0, rect.width - gutterLeft - gutter);
-    const height = Math.max(0, rect.height - 2 * gutter);
+    // Flat workbench (Ardot redesign): the panel fills its column rect edge
+    // to edge — no gutter, no dock-adjacent exception; column separation is
+    // the divider's 1px line.
+    const left = rect.left;
+    const top = rect.top;
+    const width = Math.max(0, rect.width);
+    const height = Math.max(0, rect.height);
     const key = `${left}:${top}:${width}:${height}`;
     if (panel.dataset.paneRect === key) return;
     panel.dataset.paneRect = key;
@@ -467,6 +464,10 @@ export class WorkspaceHost implements SessionRuntimeHost, PlanHost {
       this.setVar(root, '--agent-focus-ring', a.focusRing);
       this.setVar(root, '--agent-workbench-tint', a.workbenchTint);
     }
+
+    // Optional [shellTheme] chrome colors — same set/remove projection as the
+    // always-loaded shell (main.js routes the same payload here).
+    applyShellTheme(root, settings.shellTheme);
   }
 
   private setVar(el: HTMLElement, name: string, value: unknown): void {

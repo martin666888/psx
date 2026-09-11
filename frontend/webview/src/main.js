@@ -23,6 +23,7 @@ import { Bridge } from './Bridge.js';
 import { BridgeEventType } from './BridgeMessages.js';
 import { t, onLocaleChanged } from './i18n.js';
 import { colorSchemeForBackground } from './colorScheme.js';
+import { applyShellTheme } from './shellTheme.js';
 import { PaneLayoutController } from './PaneLayoutController.js';
 import { installRuntimeDiagnostics } from './RuntimeDiagnostics.js';
 import { TerminalManager } from './TerminalManager.js';
@@ -136,6 +137,9 @@ installRuntimeDiagnostics();
         }
         if (typeof settings.agentFontFamily === 'string') set('--agent-font-ui', settings.agentFontFamily);
         if (typeof settings.agentMonoFontFamily === 'string') set('--agent-font-mono', settings.agentMonoFontFamily);
+        // Optional [shellTheme] chrome colors: set/remove per field so a
+        // theme without them falls back to the tokens.css defaults.
+        applyShellTheme(root, settings.shellTheme);
     }
 
     // Pre-load staging (CP3b). Config/state events only need their most

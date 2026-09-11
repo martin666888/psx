@@ -488,7 +488,7 @@ export function ComposerView(props: ComposerViewProps): JSX.Element {
             </section>
             <div
               data-role="input-row"
-              className="agent-input-row min-w-0 px-[18px] pt-[10px] pb-[6px]"
+              className="agent-input-row min-w-0 px-[14px] pt-[12px] pb-[6px]"
               hidden={!!props.modeTransitionPrompt}
             >
               <ComposerTextarea
@@ -511,7 +511,7 @@ export function ComposerView(props: ComposerViewProps): JSX.Element {
             >
               <CommandHint {...props.hint} />
             </div>
-            <div className="agent-composer-footer box-border flex min-h-[44px] min-w-0 items-center gap-[var(--agent-space-2)] rounded-b-[var(--agent-radius-composer)] pt-1.5 pr-[7px] pb-[7px] pl-[14px]">
+            <div className="agent-composer-footer box-border flex min-h-[44px] min-w-0 items-center gap-[var(--agent-space-2)] rounded-b-[var(--agent-radius-composer)] pt-1.5 pr-[7px] pb-[10px] pl-[14px]">
               <div className="agent-composer-actions flex shrink-0 items-center">
                 <ComposerActions {...props.actions} />
               </div>

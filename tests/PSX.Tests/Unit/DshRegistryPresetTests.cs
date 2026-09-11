@@ -103,22 +103,22 @@ public sealed class DshRegistryPresetTests
         // The lock bytes pin TestIntegrity while the catalog claims OtherSri:
         // the shared validator must reject this before any npm invocation.
         locks.Bundle(
-            "0.1.5-rc.2",
+            "0.1.5-rc.3",
             sri: OtherSri(),
-            lockJson: FakeDshLockSource.BuildLockJson("0.1.5-rc.2", DshSri.TestIntegrity));
+            lockJson: FakeDshLockSource.BuildLockJson("0.1.5-rc.3", DshSri.TestIntegrity));
         var runtime = CreateRuntime(locator, workspace, locks);
         var paths = locator.Locate();
         SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
         SeedCiNpm(paths, marker: marker, runs: runs);
 
-        var result = await runtime.StageUpdateAsync(registry, "0.1.5-rc.2", CancellationToken.None);
+        var result = await runtime.StageUpdateAsync(registry, "0.1.5-rc.3", CancellationToken.None);
 
         Assert.IsFalse(result.Success);
         Assert.AreEqual(DshErrorClass.IntegrityFailed, result.ErrorClass);
         Assert.IsFalse(File.Exists(marker), "npm ci must not run when the bundled SRI mismatches");
         Assert.IsFalse(File.Exists(runs));
         Assert.IsFalse(File.Exists(paths.DshActivePointerFile));
-        Assert.IsFalse(runtime.ApplyStagedUpdate("0.1.5-rc.2"));
+        Assert.IsFalse(runtime.ApplyStagedUpdate("0.1.5-rc.3"));
     }
 
     [TestMethod]
@@ -129,7 +129,7 @@ public sealed class DshRegistryPresetTests
         var marker = Path.Combine(workspace.Path, "lifecycle.txt");
         var locator = new RuntimeLocator(workspace.Path);
         var locks = new FakeDshLockSource();
-        locks.Bundle("0.1.5-rc.2");
+        locks.Bundle("0.1.5-rc.3");
         var runtime = CreateRuntime(locator, workspace, locks);
         var paths = locator.Locate();
         SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
@@ -139,13 +139,13 @@ public sealed class DshRegistryPresetTests
         await Assert.ThrowsAsync<OperationCanceledException>(() =>
             runtime.StageUpdateAsync(
                 DshRegistryDescriptor.Official,
-                "0.1.5-rc.2",
+                "0.1.5-rc.3",
                 cts.Token,
                 () => cts.Cancel()));
 
         Assert.IsTrue(File.Exists(marker), "validationStarted now fires after npm ci completed");
         Assert.IsFalse(File.Exists(paths.DshActivePointerFile));
-        Assert.IsFalse(runtime.ApplyStagedUpdate("0.1.5-rc.2"));
+        Assert.IsFalse(runtime.ApplyStagedUpdate("0.1.5-rc.3"));
         Assert.AreEqual(DshWebRuntime.SeededPackageVersion, runtime.CurrentVersion);
     }
 
@@ -157,7 +157,7 @@ public sealed class DshRegistryPresetTests
         var marker = Path.Combine(workspace.Path, "lifecycle.txt");
         var locator = new RuntimeLocator(workspace.Path);
         var locks = new FakeDshLockSource();
-        locks.Bundle("0.1.5-rc.2");
+        locks.Bundle("0.1.5-rc.3");
         var runtime = CreateRuntime(locator, workspace, locks);
         var paths = locator.Locate();
         SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
@@ -165,14 +165,14 @@ public sealed class DshRegistryPresetTests
 
         var result = await runtime.StageUpdateAsync(
             DshRegistryDescriptor.Official,
-            "0.1.5-rc.2",
+            "0.1.5-rc.3",
             CancellationToken.None);
 
         Assert.IsFalse(result.Success);
         Assert.AreEqual(DshErrorClass.IntegrityFailed, result.ErrorClass);
         Assert.IsTrue(File.Exists(marker), "npm ci may run scripts after the lock was validated");
         Assert.IsFalse(File.Exists(paths.DshActivePointerFile));
-        Assert.IsFalse(runtime.ApplyStagedUpdate("0.1.5-rc.2"));
+        Assert.IsFalse(runtime.ApplyStagedUpdate("0.1.5-rc.3"));
     }
 
     [TestMethod]
@@ -183,7 +183,7 @@ public sealed class DshRegistryPresetTests
         var runs = Path.Combine(workspace.Path, "npm-runs.txt");
         var locator = new RuntimeLocator(workspace.Path);
         var locks = new FakeDshLockSource();
-        locks.Bundle("0.1.5-rc.2");
+        locks.Bundle(DshWebRuntime.SeededPackageVersion);
         var runtime = CreateRuntime(locator, workspace, locks);
         var paths = locator.Locate();
         SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
@@ -209,7 +209,7 @@ public sealed class DshRegistryPresetTests
             nameof(StageUpdate_CorruptCatalog_ReturnsCatalogCorrupt_WithoutStagingWrites));
         var locator = new RuntimeLocator(workspace.Path);
         var locks = new FakeDshLockSource { CatalogValid = false };
-        locks.Bundle("0.1.5-rc.2");
+        locks.Bundle("0.1.5-rc.3");
         var runtime = CreateRuntime(locator, workspace, locks);
         var paths = locator.Locate();
         SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
@@ -217,7 +217,7 @@ public sealed class DshRegistryPresetTests
 
         var result = await runtime.StageUpdateAsync(
             DshRegistryDescriptor.Official,
-            "0.1.5-rc.2",
+            "0.1.5-rc.3",
             CancellationToken.None);
 
         Assert.IsFalse(result.Success);
@@ -233,8 +233,8 @@ public sealed class DshRegistryPresetTests
             nameof(StageUpdate_CorruptArtifact_ReturnsCatalogCorrupt_WithoutStagingWrites));
         var locator = new RuntimeLocator(workspace.Path);
         var locks = new FakeDshLockSource();
-        locks.Bundle("0.1.5-rc.2");
-        locks.Corrupt("0.1.5-rc.2");
+        locks.Bundle("0.1.5-rc.3");
+        locks.Corrupt("0.1.5-rc.3");
         var runtime = CreateRuntime(locator, workspace, locks);
         var paths = locator.Locate();
         SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
@@ -242,7 +242,7 @@ public sealed class DshRegistryPresetTests
 
         var result = await runtime.StageUpdateAsync(
             DshRegistryDescriptor.Official,
-            "0.1.5-rc.2",
+            "0.1.5-rc.3",
             CancellationToken.None);
 
         Assert.IsFalse(result.Success);
@@ -274,11 +274,11 @@ public sealed class DshRegistryPresetTests
         using var workspace = TestWorkspace.Create(nameof(CheckForUpdate_CorruptCatalog_FailsWithReinstallMessage));
         var locator = new RuntimeLocator(workspace.Path);
         var locks = new FakeDshLockSource { CatalogValid = false };
-        locks.Bundle("0.1.5-rc.2");
+        locks.Bundle("0.1.5-rc.3");
         var runtime = CreateRuntime(locator, workspace, locks);
         var paths = locator.Locate();
         SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
-        SeedScriptedNpm(paths, "console.log(JSON.stringify('0.1.5-rc.2'));\n");
+        SeedScriptedNpm(paths, "console.log(JSON.stringify('0.1.5-rc.3'));\n");
 
         var result = await runtime.CheckForUpdateAsync(CancellationToken.None);
 
@@ -293,12 +293,12 @@ public sealed class DshRegistryPresetTests
         using var workspace = TestWorkspace.Create(nameof(CheckForUpdate_CorruptArtifact_FailsWithReinstallMessage));
         var locator = new RuntimeLocator(workspace.Path);
         var locks = new FakeDshLockSource();
-        locks.Bundle("0.1.5-rc.2");
-        locks.Corrupt("0.1.5-rc.2");
+        locks.Bundle("0.1.5-rc.3");
+        locks.Corrupt("0.1.5-rc.3");
         var runtime = CreateRuntime(locator, workspace, locks);
         var paths = locator.Locate();
         SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
-        SeedScriptedNpm(paths, "console.log(JSON.stringify('0.1.5-rc.2'));\n");
+        SeedScriptedNpm(paths, "console.log(JSON.stringify('0.1.5-rc.3'));\n");
 
         var result = await runtime.CheckForUpdateAsync(CancellationToken.None);
 
@@ -333,7 +333,7 @@ public sealed class DshRegistryPresetTests
         Assert.AreEqual("0.1.5-rc.3", result.AvailableVersion);
         Assert.HasCount(1, result.AvailableVersions);
         CollectionAssert.AreEqual(
-            new[] { "0.1.5-rc.5", "0.1.5-rc.2" },
+            new[] { "0.1.5-rc.5" },
             result.DeferredList.Select(entry => entry.Version).ToArray());
         CollectionAssert.AreEqual(
             new[] { "0.1.5-rc.4" },
@@ -346,7 +346,7 @@ public sealed class DshRegistryPresetTests
         using var workspace = TestWorkspace.Create(nameof(CheckForUpdate_AllNewerDeferred_ReportsDeferredOnly));
         var locator = new RuntimeLocator(workspace.Path);
         var locks = new FakeDshLockSource();
-        locks.Block("0.1.5-rc.3");
+        locks.Block("0.1.5-rc.4");
         var runtime = CreateRuntime(locator, workspace, locks);
         var paths = locator.Locate();
         SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
@@ -354,8 +354,8 @@ public sealed class DshRegistryPresetTests
             paths,
             """
             console.log(JSON.stringify({
-              versions: ['0.1.5-rc.2', '0.1.5-rc.3'],
-              'dist-tags': { latest: '0.1.5-rc.3' }
+              versions: ['0.1.5-rc.2', '0.1.5-rc.3', '0.1.5-rc.4'],
+              'dist-tags': { latest: '0.1.5-rc.4' }
             }));
             """);
 
@@ -366,10 +366,10 @@ public sealed class DshRegistryPresetTests
         Assert.IsNull(result.AvailableVersion);
         Assert.HasCount(0, result.AvailableVersions);
         CollectionAssert.AreEqual(
-            new[] { "0.1.5-rc.2" },
+            new[] { "0.1.5-rc.3" },
             result.DeferredList.Select(entry => entry.Version).ToArray());
         CollectionAssert.AreEqual(
-            new[] { "0.1.5-rc.3" },
+            new[] { "0.1.5-rc.4" },
             result.BlockedList.Select(entry => entry.Version).ToArray());
     }
 
@@ -380,7 +380,7 @@ public sealed class DshRegistryPresetTests
             nameof(ReceiptV3_RoundTrip_AndStagedValidationUsesOfficialOriginAndLockSha));
         var locator = new RuntimeLocator(workspace.Path);
         var locks = new FakeDshLockSource();
-        locks.Bundle("0.1.5-rc.2");
+        locks.Bundle("0.1.5-rc.3");
         var runtime = CreateRuntime(locator, workspace, locks);
         var paths = locator.Locate();
         SeedFakeDshTree(paths.DshCurrentDirectory, DshWebRuntime.SeededPackageVersion);
@@ -388,11 +388,11 @@ public sealed class DshRegistryPresetTests
 
         var result = await runtime.StageUpdateAsync(
             DshRegistryDescriptor.Npmmirror,
-            "0.1.5-rc.2",
+            "0.1.5-rc.3",
             CancellationToken.None);
 
         Assert.IsTrue(result.Success, result.ErrorCode ?? string.Empty);
-        Assert.IsNull(DshWebRuntime.ValidateStagedUpdate(paths.DshNextDirectory, "0.1.5-rc.2"));
+        Assert.IsNull(DshWebRuntime.ValidateStagedUpdate(paths.DshNextDirectory, "0.1.5-rc.3"));
 
         using var document = JsonDocument.Parse(
             File.ReadAllText(Path.Combine(paths.DshNextDirectory, "psx-dsh-update.json")));
@@ -400,7 +400,7 @@ public sealed class DshRegistryPresetTests
         Assert.AreEqual(3, receipt.SchemaVersion);
         Assert.AreEqual("bundled", receipt.LockSource);
         Assert.AreEqual(
-            FakeDshLockSource.HashText(FakeDshLockSource.BuildLockJson("0.1.5-rc.2", DshSri.TestIntegrity)),
+            FakeDshLockSource.HashText(FakeDshLockSource.BuildLockJson("0.1.5-rc.3", DshSri.TestIntegrity)),
             receipt.LockSha256,
             ignoreCase: true);
         Assert.AreEqual(DshRegistryDescriptor.NpmmirrorKey, receipt.RegistryKey);
@@ -410,22 +410,22 @@ public sealed class DshRegistryPresetTests
         var lockPath = Path.Combine(paths.DshNextDirectory, "package-lock.json");
         File.WriteAllText(
             lockPath,
-            FakeDshLockSource.BuildLockJson("0.1.5-rc.2", DshSri.TestIntegrity)
+            FakeDshLockSource.BuildLockJson("0.1.5-rc.3", DshSri.TestIntegrity)
                 .Replace("registry.npmjs.org", "registry.npmmirror.com", StringComparison.Ordinal));
-        Assert.IsNotNull(DshWebRuntime.ValidateStagedUpdate(paths.DshNextDirectory, "0.1.5-rc.2"));
+        Assert.IsNotNull(DshWebRuntime.ValidateStagedUpdate(paths.DshNextDirectory, "0.1.5-rc.3"));
 
         // Same logical lock, different bytes: the recorded lock hash must
         // pin the exact staged bytes.
         File.WriteAllText(
             lockPath,
-            FakeDshLockSource.BuildLockJson("0.1.5-rc.2", DshSri.TestIntegrity) + "\n");
-        Assert.IsNotNull(DshWebRuntime.ValidateStagedUpdate(paths.DshNextDirectory, "0.1.5-rc.2"));
+            FakeDshLockSource.BuildLockJson("0.1.5-rc.3", DshSri.TestIntegrity) + "\n");
+        Assert.IsNotNull(DshWebRuntime.ValidateStagedUpdate(paths.DshNextDirectory, "0.1.5-rc.3"));
 
         // Official origin but a different SRI still fails the root check.
         File.WriteAllText(
             lockPath,
-            FakeDshLockSource.BuildLockJson("0.1.5-rc.2", OtherSri()));
-        Assert.IsNotNull(DshWebRuntime.ValidateStagedUpdate(paths.DshNextDirectory, "0.1.5-rc.2"));
+            FakeDshLockSource.BuildLockJson("0.1.5-rc.3", OtherSri()));
+        Assert.IsNotNull(DshWebRuntime.ValidateStagedUpdate(paths.DshNextDirectory, "0.1.5-rc.3"));
     }
 
     [TestMethod]

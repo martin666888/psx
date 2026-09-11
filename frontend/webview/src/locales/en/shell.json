@@ -16,7 +16,8 @@
     "create": "New workspace",
     "theme": "Theme",
     "pane": "Workspace actions",
-    "fallback": "Menu"
+    "fallback": "Menu",
+    "tabs": "All tabs"
   },
   "create": {
     "placementFocused": "This column",

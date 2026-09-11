@@ -109,12 +109,12 @@ $PortableNodeUrl = "https://nodejs.org/dist/$PortableNodeVersion/$PortableNodeAr
 $PortableNodeExpectedSha = "7df0bc9375723f4a86b3aa1b7cc73342423d9677a8df4538aca31a049e309c29"
 $MapleMonoRegularExpectedSha = "E42D081EAECBDA6A043079EAAAF43EA20BD8805666BC06E1FE4DC663C462AD7F"
 $MapleMonoSemiBoldExpectedSha = "F72D4475C7AC435C7C363E0CB35100A18E4A5BB14787F17F7BBC64823B904066"
-$DshSeedLockExpectedSha = "87A14A548E528CEA705E12A24AED14E04239CBC20305C4E0BC19DCEE5D7C36E0"
-$DshPinnedVersion = "0.1.5-rc.1"
+$DshSeedLockExpectedSha = "A2E6AC98CDFF90945C7558E2A1A8FFA03346EB9B8AF431B36188BE385CCC525E"
+$DshPinnedVersion = "0.1.5-rc.2"
 # SHA-256 of tools/dsh-locks/catalog.json. Update it (and review the diff)
 # whenever the DSH lock catalog changes; the release machine never executes
 # new package code, this pin is its only catalog trust evidence.
-$DshLockCatalogExpectedSha = "2D8186C47A9EEC40416028AB99025BF247D80AB2979630BFBE2D4240AADF1714"
+$DshLockCatalogExpectedSha = "A68F2E6D346275252D4131D29C9A5B6F380896394670CF516B4908A6CFF3421A"
 $DshLockBlockedReasons = @("smoke_failed", "official_integrity_mismatch", "sri_conflict")
 
 # ---- locate repo root ----
@@ -511,8 +511,11 @@ $requiredFiles = @(
     "licenses\lucide\LICENSE",
     "licenses\tailwindcss\LICENSE",
     "licenses\maple-mono\LICENSE.txt",
-    "theme-presets\vercel-neutral-dark.ini",
-    "theme-presets\vercel-neutral-light.ini",
+    "theme-presets\base-light.ini",
+    "theme-presets\charcoal.ini",
+    "theme-presets\meadow-green.ini",
+    "theme-presets\parchment.ini",
+    "theme-presets\vercel-black.ini",
     "wwwroot\app\index.html",
     "wwwroot\app\.vite\manifest.json",
     "wwwroot\vendor\fonts\maple-mono\MapleMonoNormal-CN-Regular.ttf",

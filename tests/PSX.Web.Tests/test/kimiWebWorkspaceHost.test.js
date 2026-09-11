@@ -34,8 +34,8 @@ describe('KimiWebWorkspaceHost', () => {
     assert.ok(panel, 'panel exists for the kimi_web column');
     assert.equal(panel.dataset.columnId, 'column-2');
     assert.equal(panel.hidden, false);
-    assert.equal(panel.style.left, '512px');
-    assert.equal(panel.style.width, '676px');
+    assert.equal(panel.style.left, '500px');
+    assert.equal(panel.style.width, '700px');
 
     // The kimi tab becomes inactive (a terminal takes its column): hidden.
     const snapshot2 = {

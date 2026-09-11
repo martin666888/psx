@@ -85,6 +85,14 @@ jobs:
           $reviewRoot = Join-Path $candidateRoot 'review'
           New-Item -ItemType Directory -Path $reviewRoot -Force | Out-Null
           $patchPath = Join-Path $reviewRoot 'dsh-lock.patch'
+          # `git diff` omits newly generated lock directories unless Git knows
+          # about them. Intent-to-add keeps the runner checkout uncommitted but
+          # makes every new package.json/package-lock.json visible in the
+          # review patch alongside catalog.json.
+          git add --intent-to-add -- tools/dsh-locks
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to register generated DSH lock files for review."
+          }
           git diff --binary --output=$patchPath -- tools/dsh-locks
           if ($LASTEXITCODE -ne 0) {
             throw "Failed to capture the DSH lock review patch."

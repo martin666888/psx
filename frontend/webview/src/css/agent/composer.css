@@ -33,10 +33,10 @@
 .agent-composer-card {
     min-width: 0;
     overflow: visible;
-    border: 1px solid var(--agent-border-strong);
+    border: 1px solid var(--agent-shell-composer-border);
     border-radius: var(--agent-radius-composer);
-    background: var(--card);
-    box-shadow: var(--agent-shadow-composer);
+    background: var(--agent-shell-composer-bg);
+    box-shadow: 0 5px 8px 1px var(--agent-shell-composer-shadow); /* shadow color only; geometry composed here */
     transition: box-shadow var(--agent-duration-fast) var(--agent-ease-standard);
 }
 
@@ -63,8 +63,8 @@
 }
 
 .agent-composer-card:has([data-role="input"]:focus-visible) {
-    outline: 2px solid var(--agent-focus-ring);
-    outline-offset: 2px;
+    outline: 1px solid var(--agent-focus-ring);
+    outline-offset: 0;
 }
 
 /* Context usage retains its custom ring visualization; its surrounding
@@ -138,7 +138,7 @@
 
 /* PromptInput attachment pills share the reading-column text inset. */
 .agent-attachments-strip {
-    margin: 0 18px;
+    margin: 0 14px;
     padding-top: var(--agent-space-3);
 }
 

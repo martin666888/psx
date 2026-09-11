@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace PSX.Models;
 
 public sealed class AppSettings
@@ -23,6 +25,7 @@ public sealed class AppSettings
     public ThemeColors ThemeColors { get; set; } = new();
     public AgentThemeColors AgentTheme { get; set; } = new();
     public TerminalPalette TerminalColors { get; set; } = new();
+    public ShellThemeColors ShellTheme { get; set; } = new();
 }
 
 public sealed class AppearanceSettings
@@ -35,6 +38,7 @@ public sealed class AppearanceSettings
     public ThemeColors ThemeColors { get; set; } = new();
     public AgentThemeColors AgentTheme { get; set; } = new();
     public TerminalPalette TerminalColors { get; set; } = new();
+    public ShellThemeColors ShellTheme { get; set; } = new();
 
     public static AppearanceSettings FromSettings(AppSettings settings) => new()
     {
@@ -45,7 +49,8 @@ public sealed class AppearanceSettings
         AgentMonoFontFamily = settings.AgentMonoFontFamily,
         ThemeColors = Clone(settings.ThemeColors),
         AgentTheme = Clone(settings.AgentTheme),
-        TerminalColors = Clone(settings.TerminalColors)
+        TerminalColors = Clone(settings.TerminalColors),
+        ShellTheme = Clone(settings.ShellTheme)
     };
 
     public void ApplyTo(AppSettings settings)
@@ -58,6 +63,7 @@ public sealed class AppearanceSettings
         settings.ThemeColors = Clone(ThemeColors);
         settings.AgentTheme = Clone(AgentTheme);
         settings.TerminalColors = Clone(TerminalColors);
+        settings.ShellTheme = Clone(ShellTheme);
     }
 
     public AppearanceSettings Clone()
@@ -76,51 +82,54 @@ public sealed class AppearanceSettings
     }
 }
 
+// Defaults align with the bundled base-light preset so a fresh install
+// (no psx.ini) renders the light shell; loading an existing psx.ini always
+// overrides these values.
 public sealed class ThemeColors
 {
-    public string Background { get; set; } = "#1d1d1a";
-    public string Surface { get; set; } = "#24231f";
-    public string SurfaceRaised { get; set; } = "#2b2a25";
-    public string SurfaceMuted { get; set; } = "#34332d";
-    public string Hover { get; set; } = "#35342e";
-    public string Border { get; set; } = "#3d3b34";
-    public string BorderStrong { get; set; } = "#504d43";
-    public string Text { get; set; } = "#e8e3d6";
-    public string TextMuted { get; set; } = "#aaa396";
-    public string TextDim { get; set; } = "#7f786d";
-    public string Accent { get; set; } = "#5aa6a0";
-    public string AccentHover { get; set; } = "#6db9b2";
-    public string Error { get; set; } = "#df7c7c";
-    public string ErrorBg { get; set; } = "#352220";
-    public string Warning { get; set; } = "#d3ae68";
-    public string WarningBg { get; set; } = "#312a1c";
-    public string Scrollbar { get; set; } = "#565246";
-    public string ScrollbarHover { get; set; } = "#6a6658";
+    public string Background { get; set; } = "#ffffff";
+    public string Surface { get; set; } = "#f7f7fa";
+    public string SurfaceRaised { get; set; } = "#ffffff";
+    public string SurfaceMuted { get; set; } = "#e8ebf0";
+    public string Hover { get; set; } = "#e8ebf0";
+    public string Border { get; set; } = "#dee0e5";
+    public string BorderStrong { get; set; } = "#c6c8d0";
+    public string Text { get; set; } = "#26292e";
+    public string TextMuted { get; set; } = "#6e737a";
+    public string TextDim { get; set; } = "#9aa0a8";
+    public string Accent { get; set; } = "#171717";
+    public string AccentHover { get; set; } = "#000000";
+    public string Error { get; set; } = "#e7000b";
+    public string ErrorBg { get; set; } = "#fdecec";
+    public string Warning { get; set; } = "#a35200";
+    public string WarningBg { get; set; } = "#fff4e5";
+    public string Scrollbar { get; set; } = "#d4d4d4";
+    public string ScrollbarHover { get; set; } = "#a3a3a3";
 }
 
 public sealed class AgentThemeColors
 {
-    public string CodeBlockBg { get; set; } = "#25251f";
-    public string CodeBlockText { get; set; } = "#f3ead7";
-    public string CodeBlockBorder { get; set; } = "#514d3f";
-    public string SendBtn { get; set; } = "#2e706c";
-    public string SendBtnHover { get; set; } = "#36817c";
+    public string CodeBlockBg { get; set; } = "#f7f7fa";
+    public string CodeBlockText { get; set; } = "#26292e";
+    public string CodeBlockBorder { get; set; } = "#dee0e5";
+    public string SendBtn { get; set; } = "#26292e";
+    public string SendBtnHover { get; set; } = "#1a1d22";
     public string SendBtnText { get; set; } = "#ffffff";
-    public string DecisionPrimary { get; set; } = "#2e706c";
-    public string DecisionPrimaryHover { get; set; } = "#36817c";
+    public string DecisionPrimary { get; set; } = "#26292e";
+    public string DecisionPrimaryHover { get; set; } = "#1a1d22";
     public string DecisionPrimaryText { get; set; } = "#ffffff";
-    public string StopBtn { get; set; } = "#7b3835";
-    public string StopBtnHover { get; set; } = "#8d4642";
-    public string AllowColor { get; set; } = "#4ade80";
-    public string DenyColor { get; set; } = "#f87171";
-    public string CautionColor { get; set; } = "#facc15";
-    public string PermissionBg { get; set; } = "#272318";
-    public string PermissionBorder { get; set; } = "#6b5b36";
-    public string ElicitationBg { get; set; } = "#1d2927";
-    public string ElicitationBorder { get; set; } = "#45645f";
+    public string StopBtn { get; set; } = "#b23b3b";
+    public string StopBtnHover { get; set; } = "#9c3333";
+    public string AllowColor { get; set; } = "#297a3a";
+    public string DenyColor { get; set; } = "#e7000b";
+    public string CautionColor { get; set; } = "#a35200";
+    public string PermissionBg { get; set; } = "#f7f7fa";
+    public string PermissionBorder { get; set; } = "#c6c8d0";
+    public string ElicitationBg { get; set; } = "#f4faf9";
+    public string ElicitationBorder { get; set; } = "#cfe5e1";
     public string Overlay { get; set; } = "#000000";
     public string Shadow { get; set; } = "#000000";
-    public string FocusRing { get; set; } = "#5aa6a0";
+    public string FocusRing { get; set; } = "#6e737a";
     // Optional workbench backdrop tint painted as a top-down gradient behind
     // the two Agent panels. RRGGBBAA; fully transparent means "no tint".
     public string WorkbenchTint { get; set; } = "#00000000";
@@ -128,25 +137,84 @@ public sealed class AgentThemeColors
 
 public sealed class TerminalPalette
 {
-    public string Foreground { get; set; } = "#cdd6f4";
-    public string Cursor { get; set; } = "#f5e0dc";
-    public string CursorAccent { get; set; } = "#1d1d1a";
-    public string SelectionBackground { get; set; } = "#585b7066";
-    public string SelectionForeground { get; set; } = "#cdd6f4";
-    public string Black { get; set; } = "#45475a";
-    public string Red { get; set; } = "#f38ba8";
-    public string Green { get; set; } = "#a6e3a1";
-    public string Yellow { get; set; } = "#f9e2af";
-    public string Blue { get; set; } = "#89b4fa";
-    public string Magenta { get; set; } = "#f5c2e7";
-    public string Cyan { get; set; } = "#94e2d5";
-    public string White { get; set; } = "#bac2de";
-    public string BrightBlack { get; set; } = "#585b70";
-    public string BrightRed { get; set; } = "#f38ba8";
-    public string BrightGreen { get; set; } = "#a6e3a1";
-    public string BrightYellow { get; set; } = "#f9e2af";
-    public string BrightBlue { get; set; } = "#89b4fa";
-    public string BrightMagenta { get; set; } = "#f5c2e7";
-    public string BrightCyan { get; set; } = "#94e2d5";
-    public string BrightWhite { get; set; } = "#a6adc8";
+    public string Foreground { get; set; } = "#171717";
+    public string Cursor { get; set; } = "#171717";
+    public string CursorAccent { get; set; } = "#ffffff";
+    public string SelectionBackground { get; set; } = "#b3d7ff88";
+    public string SelectionForeground { get; set; } = "#171717";
+    public string Black { get; set; } = "#000000";
+    public string Red { get; set; } = "#e7000b";
+    public string Green { get; set; } = "#297a3a";
+    public string Yellow { get; set; } = "#a35200";
+    public string Blue { get; set; } = "#0068d6";
+    public string Magenta { get; set; } = "#7d00cc";
+    public string Cyan { get; set; } = "#0087a8";
+    public string White { get; set; } = "#d4d4d4";
+    public string BrightBlack { get; set; } = "#525252";
+    public string BrightRed { get; set; } = "#ff6467";
+    public string BrightGreen { get; set; } = "#3fa354";
+    public string BrightYellow { get; set; } = "#d17d00";
+    public string BrightBlue { get; set; } = "#52a8ff";
+    public string BrightMagenta { get; set; } = "#bf7af0";
+    public string BrightCyan { get; set; } = "#00b3d6";
+    public string BrightWhite { get; set; } = "#fafafa";
+}
+
+/// <summary>
+/// Optional shell chrome colors (Agent shell sidebar, tab strip, composer).
+/// Every field is nullable: unset fields never enter required-key validation
+/// and the frontend keeps its previous value for them.
+/// </summary>
+public sealed class ShellThemeColors
+{
+    [JsonPropertyName("sidebar")]
+    public string? Sidebar { get; set; }
+
+    [JsonPropertyName("sidebarGradientFrom")]
+    public string? SidebarGradientFrom { get; set; }
+
+    [JsonPropertyName("sidebarGradientTo")]
+    public string? SidebarGradientTo { get; set; }
+
+    /// <summary>
+    /// Optional gradient start position in percent (0-100). The design boards
+    /// anchor the first color stop away from 0% (History 9.39% / rail 16.89%);
+    /// the shell paints one shared viewport-anchored gradient, so a single
+    /// unified stop is stored here.
+    /// </summary>
+    [JsonPropertyName("sidebarGradientFromStop")]
+    public string? SidebarGradientFromStop { get; set; }
+
+    [JsonPropertyName("sidebarSelected")]
+    public string? SidebarSelected { get; set; }
+
+    [JsonPropertyName("sidebarInput")]
+    public string? SidebarInput { get; set; }
+
+    [JsonPropertyName("sidebarInputBorder")]
+    public string? SidebarInputBorder { get; set; }
+
+    [JsonPropertyName("chrome")]
+    public string? Chrome { get; set; }
+
+    [JsonPropertyName("workspace")]
+    public string? Workspace { get; set; }
+
+    [JsonPropertyName("tabActive")]
+    public string? TabActive { get; set; }
+
+    [JsonPropertyName("tabActiveTerminal")]
+    public string? TabActiveTerminal { get; set; }
+
+    [JsonPropertyName("composerBg")]
+    public string? ComposerBg { get; set; }
+
+    [JsonPropertyName("composerBorder")]
+    public string? ComposerBorder { get; set; }
+
+    [JsonPropertyName("composerShadow")]
+    public string? ComposerShadow { get; set; }
+
+    [JsonPropertyName("terminalBackground")]
+    public string? TerminalBackground { get; set; }
 }

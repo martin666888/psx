@@ -16,7 +16,8 @@
     "create": "新建工作区",
     "theme": "主题",
     "pane": "工作区操作",
-    "fallback": "菜单"
+    "fallback": "菜单",
+    "tabs": "全部标签"
   },
   "create": {
     "placementFocused": "当前列",

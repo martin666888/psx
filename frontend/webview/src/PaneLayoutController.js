@@ -11,7 +11,6 @@
 import { Bridge } from './Bridge.js';
 import { t, onLocaleChanged } from './i18n.js';
 
-const WORKBENCH_GUTTER = 12;
 const CHROME_HEIGHT = 40;
 const HISTORY_RAIL_WIDTH = 40;
 
@@ -61,10 +60,6 @@ export class PaneLayoutController {
 
     static get workspaceIdPattern() {
         return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    }
-
-    static get gutter() {
-        return WORKBENCH_GUTTER;
     }
 
     // Capacity gate for a brand-new column (decision C): the new-column
@@ -246,12 +241,7 @@ export class PaneLayoutController {
                 left: x,
                 top: CHROME_HEIGHT,
                 width: Math.max(0, columnWidth),
-                height,
-                // The open History dock already carries the left gutter and
-                // the panel gap inside the dock inset; the Agent host drops
-                // its own left gutter on this column so the dock edge and the
-                // panel edge stay exactly one panel gap apart.
-                dockAdjacent: index === 0 && this.dockInset > HISTORY_RAIL_WIDTH
+                height
             });
             x += columnWidth;
         });
