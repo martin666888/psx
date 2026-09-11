@@ -511,7 +511,7 @@ export function ComposerView(props: ComposerViewProps): JSX.Element {
             >
               <CommandHint {...props.hint} />
             </div>
-            <div className="agent-composer-footer box-border flex min-h-[44px] min-w-0 items-center gap-[var(--agent-space-2)] rounded-b-[var(--agent-radius-composer)] pt-1.5 pr-[7px] pb-[10px] pl-[14px]">
+            <div className="agent-composer-footer box-border flex min-h-[44px] min-w-0 items-center gap-[var(--agent-space-2)] rounded-b-[var(--agent-radius-composer)] pt-1.5 pr-[10px] pb-[10px] pl-[14px]">
               <div className="agent-composer-actions flex shrink-0 items-center">
                 <ComposerActions {...props.actions} />
               </div>
