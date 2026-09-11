@@ -46,3 +46,41 @@ try {
 }
 $global:LASTEXITCODE = 0
 Write-Host 'DSH release policy tests passed.'
+
+# Exercise the actual standalone-package consistency gate, without npm or a build.
+$gate = $ast.Find({ param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Assert-DshSeedConsistency'
+}, $false)
+if ($null -eq $gate) { throw 'Missing standalone seed consistency gate' }
+. ([scriptblock]::Create($gate.Extent.Text))
+$fixture = Join-Path $RepoRoot ('TestResults/dsh-seed-gate/' + [Guid]::NewGuid().ToString('N'))
+$seedRoot = Join-Path $fixture 'seed'
+$locksRoot = Join-Path $fixture 'catalog'
+$artifactRoot = Join-Path $locksRoot 'locks/1.0.0'
+New-Item -ItemType Directory -Path $seedRoot,$artifactRoot -Force | Out-Null
+$entries = @([pscustomobject]@{version = '1.0.0'})
+$declaration = 'public const string SeededPackageVersion = "1.0.0";'
+foreach ($name in @('package.json', 'package-lock.json')) {
+    [IO.File]::WriteAllText((Join-Path $artifactRoot $name), '{"dependencies":{"@deepseek-ai/dsh":"1.0.0"}}')
+    Copy-Item -LiteralPath (Join-Path $artifactRoot $name) -Destination $seedRoot
+}
+Assert-DshSeedConsistency $seedRoot $locksRoot $entries '1.0.0' $declaration
+foreach ($name in @('package.json', 'package-lock.json')) {
+    [IO.File]::WriteAllText((Join-Path $seedRoot $name), '{"dependencies":{"@deepseek-ai/dsh":"1.0.0","extra":"1.0.0"}}')
+    try {
+        Assert-DshSeedConsistency $seedRoot $locksRoot $entries '1.0.0' $declaration
+        throw 'Expected seed artifact mismatch'
+    } catch { if ($_.Exception.Message -notmatch 'differs from its catalog artifact') { throw } }
+    Copy-Item -LiteralPath (Join-Path $artifactRoot $name) -Destination $seedRoot -Force
+}
+foreach ($invalidEntries in @(@(), @($entries[0], $entries[0]))) {
+    try {
+        Assert-DshSeedConsistency $seedRoot $locksRoot $invalidEntries '1.0.0' $declaration
+        throw 'Expected missing/duplicate catalog rejection'
+    } catch { if ($_.Exception.Message -notmatch 'exactly one catalog entry') { throw } }
+}
+try {
+    Assert-DshSeedConsistency $seedRoot $locksRoot $entries '1.0.0' ($declaration.Replace('1.0.0', '1.0.1'))
+    throw 'Expected runtime declaration rejection'
+} catch { if ($_.Exception.Message -notmatch 'runtime seed declaration differs') { throw } }
+Write-Host 'Standalone DSH seed consistency tests passed.'

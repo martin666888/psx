@@ -58,9 +58,8 @@ if ($Mode -eq 'Accept') {
     if (-not $CleanWindowsConfirmed -or -not $ReadyConfirmed -or -not $Registry -or -not $RuntimeDirectory) {
         throw 'Require registry, runtime directory and explicit clean Windows / Ready confirmations'
     }
-    foreach ($command in @('python.exe', 'python3.exe', 'cl.exe', 'msbuild.exe')) {
-        if (Get-Command $command -ErrorAction SilentlyContinue) { throw "Toolchain detected: $command; use a clean VM" }
-    }
+    . (Join-Path $PSScriptRoot 'dsh-clean-windows.ps1')
+    Assert-DshNoDevelopmentCommands
     $installed = Get-Content -LiteralPath (Join-Path $RuntimeDirectory 'node_modules/@deepseek-ai/dsh/package.json') -Raw | ConvertFrom-Json
     if ($installed.version -ne $version) { throw 'Installed version differs from ZIP seed' }
     $installedLock = (Get-FileHash -LiteralPath (Join-Path $RuntimeDirectory 'package-lock.json') -Algorithm SHA256).Hash

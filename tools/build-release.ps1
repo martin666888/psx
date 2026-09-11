@@ -111,6 +111,25 @@ if ($SkipDshFreshnessCheck) {
 }
 
 # ---- pin everything for reproducible builds ----
+function Assert-DshSeedConsistency {
+    param([string]$SeedRoot, [string]$LocksRoot, [object[]]$Entries,
+        [string]$PinnedVersion, [string]$RuntimeSource)
+    $matching = @($Entries | Where-Object { $_.version -ceq $PinnedVersion })
+    if ($matching.Count -ne 1) { throw 'DSH seed must have exactly one catalog entry.' }
+    $artifactRoot = Join-Path $LocksRoot ("locks\" + $PinnedVersion)
+    foreach ($name in @('package.json', 'package-lock.json')) {
+        $seedBytes = [IO.File]::ReadAllBytes((Join-Path $SeedRoot $name))
+        $artifactBytes = [IO.File]::ReadAllBytes((Join-Path $artifactRoot $name))
+        if ([Convert]::ToBase64String($seedBytes) -cne [Convert]::ToBase64String($artifactBytes)) {
+            throw "DSH seed $name differs from its catalog artifact."
+        }
+    }
+    $declarations = [regex]::Matches($RuntimeSource, 'public const string SeededPackageVersion = "([^"]+)";')
+    if ($declarations.Count -ne 1 -or $declarations[0].Groups[1].Value -cne $PinnedVersion) {
+        throw 'DSH runtime seed declaration differs from the release seed.'
+    }
+}
+
 $PortableNodeVersion = "v22.23.1"
 $PortableNodeArchive = "node-$PortableNodeVersion-win-x64.zip"
 $PortableNodeUrl = "https://nodejs.org/dist/$PortableNodeVersion/$PortableNodeArchive"
@@ -688,6 +707,9 @@ if (Test-Path -LiteralPath $dshLocksVersionsRoot) {
     }
 }
 Write-Host "    DSH lock catalog verified: $($dshCatalogEntries.Count) entr(ies), $($dshBlockedEntries.Count) blocked."
+Assert-DshSeedConsistency -SeedRoot $dshSeedRoot -LocksRoot $dshLocksRoot `
+    -Entries $dshCatalogEntries -PinnedVersion $DshPinnedVersion `
+    -RuntimeSource ([IO.File]::ReadAllText((Join-Path $RepoRoot 'Services\DshWebRuntime.cs')))
 
 # ---- DSH catalog freshness gate (metadata-only query; never executes
 # package code). The newest published version above the seed must be covered

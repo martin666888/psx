@@ -72,7 +72,7 @@ powershell -ExecutionPolicy Bypass -File tools/generate-dsh-lock.ps1 -Version ig
 1. 在基准提交的干净临时工作树运行 `git apply --check dsh-candidate.patch`，成功后应用；有冲突重新生成。
 2. 在无 Python/VS/Build Tools/开发缓存的一次性 Windows x64 VM，从候选 ZIP 解压并通过 PSX 首次安装 DSH，确认进入 Ready。
 3. 官方源、镜像源分别恢复干净快照执行；只隐藏 PATH 不能代替无工具链 VM。
-4. 将候选代码中的记录脚本和报告带入验收环境，使用下面命令分别记录人工验收；脚本校验实际 ZIP、seed 和安装目录，人工确认项不等于自动证明。
+4. 将候选代码中的 `record-dsh-package.ps1`、同目录的 `dsh-clean-windows.ps1` 和报告带入验收环境，使用下面命令分别记录人工验收；脚本校验实际 ZIP、seed 和安装目录，人工确认项不等于自动证明。只有重解析数据明确指向已注册 App Installer 的 PythonRedirector 时，才将其视为系统占位别名；真实 Python、其他或无法识别的别名仍拒绝，PATH 中被占位别名遮住的真实解释器也会检查。
 5. 两个源都通过后审核接纳到 dev，核对构建输入一致，再运行正式 Full，直接发布原 ZIP。新 seed 待验收时仍可发布旧的已验证 seed。
 
 ```powershell

@@ -44,3 +44,38 @@ try {
 }
 $global:LASTEXITCODE = 0
 Write-Host 'DSH package identity and acceptance binding tests passed (synthetic ZIP only).'
+
+. (Join-Path $PSScriptRoot 'dsh-clean-windows.ps1')
+$redirector = 'C:\Program Files\WindowsApps\Microsoft.DesktopAppInstaller_test\AppInstallerPythonRedirector.exe'
+function New-AliasFixture {
+    param([string]$Family, [string]$Application, [string]$Target)
+    $text = [Text.Encoding]::Unicode.GetBytes("$Family`0$Application`0$Target`0Desktop`0")
+    $bytes = New-Object byte[] ($text.Length + 12)
+    [BitConverter]::GetBytes([uint32]2147483675).CopyTo($bytes, 0)
+    [BitConverter]::GetBytes([uint16]($text.Length + 4)).CopyTo($bytes, 4)
+    [BitConverter]::GetBytes([uint32]3).CopyTo($bytes, 8)
+    $text.CopyTo($bytes, 12)
+    return ,$bytes
+}
+$family = 'Microsoft.DesktopAppInstaller_8wekyb3d8bbwe'
+$valid = New-AliasFixture $family "$family!PythonRedirector" $redirector
+if (-not (Test-DshAppInstallerAliasData $valid $redirector)) { throw 'App Installer placeholder was not recognized' }
+foreach ($invalid in @(
+    (New-AliasFixture 'PythonSoftwareFoundation.Python_abc' 'Python!App' 'C:\Program Files\WindowsApps\Python\python.exe'),
+    (New-AliasFixture $family "$family!OtherApp" $redirector),
+    (New-AliasFixture $family "$family!PythonRedirector" 'C:\Other\AppInstallerPythonRedirector.exe'),
+    ([byte[]]@(1, 2, 3))
+)) {
+    if (Test-DshAppInstallerAliasData $invalid $redirector) { throw 'Real/unknown Python alias was incorrectly exempted' }
+}
+# Mock discovery only: placeholder followed by a real interpreter must still fail.
+& {
+    function Get-DshDevelopmentCommands {
+        [pscustomobject]@{Name='python.exe'; Source='stub'}
+        [pscustomobject]@{Name='python.exe'; Source='real'}
+    }
+    function Test-DshAppInstallerPlaceholder { param($Path) return $Path -eq 'stub' }
+    try { Assert-DshNoDevelopmentCommands; throw 'Expected real interpreter rejection' }
+    catch { if ($_.Exception.Message -notmatch 'Development command detected') { throw } }
+}
+Write-Host 'Python alias identity and shadowed-interpreter tests passed.'
