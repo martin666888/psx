@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="PSX.csproj" />
+  <Project Path="tests/PSX.CaptionProbe/PSX.CaptionProbe.csproj" />
   <Project Path="tests/PSX.DesktopProbe/PSX.DesktopProbe.csproj" />
   <Project Path="tests/PSX.DshProbe/PSX.DshProbe.csproj" />
   <Project Path="tests/PSX.TestAgent/PSX.TestAgent.csproj" />

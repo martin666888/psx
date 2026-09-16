@@ -13,6 +13,8 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const updateBaselines = process.argv.includes('--update');
+const nativeCaptionReview = process.argv.includes('--native-caption-review');
+if (nativeCaptionReview && updateBaselines) throw new Error('Native caption review must not overwrite legacy baselines');
 const browserRoot = path.join(root, 'TestResults', 'playwright-browsers');
 
 const [{ chromium }, { default: AxeBuilder }, { default: pixelmatch }, { PNG }] =
@@ -31,7 +33,7 @@ const baselineDir = path.join(
   'visual-baselines',
   'windows-chromium'
 );
-const resultDir = path.join(root, 'TestResults', 'visual');
+const resultDir = path.join(root, 'TestResults', nativeCaptionReview ? 'visual-native-caption' : 'visual');
 fs.mkdirSync(resultDir, { recursive: true });
 if (updateBaselines) fs.mkdirSync(baselineDir, { recursive: true });
 
@@ -1178,11 +1180,25 @@ try {
         await page.evaluate((events) => {
           for (const event of events) window.__psxEmit(event);
         }, scene.events(theme.appearance));
+        if (nativeCaptionReview) {
+          await page.evaluate(() => window.__psxEmit({ type: 'window_chrome', height: 48, rightInset: 138, active: true, fallback: false }));
+        }
         await page.waitForSelector(scene.ready, { timeout: 10000 });
         if (scene.stage) await scene.stage(page);
         if (scene.name === 'responsive-720') await verifyGlobalDismissals(page);
         if (scene.verify) await scene.verify(page);
         await waitForStableUi(page);
+        if (nativeCaptionReview) {
+          const centers = await page.evaluate(() => {
+            const selectors = ['.workspace-logo', '.workspace-tab', '.agent-history-title-row', '.agent-history-refresh'];
+            return selectors.flatMap(selector => [...document.querySelectorAll(selector)]
+              .filter(node => node.getClientRects().length && node.getBoundingClientRect().height > 0)
+              .map(node => ({ selector, y: node.getBoundingClientRect().top + node.getBoundingClientRect().height / 2 })));
+          });
+          if (centers.some(item => Math.abs(item.y - 24) > 1)) {
+            throw new Error(`Top-row center alignment: ${JSON.stringify(centers)}`);
+          }
+        }
         if (runtimeErrors.length) throw new Error(runtimeErrors.join(' | '));
 
         if (scene.geometryOnly) {
@@ -1208,6 +1224,10 @@ try {
         }
         const actualPath = path.join(resultDir, name + '--actual.png');
         await page.screenshot({ path: actualPath, fullPage: false, animations: 'disabled' });
+        if (nativeCaptionReview) {
+          console.log(`PASS ${name}: native caption review capture; axe ${axe.violations.length} total`);
+          continue;
+        }
         const result = compareOrUpdate(name, actualPath);
         const suffix = result.updated
           ? 'baseline updated'

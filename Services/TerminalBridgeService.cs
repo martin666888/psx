@@ -89,7 +89,8 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
         var runtimePaths = _runtimeLocator.Locate();
         EnsureFixedRuntimePermissions(runtimePaths.WebView2FixedRuntimePath);
         _environment = await CoreWebView2Environment.CreateAsync(
-            browserExecutableFolder: runtimePaths.WebView2FixedRuntimePath);
+            browserExecutableFolder: runtimePaths.WebView2FixedRuntimePath,
+            userDataFolder: PackageLayout.Current.WebViewDataDirectory);
         await webView.EnsureCoreWebView2Async(_environment);
         _coreWebView = webView.CoreWebView2;
         ApplyPreferredColorSchemeCore(_settingsService.GetSettings().ThemeColors.Background);
@@ -637,6 +638,9 @@ public sealed class TerminalBridgeService : ITerminalBridgeService, IDisposable
 
         FrontendReady?.Invoke(this, EventArgs.Empty);
     }
+
+    public Task SendWindowChromeAsync(double rightInset, bool active, bool fallback) =>
+        SendMessageToJs(new { type = "window_chrome", height = 48, rightInset, active, fallback });
 
     private Task SendMessageToJs(object message)
     {

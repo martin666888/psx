@@ -34,6 +34,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        InitializeWindowChrome();
     }
 
     public MainWindow(
@@ -51,6 +52,7 @@ public partial class MainWindow : Window
         PsxEnvironmentSettingsCoordinator environmentSettings)
     {
         InitializeComponent();
+        InitializeWindowChrome();
 
         _viewModel = viewModel;
         _tabService = tabService;
@@ -96,6 +98,7 @@ public partial class MainWindow : Window
     private void OnFrontendReady(object? sender, EventArgs e) =>
         _ = Dispatcher.BeginInvoke(async () =>
         {
+            PublishWindowChrome();
             await PublishThemeCatalogAsync();
             if (_environmentSettings != null)
                 await _environmentSettings.PublishSnapshotAsync();
@@ -107,6 +110,7 @@ public partial class MainWindow : Window
             if (_viewModel == null)
                 return;
             await _viewModel.ThemePicker.HandleWebActionAsync(e.Action, e.ThemeKey);
+            PublishWindowChrome();
             await PublishThemeCatalogAsync();
         });
 
@@ -163,6 +167,8 @@ public partial class MainWindow : Window
     {
         base.OnSourceInitialized(e);
         var hwnd = new WindowInteropHelper(this).Handle;
+        _chromeSource = HwndSource.FromHwnd(hwnd);
+        _chromeSource?.AddHook(ChromeWndProc);
         int darkMode = 1;
         DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref darkMode, Marshal.SizeOf(darkMode));
         if (_settingsService != null)

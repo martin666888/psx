@@ -41,6 +41,7 @@ public sealed class AppearanceService : IAppearanceService
         var t = appearance.ThemeColors;
         var resources = Application.Current.Resources;
         SetBrush(resources, "WindowBackgroundBrush", t.Background);
+        SetBrush(resources, "WindowChromeBrush", appearance.ShellTheme.Chrome ?? t.Background);
         SetBrush(resources, "SurfaceBrush", t.Surface);
         SetBrush(resources, "SurfaceRaisedBrush", t.SurfaceRaised);
         SetBrush(resources, "SurfaceMutedBrush", t.SurfaceMuted);

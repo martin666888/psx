@@ -3,6 +3,34 @@
     --workspace-rail-width: 40px;
 }
 
+.workspace-logo {
+    display: none;
+    flex: 0 0 var(--workspace-chrome-height);
+    width: 40px;
+    height: var(--workspace-chrome-height);
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+}
+.workspace-logo img { width: 20px; height: 20px; pointer-events: none; }
+[data-native-caption="true"] .workspace-logo { display: flex; app-region: drag; }
+[data-native-caption="true"] #workspace-chrome,
+[data-native-caption="true"] .workspace-tab-strip,
+[data-native-caption="true"] .workspace-tab-strip-scroll { app-region: drag; }
+[data-native-caption="true"] .workspace-tab,
+[data-native-caption="true"] #workspace-chrome button,
+[data-native-caption="true"] .workspace-chrome-popover { app-region: no-drag; }
+.workspace-tab-strip[data-compact="true"] .workspace-tab-strip-all {
+    flex: 0 0 32px;
+    min-width: 0;
+    width: 32px;
+    margin: 0;
+    padding: 0;
+}
+.workspace-tab-strip[data-compact="true"] .workspace-tab-strip-overflow,
+.workspace-tab-strip[data-compact="true"] .workspace-tab-strip-divider { display: none; }
+.workspace-tab-strip[data-compact="true"] .workspace-tab-strip-scroll { padding: 0; }
+
 #workspace-chrome {
     position: absolute;
     inset: 0 0 auto 0;

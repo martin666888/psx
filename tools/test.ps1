@@ -379,6 +379,10 @@ try {
                         throw "DSH WebView probe did not write webview-report.json under $dshProbeReport."
                     }
                 }
+                Invoke-Checked "Run native caption region probe" {
+                    & (Join-Path $repoRoot 'tests\PSX.CaptionProbe\bin\Release\net10.0-windows\PSX.CaptionProbe.exe') (Join-Path $resultsDirectory 'caption-probe\full')
+                    if ($LASTEXITCODE -ne 0) { throw 'Native caption region probe failed' }
+                }
             }
         }
     }

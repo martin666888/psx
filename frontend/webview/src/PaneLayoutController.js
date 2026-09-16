@@ -96,6 +96,14 @@ export class PaneLayoutController {
         this.terminalMinimumWidthResolver = typeof resolver === 'function' ? resolver : null;
     }
 
+    setChromeHeight(value) {
+        const height = Math.max(40, Math.min(64, Number(value) || CHROME_HEIGHT));
+        if (height === this.chromeHeight) return;
+        this.chromeHeight = height;
+        document.documentElement.style.setProperty('--workspace-chrome-height', `${height}px`);
+        this.recompute();
+    }
+
     dispose() {
         this.disposeLocaleChanged?.();
         this.cancelDrag(undefined, { recompute: false });
@@ -208,7 +216,7 @@ export class PaneLayoutController {
     recompute(options = {}) {
         const width = this.root.parentElement?.clientWidth ?? this.root.clientWidth;
         const fullHeight = this.root.parentElement?.clientHeight ?? this.root.clientHeight;
-        const height = Math.max(0, fullHeight - CHROME_HEIGHT);
+        const height = Math.max(0, fullHeight - (this.chromeHeight ?? CHROME_HEIGHT));
         const requestedColumns = this.snapshot?.columns?.length
             ? this.snapshot.columns
             : [{ columnId: 'column-1', tabs: [], activeTabId: null, ratio: 1 }];
@@ -229,7 +237,7 @@ export class PaneLayoutController {
         const widths = this.allocateWidths(columns, areaWidth, displayRatios);
         this.syncPaneSlots(columns, focusedColumnId, displayRatios);
         this.root.style.left = `${areaLeft}px`;
-        this.root.style.top = `${CHROME_HEIGHT}px`;
+        this.root.style.top = `${this.chromeHeight ?? CHROME_HEIGHT}px`;
 
         const rects = new Map();
         let x = areaLeft;
@@ -239,7 +247,7 @@ export class PaneLayoutController {
                 : Math.round(widths.get(column.columnId) ?? 0);
             rects.set(column.columnId, {
                 left: x,
-                top: CHROME_HEIGHT,
+                top: this.chromeHeight ?? CHROME_HEIGHT,
                 width: Math.max(0, columnWidth),
                 height
             });

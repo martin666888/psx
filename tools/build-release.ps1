@@ -891,5 +891,7 @@ $zipSha256 = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLower
 Write-Host "    Wrote $zipPath ($zipSize MB)"
 Write-Host "    SHA-256: $zipSha256"
 Write-Host "    Verified completed zip contents."
+& (Join-Path $PSScriptRoot 'build-compact.ps1') -PortableZip $zipPath -OutputZip (Join-Path $OutputDirectory "PSX-$version-win-x64-compact.zip")
+if ($LASTEXITCODE -ne 0) { throw "Compact package build failed" }
 Write-Host ""
 Write-Host "==> Done." -ForegroundColor Green

@@ -207,6 +207,8 @@ internal sealed class WebViewHostPolicy : IDisposable
         settings.IsZoomControlEnabled = false;
         settings.IsStatusBarEnabled = false;
         settings.AreHostObjectsAllowed = false;
+        // The trusted top-level shell owns the caption drag regions.
+        settings.IsNonClientRegionSupportEnabled = true;
 
         // Keep the native menu machinery enabled so editable fields retain the
         // localized Windows/Edge editing commands. ContextMenuRequested below

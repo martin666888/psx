@@ -15,6 +15,7 @@ public interface ITerminalBridgeService
     Task ResizeTerminalAsync(Guid sessionId, int cols, int rows);
     Task SetViewModeAsync(string mode);
     Task SendAppearanceAsync(AppearanceSettings appearance);
+    Task SendWindowChromeAsync(double rightInset, bool active, bool fallback) => Task.CompletedTask;
     /// <summary>Set (or clear) the frame-origin slot for one embedded web
     /// runtime ("dsh" / "kimi_web"). A null origin clears the slot; the
     /// frame navigation whitelist matches any slot's current origin.</summary>

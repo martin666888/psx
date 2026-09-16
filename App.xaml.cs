@@ -16,6 +16,11 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        if (e.Args.Length == 2 && e.Args[0] == "--package-smoke")
+        {
+            _ = PackageSmokeProbe.RunAsync(this, e.Args[1]);
+            return;
+        }
 
         try
         {

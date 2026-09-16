@@ -2,15 +2,37 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:controls="clr-namespace:PSX.Controls"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="PSX"
         Icon="Assets/Icons/psx.ico"
         Height="800" Width="1200"
         MinHeight="560" MinWidth="900"
         WindowStartupLocation="CenterScreen"
+        WindowStyle="None"
         Background="{DynamicResource WindowBackgroundBrush}">
 
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="0" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="0" UseAeroCaptionButtons="False"/>
+    </shell:WindowChrome.WindowChrome>
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+        <Style x:Key="CaptionButton" TargetType="Button">
+            <Setter Property="Width" Value="46"/>
+            <Setter Property="Height" Value="48"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="shell:WindowChrome.IsHitTestVisibleInChrome" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value><ControlTemplate TargetType="Button">
+                    <Border Background="{TemplateBinding Background}" BorderThickness="0" BorderBrush="Transparent"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+                </ControlTemplate></Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="{DynamicResource HoverBrush}"/></Trigger>
+                <Trigger Property="IsKeyboardFocused" Value="True"><Setter Property="Background" Value="{DynamicResource HoverBrush}"/></Trigger>
+            </Style.Triggers>
+        </Style>
     </Window.Resources>
 
     <Window.InputBindings>
@@ -21,7 +43,7 @@
         <KeyBinding Gesture="Ctrl+Alt+Enter" Command="{Binding TogglePaneZoomCommand}"/>
     </Window.InputBindings>
 
-    <Grid>
+    <Grid x:Name="WindowContentRoot">
         <Grid.RowDefinitions>
             <RowDefinition Height="0"/>
             <RowDefinition Height="*"/>
@@ -39,6 +61,25 @@
 
         <Border Grid.Row="1" Background="{DynamicResource WindowBackgroundBrush}">
             <controls:TerminalHost x:Name="TerminalHostControl"/>
+        </Border>
+        <Border x:Name="CaptionPanel" Grid.Row="1" Width="138" Height="48" HorizontalAlignment="Right" VerticalAlignment="Top"
+                Background="{DynamicResource WindowChromeBrush}" BorderBrush="Transparent" BorderThickness="0">
+            <StackPanel Orientation="Horizontal">
+                <Button x:Name="MinimizeCaption" Style="{StaticResource CaptionButton}" Click="MinimizeWindow">
+                    <Path Data="M0,5 L10,5" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1" Width="10" Height="10"/>
+                </Button>
+                <Button x:Name="MaximizeCaption" Style="{StaticResource CaptionButton}" Click="ToggleMaximizeWindow">
+                    <Path x:Name="MaximizeGlyph" Data="M0,0 L10,0 10,10 0,10 Z" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1" Width="10" Height="10"/>
+                </Button>
+                <Button x:Name="CloseCaption" Click="CloseWindow">
+                    <Button.Style><Style TargetType="Button" BasedOn="{StaticResource CaptionButton}">
+                        <Style.Triggers><Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Background" Value="#C42B1C"/><Setter Property="Foreground" Value="White"/>
+                        </Trigger></Style.Triggers>
+                    </Style></Button.Style>
+                    <Path Data="M0,0 L10,10 M10,0 L0,10" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1" Width="10" Height="10"/>
+                </Button>
+            </StackPanel>
         </Border>
 
         <!-- Status bar — populated by MainViewModel.SetStatus(...) from services.

@@ -26,6 +26,8 @@ public interface ISettingsService
 public sealed class SettingsService : ISettingsService
 {
     private readonly string _configPath;
+    private readonly string _backupPath;
+    private readonly string _tempPath;
     private AppSettings? _settings;
     private List<ShellProfile>? _profiles;
     public string ConfigPath => _configPath;
@@ -33,14 +35,17 @@ public sealed class SettingsService : ISettingsService
     public string? StartupWarningDetail { get; private set; }
 
     public SettingsService()
-        : this(Path.Combine(AppContext.BaseDirectory, "psx.ini"))
+        : this(PackageLayout.Current.ConfigPath, PackageLayout.Current.IsCompact
+            ? Path.Combine(PackageLayout.Current.ResourceRoot, "state", "settings") : null)
     {
     }
 
-    internal SettingsService(string configPath)
+    internal SettingsService(string configPath, string? stateDirectory = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(configPath);
         _configPath = Path.GetFullPath(configPath);
+        _backupPath = stateDirectory == null ? _configPath + ".bak" : Path.Combine(stateDirectory, "psx.ini.bak");
+        _tempPath = stateDirectory == null ? _configPath + ".tmp" : Path.Combine(stateDirectory, "psx.ini.tmp");
     }
 
     public AppSettings GetSettings()
@@ -61,7 +66,7 @@ public sealed class SettingsService : ISettingsService
         }
         catch (Exception activeError)
         {
-            var backupPath = _configPath + ".bak";
+            var backupPath = _backupPath;
             try
             {
                 _settings = File.Exists(backupPath) ? LoadSettingsFile(backupPath) : new AppSettings();
@@ -85,7 +90,8 @@ public sealed class SettingsService : ISettingsService
     {
         NormalizeAgentSettings(settings);
         var ini = BuildIni(settings);
-        var tmpPath = _configPath + ".tmp";
+        var tmpPath = _tempPath;
+        Directory.CreateDirectory(Path.GetDirectoryName(tmpPath)!);
         try
         {
             using (var stream = new FileStream(tmpPath, FileMode.Create, FileAccess.Write, FileShare.None))
@@ -98,7 +104,7 @@ public sealed class SettingsService : ISettingsService
 
             ValidateManagedIni(File.ReadAllLines(tmpPath, Encoding.UTF8), Path.GetFileName(tmpPath));
             if (File.Exists(_configPath))
-                File.Replace(tmpPath, _configPath, _configPath + ".bak", ignoreMetadataErrors: true);
+                File.Replace(tmpPath, _configPath, _backupPath, ignoreMetadataErrors: true);
             else
                 File.Move(tmpPath, _configPath);
             _settings = settings;

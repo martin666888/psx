@@ -94,7 +94,7 @@ internal static class HwndClipRegion
         SetWindowRgn(hwnd, IntPtr.Zero, true);
     }
 
-    public static void ApplyHole(
+    public static bool ApplyHole(
         UIElement? element,
         double overlayLeft,
         double overlayTop,
@@ -108,7 +108,7 @@ internal static class HwndClipRegion
     {
         var hwnd = HwndZOrder.TryGetHandle(element);
         if (hwnd == IntPtr.Zero || element == null)
-            return;
+            return false;
 
         var dpi = VisualTreeHelper.GetDpi(element);
         var hole = IntersectHole(
@@ -124,15 +124,14 @@ internal static class HwndClipRegion
             dpi.DpiScaleY);
         if (hole is null)
         {
-            SetWindowRgn(hwnd, IntPtr.Zero, true);
-            return;
+            return SetWindowRgn(hwnd, IntPtr.Zero, true) != 0;
         }
 
         var widthPx = ToPx(overlayWidth, dpi.DpiScaleX);
         var heightPx = ToPx(overlayHeight, dpi.DpiScaleY);
         var windowRgn = CreateRectRgn(0, 0, widthPx, heightPx);
         if (windowRgn == IntPtr.Zero)
-            return;
+            return false;
 
         var x1 = ToPx(holeLeft - overlayLeft, dpi.DpiScaleX);
         var y1 = ToPx(holeTop - overlayTop, dpi.DpiScaleY);
@@ -141,7 +140,7 @@ internal static class HwndClipRegion
         if (x2 <= x1 || y2 <= y1)
         {
             DeleteObject(windowRgn);
-            return;
+            return false;
         }
 
         var radiusPx = ToPx(holeRadius, Math.Min(dpi.DpiScaleX, dpi.DpiScaleY));
@@ -149,14 +148,23 @@ internal static class HwndClipRegion
         if (holeRgn == IntPtr.Zero)
         {
             DeleteObject(windowRgn);
-            return;
+            return false;
         }
 
-        CombineRgn(windowRgn, windowRgn, holeRgn, RgnDiff);
+        var combined = CombineRgn(windowRgn, windowRgn, holeRgn, RgnDiff);
         DeleteObject(holeRgn);
+        if (combined == 0)
+        {
+            DeleteObject(windowRgn);
+            return false;
+        }
         // SetWindowRgn takes ownership of windowRgn on success.
         if (SetWindowRgn(hwnd, windowRgn, true) == 0)
+        {
             DeleteObject(windowRgn);
+            return false;
+        }
+        return true;
     }
 
     private static IntPtr CreateHoleRegion(int x1, int y1, int x2, int y2, int radiusPx)

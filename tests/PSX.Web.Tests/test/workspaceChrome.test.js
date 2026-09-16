@@ -62,6 +62,33 @@ function columnSnapshot(columns, focusedColumnId = columns[0]?.columnId ?? 'colu
   return { revision: 1, focusedColumnId, columns };
 }
 
+test('native caption reserves only the rightmost strip and keeps narrow column menus reachable', async () => {
+  installAgentRuntime();
+  mountChrome();
+  const { WorkspaceChromeController } = await import(controllerUrl);
+  const chrome = new WorkspaceChromeController(document.getElementById('workspace-chrome'), document.getElementById('workspace-popover-root'));
+  const rects = new Map([
+    ['left', { left: 40, top: 40, width: 500, height: 700 }],
+    ['right', { left: 540, top: 40, width: 400, height: 700 }]
+  ]);
+  chrome.applyLayout(columnSnapshot([
+    { columnId: 'left', tabs: [], ratio: 1 },
+    { columnId: 'right', tabs: [], ratio: 1 }
+  ]), rects);
+  chrome.applyWindowChrome({ rightInset: 138, active: true });
+  const strips = [...document.querySelectorAll('.workspace-tab-strip')];
+  assert.equal(strips[0].style.width, '500px');
+  assert.equal(strips[1].style.width, '262px');
+  assert.equal(strips[1].dataset.compact, 'true');
+  assert.equal(rects.get('right').width, 400, 'content geometry stays intact');
+  assert.ok(strips[1].querySelector('[data-role="tab-strip-all"]'));
+  chrome.applyWindowChrome({ rightInset: 0, active: false, fallback: true });
+  assert.equal(strips[1].style.width, '400px');
+  chrome.dispose();
+  delete document.documentElement.dataset.nativeCaption;
+  delete document.documentElement.dataset.windowActive;
+});
+
 test('chrome merges layout and catalog in either arrival order without replacing tab strips', async () => {
   installAgentRuntime();
   mountChrome();

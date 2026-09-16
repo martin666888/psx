@@ -294,3 +294,7 @@ PSX is licensed under the [MIT License](LICENSE.txt). Bundled dependency license
 and notice information is in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)
 and the `licenses/` directory. Anthropic components are installed later by the
 user and remain subject to their own terms.
+
+## Compact portable package
+
+Each release build also produces a compact ZIP with only PSX.exe, psx.ini and app/ at the root. It includes the same preinstalled agents and native window controls as the standard package. See [layout and upgrade instructions](docs/compact-and-window-chrome.md).

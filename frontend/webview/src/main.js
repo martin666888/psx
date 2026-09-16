@@ -369,6 +369,10 @@ installRuntimeDiagnostics();
                 // always-loaded layer, never staged for the Agent chunk.
                 paneLayout.applySnapshot(message);
                 return;
+            case BridgeEventType.WindowChrome:
+                paneLayout.setChromeHeight(message.height);
+                workspaceChrome.applyWindowChrome(message);
+                return;
             case BridgeEventType.WorkspaceCatalog:
                 workspaceChrome.applyCatalog(message);
                 return;

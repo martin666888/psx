@@ -8,7 +8,8 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $repoRoot = [IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
-$resultsRoot = [IO.Path]::GetFullPath((Join-Path $repoRoot "TestResults\release-smoke"))
+$smokeName = if ($ArchivePath -like '*-compact.zip') { 'release-smoke-compact' } else { 'release-smoke' }
+$resultsRoot = [IO.Path]::GetFullPath((Join-Path $repoRoot "TestResults\$smokeName"))
 $unpackRoot = [IO.Path]::GetFullPath((Join-Path $resultsRoot "unpacked"))
 $profileRoot = [IO.Path]::GetFullPath((Join-Path $resultsRoot "edge-profile"))
 $serverOut = Join-Path $resultsRoot "server.out.log"
@@ -42,7 +43,8 @@ if (Test-Path -LiteralPath $resultsRoot) {
 New-Item -ItemType Directory -Path $resultsRoot, $unpackRoot, $profileRoot -Force | Out-Null
 Expand-Archive -LiteralPath $ArchivePath -DestinationPath $unpackRoot -Force
 
-$wwwroot = Join-Path $unpackRoot "wwwroot"
+$resourceRoot = if (Test-Path -LiteralPath (Join-Path $unpackRoot 'app\psx-compact-layout.json')) { Join-Path $unpackRoot 'app' } else { $unpackRoot }
+$wwwroot = Join-Path $resourceRoot "wwwroot"
 if (-not (Test-Path -LiteralPath (Join-Path $wwwroot "app\index.html"))) {
     throw "Release archive does not contain wwwroot/app/index.html."
 }

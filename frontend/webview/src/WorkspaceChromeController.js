@@ -309,9 +309,21 @@ export class WorkspaceChromeController {
     // (left/width from the geometry engine) and renders that column's tabs.
     // The effective layout drives this — while zoomed only the focused column
     // is present, so only its strip renders (decision F).
+    applyWindowChrome(message) {
+        this.captionInset = Math.max(0, Math.min(138, Number(message.rightInset) || 0));
+        document.documentElement.dataset.nativeCaption = 'true';
+        document.documentElement.dataset.windowActive = message.active === true ? 'true' : 'false';
+        this.renderTabStrips();
+    }
+
     renderTabStrips() {
         if (!this.layout || !this.nameplates) return;
         const desired = new Set();
+        const lastColumn = this.layout.columns.at(-1);
+        const lastRect = lastColumn ? this.rects.get(lastColumn.columnId) : null;
+        const inset = this.captionInset || 0;
+        const lastLeft = lastRect && inset > 0
+            ? Math.min(lastRect.left, lastRect.left + lastRect.width - inset - 32) : null;
         this.layout.columns.forEach((column, index) => {
             desired.add(column.columnId);
             let strip = [...this.nameplates.children].find((item) => item.dataset.columnId === column.columnId);
@@ -360,8 +372,14 @@ export class WorkspaceChromeController {
             }
             const rect = this.rects.get(column.columnId);
             if (rect) {
-                strip.style.left = `${rect.left}px`;
-                strip.style.width = `${rect.width}px`;
+                const isLast = index === this.layout.columns.length - 1;
+                const left = isLast && lastLeft !== null ? lastLeft : rect.left;
+                const right = isLast ? rect.left + rect.width - inset
+                    : Math.min(rect.left + rect.width, lastLeft ?? Infinity);
+                strip.style.left = `${left}px`;
+                const width = Math.max(0, right - left);
+                strip.style.width = `${width}px`;
+                strip.dataset.compact = width < 320 ? 'true' : 'false';
             }
             strip.dataset.focused = column.columnId === this.layout.focusedColumnId ? 'true' : 'false';
             strip.dataset.last = index === this.layout.columns.length - 1 ? 'true' : 'false';
