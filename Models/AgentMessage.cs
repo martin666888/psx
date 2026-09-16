@@ -20,6 +20,7 @@ public sealed class AgentMessage
     public string? DecisionState { get; set; }
     public string? SelectedOptionId { get; set; }
     public List<AgentDecisionOption>? DecisionOptions { get; set; }
+    public List<AgentEditBlock>? EditBlocks { get; set; }
     public List<AgentAttachment>? Attachments { get; set; }
 }
 

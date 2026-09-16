@@ -319,6 +319,10 @@ internal sealed class FakeNpmScenario
     public bool CreateKimi { get; set; }
     public bool KimiSmokeFails { get; set; }
     public bool CreateQwen { get; set; }
+    public bool CreatePi { get; set; }
+    public bool PiSmokeFails { get; set; }
+    public string? PiVersion { get; set; }
+    public string? PiAdapterVersion { get; set; }
     public bool QwenSmokeFails { get; set; }
     public bool CreateOpencode { get; set; }
     public bool OpencodeSmokeFails { get; set; }

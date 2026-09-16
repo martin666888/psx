@@ -5,6 +5,8 @@
 // the existing ones by the scope that decides how they are dispatched.
 
 /** Raw message as received from the C# host before decoding. */
+// File-edit permissions optionally carry ordered editBlocks; history messages
+// preserve the same field. timeline/fileEditDiff validates it before rendering.
 export interface RawHostMessage {
   type?: unknown;
   workspaceId?: unknown;

@@ -35,6 +35,7 @@ internal static class AgentThreadBridgePayload
                 decisionSnapshotId = message.DecisionSnapshotId ?? "",
                 decisionState = message.DecisionState,
                 selectedOptionId = message.SelectedOptionId,
+                editBlocks = message.EditBlocks,
                 decisionOptions = message.DecisionOptions?.Select(option => new
                 {
                     optionId = option.OptionId,

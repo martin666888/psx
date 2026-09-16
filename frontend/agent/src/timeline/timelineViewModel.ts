@@ -13,6 +13,7 @@
 // while remaining independent from React and the bridge decoder.
 
 import type { RawHostMessage } from '../contracts/host-events.js';
+import { readEditBlocks } from './fileEditDiff.js';
 import { asParams, loc, type DisplayText } from './copy.js';
 
 function asString(value: unknown): string {
@@ -157,6 +158,7 @@ export interface DecisionItem {
   description: string;
   /** Explicit technical tool input for document decisions; never a toolCall fallback. */
   rawText: string;
+  editBlocks?: import('./fileEditDiff.js').EditBlock[];
   options: DecisionOptionVM[];
   /** active | disabled */
   decisionState: 'active' | 'disabled';
@@ -916,6 +918,7 @@ export class TimelineProjection {
       title: hasTitle ? asString(raw.title) || asString(raw.name) : '',
       titleCode: hasTitle ? undefined : loc('timeline.decision.reviewDirection'),
       text: asString(raw.documentText) || asString(raw.text),
+      editBlocks: readEditBlocks(raw.editBlocks),
       description: '',
       rawText: asString(raw.text),
       options,
@@ -1086,6 +1089,7 @@ export class TimelineProjection {
             toolCallId: asString(msg.toolCallId),
             title: asString(msg.name),
             documentText: asString(msg.text),
+            editBlocks: msg.editBlocks,
             options: Array.isArray(msg.decisionOptions) ? msg.decisionOptions : [],
             selectedOptionId: asString(msg.selectedOptionId),
             decisionState: asString(msg.decisionState) || 'interrupted'

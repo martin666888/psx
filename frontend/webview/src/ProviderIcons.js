@@ -49,7 +49,9 @@ export const PROVIDER_ICONS = {
   kimi: { viewBox: '0 0 24 24', paths: KIMI_PATHS, fillRule: 'evenodd' },
   qwen: { viewBox: '0 0 24 24', paths: [QWEN_PATH], fillRule: 'evenodd' },
   opencode: { viewBox: '0 0 24 24', paths: [OPENCODE_PATH], fillRule: 'evenodd' },
-  dsh: { viewBox: '0 0 24 24', paths: [DEEPSEEK_PATH], fillRule: 'evenodd' }
+  dsh: { viewBox: '0 0 24 24', paths: [DEEPSEEK_PATH], fillRule: 'evenodd' },
+  // PSX-drawn mathematical pi mark, following the same currentColor contract.
+  pi: { viewBox: '0 0 24 24', paths: ['M3 5h18v3h-4v9c0 1 1 1 2 1h2v3h-3c-3 0-4-2-4-4V8H9v6c0 4-1 6-4 7l-2-3c3-1 3-2 3-5V8H3z'] }
 };
 
 /** Looks up the brand mark record for a catalog iconKey; any unknown key

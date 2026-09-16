@@ -18,7 +18,8 @@ internal sealed record AcpDocumentDecisionRequest(
     string ToolCallId,
     string Title,
     string DocumentText,
-    IReadOnlyList<AgentDecisionOption> Options);
+    IReadOnlyList<AgentDecisionOption> Options,
+    IReadOnlyList<AgentEditBlock>? EditBlocks = null);
 
 internal sealed record AcpDocumentDecisionStateChange(
     string RequestId,
@@ -56,6 +57,7 @@ internal sealed class AcpDecisionCoordinator
 
     private readonly IAgentBridgeService _bridgeService;
     private readonly string _assistantName;
+    private readonly Func<string?> _workingDirectory;
     private readonly Action<string> _markDocumentDecisionTool;
     private readonly Action<AcpDocumentDecisionRequest> _upsertDocumentDecision;
     private readonly Action<AcpDocumentDecisionStateChange> _updateDocumentDecision;
@@ -67,10 +69,12 @@ internal sealed class AcpDecisionCoordinator
         string assistantName,
         Action<string> markDocumentDecisionTool,
         Action<AcpDocumentDecisionRequest> upsertDocumentDecision,
-        Action<AcpDocumentDecisionStateChange> updateDocumentDecision)
+        Action<AcpDocumentDecisionStateChange> updateDocumentDecision,
+        Func<string?>? workingDirectory = null)
     {
         _bridgeService = bridgeService ?? throw new ArgumentNullException(nameof(bridgeService));
         _assistantName = string.IsNullOrWhiteSpace(assistantName) ? "Agent" : assistantName;
+        _workingDirectory = workingDirectory ?? (() => null);
         _markDocumentDecisionTool = markDocumentDecisionTool ?? throw new ArgumentNullException(nameof(markDocumentDecisionTool));
         _upsertDocumentDecision = upsertDocumentDecision ?? throw new ArgumentNullException(nameof(upsertDocumentDecision));
         _updateDocumentDecision = updateDocumentDecision ?? throw new ArgumentNullException(nameof(updateDocumentDecision));
@@ -105,6 +109,8 @@ internal sealed class AcpDecisionCoordinator
         };
 
         var explicitToolInput = classified.ExplicitRawInput;
+        var editBlocks = presentation == AcpDecisionPresentation.Document
+            ? AcpPermissionPolicy.ReadEditBlocks(toolCall, _workingDirectory()) : null;
         var description = classified.Description;
         var isAskUserForm = false;
         object? askUserSchema = null;
@@ -152,7 +158,8 @@ internal sealed class AcpDecisionCoordinator
                 toolCallId,
                 title,
                 classified.DocumentText,
-                options));
+                options,
+                editBlocks));
         }
 
         await _bridgeService.SendEventAsync(new
@@ -178,6 +185,7 @@ internal sealed class AcpDecisionCoordinator
             toolKind = GetString(toolCall, "kind"),
             toolStatus = GetString(toolCall, "status"),
             documentText = pending.IsDocumentDecision ? classified.DocumentText : null,
+            editBlocks,
             options = options.Select(option => new
             {
                 optionId = option.OptionId,

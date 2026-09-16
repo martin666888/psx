@@ -193,6 +193,18 @@
       "chooseResponse": "Choose a response",
       "proposalDetails": "Proposal details",
       "documentDetails": "Document details",
+      "fileEdit": {
+        "edit": "Edit",
+        "external": "External path",
+        "copyPath": "Copy path",
+        "copyFailed": "Copy failed. Please try again.",
+        "noNewline": "(no newline at end of file)",
+        "empty": "File is empty",
+        "more": "Show more ({{count}} lines remaining)",
+        "rejected": "Rejected",
+        "allowed": "Allowed",
+        "files": "File changes · {{count}} files"
+      },
       "option": {
         "allow": "Allow",
         "reject": "Reject",

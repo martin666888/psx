@@ -31,7 +31,7 @@ The core value of PSX is:
   workspaces.
 - **Clear Agent workflow**: conversations, tool calls, permission prompts, and
   task plans are separated in the interface.
-- **Four managed providers**: Claude Code, Kimi Code, Qwen Code, and OpenCode
+- **Five managed providers**: Claude Code, Kimi Code, Qwen Code, OpenCode, and Pi
   use curated runtime adapters rather than arbitrary
   executables.
 - **Managed Web Apps**: Kimi Code Web and DeepSeek Harness run in dedicated
@@ -61,7 +61,7 @@ controllable, and easy to distribute on work machines.
 - Terminal mode with real Windows ConPTY sessions.
 - Mixed Terminal, Agent, and Web App tab stacks in up to three resizable
   columns.
-- Managed ACP sessions for Claude Code, Kimi Code, Qwen Code, and OpenCode.
+- Managed ACP sessions for Claude Code, Kimi Code, Qwen Code, OpenCode, and Pi.
 - Embedded Kimi Code Web and DeepSeek Harness workspaces, each limited to one
   running workspace per PSX process.
 - Process-wide History plus profile, Usage, and sanitized Config views.
@@ -96,15 +96,15 @@ PSX currently targets Windows x64. Microsoft Edge WebView2 Runtime is required.
 If WebView2 is not installed, PSX will show a prompt instead of opening a blank
 window.
 
-The release package includes the .NET runtime, Portable Node, the Claude and
-DeepSeek Harness seed manifests, and curated bundled baselines for Kimi, Qwen,
+The release package includes the .NET runtime, Portable Node, the Claude, Pi and
+DeepSeek Harness seed manifests, and curated bundled baselines for Pi, Kimi, Qwen,
 and OpenCode. It deliberately does **not** include `claude.exe`, DeepSeek
 Harness, or a user-installed runtime under `runtime/`.
 
 ## First-time Runtime Setup
 
 Terminal mode works immediately and startup never starts an npm download.
-Kimi Code, Qwen Code, and OpenCode can use the curated baseline shipped in the
+Pi, Kimi Code, Qwen Code, and OpenCode can use the curated baseline shipped in the
 portable package. Claude Code requires explicit install confirmation before PSX
 downloads its managed runtime from the official npm registry. Installation and
 user-triggered updates show progress and support
@@ -239,7 +239,7 @@ PSX is built with:
 - WebView2 for the terminal and Agent frontend.
 - xterm.js for terminal rendering, ANSI sequences, input, and scrollback.
 - Windows ConPTY for real pseudo-console sessions.
-- ACP runtimes for the four managed Agent providers.
+- ACP runtimes for the five managed Agent providers.
 - Managed local Web App workspaces for Kimi Code Web and DeepSeek Harness.
 
 These technologies are implementation details. The goal of PSX is to provide a

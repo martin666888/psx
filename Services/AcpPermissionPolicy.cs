@@ -1,3 +1,4 @@
+using System.IO;
 using System.Text;
 using System.Text.Json;
 using PSX.Models;
@@ -36,6 +37,64 @@ internal static class AcpPermissionPolicy
             })
             .Where(option => !string.IsNullOrWhiteSpace(option.OptionId))
             .ToArray();
+    }
+
+    public static List<AgentEditBlock>? ReadEditBlocks(JsonElement toolCall, string? workingDirectory)
+    {
+        if (!HasDiff(toolCall))
+            return null;
+
+        var blocks = new List<AgentEditBlock>();
+        foreach (var item in toolCall.GetProperty("content").EnumerateArray())
+        {
+            var type = GetString(item, "type");
+            if (type == "diff")
+            {
+                // Incomplete provider payloads stay on the existing document
+                // fallback, rather than displaying a fabricated empty edit.
+                var path = GetString(item, "path");
+                if (string.IsNullOrWhiteSpace(path)
+                    || !item.TryGetProperty("newText", out var next)
+                    || next.ValueKind != JsonValueKind.String)
+                    return null;
+                string? oldText = null;
+                if (item.TryGetProperty("oldText", out var previous))
+                {
+                    if (previous.ValueKind is not (JsonValueKind.Null or JsonValueKind.String))
+                        return null;
+                    oldText = previous.ValueKind == JsonValueKind.String ? previous.GetString() : null;
+                }
+
+                var displayPath = path;
+                var fullPath = path;
+                var external = true;
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(workingDirectory) && Path.IsPathFullyQualified(workingDirectory))
+                    {
+                        fullPath = Path.GetFullPath(path, workingDirectory);
+                        var relative = Path.GetRelativePath(workingDirectory, fullPath);
+                        external = Path.IsPathRooted(relative) || relative == ".."
+                            || relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal);
+                        displayPath = external ? fullPath : relative.Replace('\\', '/');
+                    }
+                }
+                catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+                {
+                    // Keep the exact provider target when it cannot be resolved.
+                }
+                blocks.Add(new AgentEditBlock("diff", Path: fullPath, DisplayPath: displayPath,
+                    External: external, OldText: oldText, NewText: next.GetString() ?? ""));
+            }
+            else if (type == "text")
+                blocks.Add(new AgentEditBlock("text", Text: GetString(item, "text")));
+            else if (type == "content" && item.TryGetProperty("content", out var content)
+                && GetString(content, "type") == "text")
+                blocks.Add(new AgentEditBlock("text", Text: GetString(content, "text")));
+            else
+                return null;
+        }
+        return blocks;
     }
 
     /// <summary>

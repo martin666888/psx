@@ -24,6 +24,72 @@ afterEach(() => {
 const NAME = 'Agent';
 const { TimelineProjection } = await appModule('timeline/timelineViewModel.js');
 const { mountTimelineIsland } = await appModule('timeline/timelineIsland.js');
+const { diffFileLines, readEditBlocks } = await appModule('timeline/fileEditDiff.js');
+
+test('file diff preserves unchanged lines, EOF changes and bounded large replacements', () => {
+  const lines = diffFileLines('head\nold\ntail\n', 'head\nnew\ntail\n');
+  assert.deepEqual(lines.map(line => line.kind), ['context', 'delete', 'add', 'context']);
+  assert.equal(lines[3].newLine, 3);
+  assert.deepEqual(diffFileLines('x', 'x\n').map(line => [line.kind, line.noNewline]), [['delete', true], ['add', false]]);
+  assert.equal(diffFileLines(null, '').length, 0);
+  assert.equal(diffFileLines(null, 'new')[0].kind, 'add');
+  assert.equal(diffFileLines('gone', '')[0].kind, 'delete');
+  assert.equal(readEditBlocks([{ type: 'diff', path: 'a' }]), undefined);
+  const large = diffFileLines('old\n'.repeat(1100), 'new\n'.repeat(1100));
+  assert.equal(large.length, 2200);
+  assert.equal(large.filter(line => line.kind === 'context').length, 0);
+});
+
+test('structured file permission uses one preview and actual offered options, then one semantic result', async () => {
+  const chosen = [];
+  const copied = [];
+  const view = await renderEvents([['permission_request', {
+    requestId: 'file-edit', presentation: 'document', title: 'Edit', documentText: '### legacy fallback',
+    editBlocks: [{ type: 'diff', path: 'D:\\project\\a.c', displayPath: 'a.c', external: false,
+      oldText: 'head\nold\ntail\n', newText: 'head\nnew\ntail\n' }],
+    options: [{ optionId: 'nope', name: 'Custom rejection', kind: 'reject_once' }]
+  }]], { onDecisionOption: (item, option) => chosen.push([item.requestId, option.optionId]),
+    copyText: async text => { copied.push(text); return true; } });
+  const card = view.host.querySelector('.agent-file-edit-decision');
+  assert.ok(card);
+  assert.equal(card.querySelector('h3'), null);
+  assert.equal(card.querySelector('.agent-document-permission'), null);
+  assert.doesNotMatch(card.textContent, /文档详情|选择一个响应|legacy fallback/);
+  assert.equal(card.querySelectorAll('[data-diff-kind="context"]').length, 2);
+  assert.equal(card.querySelectorAll('[data-diff-kind="add"]').length, 1);
+  await act(async () => [...card.querySelectorAll('button')].find(button => button.textContent === '复制路径').click());
+  assert.deepEqual(copied, ['D:\\project\\a.c']);
+  await act(async () => card.querySelector('[data-option-id="nope"]').click());
+  assert.deepEqual(chosen, [['file-edit', 'nope']]);
+  view.projection.apply('permission_resolved', { requestId: 'file-edit', optionId: 'nope', optionName: 'Custom rejection' }, NAME);
+  await view.render();
+  assert.equal(card.querySelector('[data-option-id]'), null);
+  assert.equal(card.querySelector('[role="status"]').textContent, '已拒绝');
+  assert.ok(card.querySelector('[data-diff-kind="add"]'));
+  await view.dispose();
+});
+
+test('file edit replay preserves mixed content order and defaults to noninteractive collapsed previews', async () => {
+  const view = await renderEvents([['agent_thread_loaded', { messages: [{
+    role: 'document_permission', text: 'legacy fallback', decisionState: 'cancelled',
+    editBlocks: [
+      { type: 'text', text: 'First warning' },
+      { type: 'diff', path: 'D:\\a.c', oldText: null, newText: 'a' },
+      { type: 'text', text: 'Second warning' },
+      { type: 'diff', path: 'D:\\b.c', oldText: '', newText: 'b' }
+    ], decisionOptions: [{ optionId: 'yes', name: 'Allow', kind: 'allow_once' }]
+  }] }]]);
+  const card = view.host.querySelector('.agent-file-edit-decision');
+  assert.ok(card);
+  assert.ok(card.textContent.indexOf('First warning') < card.textContent.indexOf('D:\\a.c'));
+  assert.ok(card.textContent.indexOf('D:\\a.c') < card.textContent.indexOf('Second warning'));
+  assert.equal(card.querySelector('[data-option-id]'), null);
+  assert.equal(card.querySelector('[data-diff-kind]'), null);
+  assert.match(card.textContent, /外部路径/);
+  await act(async () => card.querySelector('[aria-expanded="false"]').click());
+  assert.ok(card.querySelector('[data-diff-kind="add"]'));
+  await view.dispose();
+});
 
 async function mountTimeline(host, reportFailure) {
   let island = null;

@@ -269,13 +269,15 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 request.Title,
                 request.DocumentText,
                 request.Options,
-                "pending"),
+                "pending",
+                request.EditBlocks),
             change => UpdateDocumentDecisionState(
                 change.RequestId,
                 change.Presentation,
                 change.State,
                 change.SelectedOptionId,
-                change.DecisionSnapshotId));
+                change.DecisionSnapshotId),
+            () => _workingDirectory);
         _terminalRequests = new AcpTerminalRequestHandler(
             () => _workingDirectory,
             () => _transportLifecycle.Generation,
@@ -3527,7 +3529,8 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
         string title,
         string documentText,
         IReadOnlyList<AgentDecisionOption> options,
-        string state)
+        string state,
+        IReadOnlyList<AgentEditBlock>? editBlocks = null)
     {
         lock (_sessionMutationSync)
         {
@@ -3568,6 +3571,7 @@ public sealed class AcpAgentSessionService : IAgentWorkspaceSession
                 DecisionSnapshotId = decisionSnapshotId,
                 DecisionState = state,
                 DecisionOptions = options.Select(DocumentDecisionSnapshotMerger.CloneOption).ToList(),
+                EditBlocks = editBlocks?.ToList(),
                 CreatedAt = existing?.CreatedAt ?? DateTimeOffset.Now
             };
 

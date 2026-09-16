@@ -46,6 +46,8 @@
       supplies release-only artifacts such as Portable Node and WebView2.
     -->
     <Content Include="tools\acp-seed\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="tools\pi-seed\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="tools\pi-launcher\launch.mjs" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <!--
       DSH seed mirrors acp-seed: manifests only. User confirmation installs
       @deepseek-ai/dsh into runtime/dsh-current (npm with lifecycle scripts;

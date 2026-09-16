@@ -574,6 +574,12 @@ public sealed class AcpAgentSessionServiceTests
         StringAssert.Contains(documentText, "### src/App.cs");
         StringAssert.Contains(documentText, "-old line");
         StringAssert.Contains(documentText, "+new line");
+        var editBlock = permission.GetProperty("editBlocks")[0];
+        Assert.AreEqual("diff", editBlock.GetProperty("type").GetString());
+        Assert.AreEqual("src/App.cs", editBlock.GetProperty("displayPath").GetString());
+        Assert.IsFalse(editBlock.GetProperty("external").GetBoolean());
+        Assert.AreEqual("old line", editBlock.GetProperty("oldText").GetString());
+        Assert.AreEqual("new line", editBlock.GetProperty("newText").GetString());
 
         fixture.Bridge.RaiseCommand(
             "agent_permission_response",
@@ -588,6 +594,9 @@ public sealed class AcpAgentSessionServiceTests
         Assert.AreEqual("approve", snapshot.SelectedOptionId);
         Assert.IsFalse(thread.Messages.Any(message => message.Role == "tool"
             && message.ToolCallId == "tool-diff-permission"));
+        Assert.HasCount(1, snapshot.EditBlocks!);
+        Assert.AreEqual("src/App.cs", snapshot.EditBlocks![0].DisplayPath);
+        Assert.AreEqual("new line", snapshot.EditBlocks[0].NewText);
     }
 
     [TestMethod]

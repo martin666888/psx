@@ -1,5 +1,8 @@
 using System.Text.Json;
 
+if (args.Length == 4 && args[3] == "--smoke")
+    return File.Exists(Path.Combine(Environment.CurrentDirectory, "pi-smoke-fail.marker")) ? 1 : 0;
+
 // `node <staged-entry> --version` — staged smoke checks for Kimi/Qwen, and
 // `<variant>/bin/opencode.exe --version` — the native-exe smoke check for
 // OpenCode (argv is just "--version"). Handled before configuration parsing
@@ -144,6 +147,21 @@ if (scenario.CreateKimi)
     }
 }
 
+if (scenario.CreatePi)
+{
+    foreach (var (package, bin, version) in new[]
+    {
+        ("@earendil-works/pi-coding-agent", "pi", scenario.PiVersion ?? "0.85.1"),
+        ("pi-acp", "pi-acp", scenario.PiAdapterVersion ?? "0.0.33")
+    })
+    {
+        var directory = Path.Combine(workingDirectory, "node_modules", package.Replace('/', Path.DirectorySeparatorChar));
+        WriteJson(Path.Combine(directory, "package.json"), new { name = package, version, bin = new Dictionary<string, string> { [bin] = "dist/index.js" } });
+        WriteFile(Path.Combine(directory, "dist", "index.js"), "fake");
+    }
+    if (scenario.PiSmokeFails) WriteFile(Path.Combine(workingDirectory, "pi-smoke-fail.marker"), "fail");
+}
+
 if (scenario.CreateQwen)
 {
     WriteJson(
@@ -226,6 +244,10 @@ internal sealed class FakeNpmScenario
     public bool CreateKimi { get; set; }
     public bool KimiSmokeFails { get; set; }
     public bool CreateQwen { get; set; }
+    public bool CreatePi { get; set; }
+    public bool PiSmokeFails { get; set; }
+    public string? PiVersion { get; set; }
+    public string? PiAdapterVersion { get; set; }
     public bool QwenSmokeFails { get; set; }
     public bool CreateOpencode { get; set; }
     public bool OpencodeSmokeFails { get; set; }

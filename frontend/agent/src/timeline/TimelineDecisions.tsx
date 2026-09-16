@@ -12,6 +12,7 @@ import {
   type ElicitationProperty
 } from '../core/elicitation.js';
 import { MarkdownContent } from '../markdown/MarkdownContent.js';
+import { FileEditDecision } from './FileEditDecision.js';
 import { normalizePsxHref } from '../markdown/security.js';
 import { DecisionOptionPills } from '../decisions/DecisionOptionPills.js';
 import { resolveDisplay } from './copy.js';
@@ -727,6 +728,9 @@ export function DecisionCard({
   callbacks: DecisionCallbacks;
 }): JSX.Element {
   if (item.kind === 'mode_transition' || item.kind === 'document_permission') {
+    if (item.kind === 'document_permission' && item.editBlocks?.some(block => block.type === 'diff')) {
+      return <FileEditDecision item={item} callbacks={callbacks} />;
+    }
     return <DocumentDecisionCard item={item} callbacks={callbacks} />;
   }
   // Permission form variant reuses the elicitation form body over the

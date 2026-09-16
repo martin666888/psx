@@ -40,6 +40,7 @@ internal static class DocumentDecisionSnapshotMerger
                 : message.DecisionState,
             SelectedOptionId = message.SelectedOptionId,
             DecisionOptions = message.DecisionOptions?.Select(CloneOption).ToList(),
+            EditBlocks = message.EditBlocks?.ToList(),
             CreatedAt = message.CreatedAt
         };
     }

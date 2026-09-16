@@ -193,6 +193,18 @@
       "chooseResponse": "選擇一個回應",
       "proposalDetails": "提案詳情",
       "documentDetails": "文件詳情",
+      "fileEdit": {
+        "edit": "編輯",
+        "external": "外部路徑",
+        "copyPath": "複製路徑",
+        "copyFailed": "複製失敗，請重試。",
+        "noNewline": "（結尾無換行）",
+        "empty": "檔案內容為空",
+        "more": "顯示更多（剩餘 {{count}} 行）",
+        "rejected": "已拒絕",
+        "allowed": "已允許",
+        "files": "檔案修改 · {{count}} 個檔案"
+      },
       "option": {
         "allow": "允許",
         "reject": "拒絕",

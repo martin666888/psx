@@ -193,6 +193,18 @@
       "chooseResponse": "応答を選択",
       "proposalDetails": "提案の詳細",
       "documentDetails": "ドキュメントの詳細",
+      "fileEdit": {
+        "edit": "編集",
+        "external": "外部パス",
+        "copyPath": "パスをコピー",
+        "copyFailed": "コピーに失敗しました。再試行してください。",
+        "noNewline": "（末尾に改行なし）",
+        "empty": "ファイルは空です",
+        "more": "さらに表示（残り {{count}} 行）",
+        "rejected": "拒否済み",
+        "allowed": "許可済み",
+        "files": "ファイルの変更 · {{count}} ファイル"
+      },
       "option": {
         "allow": "許可",
         "reject": "拒否",

@@ -193,6 +193,18 @@
       "chooseResponse": "选择一个响应",
       "proposalDetails": "提案详情",
       "documentDetails": "文档详情",
+      "fileEdit": {
+        "edit": "编辑",
+        "external": "外部路径",
+        "copyPath": "复制路径",
+        "copyFailed": "复制失败，请重试。",
+        "noNewline": "（末尾无换行）",
+        "empty": "文件内容为空",
+        "more": "显示更多（剩余 {{count}} 行）",
+        "rejected": "已拒绝",
+        "allowed": "已允许",
+        "files": "文件修改 · {{count}} 个文件"
+      },
       "option": {
         "allow": "允许",
         "reject": "拒绝",
